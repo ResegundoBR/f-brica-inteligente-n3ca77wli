@@ -6,16 +6,30 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { useAuth } from '@/hooks/use-auth'
-import { Save, Loader2, Image as ImageIcon } from 'lucide-react'
+import { Save, Loader2, Image as ImageIcon, CheckCircle, ShieldCheck } from 'lucide-react'
 import { LearningRecord } from '@/types'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 
 export default function Learning() {
   const { user: currentUser } = useAuth()
   const [learningRecords, setLearningRecords] = useState<LearningRecord[]>([])
   const [loading, setLoading] = useState(false)
+  const [isAdminOrRevisor, setIsAdminOrRevisor] = useState(false)
+
+  useEffect(() => {
+    if (currentUser?.role) {
+      pb.collection('roles')
+        .getOne(currentUser.role)
+        .then((role) => {
+          const name = role.name.toLowerCase()
+          setIsAdminOrRevisor(name.includes('admin') || name.includes('revisador'))
+        })
+        .catch(console.error)
+    }
+  }, [currentUser])
 
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -53,6 +67,18 @@ export default function Learning() {
     e.preventDefault()
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       setFile(e.dataTransfer.files[0])
+    }
+  }
+
+  const toggleValidation = async (id: string, currentStatus: boolean) => {
+    try {
+      await pb.collection('learning_evolution').update(id, {
+        validated: !currentStatus,
+      })
+      toast.success(`Aprendizado ${!currentStatus ? 'validado' : 'invalidado'} com sucesso!`)
+    } catch (err: any) {
+      toast.error('Erro ao alterar status de validação. Verifique suas permissões.')
+      console.error(err)
     }
   }
 
@@ -177,15 +203,47 @@ export default function Learning() {
               </div>
             ) : (
               learningRecords.map((record) => (
-                <div key={record.id} className="relative pl-8 md:pl-10">
-                  <div className="absolute -left-[11px] top-1.5 h-5 w-5 rounded-full bg-primary/20 flex items-center justify-center ring-4 ring-background">
-                    <div className="h-2 w-2 rounded-full bg-primary" />
+                <div
+                  key={record.id}
+                  className={cn(
+                    'relative pl-8 md:pl-10 transition-opacity',
+                    !record.validated && 'opacity-60',
+                  )}
+                >
+                  <div
+                    className={cn(
+                      'absolute -left-[11px] top-1.5 h-5 w-5 rounded-full flex items-center justify-center ring-4 ring-background',
+                      record.validated ? 'bg-green-500/20' : 'bg-primary/20',
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        'h-2 w-2 rounded-full',
+                        record.validated ? 'bg-green-600' : 'bg-primary',
+                      )}
+                    />
                   </div>
-                  <Card className="shadow-sm border-border/60">
+                  <Card
+                    className={cn(
+                      'shadow-sm border-border/60',
+                      record.validated && 'border-green-500/30',
+                    )}
+                  >
                     <CardContent className="p-0 flex flex-col md:flex-row overflow-hidden">
                       <div className="p-5 flex-1 space-y-3">
                         <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-                          <h3 className="font-semibold text-lg leading-tight">{record.title}</h3>
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-semibold text-lg leading-tight">{record.title}</h3>
+                            {record.validated && (
+                              <Badge
+                                variant="outline"
+                                className="bg-green-50 text-green-700 border-green-200 gap-1 px-1.5"
+                              >
+                                <CheckCircle className="w-3 h-3" />
+                                Validado
+                              </Badge>
+                            )}
+                          </div>
                           <Badge variant="secondary" className="text-xs font-normal">
                             {new Date(record.created).toLocaleDateString()}
                           </Badge>
@@ -193,10 +251,27 @@ export default function Learning() {
                         <p className="text-sm text-muted-foreground whitespace-pre-wrap">
                           {record.description}
                         </p>
-                        <div className="pt-3 flex items-center text-xs text-muted-foreground border-t border-border/40 mt-3">
+                        <div className="pt-3 flex items-center justify-between text-xs text-muted-foreground border-t border-border/40 mt-3">
                           <span className="font-medium text-foreground">
                             Por: {record.expand?.user_id?.name || 'Usuário'}
                           </span>
+
+                          {isAdminOrRevisor && (
+                            <Button
+                              variant={record.validated ? 'outline' : 'default'}
+                              size="sm"
+                              className={cn(
+                                'h-7 text-xs',
+                                record.validated
+                                  ? 'text-muted-foreground'
+                                  : 'bg-blue-600 hover:bg-blue-700 text-white',
+                              )}
+                              onClick={() => toggleValidation(record.id, !!record.validated)}
+                            >
+                              <ShieldCheck className="w-3.5 h-3.5 mr-1" />
+                              {record.validated ? 'Desfazer Validação' : 'Validar Aprendizado'}
+                            </Button>
+                          )}
                         </div>
                       </div>
                       {record.evidence && (

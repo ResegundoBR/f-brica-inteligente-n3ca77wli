@@ -102,6 +102,7 @@ export interface LearningRecord {
   title: string
   description: string
   evidence: string
+  validated?: boolean
   created: string
   updated: string
   expand?: { user_id?: User }

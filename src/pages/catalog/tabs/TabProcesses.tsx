@@ -132,8 +132,19 @@ export function TabProcesses({ product }: { product: Product; setProduct: (p: Pr
         <Label>Adicionar Etapa de Processo</Label>
         <div className="flex flex-wrap gap-2">
           {defaultProcessTypes.map((pt) => {
+            const isAdded = processes.some((p) => p.name.toLowerCase() === pt.toLowerCase())
             return (
-              <Button key={pt} variant="outline" onClick={() => handleAddProcess(pt)}>
+              <Button
+                key={pt}
+                variant={isAdded ? 'default' : 'outline'}
+                className={
+                  isAdded
+                    ? 'bg-blue-600 text-white hover:bg-blue-600/90 disabled:opacity-80 disabled:bg-blue-600 disabled:text-white'
+                    : ''
+                }
+                disabled={isAdded}
+                onClick={() => handleAddProcess(pt)}
+              >
                 {pt}
               </Button>
             )

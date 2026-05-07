@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-07T20:41:14.653Z",
+  "generatedAt": "2026-05-07T20:50:27.636Z",
   "collections": [
     {
       "name": "users",
@@ -386,7 +386,7 @@
         "list": "@request.auth.id != ''",
         "view": "@request.auth.id != ''",
         "create": "@request.auth.id != ''",
-        "update": "@request.auth.id != '' && user_id = @request.auth.id",
+        "update": "@request.auth.id != '' && (user_id = @request.auth.id || @request.auth.role.name = 'admin' || @request.auth.role.name = 'Administrador' || @request.auth.role.name = 'revisador' || @request.auth.role.name = 'Revisador')",
         "delete": "@request.auth.id != '' && user_id = @request.auth.id"
       },
       "fields": [
@@ -428,6 +428,12 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "validated",
+          "type": "bool",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": []

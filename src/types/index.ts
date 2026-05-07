@@ -1,12 +1,25 @@
-export type UserRole = 'registrator' | 'reviewer' | 'admin'
-export type ProductStatus = 'rascunho' | 'revisao' | 'pendencia' | 'validado'
+export interface Role {
+  id: string
+  name: string
+  description: string
+  active: boolean
+}
+
+export interface ProductStatusModel {
+  id: string
+  name: string
+  color: string
+  active: boolean
+}
 
 export interface User {
   id: string
   name: string
   email: string
-  role: UserRole
+  role: string
+  active: boolean
   must_change_password?: boolean
+  expand?: { role?: Role }
 }
 
 export interface Process {
@@ -41,13 +54,13 @@ export interface Product {
   id: string
   name: string
   description: string
-  status: ProductStatus
+  status: string
   files: string[]
   owner: string
   data: ProductData
   created: string
   updated: string
-  expand?: { owner?: User }
+  expand?: { owner?: User; status?: ProductStatusModel }
 }
 
 export interface LearningRecord {

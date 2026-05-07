@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-07T17:47:07.043Z",
+  "generatedAt": "2026-05-07T17:58:41.154Z",
   "collections": [
     {
       "name": "users",
@@ -39,14 +39,20 @@
           "autodateTriggers": ["onCreate", "onUpdate"]
         },
         {
-          "name": "role",
-          "type": "select",
-          "required": true,
-          "system": false,
-          "selectValues": ["admin", "reviewer", "registrator"]
+          "name": "must_change_password",
+          "type": "bool",
+          "required": false,
+          "system": false
         },
         {
-          "name": "must_change_password",
+          "name": "role",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "roles"
+        },
+        {
+          "name": "active",
           "type": "bool",
           "required": false,
           "system": false
@@ -63,9 +69,9 @@
       "apiRules": {
         "list": "@request.auth.id != ''",
         "view": "@request.auth.id != ''",
-        "create": "@request.auth.id != '' && (@request.auth.role = 'admin' || @request.auth.role = 'registrator')",
+        "create": "@request.auth.id != ''",
         "update": "@request.auth.id != ''",
-        "delete": "@request.auth.id != '' && @request.auth.role = 'admin'"
+        "delete": "@request.auth.id != ''"
       },
       "fields": [
         {
@@ -79,13 +85,6 @@
           "type": "text",
           "required": false,
           "system": false
-        },
-        {
-          "name": "status",
-          "type": "select",
-          "required": true,
-          "system": false,
-          "selectValues": ["rascunho", "revisao", "pendencia", "validado"]
         },
         {
           "name": "files",
@@ -119,6 +118,13 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "status",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "product_statuses"
         }
       ],
       "indexes": [
@@ -206,6 +212,98 @@
         },
         {
           "name": "read",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "name": "roles",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "name",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "active",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "name": "product_statuses",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "name",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "color",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "active",
           "type": "bool",
           "required": false,
           "system": false

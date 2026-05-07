@@ -7,6 +7,7 @@ import {
   Shield,
   ScrollText,
   Factory,
+  Settings,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -26,6 +27,7 @@ const navItems = [
   { title: 'Evolução Aprendizado', url: '/aprendizado', icon: GraduationCap, group: 'Principal' },
   { title: 'Usuários', url: '/admin/usuarios', icon: Users, group: 'Administração' },
   { title: 'Funções', url: '/admin/funcoes', icon: Shield, group: 'Administração' },
+  { title: 'Status dos Produtos', url: '/admin/status', icon: Settings, group: 'Administração' },
   { title: 'Log de Atividades', url: '/admin/logs', icon: ScrollText, group: 'Administração' },
 ]
 

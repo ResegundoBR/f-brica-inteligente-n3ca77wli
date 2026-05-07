@@ -7,12 +7,11 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { useApp } from '@/contexts/app-context'
-import { Product } from '@/types'
+import { Product, ProductStatusModel } from '@/types'
+import pb from '@/lib/pocketbase/client'
 import { TabGeneral } from './tabs/TabGeneral'
 import { TabEngineering } from './tabs/TabEngineering'
 import { TabProcesses } from './tabs/TabProcesses'
@@ -20,61 +19,98 @@ import { TabComposition } from './tabs/TabComposition'
 import { TabChecklist } from './tabs/TabChecklist'
 import { TabReview } from './tabs/TabReview'
 import { ArrowLeftIcon, SaveIcon, SendIcon } from 'lucide-react'
+import { useAuth } from '@/hooks/use-auth'
+import { useToast } from '@/hooks/use-toast'
 
 export default function CatalogDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { products, updateProduct } = useApp()
+  const { user } = useAuth()
+  const { toast } = useToast()
   const [product, setProduct] = useState<Product | null>(null)
   const [showSaveDialog, setShowSaveDialog] = useState(false)
   const [activeTab, setActiveTab] = useState('geral')
+  const [statuses, setStatuses] = useState<ProductStatusModel[]>([])
 
   useEffect(() => {
+    pb.collection('product_statuses')
+      .getFullList<ProductStatusModel>()
+      .then(setStatuses)
+      .catch(console.error)
+
     if (id === 'novo') {
       setProduct({
-        id: `P00${(products?.length ?? 0) + 1}`,
+        id: '',
         name: '',
-        details: '',
-        status: 'Iniciado',
-        lastUpdate: new Date().toISOString().split('T')[0],
-        daysIdle: 0,
+        description: '',
+        status: '',
+        owner: user?.id || '',
         processes: [],
         composition: [],
         checklist: [],
         reviewPoints: [],
         files: [],
         data: {},
-      })
-    } else {
-      const found = products?.find((p) => p.id === id)
-      if (found) {
-        setProduct({
-          ...found,
-          processes: found.processes ?? found.data?.processes ?? [],
-          composition: found.composition ?? found.data?.composition ?? [],
-          checklist: found.checklist ?? found.data?.checklist ?? [],
-          reviewPoints: found.reviewPoints ?? found.data?.reviewPoints ?? [],
-          files: found.files ?? [],
-          data: found.data ?? {},
-        }) // clone to edit
-        if (found.status === 'Pendência') setActiveTab('revisao')
-      }
+        created: '',
+        updated: '',
+      } as any)
+    } else if (id) {
+      pb.collection('products')
+        .getOne<Product>(id, { expand: 'status,owner' })
+        .then((found) => {
+          setProduct({
+            ...found,
+            data: found.data || {},
+          })
+          if (found.expand?.status?.name.toLowerCase() === 'pendencia') setActiveTab('revisao')
+        })
+        .catch(console.error)
     }
-  }, [id, products])
+  }, [id, user])
 
   const handleSaveClick = () => {
     setShowSaveDialog(true)
   }
 
-  const performSave = (action: 'draft' | 'review') => {
+  const performSave = async (action: 'draft' | 'review') => {
     if (!product) return
-    const finalProduct = {
-      ...product,
-      status: action === 'review' ? ('Revisão' as const) : product.status,
+
+    try {
+      let targetStatus = product.status
+      if (action === 'review') {
+        const revStatus = statuses.find((s) => s.name.toLowerCase() === 'revisao')
+        if (revStatus) targetStatus = revStatus.id
+      } else if (!product.id) {
+        const rascunho = statuses.find((s) => s.name.toLowerCase() === 'rascunho')
+        if (rascunho) targetStatus = rascunho.id
+      }
+
+      const dataToSave = {
+        name: product.name,
+        description: product.description,
+        status: targetStatus,
+        owner: product.owner || user?.id,
+        data: {
+          processes: product.data?.processes || [],
+          composition: product.data?.composition || [],
+          checklist: product.data?.checklist || [],
+          reviewPoints: product.data?.reviewPoints || [],
+        },
+      }
+
+      if (id === 'novo') {
+        await pb.collection('products').create(dataToSave)
+      } else {
+        await pb.collection('products').update(product.id, dataToSave)
+      }
+
+      toast({ title: 'Produto salvo com sucesso!' })
+      setShowSaveDialog(false)
+      navigate('/catalogo')
+    } catch (err) {
+      toast({ title: 'Erro ao salvar', variant: 'destructive' })
+      console.error(err)
     }
-    updateProduct(finalProduct)
-    setShowSaveDialog(false)
-    navigate('/catalogo')
   }
 
   if (!product) return <div>Carregando...</div>
@@ -90,7 +126,9 @@ export default function CatalogDetail() {
             <h1 className="text-2xl font-bold">
               {id === 'novo' ? 'Novo Produto' : product.name || 'Sem Título'}
             </h1>
-            <p className="text-sm text-muted-foreground text-mono">ID: {product.id}</p>
+            <p className="text-sm text-muted-foreground font-mono">
+              ID: {product.id || 'Não salvo'}
+            </p>
           </div>
         </div>
         <Button onClick={handleSaveClick}>
@@ -136,9 +174,9 @@ export default function CatalogDetail() {
               className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none py-3 px-6"
             >
               Revisão{' '}
-              {(product.reviewPoints?.length ?? 0) > 0 && (
+              {(product.data?.reviewPoints?.length || 0) > 0 && (
                 <span className="ml-2 bg-destructive text-destructive-foreground text-[10px] px-1.5 py-0.5 rounded-full">
-                  {product.reviewPoints?.length}
+                  {product.data?.reviewPoints?.length}
                 </span>
               )}
             </TabsTrigger>

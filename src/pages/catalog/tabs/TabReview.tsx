@@ -1,12 +1,14 @@
-import { useState } from 'react'
-import { Product } from '@/types'
-import { useApp } from '@/contexts/app-context'
+import { useState, useEffect } from 'react'
+import { Product, ProductStatusModel } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Badge } from '@/components/ui/badge'
 import { Check, X, Send, CheckCircle2 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import { useAuth } from '@/hooks/use-auth'
+import pb from '@/lib/pocketbase/client'
 
 export function TabReview({
   product,
@@ -15,51 +17,63 @@ export function TabReview({
   product: Product
   setProduct: (p: Product) => void
 }) {
-  const { currentUser, updateProduct } = useApp()
+  const { user: currentUser } = useAuth()
   const { toast } = useToast()
   const [newPoint, setNewPoint] = useState('')
+  const [statuses, setStatuses] = useState<ProductStatusModel[]>([])
 
-  const isReviewer = currentUser.role === 'Revisador' || currentUser.role === 'Admin'
-  const isRegistrator = currentUser.role === 'Registrador' || currentUser.role === 'Admin'
+  useEffect(() => {
+    pb.collection('product_statuses')
+      .getFullList<ProductStatusModel>()
+      .then(setStatuses)
+      .catch(console.error)
+  }, [])
+
+  const roleName = currentUser?.expand?.role?.name || currentUser?.role
+  const isReviewer = roleName === 'reviewer' || roleName === 'admin'
+  const isRegistrator = roleName === 'registrator' || roleName === 'admin'
+
+  const reviewPoints = product.data?.reviewPoints || []
 
   const addPoint = () => {
     if (!newPoint.trim()) return
     setProduct({
       ...product,
-      reviewPoints: [
-        ...(product.reviewPoints || []),
-        { id: Date.now().toString(), description: newPoint, resolved: null, observation: '' },
-      ],
+      data: {
+        ...product.data,
+        reviewPoints: [
+          ...reviewPoints,
+          { id: Date.now().toString(), description: newPoint, resolved: null, observation: '' },
+        ],
+      },
     })
     setNewPoint('')
   }
 
   const resolvePoint = (id: string, resolved: boolean) => {
-    const newPoints = (product.reviewPoints || []).map((p) =>
-      p.id === id ? { ...p, resolved } : p,
-    )
-    setProduct({ ...product, reviewPoints: newPoints })
+    const newPoints = reviewPoints.map((p: any) => (p.id === id ? { ...p, resolved } : p))
+    setProduct({ ...product, data: { ...product.data, reviewPoints: newPoints } })
   }
 
   const updateObservation = (id: string, observation: string) => {
-    const newPoints = (product.reviewPoints || []).map((p) =>
-      p.id === id ? { ...p, observation } : p,
-    )
-    setProduct({ ...product, reviewPoints: newPoints })
+    const newPoints = reviewPoints.map((p: any) => (p.id === id ? { ...p, observation } : p))
+    setProduct({ ...product, data: { ...product.data, reviewPoints: newPoints } })
   }
 
-  const sendToRegistrator = () => {
-    const updated = { ...product, status: 'Pendência' as const }
-    setProduct(updated)
-    updateProduct(updated)
-    toast({ title: 'Enviado para Registrador', description: 'O status mudou para Pendência.' })
-  }
+  const updateStatus = async (statusName: string, title: string, desc: string) => {
+    const s = statuses.find((x) => x.name.toLowerCase() === statusName)
+    if (!s) return toast({ title: 'Status não encontrado', variant: 'destructive' })
 
-  const validateProduct = () => {
-    const updated = { ...product, status: 'Validado' as const }
-    setProduct(updated)
-    updateProduct(updated)
-    toast({ title: 'Produto Validado', description: 'O cadastro foi aprovado com sucesso.' })
+    try {
+      const updated = { ...product, status: s.id }
+      if (product.id) {
+        await pb.collection('products').update(product.id, { status: s.id })
+      }
+      setProduct(updated)
+      toast({ title, description: desc })
+    } catch (err) {
+      toast({ title: 'Erro ao atualizar', variant: 'destructive' })
+    }
   }
 
   return (
@@ -80,13 +94,24 @@ export function TabReview({
           </div>
           <div className="flex gap-3 pt-4 border-t">
             <Button
-              onClick={sendToRegistrator}
+              onClick={() =>
+                updateStatus(
+                  'pendencia',
+                  'Enviado para Registrador',
+                  'O status mudou para Pendência.',
+                )
+              }
               variant="outline"
               className="text-amber-600 border-amber-200 hover:bg-amber-50 dark:hover:bg-amber-950"
             >
               <Send className="mr-2 h-4 w-4" /> Devolver p/ Ajustes (Pendência)
             </Button>
-            <Button onClick={validateProduct} className="bg-emerald-600 hover:bg-emerald-700">
+            <Button
+              onClick={() =>
+                updateStatus('validado', 'Produto Validado', 'O cadastro foi aprovado com sucesso.')
+              }
+              className="bg-emerald-600 hover:bg-emerald-700"
+            >
               <CheckCircle2 className="mr-2 h-4 w-4" /> Aprovar / Validar
             </Button>
           </div>
@@ -94,14 +119,12 @@ export function TabReview({
       )}
 
       <div className="space-y-4">
-        <h3 className="font-medium text-lg">
-          Pontos de Revisão ({product.reviewPoints?.length ?? 0})
-        </h3>
-        {(product.reviewPoints?.length ?? 0) === 0 ? (
+        <h3 className="font-medium text-lg">Pontos de Revisão ({reviewPoints.length})</h3>
+        {reviewPoints.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nenhum ponto de revisão apontado.</p>
         ) : (
           <div className="grid gap-4">
-            {product.reviewPoints?.map((point) => (
+            {reviewPoints.map((point: any) => (
               <div
                 key={point.id}
                 className="border rounded-md p-4 bg-card flex flex-col sm:flex-row gap-4"

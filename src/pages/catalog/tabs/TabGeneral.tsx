@@ -3,6 +3,7 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { StatusBadge } from '../CatalogList'
+import { useAuth } from '@/hooks/use-auth'
 import { ImagePlus } from 'lucide-react'
 
 interface Props {
@@ -11,6 +12,7 @@ interface Props {
 }
 
 export function TabGeneral({ product, setProduct }: Props) {
+  const { user } = useAuth()
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="grid gap-6 md:grid-cols-2">
@@ -38,7 +40,7 @@ export function TabGeneral({ product, setProduct }: Props) {
           <div className="space-y-2">
             <Label>Status Atual</Label>
             <div className="pt-1">
-              <StatusBadge status={product.status} />
+              <StatusBadge status={product.expand?.status || product.status} />
             </div>
           </div>
         </div>

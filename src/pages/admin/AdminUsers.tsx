@@ -26,38 +26,99 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus, UserCog } from 'lucide-react'
+import { Switch } from '@/components/ui/switch'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { MoreHorizontal, Plus, Pencil, CheckCircle2, XCircle } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
+import { useToast } from '@/hooks/use-toast'
+import { Role, User } from '@/types'
 
 export default function AdminUsers() {
-  const [users, setUsers] = useState<any[]>([])
+  const { toast } = useToast()
+  const [users, setUsers] = useState<User[]>([])
+  const [roles, setRoles] = useState<Role[]>([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
+  const [editingUser, setEditingUser] = useState<User | null>(null)
+
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    role: '',
+    active: true,
+    must_change_password: false,
+  })
 
   const loadUsers = async () => {
     try {
-      setLoading(true)
-      const records = await pb.collection('users').getFullList({
-        sort: '-created',
-      })
+      const records = await pb
+        .collection('users')
+        .getFullList<User>({ sort: '-created', expand: 'role' })
       setUsers(records)
     } catch (error) {
       console.error('Failed to load users:', error)
-      setUsers([])
     } finally {
       setLoading(false)
     }
   }
 
+  const loadRoles = async () => {
+    try {
+      const records = await pb.collection('roles').getFullList<Role>({ sort: 'name' })
+      setRoles(records)
+    } catch (error) {
+      console.error('Failed to load roles:', error)
+    }
+  }
+
   useEffect(() => {
     loadUsers()
+    loadRoles()
   }, [])
 
   useRealtime('users', () => {
     loadUsers()
   })
+
+  const handleEdit = (user: User) => {
+    setEditingUser(user)
+    setFormData({
+      name: user.name || '',
+      email: user.email,
+      role: user.role || '',
+      active: user.active ?? true,
+      must_change_password: user.must_change_password || false,
+    })
+    setOpen(true)
+  }
+
+  const handleSave = async () => {
+    try {
+      if (editingUser) {
+        await pb.collection('users').update(editingUser.id, formData)
+        toast({ title: 'Usuário atualizado com sucesso' })
+      } else {
+        await pb.collection('users').create({
+          ...formData,
+          password: 'Password123!',
+          passwordConfirm: 'Password123!',
+          must_change_password: true,
+        })
+        toast({ title: 'Usuário criado com sucesso' })
+      }
+      setOpen(false)
+      setEditingUser(null)
+    } catch (error: any) {
+      toast({ title: 'Erro ao salvar', description: error.message, variant: 'destructive' })
+    }
+  }
 
   return (
     <div className="space-y-6 animate-fade-in-up">
@@ -66,45 +127,93 @@ export default function AdminUsers() {
           <h1 className="text-3xl font-bold">Gestão de Usuários</h1>
           <p className="text-muted-foreground">Controle de acessos e perfis do sistema.</p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog
+          open={open}
+          onOpenChange={(val) => {
+            setOpen(val)
+            if (!val) setEditingUser(null)
+          }}
+        >
           <DialogTrigger asChild>
-            <Button>
+            <Button
+              onClick={() =>
+                setFormData({
+                  name: '',
+                  email: '',
+                  role: '',
+                  active: true,
+                  must_change_password: false,
+                })
+              }
+            >
               <Plus className="mr-2 h-4 w-4" /> Novo Usuário
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Cadastrar Novo Usuário</DialogTitle>
+              <DialogTitle>{editingUser ? 'Editar Usuário' : 'Cadastrar Novo Usuário'}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label>Nome Completo *</Label>
-                <Input placeholder="Ex: João da Silva" />
+                <Input
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="Ex: João da Silva"
+                />
               </div>
               <div className="space-y-2">
                 <Label>Email corporativo *</Label>
-                <Input type="email" placeholder="joao@fabrica.com" />
+                <Input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  placeholder="joao@fabrica.com"
+                />
               </div>
               <div className="space-y-2">
                 <Label>Função / Papel</Label>
-                <Select defaultValue="Registrador">
+                <Select
+                  value={formData.role}
+                  onValueChange={(v) => setFormData({ ...formData, role: v })}
+                >
                   <SelectTrigger>
-                    <SelectValue />
+                    <SelectValue placeholder="Selecione um papel" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Registrador">Registrador</SelectItem>
-                    <SelectItem value="Revisador">Revisador</SelectItem>
-                    <SelectItem value="Admin">Administrador</SelectItem>
+                    {roles.map((r) => (
+                      <SelectItem key={r.id} value={r.id}>
+                        {r.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="bg-muted p-3 rounded-md text-sm">
-                <p className="font-semibold mb-1">Atenção:</p>
-                Uma senha temporária será gerada e enviada ao e-mail. No primeiro acesso, o usuário
-                deverá criar uma nova senha (mín 8 caracteres, números e letras).
+
+              <div className="flex items-center justify-between border p-3 rounded-md">
+                <div className="space-y-0.5">
+                  <Label>Usuário Ativo</Label>
+                  <p className="text-xs text-muted-foreground">Permitir acesso ao sistema</p>
+                </div>
+                <Switch
+                  checked={formData.active}
+                  onCheckedChange={(v) => setFormData({ ...formData, active: v })}
+                />
               </div>
-              <Button className="w-full" onClick={() => setOpen(false)}>
-                Cadastrar Usuário
+
+              <div className="flex items-center justify-between border p-3 rounded-md">
+                <div className="space-y-0.5">
+                  <Label>Forçar troca de senha</Label>
+                  <p className="text-xs text-muted-foreground">Exigir nova senha no login</p>
+                </div>
+                <Switch
+                  checked={formData.must_change_password}
+                  onCheckedChange={(v) => setFormData({ ...formData, must_change_password: v })}
+                />
+              </div>
+
+              <Button className="w-full" onClick={handleSave}>
+                {editingUser ? 'Salvar Alterações' : 'Cadastrar Usuário'}
               </Button>
             </div>
           </DialogContent>
@@ -155,18 +264,44 @@ export default function AdminUsers() {
                   <TableRow key={u.id}>
                     <TableCell className="font-medium">{u.name || '-'}</TableCell>
                     <TableCell>{u.email}</TableCell>
-                    <TableCell className="capitalize">{u.role || '-'}</TableCell>
+                    <TableCell className="capitalize">{u.expand?.role?.name || '-'}</TableCell>
                     <TableCell>
-                      {u.verified ? (
+                      {u.active ? (
                         <Badge className="bg-emerald-600">Ativo</Badge>
                       ) : (
-                        <Badge variant="secondary">Pendente</Badge>
+                        <Badge variant="destructive">Inativo</Badge>
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="icon">
-                        <UserCog className="h-4 w-4" />
-                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => handleEdit(u)}>
+                            <Pencil className="mr-2 h-4 w-4" /> Editar Perfil
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => {
+                              pb.collection('users')
+                                .update(u.id, { active: !u.active })
+                                .catch(console.error)
+                            }}
+                          >
+                            {u.active ? (
+                              <>
+                                <XCircle className="mr-2 h-4 w-4" /> Desativar
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle2 className="mr-2 h-4 w-4" /> Ativar
+                              </>
+                            )}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </TableCell>
                   </TableRow>
                 ))

@@ -10,6 +10,7 @@ import CatalogDetail from './pages/catalog/CatalogDetail'
 import Learning from './pages/Learning'
 import AdminUsers from './pages/admin/AdminUsers'
 import AdminRoles from './pages/admin/AdminRoles'
+import AdminStatuses from './pages/admin/AdminStatuses'
 import AdminLogs from './pages/admin/AdminLogs'
 import Login from './pages/Login'
 import ChangePassword from './pages/ChangePassword'
@@ -34,6 +35,7 @@ const App = () => (
               <Route path="/aprendizado" element={<Learning />} />
               <Route path="/admin/usuarios" element={<AdminUsers />} />
               <Route path="/admin/funcoes" element={<AdminRoles />} />
+              <Route path="/admin/status" element={<AdminStatuses />} />
               <Route path="/admin/logs" element={<AdminLogs />} />
             </Route>
           </Route>

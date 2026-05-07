@@ -5,14 +5,17 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { useApp } from '@/contexts/app-context'
+import { useAuth } from '@/hooks/use-auth'
 import { Plus, UploadCloud, CheckCircle2, Calendar } from 'lucide-react'
+import { LearningRecord } from '@/types'
 
 export default function Learning() {
-  const { learningRecords, currentUser } = useApp()
+  const { user: currentUser } = useAuth()
   const [showForm, setShowForm] = useState(false)
+  const [learningRecords, setLearningRecords] = useState<LearningRecord[]>([])
 
-  const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'Revisador'
+  const userRole = currentUser?.expand?.role?.name || currentUser?.role
+  const isAdmin = userRole === 'admin' || userRole === 'reviewer'
 
   if (!currentUser) {
     return (

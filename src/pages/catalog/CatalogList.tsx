@@ -13,23 +13,24 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { Product, ProductStatus } from '@/types'
+import { Product, ProductStatusModel } from '@/types'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { useAuth } from '@/hooks/use-auth'
 
-export function StatusBadge({ status }: { status: ProductStatus }) {
-  const map: Record<
-    ProductStatus,
-    { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }
-  > = {
-    rascunho: { label: 'Rascunho', variant: 'secondary' },
-    revisao: { label: 'Revisão', variant: 'default' },
-    validado: { label: 'Validado', variant: 'outline' },
-    pendencia: { label: 'Pendência', variant: 'destructive' },
+export function StatusBadge({ status }: { status?: ProductStatusModel | string }) {
+  if (!status) return <Badge variant="secondary">Desconhecido</Badge>
+
+  if (typeof status === 'string') {
+    return <Badge variant="secondary">{status}</Badge>
   }
-  const config = map[status] || map['rascunho']
-  return <Badge variant={config.variant}>{config.label}</Badge>
+
+  const color = status.color || 'secondary'
+  const variant = ['default', 'secondary', 'destructive', 'outline'].includes(color)
+    ? (color as any)
+    : 'secondary'
+
+  return <Badge variant={variant}>{status.name}</Badge>
 }
 
 export default function CatalogList() {
@@ -40,7 +41,10 @@ export default function CatalogList() {
 
   const loadData = async () => {
     try {
-      const records = await pb.collection('products').getFullList<Product>({ sort: '-updated' })
+      const records = await pb.collection('products').getFullList<Product>({
+        sort: '-updated',
+        expand: 'status',
+      })
       setProducts(records)
     } catch {
       /* intentionally ignored */
@@ -60,7 +64,8 @@ export default function CatalogList() {
       p.id.toLowerCase().includes(search.toLowerCase()),
   )
 
-  const canCreate = user?.role === 'admin' || user?.role === 'registrator'
+  const roleName = user?.expand?.role?.name || user?.role
+  const canCreate = roleName === 'admin' || roleName === 'registrator'
 
   return (
     <div className="space-y-6 animate-fade-in-up">
@@ -114,7 +119,7 @@ export default function CatalogList() {
                     <TableCell className="font-mono text-xs">{p.id}</TableCell>
                     <TableCell className="font-medium">{p.name}</TableCell>
                     <TableCell>
-                      <StatusBadge status={p.status} />
+                      <StatusBadge status={p.expand?.status || p.status} />
                     </TableCell>
                     <TableCell>{new Date(p.updated).toLocaleDateString()}</TableCell>
                     <TableCell className="text-right">

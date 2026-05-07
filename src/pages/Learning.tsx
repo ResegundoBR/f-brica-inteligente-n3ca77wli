@@ -65,7 +65,7 @@ export default function Learning() {
     try {
       setLoading(true)
       const formData = new FormData()
-      if (currentUser) formData.append('user_id', currentUser.id)
+      formData.append('user_id', currentUser?.id || '')
       formData.append('title', title)
       formData.append('description', description)
       if (file) {
@@ -79,9 +79,9 @@ export default function Learning() {
       setDescription('')
       setFile(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
-    } catch (err) {
+    } catch (err: any) {
       console.error(err)
-      toast.error('Erro ao salvar o registro')
+      toast.error(err?.message || 'Erro ao salvar o registro')
     } finally {
       setLoading(false)
     }
@@ -200,19 +200,25 @@ export default function Learning() {
                         </div>
                       </div>
                       {record.evidence && (
-                        <div className="w-full md:w-64 h-48 md:h-auto bg-muted/50 flex items-center justify-center border-t md:border-t-0 md:border-l border-border/60 shrink-0">
+                        <div className="w-full md:w-64 h-48 md:h-auto bg-muted/50 flex items-center justify-center border-t md:border-t-0 md:border-l border-border/60 shrink-0 overflow-hidden">
                           {record.evidence.match(/\.(jpeg|jpg|gif|png|webp)$/i) != null ? (
                             <img
                               src={pb.files.getUrl(record, record.evidence)}
                               alt="Evidência"
-                              className="w-full h-full object-cover"
+                              className="w-full h-full object-cover hover:scale-105 transition-transform duration-500 cursor-pointer"
+                              onClick={() =>
+                                window.open(pb.files.getUrl(record, record.evidence), '_blank')
+                              }
                             />
                           ) : (
-                            <div className="flex flex-col items-center justify-center text-muted-foreground p-4">
+                            <div
+                              className="flex flex-col items-center justify-center text-muted-foreground p-4 cursor-pointer hover:bg-muted/80 transition-colors w-full h-full"
+                              onClick={() =>
+                                window.open(pb.files.getUrl(record, record.evidence), '_blank')
+                              }
+                            >
                               <ImageIcon className="h-8 w-8 mb-2 opacity-50" />
-                              <span className="text-xs text-center break-all">
-                                {record.evidence}
-                              </span>
+                              <span className="text-xs text-center break-all">Ver anexo</span>
                             </div>
                           )}
                         </div>

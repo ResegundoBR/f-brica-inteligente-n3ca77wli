@@ -130,6 +130,8 @@ export default function AdminStatuses() {
                     <SelectItem value="default">Padrão (Primária)</SelectItem>
                     <SelectItem value="secondary">Secundária (Cinza)</SelectItem>
                     <SelectItem value="destructive">Destrutiva (Vermelho)</SelectItem>
+                    <SelectItem value="warning">Aviso (Laranja)</SelectItem>
+                    <SelectItem value="success">Sucesso (Verde)</SelectItem>
                     <SelectItem value="outline">Contorno (Bordada)</SelectItem>
                   </SelectContent>
                 </Select>
@@ -194,7 +196,17 @@ export default function AdminStatuses() {
                   <TableRow key={s.id}>
                     <TableCell className="font-medium capitalize">{s.name}</TableCell>
                     <TableCell>
-                      <Badge variant={s.color as any}>{s.name}</Badge>
+                      {s.color === 'warning' ? (
+                        <Badge className="bg-orange-500 hover:bg-orange-600 text-white border-transparent">
+                          {s.name}
+                        </Badge>
+                      ) : s.color === 'success' ? (
+                        <Badge className="bg-green-600 hover:bg-green-700 text-white border-transparent">
+                          {s.name}
+                        </Badge>
+                      ) : (
+                        <Badge variant={s.color as any}>{s.name}</Badge>
+                      )}
                     </TableCell>
                     <TableCell>
                       {s.active ? (

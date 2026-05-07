@@ -62,22 +62,24 @@ export default function AdminLogs() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {!logs || logs.length === 0 ? (
+                {!logs || !Array.isArray(logs) || logs.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={4} className="text-center py-6 text-muted-foreground">
                       Nenhum log encontrado.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  (logs || []).map((log) => (
-                    <TableRow key={log.id}>
+                  logs.map((log) => (
+                    <TableRow key={log?.id || Math.random()}>
                       <TableCell className="font-mono text-xs">
-                        {new Date(log.created).toLocaleString()}
+                        {log?.created ? new Date(log.created).toLocaleString() : '-'}
                       </TableCell>
-                      <TableCell>{log.expand?.user_id?.name || log.user_id || 'Sistema'}</TableCell>
-                      <TableCell className="font-medium">{log.action}</TableCell>
                       <TableCell>
-                        {log.expand?.product_id?.name || log.product_id || 'N/A'}
+                        {log?.expand?.user_id?.name || log?.user_id || 'Sistema'}
+                      </TableCell>
+                      <TableCell className="font-medium">{log?.action || '-'}</TableCell>
+                      <TableCell>
+                        {log?.expand?.product_id?.name || log?.product_id || 'N/A'}
                       </TableCell>
                     </TableRow>
                   ))

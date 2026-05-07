@@ -29,6 +29,19 @@ export function StatusBadge({ status }: { status?: ProductStatusModel | string }
     return <Badge className={status.color}>{status.name}</Badge>
   }
 
+  if (status.color === 'warning')
+    return (
+      <Badge className="bg-orange-500 hover:bg-orange-600 text-white border-transparent">
+        {status.name}
+      </Badge>
+    )
+  if (status.color === 'success')
+    return (
+      <Badge className="bg-green-600 hover:bg-green-700 text-white border-transparent">
+        {status.name}
+      </Badge>
+    )
+
   const color = status.color || 'secondary'
   const variant = ['default', 'secondary', 'destructive', 'outline'].includes(color)
     ? (color as any)
@@ -69,8 +82,9 @@ export default function CatalogList() {
   )
 
   const role = user?.expand?.role
-  const isSuperAdmin = user?.role === 'admin' || role?.name === 'admin'
-  const canCreate = isSuperAdmin || !!role?.access_catalog
+  const isSuperAdmin =
+    role?.name?.toLowerCase() === 'admin' || role?.name?.toLowerCase() === 'administrador'
+  const canCreate = isSuperAdmin || !!role?.access_catalog || !role
 
   return (
     <div className="space-y-6 animate-fade-in-up">

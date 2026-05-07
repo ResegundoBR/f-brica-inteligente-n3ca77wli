@@ -57,7 +57,7 @@ export function AuthGuard() {
         <ShieldAlert className="h-16 w-16 text-destructive mb-6" />
         <h2 className="text-3xl font-bold mb-4 tracking-tight">Acesso Negado</h2>
         <p className="text-muted-foreground mb-8 max-w-md">
-          Acesso não permitido fora do horário ou dias estabelecidos pelo administrador.
+          Acesso não permitido neste horário/dia.
         </p>
         <Button onClick={() => signOut()} size="lg">
           Voltar para o Login

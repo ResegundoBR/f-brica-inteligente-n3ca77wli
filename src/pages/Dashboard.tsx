@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
-import { Area, AreaChart, ResponsiveContainer, XAxis } from 'recharts'
+
 import {
   Table,
   TableBody,
@@ -16,15 +15,6 @@ import { useRealtime } from '@/hooks/use-realtime'
 import { Product } from '@/types'
 
 const TARGET = 242
-
-const evolutionData = [
-  { name: 'Seg', registros: 4 },
-  { name: 'Ter', registros: 7 },
-  { name: 'Qua', registros: 5 },
-  { name: 'Qui', registros: 9 },
-  { name: 'Sex', registros: 12 },
-  { name: 'Sáb', registros: 3 },
-]
 
 function Gauge({ value, max }: { value: number; max: number }) {
   const percentage = Math.min(value / max, 1)
@@ -178,38 +168,12 @@ export default function Dashboard() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Evolução Diária</CardTitle>
-            <CardDescription>Cadastros nos últimos 7 dias</CardDescription>
-          </CardHeader>
-          <CardContent className="h-[200px]">
-            <ChartContainer
-              config={{ registros: { color: 'hsl(var(--primary))', label: 'Registros' } }}
-            >
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={evolutionData}>
-                  <XAxis dataKey="name" fontSize={12} tickLine={false} axisLine={false} />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Area
-                    type="monotone"
-                    dataKey="registros"
-                    stroke="var(--color-registros)"
-                    fill="var(--color-registros)"
-                    fillOpacity={0.2}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </ChartContainer>
-          </CardContent>
-        </Card>
-
-        <Card>
+        <Card className="col-span-1 md:col-span-2 lg:col-span-1">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Progresso de Cadastros</CardTitle>
             <CardDescription>Meta: {TARGET} produtos</CardDescription>
           </CardHeader>
-          <CardContent className="h-[200px] flex items-center justify-center relative pt-6">
+          <CardContent className="h-[250px] flex items-center justify-center relative pt-6">
             <Gauge value={totalProducts} max={TARGET} />
           </CardContent>
         </Card>

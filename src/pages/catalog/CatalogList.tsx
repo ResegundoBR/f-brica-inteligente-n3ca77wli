@@ -201,9 +201,9 @@ export default function CatalogList() {
                               <AlertDialogHeader>
                                 <AlertDialogTitle>Excluir produto?</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  Esta ação não pode ser desfeita. O produto "{p.name}" será
-                                  excluído permanentemente.
-                                </AlertDialogDescription>
+                                  Tem certeza que deseja excluir este produto? Esta ação não pode
+                                  ser desfeita.
+                                </AlertDialogDescription>{' '}
                               </AlertDialogHeader>
                               <AlertDialogFooter>
                                 <AlertDialogCancel>Cancelar</AlertDialogCancel>

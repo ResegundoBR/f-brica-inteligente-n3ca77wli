@@ -65,16 +65,19 @@ export interface Product {
 
 export interface LearningRecord {
   id: string
-  date: string
+  user_id: string
   title: string
   description: string
-  validated: boolean
-  photos: string[]
+  evidence: string
+  created: string
+  updated: string
+  expand?: { user_id?: User }
 }
 
 export interface Log {
   id: string
   created: string
+  product_id: string
   user_id: string
   action: string
   details: any

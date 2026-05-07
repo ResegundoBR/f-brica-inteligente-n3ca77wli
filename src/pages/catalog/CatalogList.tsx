@@ -25,6 +25,10 @@ export function StatusBadge({ status }: { status?: ProductStatusModel | string }
     return <Badge variant="secondary">{status}</Badge>
   }
 
+  if (status.color && status.color.startsWith('bg-')) {
+    return <Badge className={status.color}>{status.name}</Badge>
+  }
+
   const color = status.color || 'secondary'
   const variant = ['default', 'secondary', 'destructive', 'outline'].includes(color)
     ? (color as any)

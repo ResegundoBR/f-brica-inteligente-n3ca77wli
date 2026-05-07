@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { StatusBadge } from '../CatalogList'
 import { useAuth } from '@/hooks/use-auth'
-import { ImagePlus } from 'lucide-react'
+import { FilePlus } from 'lucide-react'
 import { useRef } from 'react'
 
 interface Props {
@@ -65,7 +65,7 @@ export function TabGeneral({ product, setProduct }: Props) {
         </div>
 
         <div className="space-y-4">
-          <Label>Imagens do Produto</Label>
+          <Label>Arquivos do Produto</Label>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             <div
               className="border-2 border-dashed rounded-lg p-4 flex flex-col items-center justify-center text-center h-[200px] hover:bg-muted/50 transition-colors cursor-pointer"
@@ -78,11 +78,11 @@ export function TabGeneral({ product, setProduct }: Props) {
                 className="hidden"
                 ref={fileInputRef}
                 multiple
-                accept="image/*"
+                accept="image/*,.pdf,.xlsx,.xls,.sldprt,.sldasm"
                 onChange={handleFileChange}
               />
-              <ImagePlus className="h-8 w-8 text-muted-foreground mb-2" />
-              <span className="text-sm font-medium">Adicionar Imagem</span>
+              <FilePlus className="h-8 w-8 text-muted-foreground mb-2" />
+              <span className="text-sm font-medium">Adicionar Arquivo</span>
               <span className="text-xs text-muted-foreground mt-1">Arraste ou clique</span>
             </div>
 
@@ -96,11 +96,23 @@ export function TabGeneral({ product, setProduct }: Props) {
                   key={idx}
                   className="border-2 border-border rounded-lg p-1 flex flex-col items-center justify-center h-[200px] bg-muted/20 relative group"
                 >
-                  <img
-                    src={url}
-                    alt={`Preview ${idx + 1}`}
-                    className="h-full w-full object-contain rounded"
-                  />
+                  {(isFileObj && file.type.startsWith('image/')) ||
+                  (!isFileObj &&
+                    typeof file === 'string' &&
+                    file.match(/\.(jpeg|jpg|gif|png|webp)$/i)) ? (
+                    <img
+                      src={url}
+                      alt={`Preview ${idx + 1}`}
+                      className="h-full w-full object-contain rounded"
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center text-center p-2 w-full h-full overflow-hidden">
+                      <FilePlus className="h-8 w-8 text-muted-foreground mb-2 shrink-0" />
+                      <span className="text-xs text-muted-foreground break-all line-clamp-3">
+                        {isFileObj ? file.name : file}
+                      </span>
+                    </div>
+                  )}
                   <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                       type="button"

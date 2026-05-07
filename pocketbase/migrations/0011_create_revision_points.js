@@ -1,5 +1,7 @@
 migrate(
   (app) => {
+    const productsCol = app.findCollectionByNameOrId('products')
+
     const collection = new Collection({
       name: 'revision_points',
       type: 'base',
@@ -13,7 +15,7 @@ migrate(
           name: 'product_id',
           type: 'relation',
           required: true,
-          collectionId: 'products',
+          collectionId: productsCol.id,
           cascadeDelete: true,
           maxSelect: 1,
         },

@@ -37,15 +37,27 @@ export function TabGeneral({ product, setProduct }: Props) {
     <div className="space-y-6 animate-fade-in">
       <div className="grid gap-6 md:grid-cols-2">
         <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="name">
-              Nome do Produto <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              id="name"
-              value={product.name}
-              onChange={(e) => setProduct({ ...product, name: e.target.value })}
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="code">
+                Código do Produto <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="code"
+                value={product.code || ''}
+                onChange={(e) => setProduct({ ...product, code: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="name">
+                Nome do Produto <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="name"
+                value={product.name || ''}
+                onChange={(e) => setProduct({ ...product, name: e.target.value })}
+              />
+            </div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="details">Detalhes Técnicos</Label>
@@ -79,12 +91,12 @@ export function TabGeneral({ product, setProduct }: Props) {
                 className="hidden"
                 ref={fileInputRef}
                 multiple
-                accept="image/*,.pdf,.xlsx,.xls,.sldprt,.sldasm"
+                accept="image/jpeg,image/png,image/gif,image/webp"
                 onChange={handleFileChange}
               />
               <FilePlus className="h-8 w-8 text-muted-foreground mb-2" />
-              <span className="text-sm font-medium">Adicionar Arquivo</span>
-              <span className="text-xs text-muted-foreground mt-1">Arraste ou clique</span>
+              <span className="text-sm font-medium">Adicionar Imagem</span>
+              <span className="text-xs text-muted-foreground mt-1">Apenas imagens</span>
             </div>
 
             {(product.files || []).map((file: any, idx: number) => {

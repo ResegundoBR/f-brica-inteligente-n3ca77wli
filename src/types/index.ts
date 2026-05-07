@@ -62,6 +62,7 @@ export interface RevisionPointModel {
   product_id: string
   user_id: string
   description: string
+  resolved: boolean
   files?: string[]
   created: string
   updated: string
@@ -70,10 +71,12 @@ export interface RevisionPointModel {
 
 export interface Product {
   id: string
+  code: string
   name: string
   description: string
   status: string
   files: any[]
+  composition_files?: any[]
   owner: string
   data: ProductData
   created: string

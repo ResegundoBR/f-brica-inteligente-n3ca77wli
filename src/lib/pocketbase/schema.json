@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-07T20:11:45.292Z",
+  "generatedAt": "2026-05-07T20:22:42.188Z",
   "collections": [
     {
       "name": "users",
@@ -143,6 +143,18 @@
           "required": false,
           "system": false,
           "collectionRef": "product_statuses"
+        },
+        {
+          "name": "code",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "composition_files",
+          "type": "file",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
@@ -470,6 +482,12 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "resolved",
+          "type": "bool",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": []

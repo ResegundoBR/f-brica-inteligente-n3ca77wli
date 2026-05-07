@@ -96,7 +96,8 @@ export default function CatalogList() {
   const filtered = products.filter(
     (p) =>
       p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.id.toLowerCase().includes(search.toLowerCase()),
+      p.id.toLowerCase().includes(search.toLowerCase()) ||
+      p.code?.toLowerCase().includes(search.toLowerCase()),
   )
 
   const role = user?.expand?.role
@@ -153,7 +154,7 @@ export default function CatalogList() {
               ) : (
                 filtered.map((p) => (
                   <TableRow key={p.id}>
-                    <TableCell className="font-mono text-xs">{p.id}</TableCell>
+                    <TableCell className="font-mono text-xs">{p.code || p.id}</TableCell>
                     <TableCell className="font-medium">{p.name}</TableCell>
                     <TableCell>
                       <StatusBadge status={p.expand?.status || p.status} />
@@ -161,7 +162,7 @@ export default function CatalogList() {
                     <TableCell>{new Date(p.updated).toLocaleDateString()}</TableCell>
                     <TableCell className="text-right">
                       <Button variant="ghost" size="sm" asChild>
-                        <Link to={`/catalogo/${p.id}`}>Detalhes</Link>
+                        <Link to={`/catalogo/${p.id}`}>Editar</Link>
                       </Button>
                     </TableCell>
                   </TableRow>

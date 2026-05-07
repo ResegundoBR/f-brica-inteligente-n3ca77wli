@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Send, CheckCircle2, Paperclip } from 'lucide-react'
+import { Send, CheckCircle2, Paperclip, X, Clock } from 'lucide-react'
+import { Switch } from '@/components/ui/switch'
 import { useToast } from '@/hooks/use-toast'
 import { useAuth } from '@/hooks/use-auth'
 import pb from '@/lib/pocketbase/client'
@@ -107,6 +108,14 @@ export function TabReview({
     }
   }
 
+  const toggleResolved = async (point: RevisionPointModel, checked: boolean) => {
+    try {
+      await pb.collection('revision_points').update(point.id, { resolved: checked })
+    } catch (err) {
+      toast({ title: 'Erro ao atualizar status do ponto', variant: 'destructive' })
+    }
+  }
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="bg-slate-50 dark:bg-muted/20 p-4 rounded-lg border space-y-4">
@@ -192,36 +201,71 @@ export function TabReview({
         {revisionPoints.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nenhum ponto de revisão apontado.</p>
         ) : (
-          <div className="grid gap-4">
+          <div className="flex flex-col gap-2">
             {revisionPoints.map((point) => (
-              <div key={point.id} className="border rounded-md p-4 bg-card flex flex-col gap-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-xs font-semibold bg-muted px-2 py-1 rounded">
+              <div
+                key={point.id}
+                className="border rounded-md px-3 py-2 bg-card flex flex-col sm:flex-row sm:items-center gap-3 hover:bg-accent/10 transition-colors"
+              >
+                <div className="flex items-center gap-2 flex-1 overflow-hidden">
+                  <span className="text-[10px] font-semibold bg-muted px-1.5 py-0.5 rounded shrink-0">
                     {point.expand?.user_id?.name || point.expand?.user_id?.email || 'Usuário'}
                   </span>
-                  <span className="text-xs text-muted-foreground">
-                    {new Date(point.created).toLocaleString()}
+                  <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">
+                    {new Date(point.created).toLocaleDateString()}
                   </span>
-                </div>
-                <p className="font-medium mt-1 text-sm sm:text-base">{point.description}</p>
-                {point.files && point.files.length > 0 && (
-                  <div className="flex gap-2 mt-2 flex-wrap">
-                    {point.files.map((fileStr, i) => {
-                      const fileUrl = pb.files.getUrl(point, fileStr)
-                      return (
-                        <a key={i} href={fileUrl} target="_blank" rel="noreferrer">
-                          <Badge
-                            variant="secondary"
-                            className="text-xs hover:bg-secondary/80 cursor-pointer"
+                  <p className="font-medium text-sm truncate" title={point.description}>
+                    {point.description}
+                  </p>
+
+                  {point.files && point.files.length > 0 && (
+                    <div className="flex gap-1 shrink-0 ml-1">
+                      {point.files.map((fileStr, i) => {
+                        const fileUrl = pb.files.getUrl(point, fileStr)
+                        return (
+                          <a
+                            key={i}
+                            href={fileUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={`Anexo ${i + 1}`}
                           >
-                            <Paperclip className="h-3 w-3 mr-1" />
-                            Anexo {i + 1}
-                          </Badge>
-                        </a>
-                      )
-                    })}
+                            <Badge
+                              variant="secondary"
+                              className="text-[10px] px-1 py-0 hover:bg-secondary/80 cursor-pointer"
+                            >
+                              <Paperclip className="h-3 w-3" />
+                            </Badge>
+                          </a>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center space-x-2 bg-background border px-2 py-1 rounded-md">
+                    <Switch
+                      id={`resolved-${point.id}`}
+                      checked={point.resolved}
+                      onCheckedChange={(checked) => toggleResolved(point, checked)}
+                    />
+                    <Label
+                      htmlFor={`resolved-${point.id}`}
+                      className="text-xs cursor-pointer min-w-[70px]"
+                    >
+                      {point.resolved ? (
+                        <span className="flex items-center text-emerald-600 font-medium">
+                          <CheckCircle2 className="h-3 w-3 mr-1" /> Resolvido
+                        </span>
+                      ) : (
+                        <span className="flex items-center text-amber-600 font-medium">
+                          <Clock className="h-3 w-3 mr-1" /> Pendente
+                        </span>
+                      )}
+                    </Label>
                   </div>
-                )}
+                </div>
               </div>
             ))}
           </div>

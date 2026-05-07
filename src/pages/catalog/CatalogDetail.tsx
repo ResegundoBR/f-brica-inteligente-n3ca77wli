@@ -51,6 +51,7 @@ export default function CatalogDetail() {
     if (id === 'novo') {
       setProduct({
         id: '',
+        code: '',
         name: '',
         description: '',
         status: defaultStatus,
@@ -62,6 +63,7 @@ export default function CatalogDetail() {
           reviewPoints: [],
         },
         files: [],
+        composition_files: [],
         created: '',
         updated: '',
       } as any)
@@ -86,6 +88,12 @@ export default function CatalogDetail() {
   const performSave = async (action: 'draft' | 'review') => {
     if (!product) return
 
+    if (!product.code?.trim()) {
+      toast({ title: 'Código do Produto é obrigatório', variant: 'destructive' })
+      setShowSaveDialog(false)
+      return
+    }
+
     try {
       let targetStatus = product.status
       if (action === 'review') {
@@ -97,6 +105,7 @@ export default function CatalogDetail() {
       }
 
       const dataToSave: any = {
+        code: product.code,
         name: product.name,
         description: product.description,
         status: targetStatus,
@@ -113,6 +122,12 @@ export default function CatalogDetail() {
         dataToSave.files = product.files
       } else {
         dataToSave.files = null
+      }
+
+      if (product.composition_files && product.composition_files.length > 0) {
+        dataToSave.composition_files = product.composition_files
+      } else {
+        dataToSave.composition_files = null
       }
 
       if (id === 'novo') {
@@ -144,7 +159,7 @@ export default function CatalogDetail() {
               {id === 'novo' ? 'Novo Produto' : product.name || 'Sem Título'}
             </h1>
             <p className="text-sm text-muted-foreground font-mono">
-              ID: {product.id || 'Não salvo'}
+              Código: {product.code || 'N/A'} • ID: {product.id || 'Não salvo'}
             </p>
           </div>
         </div>

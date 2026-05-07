@@ -66,7 +66,10 @@ export function AppSidebar() {
         <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
           <Factory className="size-5" />
         </div>
-        <span className="font-bold text-lg">Fábrica Inteligente</span>
+        <span className="font-bold text-lg">
+          <span className="text-green-700">Fábrica</span>{' '}
+          <span className="text-orange-600">Inteligente</span>
+        </span>
       </SidebarHeader>
       <SidebarContent>
         {['Principal', 'Administração'].map((group) => (

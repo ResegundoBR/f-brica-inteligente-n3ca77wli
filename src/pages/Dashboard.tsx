@@ -1,17 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  ResponsiveContainer,
-  XAxis,
-  PieChart,
-  Pie,
-  Cell,
-} from 'recharts'
+import { Area, AreaChart, Bar, BarChart, ResponsiveContainer, XAxis } from 'recharts'
 import {
   Table,
   TableBody,
@@ -24,6 +14,8 @@ import { Badge } from '@/components/ui/badge'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { Product } from '@/types'
+
+const TARGET = 242
 
 const evolutionData = [
   { name: 'Seg', registros: 4 },
@@ -40,15 +32,58 @@ const productivityData = [
   { name: 'Equipe C', atual: 11, meta: 8 },
 ]
 
-const COLORS = ['hsl(var(--primary))', 'hsl(var(--muted))']
+function Gauge({ value, max }: { value: number; max: number }) {
+  const percentage = Math.min(value / max, 1)
+  const angle = percentage * 180
+
+  return (
+    <div className="relative w-full aspect-[2/1] max-h-[180px] mx-auto overflow-hidden flex items-end justify-center">
+      <svg viewBox="0 0 200 115" className="w-full h-full drop-shadow-sm overflow-visible">
+        <path
+          d="M 20 90 A 80 80 0 0 1 180 90"
+          fill="none"
+          stroke="hsl(var(--muted))"
+          strokeWidth="20"
+          strokeLinecap="round"
+        />
+        <path
+          d="M 20 90 A 80 80 0 0 1 180 90"
+          fill="none"
+          stroke="hsl(var(--primary))"
+          strokeWidth="20"
+          strokeLinecap="round"
+          strokeDasharray="251.327"
+          strokeDashoffset={251.327 - percentage * 251.327}
+          className="transition-all duration-1000 ease-out"
+        />
+        <g
+          transform={`translate(100, 90) rotate(${angle - 90})`}
+          className="transition-all duration-1000 ease-out"
+        >
+          <path d="M -4 0 L 0 -65 L 4 0 Z" fill="hsl(var(--foreground))" />
+          <circle cx="0" cy="0" r="8" fill="hsl(var(--foreground))" />
+          <circle cx="0" cy="0" r="3" fill="hsl(var(--background))" />
+        </g>
+        <text x="100" y="112" textAnchor="middle" className="text-sm font-bold fill-foreground">
+          {value} / {max}
+        </text>
+      </svg>
+    </div>
+  )
+}
 
 export default function Dashboard() {
   const [products, setProducts] = useState<Product[]>([])
+  const [statuses, setStatuses] = useState<any[]>([])
 
   const loadData = async () => {
     try {
-      const records = await pb.collection('products').getFullList<Product>()
-      setProducts(records)
+      const [prodRes, statRes] = await Promise.all([
+        pb.collection('products').getFullList<Product>(),
+        pb.collection('product_statuses').getFullList(),
+      ])
+      setProducts(prodRes)
+      setStatuses(statRes)
     } catch {
       /* intentionally ignored */
     }
@@ -60,40 +95,82 @@ export default function Dashboard() {
   useRealtime('products', () => {
     loadData()
   })
+  useRealtime('product_statuses', () => {
+    loadData()
+  })
 
-  const validadoCount = products.filter((p) => p.status === 'validado').length
-  const totalCount = products.length || 1 // avoid div by 0 visual
+  const getStatusInfo = (names: string[], fallbackLabel: string) => {
+    const st = statuses.find((s) => names.includes(s.name.toLowerCase()))
+    if (!st) return { count: 0, color: 'hsl(var(--muted-foreground))', label: fallbackLabel }
+    const count = products.filter((p) => p.status === st.id).length
+    return { count, color: st.color || 'hsl(var(--primary))', label: st.name }
+  }
 
-  const goalData = [
-    { name: 'Concluído', value: validadoCount },
-    { name: 'Restante', value: products.length - validadoCount },
-  ]
+  const kpiIniciado = getStatusInfo(['iniciado', 'rascunho'], 'Iniciado')
+  const kpiRevisao = getStatusInfo(['revisão', 'revisao'], 'Revisão')
+  const kpiPendencia = getStatusInfo(['pendência', 'pendencia'], 'Pendência')
+  const kpiValidado = getStatusInfo(['validado'], 'Validado')
 
+  const totalProducts = products.length
+  const faltam = Math.max(TARGET - totalProducts, 0)
   const today = new Date().getTime()
+  const validadoId = statuses.find((s) => s.name?.toLowerCase() === 'validado')?.id
+
   const idleProducts = products
     .filter((p) => {
       const diff = Math.floor((today - new Date(p.updated).getTime()) / (1000 * 3600 * 24))
-      return diff > 5 && p.status !== 'validado'
+      return diff > 5 && p.status !== validadoId
     })
-    .map((p) => ({
-      ...p,
-      daysIdle: Math.floor((today - new Date(p.updated).getTime()) / (1000 * 3600 * 24)),
-    }))
-
-  const statusLabel = {
-    rascunho: 'Rascunho',
-    revisao: 'Revisão',
-    pendencia: 'Pendência',
-    validado: 'Validado',
-  }
+    .map((p) => {
+      const st = statuses.find((s) => s.id === p.status)
+      return {
+        ...p,
+        daysIdle: Math.floor((today - new Date(p.updated).getTime()) / (1000 * 3600 * 24)),
+        statusName: st?.name || 'Desconhecido',
+        statusColor: st?.color || 'hsl(var(--muted-foreground))',
+      }
+    })
 
   return (
     <div className="space-y-6 animate-fade-in-up">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Dashboard da Fábrica</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Evoluções dos Trabalhos</h1>
         <p className="text-muted-foreground">
-          Visão geral de produtividade e evolução de cadastros.
+          Visão geral de produtividade e acompanhamento da meta de cadastros.
         </p>
+      </div>
+
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
+        <Card className="border-l-4" style={{ borderLeftColor: 'hsl(var(--muted-foreground))' }}>
+          <CardContent className="p-4 flex flex-col justify-center">
+            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
+              Faltam Cadastrar
+            </p>
+            <h3 className="text-2xl font-bold mt-1">{faltam}</h3>
+          </CardContent>
+        </Card>
+
+        {[kpiIniciado, kpiRevisao, kpiPendencia, kpiValidado].map((kpi) => (
+          <Card key={kpi.label} className="border-l-4" style={{ borderLeftColor: kpi.color }}>
+            <CardContent className="p-4 flex flex-col justify-center">
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
+                {kpi.label}
+              </p>
+              <h3 className="text-2xl font-bold mt-1" style={{ color: kpi.color }}>
+                {kpi.count}
+              </h3>
+            </CardContent>
+          </Card>
+        ))}
+
+        <Card className="border-l-4" style={{ borderLeftColor: 'hsl(var(--foreground))' }}>
+          <CardContent className="p-4 flex flex-col justify-center">
+            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
+              Total
+            </p>
+            <h3 className="text-2xl font-bold mt-1">{totalProducts}</h3>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -154,31 +231,11 @@ export default function Dashboard() {
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Progresso (Validados)</CardTitle>
-            <CardDescription>Total de {products.length} registros</CardDescription>
+            <CardTitle className="text-base">Progresso de Cadastros</CardTitle>
+            <CardDescription>Meta: {TARGET} produtos</CardDescription>
           </CardHeader>
-          <CardContent className="h-[200px] flex items-center justify-center relative">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={goalData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={80}
-                  paddingAngle={2}
-                  dataKey="value"
-                >
-                  {goalData.map((_, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-              <span className="text-3xl font-bold">{validadoCount}</span>
-              <span className="text-xs text-muted-foreground">/ {products.length}</span>
-            </div>
+          <CardContent className="h-[200px] flex items-center justify-center relative pt-6">
+            <Gauge value={totalProducts} max={TARGET} />
           </CardContent>
         </Card>
       </div>
@@ -210,8 +267,11 @@ export default function Dashboard() {
                   <TableRow key={p.id}>
                     <TableCell className="font-medium">{p.name}</TableCell>
                     <TableCell>
-                      <Badge variant="outline">
-                        {statusLabel[p.status as keyof typeof statusLabel]}
+                      <Badge
+                        variant="outline"
+                        style={{ borderColor: p.statusColor, color: p.statusColor }}
+                      >
+                        {p.statusName}
                       </Badge>
                     </TableCell>
                     <TableCell>{new Date(p.updated).toLocaleDateString()}</TableCell>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
-import { Area, AreaChart, Bar, BarChart, ResponsiveContainer, XAxis } from 'recharts'
+import { Area, AreaChart, ResponsiveContainer, XAxis } from 'recharts'
 import {
   Table,
   TableBody,
@@ -26,15 +26,18 @@ const evolutionData = [
   { name: 'Sáb', registros: 3 },
 ]
 
-const productivityData = [
-  { name: 'Equipe A', atual: 9, meta: 8 },
-  { name: 'Equipe B', atual: 6, meta: 8 },
-  { name: 'Equipe C', atual: 11, meta: 8 },
-]
-
 function Gauge({ value, max }: { value: number; max: number }) {
   const percentage = Math.min(value / max, 1)
   const angle = percentage * 180
+
+  let color = '#22C55E' // Default to Green
+  if (value <= 30)
+    color = '#EF4444' // Red
+  else if (value <= 75)
+    color = '#F97316' // Orange
+  else if (value <= 120)
+    color = '#A855F7' // Purple
+  else if (value <= 180) color = '#3B82F6' // Blue
 
   return (
     <div className="relative w-full aspect-[2/1] max-h-[180px] mx-auto overflow-hidden flex items-end justify-center">
@@ -49,7 +52,7 @@ function Gauge({ value, max }: { value: number; max: number }) {
         <path
           d="M 20 90 A 80 80 0 0 1 180 90"
           fill="none"
-          stroke="hsl(var(--primary))"
+          stroke={color}
           strokeWidth="20"
           strokeLinecap="round"
           strokeDasharray="251.327"
@@ -99,17 +102,16 @@ export default function Dashboard() {
     loadData()
   })
 
-  const getStatusInfo = (names: string[], fallbackLabel: string) => {
+  const getStatusInfo = (names: string[], fallbackLabel: string, defaultColor: string) => {
     const st = statuses.find((s) => names.includes(s.name.toLowerCase()))
-    if (!st) return { count: 0, color: 'hsl(var(--muted-foreground))', label: fallbackLabel }
-    const count = products.filter((p) => p.status === st.id).length
-    return { count, color: st.color || 'hsl(var(--primary))', label: st.name }
+    const count = st ? products.filter((p) => p.status === st.id).length : 0
+    return { count, color: defaultColor, label: st?.name || fallbackLabel }
   }
 
-  const kpiIniciado = getStatusInfo(['iniciado', 'rascunho'], 'Iniciado')
-  const kpiRevisao = getStatusInfo(['revisão', 'revisao'], 'Revisão')
-  const kpiPendencia = getStatusInfo(['pendência', 'pendencia'], 'Pendência')
-  const kpiValidado = getStatusInfo(['validado'], 'Validado')
+  const kpiIniciado = getStatusInfo(['iniciado', 'rascunho'], 'Iniciado', '#F97316')
+  const kpiRevisao = getStatusInfo(['revisão', 'revisao'], 'Revisão', '#3B82F6')
+  const kpiPendencia = getStatusInfo(['pendência', 'pendencia'], 'Pendência', '#EF4444')
+  const kpiValidado = getStatusInfo(['validado'], 'Validado', '#22C55E')
 
   const totalProducts = products.length
   const faltam = Math.max(TARGET - totalProducts, 0)
@@ -141,12 +143,14 @@ export default function Dashboard() {
       </div>
 
       <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
-        <Card className="border-l-4" style={{ borderLeftColor: 'hsl(var(--muted-foreground))' }}>
+        <Card className="border-l-4" style={{ borderLeftColor: '#FF00FF' }}>
           <CardContent className="p-4 flex flex-col justify-center">
             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
               Faltam Cadastrar
             </p>
-            <h3 className="text-2xl font-bold mt-1">{faltam}</h3>
+            <h3 className="text-2xl font-bold mt-1" style={{ color: '#FF00FF' }}>
+              {faltam}
+            </h3>
           </CardContent>
         </Card>
 
@@ -173,7 +177,7 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Evolução Diária</CardTitle>
@@ -195,35 +199,6 @@ export default function Dashboard() {
                     fillOpacity={0.2}
                   />
                 </AreaChart>
-              </ResponsiveContainer>
-            </ChartContainer>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Produtividade da Equipe</CardTitle>
-            <CardDescription>Meta: 8 cadastros/dia</CardDescription>
-          </CardHeader>
-          <CardContent className="h-[200px]">
-            <ChartContainer
-              config={{
-                atual: { color: 'hsl(var(--primary))', label: 'Atual' },
-                meta: { color: 'hsl(var(--chart-2))', label: 'Meta' },
-              }}
-            >
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={productivityData}>
-                  <XAxis dataKey="name" fontSize={12} tickLine={false} axisLine={false} />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="atual" fill="var(--color-atual)" radius={[4, 4, 0, 0]} />
-                  <Bar
-                    dataKey="meta"
-                    fill="var(--color-meta)"
-                    radius={[4, 4, 0, 0]}
-                    opacity={0.5}
-                  />
-                </BarChart>
               </ResponsiveContainer>
             </ChartContainer>
           </CardContent>

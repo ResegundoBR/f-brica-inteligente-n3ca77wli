@@ -66,7 +66,7 @@ export function TabGeneral({ product, setProduct }: Props) {
 
         <div className="space-y-4">
           <Label>Imagens do Produto</Label>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             <div
               className="border-2 border-dashed rounded-lg p-4 flex flex-col items-center justify-center text-center h-[200px] hover:bg-muted/50 transition-colors cursor-pointer"
               onClick={() => fileInputRef.current?.click()}
@@ -78,22 +78,51 @@ export function TabGeneral({ product, setProduct }: Props) {
                 className="hidden"
                 ref={fileInputRef}
                 multiple
+                accept="image/*"
                 onChange={handleFileChange}
               />
               <ImagePlus className="h-8 w-8 text-muted-foreground mb-2" />
-              <span className="text-sm font-medium">Renderização / Vista Explodida</span>
+              <span className="text-sm font-medium">Adicionar Imagem</span>
               <span className="text-xs text-muted-foreground mt-1">Arraste ou clique</span>
             </div>
-            <div className="border-2 border-dashed rounded-lg p-4 flex flex-col items-center justify-center text-center h-[200px] hover:bg-muted/50 transition-colors cursor-pointer bg-muted/20">
-              <img
-                src="https://img.usecurling.com/p/200/200?q=industrial%20part"
-                alt="Real"
-                className="h-full w-full object-cover rounded opacity-80 mix-blend-multiply"
-              />
-              <span className="text-xs font-medium absolute bg-background/80 px-2 py-1 rounded">
-                Foto Real
-              </span>
-            </div>
+
+            {(product.files || []).map((file: any, idx: number) => {
+              const isFileObj = file instanceof File
+              const url = isFileObj
+                ? URL.createObjectURL(file)
+                : pb.files.getUrl(product as any, file)
+              return (
+                <div
+                  key={idx}
+                  className="border-2 border-border rounded-lg p-1 flex flex-col items-center justify-center h-[200px] bg-muted/20 relative group"
+                >
+                  <img
+                    src={url}
+                    alt={`Preview ${idx + 1}`}
+                    className="h-full w-full object-contain rounded"
+                  />
+                  <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      type="button"
+                      className="bg-destructive text-destructive-foreground px-2 py-1 rounded text-xs font-medium"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        const newFiles = [...(product.files || [])]
+                        newFiles.splice(idx, 1)
+                        setProduct({ ...product, files: newFiles })
+                      }}
+                    >
+                      Remover
+                    </button>
+                  </div>
+                  {isFileObj && (
+                    <span className="text-[10px] font-medium absolute bottom-2 left-2 bg-primary/90 text-primary-foreground px-1.5 py-0.5 rounded">
+                      Novo
+                    </span>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
       </div>

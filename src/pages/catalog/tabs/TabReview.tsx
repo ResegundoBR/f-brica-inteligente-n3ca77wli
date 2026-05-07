@@ -58,7 +58,10 @@ export function TabReview({
   const isReviewer = roleName === 'reviewer' || roleName === 'admin' || roleName === 'Administrador'
 
   const addPoint = async () => {
-    if (!newPointDesc.trim() && newPointFiles.length === 0) return
+    if (!newPointDesc.trim()) {
+      toast({ title: 'A descrição é obrigatória', variant: 'destructive' })
+      return
+    }
     if (!product.id || product.id === 'novo') {
       toast({
         title: 'Atenção',
@@ -129,10 +132,29 @@ export function TabReview({
                   setNewPointFiles([...newPointFiles, ...Array.from(e.target.files)])
               }}
             />
-            <span className="text-xs text-muted-foreground">
-              {newPointFiles.length} arquivo(s) anexado(s)
-            </span>
           </div>
+          {newPointFiles.length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-1">
+              {newPointFiles.map((file, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center gap-1 bg-muted px-2 py-1 rounded text-xs border border-border"
+                >
+                  <span className="truncate max-w-[150px] font-medium">{file.name}</span>
+                  <button
+                    onClick={() => {
+                      const nf = [...newPointFiles]
+                      nf.splice(idx, 1)
+                      setNewPointFiles(nf)
+                    }}
+                    className="text-destructive hover:underline ml-1"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <Button onClick={addPoint} variant="secondary" className="w-fit mt-2">
             Adicionar Ponto
           </Button>
@@ -184,11 +206,20 @@ export function TabReview({
                 <p className="font-medium mt-1 text-sm sm:text-base">{point.description}</p>
                 {point.files && point.files.length > 0 && (
                   <div className="flex gap-2 mt-2 flex-wrap">
-                    {point.files.map((fileStr, i) => (
-                      <Badge key={i} variant="secondary" className="text-xs">
-                        Anexo {i + 1}
-                      </Badge>
-                    ))}
+                    {point.files.map((fileStr, i) => {
+                      const fileUrl = pb.files.getUrl(point, fileStr)
+                      return (
+                        <a key={i} href={fileUrl} target="_blank" rel="noreferrer">
+                          <Badge
+                            variant="secondary"
+                            className="text-xs hover:bg-secondary/80 cursor-pointer"
+                          >
+                            <Paperclip className="h-3 w-3 mr-1" />
+                            Anexo {i + 1}
+                          </Badge>
+                        </a>
+                      )
+                    })}
                   </div>
                 )}
               </div>

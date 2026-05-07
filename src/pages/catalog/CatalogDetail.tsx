@@ -91,9 +91,9 @@ export default function CatalogDetail() {
       if (action === 'review') {
         const revStatus = statuses.find((s) => s.name.toLowerCase() === 'revisao')
         if (revStatus) targetStatus = revStatus.id
-      } else if (!product.id) {
-        const rascunho = statuses.find((s) => s.name.toLowerCase() === 'rascunho')
-        if (rascunho) targetStatus = rascunho.id
+      } else if (id === 'novo') {
+        const iniciado = statuses.find((s) => s.name.toLowerCase() === 'iniciado')
+        if (iniciado) targetStatus = iniciado.id
       }
 
       const dataToSave: any = {
@@ -109,16 +109,13 @@ export default function CatalogDetail() {
         },
       }
 
-      const newFiles = (product.files || []).filter((f: any) => f instanceof File)
-      if (newFiles.length > 0) {
-        dataToSave['files+'] = newFiles
+      if (product.files && product.files.length > 0) {
+        dataToSave.files = product.files
+      } else {
+        dataToSave.files = null
       }
 
       if (id === 'novo') {
-        if (newFiles.length > 0) {
-          dataToSave.files = newFiles
-          delete dataToSave['files+']
-        }
         await pb.collection('products').create(dataToSave)
       } else {
         await pb.collection('products').update(product.id, dataToSave)

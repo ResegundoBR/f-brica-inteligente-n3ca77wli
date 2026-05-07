@@ -57,7 +57,10 @@ export function TabComposition({
           })
         }
       }
-      setProduct({ ...product, composition: [...(product.composition || []), ...newItems] })
+      setProduct({
+        ...product,
+        data: { ...product.data, composition: [...(product.data?.composition || []), ...newItems] },
+      })
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
     reader.readAsText(file)
@@ -71,18 +74,27 @@ export function TabComposition({
       quantity: 1,
       measurements: '',
     }
-    setProduct({ ...product, composition: [...(product.composition || []), newItem] })
+    setProduct({
+      ...product,
+      data: { ...product.data, composition: [...(product.data?.composition || []), newItem] },
+    })
   }
 
   const updateItem = (id: string, field: string, value: string | number) => {
-    const newComp = (product.composition || []).map((c) =>
+    const newComp = (product.data?.composition || []).map((c) =>
       c.id === id ? { ...c, [field]: value } : c,
     )
-    setProduct({ ...product, composition: newComp })
+    setProduct({ ...product, data: { ...product.data, composition: newComp } })
   }
 
   const removeItem = (id: string) => {
-    setProduct({ ...product, composition: (product.composition || []).filter((c) => c.id !== id) })
+    setProduct({
+      ...product,
+      data: {
+        ...product.data,
+        composition: (product.data?.composition || []).filter((c) => c.id !== id),
+      },
+    })
   }
 
   return (
@@ -122,14 +134,14 @@ export function TabComposition({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {(product.composition?.length ?? 0) === 0 ? (
+            {(product.data?.composition?.length ?? 0) === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                   Nenhum componente adicionado.
                 </TableCell>
               </TableRow>
             ) : (
-              product.composition?.map((item, idx) => (
+              product.data?.composition?.map((item, idx) => (
                 <TableRow key={item.id}>
                   <TableCell>{idx + 1}</TableCell>
                   <TableCell>

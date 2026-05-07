@@ -3,7 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, Save } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
@@ -20,7 +19,7 @@ import { TabProcesses } from './tabs/TabProcesses'
 import { TabComposition } from './tabs/TabComposition'
 import { TabChecklist } from './tabs/TabChecklist'
 import { TabReview } from './tabs/TabReview'
-import { ArrowLeftIcon, SaveIcon } from 'lucide-react'
+import { ArrowLeftIcon, SaveIcon, SendIcon } from 'lucide-react'
 
 export default function CatalogDetail() {
   const { id } = useParams()
@@ -181,7 +180,7 @@ export default function CatalogDetail() {
               size="lg"
               onClick={() => performSave('review')}
             >
-              <Send className="mr-2 h-5 w-5" /> Enviar para Revisão
+              <SendIcon className="mr-2 h-5 w-5" /> Enviar para Revisão
               <span className="ml-auto text-xs opacity-70">Notifica o revisador</span>
             </Button>
             <Button

@@ -10,6 +10,8 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts'
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { Product } from '@/types'
@@ -68,15 +70,18 @@ function Gauge({ value, max }: { value: number; max: number }) {
 export default function Dashboard() {
   const [products, setProducts] = useState<Product[]>([])
   const [statuses, setStatuses] = useState<any[]>([])
+  const [users, setUsers] = useState<any[]>([])
 
   const loadData = async () => {
     try {
-      const [prodRes, statRes] = await Promise.all([
+      const [prodRes, statRes, usersRes] = await Promise.all([
         pb.collection('products').getFullList<Product>(),
         pb.collection('product_statuses').getFullList(),
+        pb.collection('users').getFullList(),
       ])
       setProducts(prodRes)
       setStatuses(statRes)
+      setUsers(usersRes)
     } catch {
       /* intentionally ignored */
     }
@@ -85,6 +90,7 @@ export default function Dashboard() {
   useEffect(() => {
     loadData()
   }, [])
+
   useRealtime('products', () => {
     loadData()
   })
@@ -123,10 +129,25 @@ export default function Dashboard() {
       }
     })
 
+  const userProductCounts = users
+    .map((u) => ({
+      name: u.name || u.email || 'Desconhecido',
+      count: products.filter((p) => p.owner === u.id).length,
+    }))
+    .filter((u) => u.count > 0)
+    .sort((a, b) => b.count - a.count)
+
+  const chartConfig = {
+    count: {
+      label: 'Produtos',
+      color: 'hsl(var(--primary))',
+    },
+  }
+
   return (
     <div className="space-y-6 animate-fade-in-up">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Evoluções dos Trabalhos</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Evolução dos Trabalhos</h1>
         <p className="text-muted-foreground">
           Visão geral de produtividade e acompanhamento da meta de cadastros.
         </p>
@@ -168,13 +189,43 @@ export default function Dashboard() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <Card className="col-span-1 md:col-span-2 lg:col-span-1">
+        <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Progresso de Cadastros</CardTitle>
             <CardDescription>Meta: {TARGET} produtos</CardDescription>
           </CardHeader>
           <CardContent className="h-[250px] flex items-center justify-center relative pt-6">
             <Gauge value={totalProducts} max={TARGET} />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Produtividade da Equipe</CardTitle>
+            <CardDescription>Quantidade de produtos cadastrados por usuário</CardDescription>
+          </CardHeader>
+          <CardContent className="h-[250px] pt-4">
+            <ChartContainer config={chartConfig} className="h-full w-full">
+              <BarChart
+                data={userProductCounts}
+                margin={{ top: 0, right: 0, left: -20, bottom: 0 }}
+              >
+                <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="name"
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                  fontSize={12}
+                />
+                <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
+                <ChartTooltip
+                  cursor={{ fill: 'var(--color-secondary)' }}
+                  content={<ChartTooltipContent />}
+                />
+                <Bar dataKey="count" fill="var(--color-count)" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ChartContainer>
           </CardContent>
         </Card>
       </div>

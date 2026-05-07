@@ -61,14 +61,26 @@ export function AppSidebar() {
   }
 
   return (
-    <Sidebar variant="inset">
-      <SidebarHeader className="flex flex-row items-center gap-2 p-4 h-16 border-b">
+    <Sidebar
+      variant="inset"
+      style={
+        {
+          '--sidebar-background': '222.2 47.4% 11.2%',
+          '--sidebar-foreground': '210 40% 98%',
+          '--sidebar-border': '222.2 47.4% 11.2%',
+          '--sidebar-accent': '217.2 32.6% 17.5%',
+          '--sidebar-accent-foreground': '210 40% 98%',
+        } as React.CSSProperties
+      }
+      className="border-r-0"
+    >
+      <SidebarHeader className="flex flex-row items-center gap-2 p-4 h-16 border-b border-slate-800/50">
         <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
           <Factory className="size-5" />
         </div>
         <span className="font-bold text-lg">
-          <span className="text-green-800 dark:text-green-600">Fábrica</span>{' '}
-          <span className="text-orange-700 dark:text-orange-500">Inteligente</span>
+          <span className="text-green-700">Fábrica</span>{' '}
+          <span className="text-orange-600">Inteligente</span>
         </span>
       </SidebarHeader>
       <SidebarContent>

@@ -11,7 +11,16 @@ import { Plus, UploadCloud, CheckCircle2, Calendar } from 'lucide-react'
 export default function Learning() {
   const { learningRecords, currentUser } = useApp()
   const [showForm, setShowForm] = useState(false)
-  const isAdmin = currentUser.role === 'Admin' || currentUser.role === 'Revisador'
+
+  const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'Revisador'
+
+  if (!currentUser) {
+    return (
+      <div className="flex items-center justify-center p-12 min-h-[400px]">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-8 animate-fade-in-up max-w-4xl mx-auto">
@@ -68,7 +77,7 @@ export default function Learning() {
       )}
 
       <div className="relative border-l-2 border-muted ml-4 md:ml-6 space-y-8 pb-8">
-        {learningRecords.map((record) => (
+        {learningRecords?.map((record) => (
           <div key={record.id} className="relative pl-8 md:pl-10">
             <div className="absolute -left-[11px] top-1.5 h-5 w-5 rounded-full bg-primary flex items-center justify-center ring-4 ring-background">
               <div className="h-2 w-2 rounded-full bg-primary-foreground" />

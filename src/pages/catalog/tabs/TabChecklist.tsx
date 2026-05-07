@@ -16,12 +16,12 @@ export function TabChecklist({
 
   const addItem = () => {
     if (!newItem.trim()) return
-    setProduct({ ...product, checklist: [...product.checklist, newItem] })
+    setProduct({ ...product, checklist: [...(product.checklist || []), newItem] })
     setNewItem('')
   }
 
   const removeItem = (idx: number) => {
-    const newChecklist = [...product.checklist]
+    const newChecklist = [...(product.checklist || [])]
     newChecklist.splice(idx, 1)
     setProduct({ ...product, checklist: newChecklist })
   }
@@ -48,13 +48,13 @@ export function TabChecklist({
       </div>
 
       <div className="space-y-3 pt-4">
-        {product.checklist.length === 0 ? (
+        {(product.checklist?.length ?? 0) === 0 ? (
           <div className="text-center p-6 border border-dashed rounded-lg text-muted-foreground">
             <CheckSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
             Nenhum tópico adicionado.
           </div>
         ) : (
-          product.checklist.map((item, idx) => (
+          product.checklist?.map((item, idx) => (
             <div key={idx} className="flex items-center justify-between p-3 border rounded bg-card">
               <div className="flex items-center gap-3">
                 <CheckSquare className="h-5 w-5 text-primary opacity-70" />

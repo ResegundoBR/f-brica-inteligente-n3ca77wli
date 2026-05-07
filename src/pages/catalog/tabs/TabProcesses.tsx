@@ -27,13 +27,16 @@ export function TabProcesses({
   const [newProcessName, setNewProcessName] = useState('')
 
   const toggleProcess = (name: string) => {
-    const exists = product.processes.find((p) => p.name === name)
+    const exists = (product.processes || []).find((p) => p.name === name)
     if (exists) {
-      setProduct({ ...product, processes: product.processes.filter((p) => p.name !== name) })
+      setProduct({
+        ...product,
+        processes: (product.processes || []).filter((p) => p.name !== name),
+      })
     } else {
       setProduct({
         ...product,
-        processes: [...product.processes, { id: Date.now().toString(), name, details: '' }],
+        processes: [...(product.processes || []), { id: Date.now().toString(), name, details: '' }],
       })
     }
   }
@@ -51,7 +54,7 @@ export function TabProcesses({
         <Label>Seleção de Processos de Fabricação</Label>
         <div className="flex flex-wrap gap-2">
           {defaultProcessTypes.map((pt) => {
-            const isSelected = product.processes.some((p) => p.name === pt)
+            const isSelected = product.processes?.some((p) => p.name === pt)
             return (
               <Button
                 key={pt}
@@ -78,11 +81,11 @@ export function TabProcesses({
         )}
       </div>
 
-      {product.processes.length > 0 && (
+      {(product.processes?.length ?? 0) > 0 && (
         <div className="space-y-4 pt-4 border-t">
           <Label className="text-base">Detalhamento dos Processos</Label>
           <div className="grid gap-4">
-            {product.processes.map((proc, idx) => (
+            {product.processes?.map((proc, idx) => (
               <div
                 key={proc.id}
                 className="p-4 border rounded-md bg-slate-50/50 dark:bg-muted/10 relative"
@@ -95,9 +98,11 @@ export function TabProcesses({
                   placeholder={`Descreva os detalhes para o processo de ${proc.name}...`}
                   value={proc.details}
                   onChange={(e) => {
-                    const newProcs = [...product.processes]
-                    newProcs[idx].details = e.target.value
-                    setProduct({ ...product, processes: newProcs })
+                    const newProcs = [...(product.processes || [])]
+                    if (newProcs[idx]) {
+                      newProcs[idx].details = e.target.value
+                      setProduct({ ...product, processes: newProcs })
+                    }
                   }}
                 />
               </div>

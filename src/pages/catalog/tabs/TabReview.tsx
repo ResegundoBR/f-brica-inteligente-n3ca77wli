@@ -27,7 +27,7 @@ export function TabReview({
     setProduct({
       ...product,
       reviewPoints: [
-        ...product.reviewPoints,
+        ...(product.reviewPoints || []),
         { id: Date.now().toString(), description: newPoint, resolved: null, observation: '' },
       ],
     })
@@ -35,12 +35,16 @@ export function TabReview({
   }
 
   const resolvePoint = (id: string, resolved: boolean) => {
-    const newPoints = product.reviewPoints.map((p) => (p.id === id ? { ...p, resolved } : p))
+    const newPoints = (product.reviewPoints || []).map((p) =>
+      p.id === id ? { ...p, resolved } : p,
+    )
     setProduct({ ...product, reviewPoints: newPoints })
   }
 
   const updateObservation = (id: string, observation: string) => {
-    const newPoints = product.reviewPoints.map((p) => (p.id === id ? { ...p, observation } : p))
+    const newPoints = (product.reviewPoints || []).map((p) =>
+      p.id === id ? { ...p, observation } : p,
+    )
     setProduct({ ...product, reviewPoints: newPoints })
   }
 
@@ -90,12 +94,14 @@ export function TabReview({
       )}
 
       <div className="space-y-4">
-        <h3 className="font-medium text-lg">Pontos de Revisão ({product.reviewPoints.length})</h3>
-        {product.reviewPoints.length === 0 ? (
+        <h3 className="font-medium text-lg">
+          Pontos de Revisão ({product.reviewPoints?.length ?? 0})
+        </h3>
+        {(product.reviewPoints?.length ?? 0) === 0 ? (
           <p className="text-sm text-muted-foreground">Nenhum ponto de revisão apontado.</p>
         ) : (
           <div className="grid gap-4">
-            {product.reviewPoints.map((point) => (
+            {product.reviewPoints?.map((point) => (
               <div
                 key={point.id}
                 className="border rounded-md p-4 bg-card flex flex-col sm:flex-row gap-4"

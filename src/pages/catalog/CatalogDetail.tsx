@@ -33,7 +33,7 @@ export default function CatalogDetail() {
   useEffect(() => {
     if (id === 'novo') {
       setProduct({
-        id: `P00${products.length + 1}`,
+        id: `P00${(products?.length ?? 0) + 1}`,
         name: '',
         details: '',
         status: 'Iniciado',
@@ -43,11 +43,21 @@ export default function CatalogDetail() {
         composition: [],
         checklist: [],
         reviewPoints: [],
+        files: [],
+        data: {},
       })
     } else {
-      const found = products.find((p) => p.id === id)
+      const found = products?.find((p) => p.id === id)
       if (found) {
-        setProduct({ ...found }) // clone to edit
+        setProduct({
+          ...found,
+          processes: found.processes ?? found.data?.processes ?? [],
+          composition: found.composition ?? found.data?.composition ?? [],
+          checklist: found.checklist ?? found.data?.checklist ?? [],
+          reviewPoints: found.reviewPoints ?? found.data?.reviewPoints ?? [],
+          files: found.files ?? [],
+          data: found.data ?? {},
+        }) // clone to edit
         if (found.status === 'Pendência') setActiveTab('revisao')
       }
     }
@@ -127,9 +137,9 @@ export default function CatalogDetail() {
               className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none py-3 px-6"
             >
               Revisão{' '}
-              {product.reviewPoints.length > 0 && (
+              {(product.reviewPoints?.length ?? 0) > 0 && (
                 <span className="ml-2 bg-destructive text-destructive-foreground text-[10px] px-1.5 py-0.5 rounded-full">
-                  {product.reviewPoints.length}
+                  {product.reviewPoints?.length}
                 </span>
               )}
             </TabsTrigger>

@@ -11,29 +11,37 @@ import Learning from './pages/Learning'
 import AdminUsers from './pages/admin/AdminUsers'
 import AdminRoles from './pages/admin/AdminRoles'
 import AdminLogs from './pages/admin/AdminLogs'
-import { AppProvider } from './contexts/app-context'
+import Login from './pages/Login'
+import ChangePassword from './pages/ChangePassword'
+import { AuthProvider } from './hooks/use-auth'
+import { AuthGuard } from './components/AuthGuard'
 
 const App = () => (
-  <AppProvider>
+  <AuthProvider>
     <BrowserRouter future={{ v7_startTransition: false, v7_relativeSplatPath: false }}>
       <TooltipProvider>
         <Toaster />
         <Sonner />
         <Routes>
-          <Route element={<Layout />}>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/catalogo" element={<CatalogList />} />
-            <Route path="/catalogo/:id" element={<CatalogDetail />} />
-            <Route path="/aprendizado" element={<Learning />} />
-            <Route path="/admin/usuarios" element={<AdminUsers />} />
-            <Route path="/admin/funcoes" element={<AdminRoles />} />
-            <Route path="/admin/logs" element={<AdminLogs />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/change-password" element={<ChangePassword />} />
+
+          <Route element={<AuthGuard />}>
+            <Route element={<Layout />}>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/catalogo" element={<CatalogList />} />
+              <Route path="/catalogo/:id" element={<CatalogDetail />} />
+              <Route path="/aprendizado" element={<Learning />} />
+              <Route path="/admin/usuarios" element={<AdminUsers />} />
+              <Route path="/admin/funcoes" element={<AdminRoles />} />
+              <Route path="/admin/logs" element={<AdminLogs />} />
+            </Route>
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
       </TooltipProvider>
     </BrowserRouter>
-  </AppProvider>
+  </AuthProvider>
 )
 
 export default App

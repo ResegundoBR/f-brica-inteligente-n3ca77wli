@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
 import {
@@ -7,7 +8,6 @@ import {
   BarChart,
   ResponsiveContainer,
   XAxis,
-  YAxis,
   PieChart,
   Pie,
   Cell,
@@ -21,7 +21,9 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { useApp } from '@/contexts/app-context'
+import pb from '@/lib/pocketbase/client'
+import { useRealtime } from '@/hooks/use-realtime'
+import { Product } from '@/types'
 
 const evolutionData = [
   { name: 'Seg', registros: 4 },
@@ -38,15 +40,52 @@ const productivityData = [
   { name: 'Equipe C', atual: 11, meta: 8 },
 ]
 
-const goalData = [
-  { name: 'Concluído', value: 145 },
-  { name: 'Restante', value: 96 },
-]
 const COLORS = ['hsl(var(--primary))', 'hsl(var(--muted))']
 
 export default function Dashboard() {
-  const { products } = useApp()
-  const idleProducts = products.filter((p) => p.daysIdle > 5)
+  const [products, setProducts] = useState<Product[]>([])
+
+  const loadData = async () => {
+    try {
+      const records = await pb.collection('products').getFullList<Product>()
+      setProducts(records)
+    } catch {
+      /* intentionally ignored */
+    }
+  }
+
+  useEffect(() => {
+    loadData()
+  }, [])
+  useRealtime('products', () => {
+    loadData()
+  })
+
+  const validadoCount = products.filter((p) => p.status === 'validado').length
+  const totalCount = products.length || 1 // avoid div by 0 visual
+
+  const goalData = [
+    { name: 'Concluído', value: validadoCount },
+    { name: 'Restante', value: products.length - validadoCount },
+  ]
+
+  const today = new Date().getTime()
+  const idleProducts = products
+    .filter((p) => {
+      const diff = Math.floor((today - new Date(p.updated).getTime()) / (1000 * 3600 * 24))
+      return diff > 5 && p.status !== 'validado'
+    })
+    .map((p) => ({
+      ...p,
+      daysIdle: Math.floor((today - new Date(p.updated).getTime()) / (1000 * 3600 * 24)),
+    }))
+
+  const statusLabel = {
+    rascunho: 'Rascunho',
+    revisao: 'Revisão',
+    pendencia: 'Pendência',
+    validado: 'Validado',
+  }
 
   return (
     <div className="space-y-6 animate-fade-in-up">
@@ -115,8 +154,8 @@ export default function Dashboard() {
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Progresso da Meta</CardTitle>
-            <CardDescription>Total de 241 registros</CardDescription>
+            <CardTitle className="text-base">Progresso (Validados)</CardTitle>
+            <CardDescription>Total de {products.length} registros</CardDescription>
           </CardHeader>
           <CardContent className="h-[200px] flex items-center justify-center relative">
             <ResponsiveContainer width="100%" height="100%">
@@ -137,8 +176,8 @@ export default function Dashboard() {
               </PieChart>
             </ResponsiveContainer>
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-              <span className="text-3xl font-bold">145</span>
-              <span className="text-xs text-muted-foreground">/ 241</span>
+              <span className="text-3xl font-bold">{validadoCount}</span>
+              <span className="text-xs text-muted-foreground">/ {products.length}</span>
             </div>
           </CardContent>
         </Card>
@@ -147,7 +186,7 @@ export default function Dashboard() {
       <Card>
         <CardHeader>
           <CardTitle>Cadastros Parados (Mais de 5 dias)</CardTitle>
-          <CardDescription>Atenção necessária para itens ociosos.</CardDescription>
+          <CardDescription>Atenção necessária para itens ociosos (não validados).</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
@@ -171,9 +210,11 @@ export default function Dashboard() {
                   <TableRow key={p.id}>
                     <TableCell className="font-medium">{p.name}</TableCell>
                     <TableCell>
-                      <Badge variant="outline">{p.status}</Badge>
+                      <Badge variant="outline">
+                        {statusLabel[p.status as keyof typeof statusLabel]}
+                      </Badge>
                     </TableCell>
-                    <TableCell>{p.lastUpdate}</TableCell>
+                    <TableCell>{new Date(p.updated).toLocaleDateString()}</TableCell>
                     <TableCell className="text-right text-destructive font-bold">
                       {p.daysIdle} dias
                     </TableCell>

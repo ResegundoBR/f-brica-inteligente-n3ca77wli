@@ -1,14 +1,13 @@
-export type UserRole = 'Registrador' | 'Revisador' | 'Admin'
+export type UserRole = 'registrator' | 'reviewer' | 'admin'
+export type ProductStatus = 'rascunho' | 'revisao' | 'pendencia' | 'validado'
 
 export interface User {
   id: string
   name: string
   email: string
   role: UserRole
-  active: boolean
+  must_change_password?: boolean
 }
-
-export type ProductStatus = 'Iniciado' | 'Revisão' | 'Validado' | 'Pendência'
 
 export interface Process {
   id: string
@@ -27,21 +26,28 @@ export interface CompositionItem {
 export interface ReviewPoint {
   id: string
   description: string
-  resolved: boolean | null // null = not checked, true = V, false = X
+  resolved: boolean | null
   observation: string
+}
+
+export interface ProductData {
+  processes: Process[]
+  composition: CompositionItem[]
+  checklist: string[]
+  reviewPoints: ReviewPoint[]
 }
 
 export interface Product {
   id: string
   name: string
-  details: string
+  description: string
   status: ProductStatus
-  lastUpdate: string
-  daysIdle: number
-  processes: Process[]
-  composition: CompositionItem[]
-  checklist: string[]
-  reviewPoints: ReviewPoint[]
+  files: string[]
+  owner: string
+  data: ProductData
+  created: string
+  updated: string
+  expand?: { owner?: User }
 }
 
 export interface LearningRecord {
@@ -55,8 +61,9 @@ export interface LearningRecord {
 
 export interface Log {
   id: string
-  timestamp: string
-  user: string
+  created: string
+  user_id: string
   action: string
-  target: string
+  details: any
+  expand?: { user_id?: User; product_id?: Product }
 }

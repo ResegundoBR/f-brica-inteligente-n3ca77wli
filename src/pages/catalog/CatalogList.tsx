@@ -1,6 +1,7 @@
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Plus, Search } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import {
@@ -12,22 +13,54 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { useApp } from '@/contexts/app-context'
-import { ProductStatus } from '@/types'
+import { Product, ProductStatus } from '@/types'
+import pb from '@/lib/pocketbase/client'
+import { useRealtime } from '@/hooks/use-realtime'
+import { useAuth } from '@/hooks/use-auth'
 
 export function StatusBadge({ status }: { status: ProductStatus }) {
-  const variantMap: Record<ProductStatus, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-    Iniciado: 'secondary',
-    Revisão: 'default',
-    Validado: 'outline',
-    Pendência: 'destructive',
+  const map: Record<
+    ProductStatus,
+    { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }
+  > = {
+    rascunho: { label: 'Rascunho', variant: 'secondary' },
+    revisao: { label: 'Revisão', variant: 'default' },
+    validado: { label: 'Validado', variant: 'outline' },
+    pendencia: { label: 'Pendência', variant: 'destructive' },
   }
-  return <Badge variant={variantMap[status]}>{status}</Badge>
+  const config = map[status] || map['rascunho']
+  return <Badge variant={config.variant}>{config.label}</Badge>
 }
 
 export default function CatalogList() {
-  const { products } = useApp()
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const [products, setProducts] = useState<Product[]>([])
+  const [search, setSearch] = useState('')
+
+  const loadData = async () => {
+    try {
+      const records = await pb.collection('products').getFullList<Product>({ sort: '-updated' })
+      setProducts(records)
+    } catch {
+      /* intentionally ignored */
+    }
+  }
+
+  useEffect(() => {
+    loadData()
+  }, [])
+  useRealtime('products', () => {
+    loadData()
+  })
+
+  const filtered = products.filter(
+    (p) =>
+      p.name.toLowerCase().includes(search.toLowerCase()) ||
+      p.id.toLowerCase().includes(search.toLowerCase()),
+  )
+
+  const canCreate = user?.role === 'admin' || user?.role === 'registrator'
 
   return (
     <div className="space-y-6 animate-fade-in-up">
@@ -36,9 +69,11 @@ export default function CatalogList() {
           <h1 className="text-3xl font-bold tracking-tight">Catálogo Técnico</h1>
           <p className="text-muted-foreground">Gerencie o cadastro de produtos e especificações.</p>
         </div>
-        <Button onClick={() => navigate('/catalogo/novo')}>
-          <Plus className="mr-2 h-4 w-4" /> Novo Cadastro
-        </Button>
+        {canCreate && (
+          <Button onClick={() => navigate('/catalogo/novo')}>
+            <Plus className="mr-2 h-4 w-4" /> Novo Cadastro
+          </Button>
+        )}
       </div>
 
       <Card>
@@ -46,7 +81,12 @@ export default function CatalogList() {
           <div className="flex items-center gap-4">
             <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Buscar por código ou nome..." className="pl-9" />
+              <Input
+                placeholder="Buscar por código ou nome..."
+                className="pl-9"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
             </div>
           </div>
         </CardHeader>
@@ -62,21 +102,29 @@ export default function CatalogList() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {products.map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell className="font-mono text-xs">{p.id}</TableCell>
-                  <TableCell className="font-medium">{p.name}</TableCell>
-                  <TableCell>
-                    <StatusBadge status={p.status} />
-                  </TableCell>
-                  <TableCell>{p.lastUpdate}</TableCell>
-                  <TableCell className="text-right">
-                    <Button variant="ghost" size="sm" asChild>
-                      <Link to={`/catalogo/${p.id}`}>Editar</Link>
-                    </Button>
+              {filtered.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center py-6 text-muted-foreground">
+                    Nenhum produto encontrado.
                   </TableCell>
                 </TableRow>
-              ))}
+              ) : (
+                filtered.map((p) => (
+                  <TableRow key={p.id}>
+                    <TableCell className="font-mono text-xs">{p.id}</TableCell>
+                    <TableCell className="font-medium">{p.name}</TableCell>
+                    <TableCell>
+                      <StatusBadge status={p.status} />
+                    </TableCell>
+                    <TableCell>{new Date(p.updated).toLocaleDateString()}</TableCell>
+                    <TableCell className="text-right">
+                      <Button variant="ghost" size="sm" asChild>
+                        <Link to={`/catalogo/${p.id}`}>Detalhes</Link>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>

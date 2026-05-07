@@ -19,10 +19,17 @@ export default function ChangePassword() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (!password || !passwordConfirm) {
+      toast({ variant: 'destructive', title: 'Erro', description: 'Cannot be blank.' })
+      return
+    }
+
     if (password !== passwordConfirm) {
       toast({ variant: 'destructive', title: 'Erro', description: 'As senhas não coincidem.' })
       return
     }
+
     if (password.length < 8) {
       toast({
         variant: 'destructive',
@@ -35,11 +42,15 @@ export default function ChangePassword() {
     setLoading(true)
     try {
       if (user) {
-        await pb.collection('users').update(user.id, {
+        const updatedRecord = await pb.collection('users').update(user.id, {
           password,
           passwordConfirm,
           must_change_password: false,
         })
+
+        // Update the auth store to sync context state and ensure AuthGuard allows access to dashboard
+        pb.authStore.save(pb.authStore.token, updatedRecord)
+
         toast({ title: 'Sucesso', description: 'Senha alterada com sucesso.' })
         navigate('/')
       }
@@ -50,40 +61,52 @@ export default function ChangePassword() {
     }
   }
 
+  // Ensure unauthenticated users cannot access this page
+  if (!user && !loading) {
+    navigate('/login')
+    return null
+  }
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-muted/40 p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>Atualização de Senha</CardTitle>
-          <CardDescription>
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+      <Card className="w-full max-w-[440px] shadow-sm">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-xl font-semibold">Atualização de Senha</CardTitle>
+          <CardDescription className="text-sm mt-1.5 text-slate-500">
             Este é o seu primeiro acesso. Por favor, crie uma nova senha para continuar.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-2">
-              <Label htmlFor="password">Nova Senha</Label>
+              <Label htmlFor="password" className="text-sm font-medium text-slate-900">
+                Nova Senha
+              </Label>
               <Input
                 id="password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={8}
+                className="h-10"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="passwordConfirm">Confirmar Nova Senha</Label>
+              <Label htmlFor="passwordConfirm" className="text-sm font-medium text-slate-900">
+                Confirmar Nova Senha
+              </Label>
               <Input
                 id="passwordConfirm"
                 type="password"
                 value={passwordConfirm}
                 onChange={(e) => setPasswordConfirm(e.target.value)}
-                required
-                minLength={8}
+                className="h-10"
               />
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button
+              type="submit"
+              className="w-full bg-[#243e9e] hover:bg-[#1c307b] text-white transition-colors h-10 mt-2"
+              disabled={loading}
+            >
               {loading ? 'Salvando...' : 'Salvar e Continuar'}
             </Button>
           </form>

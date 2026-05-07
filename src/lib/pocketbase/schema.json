@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-07T18:47:16.830Z",
+  "generatedAt": "2026-05-07T19:32:03.105Z",
   "collections": [
     {
       "name": "users",
@@ -54,6 +54,24 @@
         {
           "name": "active",
           "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "access_start_time",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "access_end_time",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "access_days",
+          "type": "json",
           "required": false,
           "system": false
         }
@@ -275,6 +293,30 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "access_dashboard",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "access_catalog",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "access_learning",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "access_users",
+          "type": "bool",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": []

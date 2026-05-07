@@ -68,8 +68,9 @@ export default function CatalogList() {
       p.id.toLowerCase().includes(search.toLowerCase()),
   )
 
-  const roleName = user?.expand?.role?.name || user?.role
-  const canCreate = roleName === 'admin' || roleName === 'registrator'
+  const role = user?.expand?.role
+  const isSuperAdmin = user?.role === 'admin' || role?.name === 'admin'
+  const canCreate = isSuperAdmin || !!role?.access_catalog
 
   return (
     <div className="space-y-6 animate-fade-in-up">

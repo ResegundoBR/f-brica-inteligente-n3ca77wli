@@ -1,4 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
+import { useAuth } from '@/hooks/use-auth'
 import {
   LayoutDashboard,
   BookOpen,
@@ -33,6 +34,31 @@ const navItems = [
 
 export function AppSidebar() {
   const location = useLocation()
+  const { user } = useAuth()
+
+  const role = user?.expand?.role
+  const isSuperAdmin = user?.role === 'admin' || role?.name === 'admin'
+
+  const hasAccess = (itemTitle: string) => {
+    if (isSuperAdmin) return true
+    if (!role) return true
+
+    switch (itemTitle) {
+      case 'Dashboard':
+        return !!role.access_dashboard
+      case 'Catálogo Técnico':
+        return !!role.access_catalog
+      case 'Evolução Aprendizado':
+        return !!role.access_learning
+      case 'Usuários':
+      case 'Funções':
+      case 'Status dos Produtos':
+      case 'Log de Atividades':
+        return !!role.access_users
+      default:
+        return true
+    }
+  }
 
   return (
     <Sidebar variant="inset">
@@ -49,7 +75,7 @@ export function AppSidebar() {
             <SidebarGroupContent>
               <SidebarMenu>
                 {navItems
-                  .filter((i) => i.group === group)
+                  .filter((i) => i.group === group && hasAccess(i.title))
                   .map((item) => {
                     const isActive =
                       location.pathname === item.url ||

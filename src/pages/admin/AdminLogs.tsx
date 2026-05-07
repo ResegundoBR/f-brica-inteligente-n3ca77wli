@@ -62,14 +62,14 @@ export default function AdminLogs() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {logs?.length === 0 ? (
+                {!logs || logs.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={4} className="text-center py-6 text-muted-foreground">
                       Nenhum log encontrado.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  logs?.map((log) => (
+                  (logs || []).map((log) => (
                     <TableRow key={log.id}>
                       <TableCell className="font-mono text-xs">
                         {new Date(log.created).toLocaleString()}

@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Plus, Pencil } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import pb from '@/lib/pocketbase/client'
@@ -35,7 +36,15 @@ export default function AdminRoles() {
   const [open, setOpen] = useState(false)
   const [editingRole, setEditingRole] = useState<Role | null>(null)
 
-  const [formData, setFormData] = useState({ name: '', description: '', active: true })
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    active: true,
+    access_dashboard: false,
+    access_catalog: false,
+    access_learning: false,
+    access_users: false,
+  })
 
   const loadRoles = async () => {
     try {
@@ -57,7 +66,15 @@ export default function AdminRoles() {
 
   const handleEdit = (role: Role) => {
     setEditingRole(role)
-    setFormData({ name: role.name, description: role.description, active: role.active })
+    setFormData({
+      name: role.name,
+      description: role.description || '',
+      active: role.active,
+      access_dashboard: !!role.access_dashboard,
+      access_catalog: !!role.access_catalog,
+      access_learning: !!role.access_learning,
+      access_users: !!role.access_users,
+    })
     setOpen(true)
   }
 
@@ -77,6 +94,19 @@ export default function AdminRoles() {
     }
   }
 
+  const handleCreateNew = () => {
+    setEditingRole(null)
+    setFormData({
+      name: '',
+      description: '',
+      active: true,
+      access_dashboard: false,
+      access_catalog: false,
+      access_learning: false,
+      access_users: false,
+    })
+  }
+
   return (
     <div className="space-y-6 animate-fade-in-up">
       <div className="flex justify-between items-center">
@@ -92,11 +122,11 @@ export default function AdminRoles() {
           }}
         >
           <DialogTrigger asChild>
-            <Button onClick={() => setFormData({ name: '', description: '', active: true })}>
+            <Button onClick={handleCreateNew}>
               <Plus className="mr-2 h-4 w-4" /> Nova Função
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>{editingRole ? 'Editar Função' : 'Cadastrar Função'}</DialogTitle>
             </DialogHeader>
@@ -106,16 +136,54 @@ export default function AdminRoles() {
                 <Input
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="Ex: admin"
+                  placeholder="Ex: Operador Nível 1"
                 />
               </div>
-              <div className="space-y-2">
-                <Label>Descrição</Label>
-                <Textarea
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Descreva os acessos..."
-                />
+
+              <div className="space-y-3 border p-4 rounded-md bg-muted/20">
+                <Label className="text-base font-semibold">Acessos e Permissões (Cascata)</Label>
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center space-x-3">
+                    <Checkbox
+                      id="acc_dash"
+                      checked={formData.access_dashboard}
+                      onCheckedChange={(c) => setFormData({ ...formData, access_dashboard: !!c })}
+                    />
+                    <Label htmlFor="acc_dash" className="font-normal text-sm">
+                      Dashboard
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <Checkbox
+                      id="acc_cat"
+                      checked={formData.access_catalog}
+                      onCheckedChange={(c) => setFormData({ ...formData, access_catalog: !!c })}
+                    />
+                    <Label htmlFor="acc_cat" className="font-normal text-sm">
+                      Catálogo Técnico
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <Checkbox
+                      id="acc_lear"
+                      checked={formData.access_learning}
+                      onCheckedChange={(c) => setFormData({ ...formData, access_learning: !!c })}
+                    />
+                    <Label htmlFor="acc_lear" className="font-normal text-sm">
+                      Evolução Aprendizado
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <Checkbox
+                      id="acc_usr"
+                      checked={formData.access_users}
+                      onCheckedChange={(c) => setFormData({ ...formData, access_users: !!c })}
+                    />
+                    <Label htmlFor="acc_usr" className="font-normal text-sm">
+                      Gestão de Usuários
+                    </Label>
+                  </div>
+                </div>
               </div>
 
               <div className="flex items-center justify-between border p-3 rounded-md">
@@ -129,9 +197,14 @@ export default function AdminRoles() {
                 />
               </div>
 
-              <Button className="w-full" onClick={handleSave}>
-                {editingRole ? 'Salvar Alterações' : 'Criar Função'}
-              </Button>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" onClick={() => setOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button onClick={handleSave}>
+                  {editingRole ? 'Salvar Alterações' : 'Salvar Função'}
+                </Button>
+              </div>
             </div>
           </DialogContent>
         </Dialog>
@@ -143,7 +216,6 @@ export default function AdminRoles() {
             <TableHeader>
               <TableRow>
                 <TableHead>Nome</TableHead>
-                <TableHead>Descrição</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
@@ -156,9 +228,6 @@ export default function AdminRoles() {
                       <Skeleton className="h-4 w-[150px]" />
                     </TableCell>
                     <TableCell>
-                      <Skeleton className="h-4 w-[250px]" />
-                    </TableCell>
-                    <TableCell>
                       <Skeleton className="h-6 w-[60px] rounded-full" />
                     </TableCell>
                     <TableCell className="text-right">
@@ -168,7 +237,7 @@ export default function AdminRoles() {
                 ))
               ) : !roles || roles.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center py-6 text-muted-foreground">
+                  <TableCell colSpan={3} className="text-center py-6 text-muted-foreground">
                     Nenhuma função encontrada.
                   </TableCell>
                 </TableRow>
@@ -176,7 +245,6 @@ export default function AdminRoles() {
                 roles.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell className="font-medium capitalize">{r.name}</TableCell>
-                    <TableCell>{r.description || '-'}</TableCell>
                     <TableCell>
                       {r.active ? (
                         <Badge className="bg-emerald-600">Ativo</Badge>

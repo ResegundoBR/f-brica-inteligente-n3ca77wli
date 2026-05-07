@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,6 +40,16 @@ import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { useToast } from '@/hooks/use-toast'
 import { Role, User } from '@/types'
+
+const daysOptions = [
+  { label: 'Segunda-feira', value: 1 },
+  { label: 'Terça-feira', value: 2 },
+  { label: 'Quarta-feira', value: 3 },
+  { label: 'Quinta-feira', value: 4 },
+  { label: 'Sexta-feira', value: 5 },
+  { label: 'Sábado', value: 6 },
+  { label: 'Domingo', value: 0 },
+]
 
 export default function AdminUsers() {
   const { toast } = useToast()
@@ -54,6 +65,9 @@ export default function AdminUsers() {
     role: '',
     active: true,
     must_change_password: false,
+    access_start_time: '',
+    access_end_time: '',
+    access_days: [] as number[],
   })
 
   const loadUsers = async () => {
@@ -95,6 +109,9 @@ export default function AdminUsers() {
       role: user.role || '',
       active: user.active ?? true,
       must_change_password: user.must_change_password || false,
+      access_start_time: user.access_start_time || '',
+      access_end_time: user.access_end_time || '',
+      access_days: Array.isArray(user.access_days) ? user.access_days : [],
     })
     setOpen(true)
   }
@@ -120,6 +137,20 @@ export default function AdminUsers() {
     }
   }
 
+  const handleCreateNew = () => {
+    setEditingUser(null)
+    setFormData({
+      name: '',
+      email: '',
+      role: '',
+      active: true,
+      must_change_password: false,
+      access_start_time: '',
+      access_end_time: '',
+      access_days: [],
+    })
+  }
+
   return (
     <div className="space-y-6 animate-fade-in-up">
       <div className="flex justify-between items-center">
@@ -135,42 +166,35 @@ export default function AdminUsers() {
           }}
         >
           <DialogTrigger asChild>
-            <Button
-              onClick={() =>
-                setFormData({
-                  name: '',
-                  email: '',
-                  role: '',
-                  active: true,
-                  must_change_password: false,
-                })
-              }
-            >
+            <Button onClick={handleCreateNew}>
               <Plus className="mr-2 h-4 w-4" /> Novo Usuário
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>{editingUser ? 'Editar Usuário' : 'Cadastrar Novo Usuário'}</DialogTitle>
+              <DialogTitle>{editingUser ? 'Editar Usuário' : 'Novo Usuário'}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label>Nome Completo *</Label>
-                <Input
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="Ex: João da Silva"
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Nome Completo *</Label>
+                  <Input
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    placeholder="Ex: João da Silva"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Email corporativo *</Label>
+                  <Input
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    placeholder="joao@fabrica.com"
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label>Email corporativo *</Label>
-                <Input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  placeholder="joao@fabrica.com"
-                />
-              </div>
+
               <div className="space-y-2">
                 <Label>Função / Papel</Label>
                 <Select
@@ -178,7 +202,7 @@ export default function AdminUsers() {
                   onValueChange={(v) => setFormData({ ...formData, role: v })}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Selecione um papel" />
+                    <SelectValue placeholder="Selecione a função" />
                   </SelectTrigger>
                   <SelectContent>
                     {roles.map((r) => (
@@ -190,10 +214,72 @@ export default function AdminUsers() {
                 </Select>
               </div>
 
+              <div className="space-y-4 border p-4 rounded-md bg-muted/20">
+                <Label className="text-base font-semibold">
+                  Horário e Dias de Acesso (Opcional)
+                </Label>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm">Hora Inicial</Label>
+                    <Input
+                      type="time"
+                      value={formData.access_start_time}
+                      onChange={(e) =>
+                        setFormData({ ...formData, access_start_time: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm">Hora Final</Label>
+                    <Input
+                      type="time"
+                      value={formData.access_end_time}
+                      onChange={(e) =>
+                        setFormData({ ...formData, access_end_time: e.target.value })
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2 pt-2">
+                  <Label className="text-sm">Dias Permitidos</Label>
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    {daysOptions.map((d) => (
+                      <div key={d.value} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`day_${d.value}`}
+                          checked={formData.access_days.includes(d.value)}
+                          onCheckedChange={(c) => {
+                            if (c) {
+                              setFormData({
+                                ...formData,
+                                access_days: [...formData.access_days, d.value],
+                              })
+                            } else {
+                              setFormData({
+                                ...formData,
+                                access_days: formData.access_days.filter((x) => x !== d.value),
+                              })
+                            }
+                          }}
+                        />
+                        <Label
+                          htmlFor={`day_${d.value}`}
+                          className="font-normal text-sm cursor-pointer"
+                        >
+                          {d.label}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
               <div className="flex items-center justify-between border p-3 rounded-md">
                 <div className="space-y-0.5">
                   <Label>Usuário Ativo</Label>
-                  <p className="text-xs text-muted-foreground">Permitir acesso ao sistema</p>
+                  <p className="text-xs text-muted-foreground">
+                    Permitir que este usuário acesse o sistema
+                  </p>
                 </div>
                 <Switch
                   checked={formData.active}
@@ -204,7 +290,9 @@ export default function AdminUsers() {
               <div className="flex items-center justify-between border p-3 rounded-md">
                 <div className="space-y-0.5">
                   <Label>Forçar troca de senha</Label>
-                  <p className="text-xs text-muted-foreground">Exigir nova senha no login</p>
+                  <p className="text-xs text-muted-foreground">
+                    Exigir nova senha no próximo login
+                  </p>
                 </div>
                 <Switch
                   checked={formData.must_change_password}
@@ -212,9 +300,12 @@ export default function AdminUsers() {
                 />
               </div>
 
-              <Button className="w-full" onClick={handleSave}>
-                {editingUser ? 'Salvar Alterações' : 'Cadastrar Usuário'}
-              </Button>
+              <div className="flex justify-end gap-2 pt-4">
+                <Button variant="outline" onClick={() => setOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button onClick={handleSave}>{editingUser ? 'Salvar Alterações' : 'Salvar'}</Button>
+              </div>
             </div>
           </DialogContent>
         </Dialog>

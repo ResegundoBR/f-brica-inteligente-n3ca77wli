@@ -3,6 +3,10 @@ export interface Role {
   name: string
   description: string
   active: boolean
+  access_dashboard?: boolean
+  access_catalog?: boolean
+  access_learning?: boolean
+  access_users?: boolean
 }
 
 export interface ProductStatusModel {
@@ -19,6 +23,9 @@ export interface User {
   role: string
   active: boolean
   must_change_password?: boolean
+  access_start_time?: string
+  access_end_time?: string
+  access_days?: number[]
   expand?: { role?: Role }
 }
 

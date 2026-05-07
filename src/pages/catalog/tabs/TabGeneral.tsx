@@ -99,55 +99,48 @@ export function TabGeneral({ product, setProduct }: Props) {
               <span className="text-xs text-muted-foreground mt-1">Apenas imagens</span>
             </div>
 
-            {(product.files || []).map((file: any, idx: number) => {
-              const isFileObj = file instanceof File
-              const url = isFileObj
-                ? URL.createObjectURL(file)
-                : pb.files.getUrl(product as any, file)
-              return (
-                <div
-                  key={idx}
-                  className="border-2 border-border rounded-lg p-1 flex flex-col items-center justify-center h-[200px] bg-muted/20 relative group"
-                >
-                  {(isFileObj && file.type.startsWith('image/')) ||
-                  (!isFileObj &&
-                    typeof file === 'string' &&
-                    file.match(/\.(jpeg|jpg|gif|png|webp)$/i)) ? (
+            {(product.files || [])
+              .filter((file: any) => {
+                const isFileObj = file instanceof File
+                if (isFileObj) return file.type.startsWith('image/')
+                return typeof file === 'string' && file.match(/\.(jpeg|jpg|gif|png|webp)$/i)
+              })
+              .map((file: any, idx: number) => {
+                const isFileObj = file instanceof File
+                const url = isFileObj
+                  ? URL.createObjectURL(file)
+                  : pb.files.getUrl(product as any, file)
+                return (
+                  <div
+                    key={idx}
+                    className="border-2 border-border rounded-lg p-1 flex flex-col items-center justify-center h-[200px] bg-muted/20 relative group"
+                  >
                     <img
                       src={url}
                       alt={`Preview ${idx + 1}`}
                       className="h-full w-full object-contain rounded"
                     />
-                  ) : (
-                    <div className="flex flex-col items-center justify-center text-center p-2 w-full h-full overflow-hidden">
-                      <FilePlus className="h-8 w-8 text-muted-foreground mb-2 shrink-0" />
-                      <span className="text-xs text-muted-foreground break-all line-clamp-3">
-                        {isFileObj ? file.name : file}
-                      </span>
+                    <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        type="button"
+                        className="bg-destructive text-destructive-foreground px-2 py-1 rounded text-xs font-medium"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          const newFiles = (product.files || []).filter((f) => f !== file)
+                          setProduct({ ...product, files: newFiles })
+                        }}
+                      >
+                        Remover
+                      </button>
                     </div>
-                  )}
-                  <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      type="button"
-                      className="bg-destructive text-destructive-foreground px-2 py-1 rounded text-xs font-medium"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        const newFiles = [...(product.files || [])]
-                        newFiles.splice(idx, 1)
-                        setProduct({ ...product, files: newFiles })
-                      }}
-                    >
-                      Remover
-                    </button>
+                    {isFileObj && (
+                      <span className="text-[10px] font-medium absolute bottom-2 left-2 bg-primary/90 text-primary-foreground px-1.5 py-0.5 rounded">
+                        Novo
+                      </span>
+                    )}
                   </div>
-                  {isFileObj && (
-                    <span className="text-[10px] font-medium absolute bottom-2 left-2 bg-primary/90 text-primary-foreground px-1.5 py-0.5 rounded">
-                      Novo
-                    </span>
-                  )}
-                </div>
-              )
-            })}
+                )
+              })}
           </div>
         </div>
       </div>

@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Send, CheckCircle2, Paperclip, X, Clock } from 'lucide-react'
+import { Textarea } from '@/components/ui/textarea'
+import { Send, CheckCircle2, Paperclip, X, Clock, MessageSquareText } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { useToast } from '@/hooks/use-toast'
 import { useAuth } from '@/hooks/use-auth'
@@ -24,6 +25,8 @@ export function TabReview({
   const [newPointFiles, setNewPointFiles] = useState<File[]>([])
   const [statuses, setStatuses] = useState<ProductStatusModel[]>([])
   const [revisionPoints, setRevisionPoints] = useState<RevisionPointModel[]>([])
+  const [openNotesId, setOpenNotesId] = useState<string | null>(null)
+  const [notesText, setNotesText] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const loadPoints = async () => {
@@ -116,6 +119,26 @@ export function TabReview({
     }
   }
 
+  const handleOpenNotes = (point: RevisionPointModel) => {
+    if (openNotesId === point.id) {
+      setOpenNotesId(null)
+    } else {
+      setOpenNotesId(point.id)
+      setNotesText(point.notes || '')
+    }
+  }
+
+  const saveNotes = async () => {
+    if (!openNotesId) return
+    try {
+      await pb.collection('revision_points').update(openNotesId, { notes: notesText })
+      toast({ title: 'Notas salvas com sucesso' })
+      setOpenNotesId(null)
+    } catch (e) {
+      toast({ title: 'Erro ao salvar notas', variant: 'destructive' })
+    }
+  }
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="bg-slate-50 dark:bg-muted/20 p-4 rounded-lg border space-y-4">
@@ -201,71 +224,108 @@ export function TabReview({
         {revisionPoints.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nenhum ponto de revisão apontado.</p>
         ) : (
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3">
             {revisionPoints.map((point) => (
-              <div
-                key={point.id}
-                className="border rounded-md px-3 py-2 bg-card flex flex-col sm:flex-row sm:items-center gap-3 hover:bg-accent/10 transition-colors"
-              >
-                <div className="flex items-center gap-2 flex-1 overflow-hidden">
-                  <span className="text-[10px] font-semibold bg-muted px-1.5 py-0.5 rounded shrink-0">
-                    {point.expand?.user_id?.name || point.expand?.user_id?.email || 'Usuário'}
-                  </span>
-                  <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">
-                    {new Date(point.created).toLocaleDateString()}
-                  </span>
-                  <p className="font-medium text-sm truncate" title={point.description}>
-                    {point.description}
-                  </p>
+              <div key={point.id} className="flex flex-col group shadow-sm">
+                <div
+                  className="border rounded-t-md px-3 py-2 bg-card flex flex-col sm:flex-row sm:items-center gap-3 hover:bg-accent/10 transition-colors h-auto sm:h-12 border-b-0 data-[state=closed]:border-b data-[state=closed]:rounded-b-md"
+                  data-state={openNotesId === point.id || point.notes ? 'open' : 'closed'}
+                >
+                  <div className="flex items-center gap-2 flex-1 overflow-hidden">
+                    <span className="text-[10px] font-semibold bg-muted px-1.5 py-0.5 rounded shrink-0">
+                      {point.expand?.user_id?.name || point.expand?.user_id?.email || 'Usuário'}
+                    </span>
+                    <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">
+                      {new Date(point.created).toLocaleDateString()}
+                    </span>
+                    <p className="font-medium text-sm truncate" title={point.description}>
+                      {point.description}
+                    </p>
 
-                  {point.files && point.files.length > 0 && (
-                    <div className="flex gap-1 shrink-0 ml-1">
-                      {point.files.map((fileStr, i) => {
-                        const fileUrl = pb.files.getUrl(point, fileStr)
-                        return (
-                          <a
-                            key={i}
-                            href={fileUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            title={`Anexo ${i + 1}`}
-                          >
-                            <Badge
-                              variant="secondary"
-                              className="text-[10px] px-1 py-0 hover:bg-secondary/80 cursor-pointer"
+                    {point.files && point.files.length > 0 && (
+                      <div className="flex gap-1 shrink-0 ml-1">
+                        {point.files.map((fileStr, i) => {
+                          const fileUrl = pb.files.getUrl(point, fileStr) + '?download=1'
+                          return (
+                            <a
+                              key={i}
+                              href={fileUrl}
+                              download={fileStr}
+                              onClick={(e) => e.stopPropagation()}
+                              title={`Baixar Anexo ${i + 1}`}
                             >
-                              <Paperclip className="h-3 w-3" />
-                            </Badge>
-                          </a>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
+                              <Badge
+                                variant="secondary"
+                                className="text-[10px] px-1 py-0 hover:bg-secondary/80 cursor-pointer"
+                              >
+                                <Paperclip className="h-3 w-3" />
+                              </Badge>
+                            </a>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
 
-                <div className="flex items-center gap-2 shrink-0">
-                  <div className="flex items-center space-x-2 bg-background border px-2 py-1 rounded-md">
-                    <Switch
-                      id={`resolved-${point.id}`}
-                      checked={point.resolved}
-                      onCheckedChange={(checked) => toggleResolved(point, checked)}
-                    />
-                    <Label
-                      htmlFor={`resolved-${point.id}`}
-                      className="text-xs cursor-pointer min-w-[70px]"
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 text-xs"
+                      onClick={() => handleOpenNotes(point)}
                     >
-                      {point.resolved ? (
-                        <span className="flex items-center text-emerald-600 font-medium">
-                          <CheckCircle2 className="h-3 w-3 mr-1" /> Resolvido
-                        </span>
-                      ) : (
-                        <span className="flex items-center text-amber-600 font-medium">
-                          <Clock className="h-3 w-3 mr-1" /> Pendente
-                        </span>
-                      )}
-                    </Label>
+                      <MessageSquareText className="h-3 w-3 mr-1.5" />
+                      Notas
+                    </Button>
+                    <div className="flex items-center space-x-2 bg-background border px-2 py-1 rounded-md h-8">
+                      <Switch
+                        id={`resolved-${point.id}`}
+                        checked={point.resolved}
+                        onCheckedChange={(checked) => toggleResolved(point, checked)}
+                      />
+                      <Label
+                        htmlFor={`resolved-${point.id}`}
+                        className="text-xs cursor-pointer min-w-[70px]"
+                      >
+                        {point.resolved ? (
+                          <span className="flex items-center text-emerald-600 font-medium">
+                            <CheckCircle2 className="h-3 w-3 mr-1" /> Resolvido
+                          </span>
+                        ) : (
+                          <span className="flex items-center text-amber-600 font-medium">
+                            <Clock className="h-3 w-3 mr-1" /> Pendente
+                          </span>
+                        )}
+                      </Label>
+                    </div>
                   </div>
                 </div>
+
+                {openNotesId === point.id && (
+                  <div className="p-3 border-x border-b rounded-b-md bg-muted/20 animate-fade-in-down shadow-inner">
+                    <Textarea
+                      value={notesText}
+                      onChange={(e) => setNotesText(e.target.value)}
+                      placeholder="Adicione notas, justificativas ou feedback (visto por ambos)..."
+                      className="mb-2 min-h-[80px]"
+                    />
+                    <div className="flex justify-end gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setOpenNotesId(null)}>
+                        Cancelar
+                      </Button>
+                      <Button size="sm" onClick={saveNotes}>
+                        Salvar Notas
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {point.notes && openNotesId !== point.id && (
+                  <div className="px-3 py-2.5 text-sm bg-muted/10 border-x border-b text-muted-foreground rounded-b-md border-l-4 border-l-primary flex items-start gap-2 shadow-inner">
+                    <MessageSquareText className="h-4 w-4 shrink-0 mt-0.5 opacity-50" />
+                    <div className="whitespace-pre-wrap">{point.notes}</div>
+                  </div>
+                )}
               </div>
             ))}
           </div>

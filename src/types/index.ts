@@ -63,10 +63,22 @@ export interface RevisionPointModel {
   user_id: string
   description: string
   resolved: boolean
+  notes: string
   files?: string[]
   created: string
   updated: string
   expand?: { user_id?: User; product_id?: Product }
+}
+
+export interface ProductProcessModel {
+  id: string
+  product_id: string
+  name: string
+  description: string
+  image?: string
+  order: number
+  created: string
+  updated: string
 }
 
 export interface Product {

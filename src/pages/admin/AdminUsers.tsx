@@ -1,5 +1,4 @@
-import { useState } from 'react'
-import { useApp } from '@/contexts/app-context'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Table,
@@ -28,10 +27,37 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Plus, UserCog } from 'lucide-react'
+import { Skeleton } from '@/components/ui/skeleton'
+import pb from '@/lib/pocketbase/client'
+import { useRealtime } from '@/hooks/use-realtime'
 
 export default function AdminUsers() {
-  const { users } = useApp()
+  const [users, setUsers] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
+
+  const loadUsers = async () => {
+    try {
+      setLoading(true)
+      const records = await pb.collection('users').getFullList({
+        sort: '-created',
+      })
+      setUsers(records)
+    } catch (error) {
+      console.error('Failed to load users:', error)
+      setUsers([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadUsers()
+  }, [])
+
+  useRealtime('users', () => {
+    loadUsers()
+  })
 
   return (
     <div className="space-y-6 animate-fade-in-up">
@@ -98,25 +124,53 @@ export default function AdminUsers() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {users.map((u) => (
-                <TableRow key={u.id}>
-                  <TableCell className="font-medium">{u.name}</TableCell>
-                  <TableCell>{u.email}</TableCell>
-                  <TableCell>{u.role}</TableCell>
-                  <TableCell>
-                    {u.active ? (
-                      <Badge className="bg-emerald-600">Ativo</Badge>
-                    ) : (
-                      <Badge variant="secondary">Inativo</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button variant="ghost" size="icon">
-                      <UserCog className="h-4 w-4" />
-                    </Button>
+              {loading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <TableRow key={i}>
+                    <TableCell>
+                      <Skeleton className="h-4 w-[150px]" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-4 w-[200px]" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-4 w-[100px]" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-6 w-[60px] rounded-full" />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Skeleton className="h-8 w-8 ml-auto rounded-md" />
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : !users || users.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center py-6 text-muted-foreground">
+                    Nenhum usuário encontrado.
                   </TableCell>
                 </TableRow>
-              ))}
+              ) : (
+                users.map((u) => (
+                  <TableRow key={u.id}>
+                    <TableCell className="font-medium">{u.name || '-'}</TableCell>
+                    <TableCell>{u.email}</TableCell>
+                    <TableCell className="capitalize">{u.role || '-'}</TableCell>
+                    <TableCell>
+                      {u.verified ? (
+                        <Badge className="bg-emerald-600">Ativo</Badge>
+                      ) : (
+                        <Badge variant="secondary">Pendente</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button variant="ghost" size="icon">
+                        <UserCog className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>

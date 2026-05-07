@@ -6,6 +6,7 @@ import { StatusBadge } from '../CatalogList'
 import { useAuth } from '@/hooks/use-auth'
 import { FilePlus } from 'lucide-react'
 import { useRef } from 'react'
+import pb from '@/lib/pocketbase/client'
 
 interface Props {
   product: Product

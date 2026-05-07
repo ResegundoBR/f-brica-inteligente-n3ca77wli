@@ -57,12 +57,23 @@ export interface ProductData {
   reviewPoints: ReviewPoint[]
 }
 
+export interface RevisionPointModel {
+  id: string
+  product_id: string
+  user_id: string
+  description: string
+  files?: string[]
+  created: string
+  updated: string
+  expand?: { user_id?: User; product_id?: Product }
+}
+
 export interface Product {
   id: string
   name: string
   description: string
   status: string
-  files: string[]
+  files: any[]
   owner: string
   data: ProductData
   created: string

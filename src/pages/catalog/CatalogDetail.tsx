@@ -33,9 +33,19 @@ export default function CatalogDetail() {
   const [statuses, setStatuses] = useState<ProductStatusModel[]>([])
 
   useEffect(() => {
+    let defaultStatus = ''
     pb.collection('product_statuses')
       .getFullList<ProductStatusModel>()
-      .then(setStatuses)
+      .then((list) => {
+        setStatuses(list)
+        const iniciado = list.find((s) => s.name.toLowerCase() === 'iniciado')
+        if (iniciado) {
+          defaultStatus = iniciado.id
+          if (id === 'novo') {
+            setProduct((p) => (p ? { ...p, status: defaultStatus } : p))
+          }
+        }
+      })
       .catch(console.error)
 
     if (id === 'novo') {
@@ -43,14 +53,15 @@ export default function CatalogDetail() {
         id: '',
         name: '',
         description: '',
-        status: '',
+        status: defaultStatus,
         owner: user?.id || '',
-        processes: [],
-        composition: [],
-        checklist: [],
-        reviewPoints: [],
+        data: {
+          processes: [],
+          composition: [],
+          checklist: [],
+          reviewPoints: [],
+        },
         files: [],
-        data: {},
         created: '',
         updated: '',
       } as any)
@@ -85,11 +96,11 @@ export default function CatalogDetail() {
         if (rascunho) targetStatus = rascunho.id
       }
 
-      const dataToSave = {
+      const dataToSave: any = {
         name: product.name,
         description: product.description,
         status: targetStatus,
-        owner: product.owner || user?.id,
+        owner: product.owner || user?.id || '',
         data: {
           processes: product.data?.processes || [],
           composition: product.data?.composition || [],
@@ -98,7 +109,16 @@ export default function CatalogDetail() {
         },
       }
 
+      const newFiles = (product.files || []).filter((f: any) => f instanceof File)
+      if (newFiles.length > 0) {
+        dataToSave['files+'] = newFiles
+      }
+
       if (id === 'novo') {
+        if (newFiles.length > 0) {
+          dataToSave.files = newFiles
+          delete dataToSave['files+']
+        }
         await pb.collection('products').create(dataToSave)
       } else {
         await pb.collection('products').update(product.id, dataToSave)
@@ -187,7 +207,7 @@ export default function CatalogDetail() {
               <TabGeneral product={product} setProduct={setProduct} />
             </TabsContent>
             <TabsContent value="engenharia" className="m-0">
-              <TabEngineering />
+              <TabEngineering product={product} setProduct={setProduct} />
             </TabsContent>
             <TabsContent value="processos" className="m-0">
               <TabProcesses product={product} setProduct={setProduct} />

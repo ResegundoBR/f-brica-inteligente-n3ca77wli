@@ -1,14 +1,14 @@
-import { useState, useEffect } from 'react'
-import { Product, ProductStatusModel } from '@/types'
+import { useState, useEffect, useRef } from 'react'
+import { Product, ProductStatusModel, RevisionPointModel } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
-import { Check, X, Send, CheckCircle2 } from 'lucide-react'
+import { Send, CheckCircle2, Paperclip } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { useAuth } from '@/hooks/use-auth'
 import pb from '@/lib/pocketbase/client'
+import { useRealtime } from '@/hooks/use-realtime'
 
 export function TabReview({
   product,
@@ -19,45 +19,73 @@ export function TabReview({
 }) {
   const { user: currentUser } = useAuth()
   const { toast } = useToast()
-  const [newPoint, setNewPoint] = useState('')
+  const [newPointDesc, setNewPointDesc] = useState('')
+  const [newPointFiles, setNewPointFiles] = useState<File[]>([])
   const [statuses, setStatuses] = useState<ProductStatusModel[]>([])
+  const [revisionPoints, setRevisionPoints] = useState<RevisionPointModel[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const loadPoints = async () => {
+    if (!product.id || product.id === 'novo') return
+    try {
+      const res = await pb.collection('revision_points').getFullList<RevisionPointModel>({
+        filter: `product_id = "${product.id}"`,
+        sort: '-created',
+        expand: 'user_id',
+      })
+      setRevisionPoints(res)
+    } catch (err) {
+      console.error(err)
+    }
+  }
 
   useEffect(() => {
     pb.collection('product_statuses')
       .getFullList<ProductStatusModel>()
       .then(setStatuses)
       .catch(console.error)
-  }, [])
+
+    loadPoints()
+  }, [product.id])
+
+  useRealtime('revision_points', (e) => {
+    if (e.record.product_id === product.id) {
+      loadPoints()
+    }
+  })
 
   const roleName = currentUser?.expand?.role?.name || currentUser?.role
-  const isReviewer = roleName === 'reviewer' || roleName === 'admin'
-  const isRegistrator = roleName === 'registrator' || roleName === 'admin'
+  const isReviewer = roleName === 'reviewer' || roleName === 'admin' || roleName === 'Administrador'
 
-  const reviewPoints = product.data?.reviewPoints || []
+  const addPoint = async () => {
+    if (!newPointDesc.trim() && newPointFiles.length === 0) return
+    if (!product.id || product.id === 'novo') {
+      toast({
+        title: 'Atenção',
+        description: 'Salve o produto primeiro antes de adicionar pontos de revisão.',
+        variant: 'destructive',
+      })
+      return
+    }
 
-  const addPoint = () => {
-    if (!newPoint.trim()) return
-    setProduct({
-      ...product,
-      data: {
-        ...product.data,
-        reviewPoints: [
-          ...reviewPoints,
-          { id: Date.now().toString(), description: newPoint, resolved: null, observation: '' },
-        ],
-      },
-    })
-    setNewPoint('')
-  }
+    try {
+      const formData = new FormData()
+      formData.append('product_id', product.id)
+      formData.append('user_id', currentUser?.id || '')
+      formData.append('description', newPointDesc)
 
-  const resolvePoint = (id: string, resolved: boolean) => {
-    const newPoints = reviewPoints.map((p: any) => (p.id === id ? { ...p, resolved } : p))
-    setProduct({ ...product, data: { ...product.data, reviewPoints: newPoints } })
-  }
+      newPointFiles.forEach((file) => {
+        formData.append('files', file)
+      })
 
-  const updateObservation = (id: string, observation: string) => {
-    const newPoints = reviewPoints.map((p: any) => (p.id === id ? { ...p, observation } : p))
-    setProduct({ ...product, data: { ...product.data, reviewPoints: newPoints } })
+      await pb.collection('revision_points').create(formData)
+      setNewPointDesc('')
+      setNewPointFiles([])
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      toast({ title: 'Ponto adicionado com sucesso!' })
+    } catch (err) {
+      toast({ title: 'Erro ao adicionar ponto', variant: 'destructive' })
+    }
   }
 
   const updateStatus = async (statusName: string, title: string, desc: string) => {
@@ -66,7 +94,7 @@ export function TabReview({
 
     try {
       const updated = { ...product, status: s.id }
-      if (product.id) {
+      if (product.id && product.id !== 'novo') {
         await pb.collection('products').update(product.id, { status: s.id })
       }
       setProduct(updated)
@@ -78,21 +106,40 @@ export function TabReview({
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {isReviewer && (
-        <div className="bg-slate-50 dark:bg-muted/20 p-4 rounded-lg border space-y-4">
-          <Label className="text-lg font-bold">Área do Revisador</Label>
-          <div className="flex gap-2 max-w-xl">
-            <Input
-              placeholder="Apontar erro ou correção..."
-              value={newPoint}
-              onChange={(e) => setNewPoint(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && addPoint()}
-            />
-            <Button onClick={addPoint} variant="secondary">
-              Adicionar Ponto
+      <div className="bg-slate-50 dark:bg-muted/20 p-4 rounded-lg border space-y-4">
+        <Label className="text-lg font-bold">Adicionar Ponto de Revisão</Label>
+        <div className="flex flex-col gap-2 max-w-xl">
+          <Input
+            placeholder="Apontar erro, correção ou feedback..."
+            value={newPointDesc}
+            onChange={(e) => setNewPointDesc(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && addPoint()}
+          />
+          <div className="flex items-center gap-2 mt-1">
+            <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+              <Paperclip className="mr-2 h-4 w-4" /> Anexar Evidência
             </Button>
+            <input
+              type="file"
+              multiple
+              className="hidden"
+              ref={fileInputRef}
+              onChange={(e) => {
+                if (e.target.files)
+                  setNewPointFiles([...newPointFiles, ...Array.from(e.target.files)])
+              }}
+            />
+            <span className="text-xs text-muted-foreground">
+              {newPointFiles.length} arquivo(s) anexado(s)
+            </span>
           </div>
-          <div className="flex gap-3 pt-4 border-t">
+          <Button onClick={addPoint} variant="secondary" className="w-fit mt-2">
+            Adicionar Ponto
+          </Button>
+        </div>
+
+        {isReviewer && (
+          <div className="flex flex-wrap gap-3 pt-4 border-t mt-4">
             <Button
               onClick={() =>
                 updateStatus(
@@ -104,7 +151,7 @@ export function TabReview({
               variant="outline"
               className="text-amber-600 border-amber-200 hover:bg-amber-50 dark:hover:bg-amber-950"
             >
-              <Send className="mr-2 h-4 w-4" /> Devolver p/ Ajustes (Pendência)
+              <Send className="mr-2 h-4 w-4" /> Devolver p/ Ajustes
             </Button>
             <Button
               onClick={() =>
@@ -115,60 +162,33 @@ export function TabReview({
               <CheckCircle2 className="mr-2 h-4 w-4" /> Aprovar / Validar
             </Button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       <div className="space-y-4">
-        <h3 className="font-medium text-lg">Pontos de Revisão ({reviewPoints.length})</h3>
-        {reviewPoints.length === 0 ? (
+        <h3 className="font-medium text-lg">Pontos de Revisão ({revisionPoints.length})</h3>
+        {revisionPoints.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nenhum ponto de revisão apontado.</p>
         ) : (
           <div className="grid gap-4">
-            {reviewPoints.map((point: any) => (
-              <div
-                key={point.id}
-                className="border rounded-md p-4 bg-card flex flex-col sm:flex-row gap-4"
-              >
-                <div className="flex-1 space-y-2">
-                  <p className="font-medium">{point.description}</p>
-                  {isRegistrator && (
-                    <Textarea
-                      placeholder="Nota / Observação do ajuste..."
-                      className="h-16 resize-none"
-                      value={point.observation}
-                      onChange={(e) => updateObservation(point.id, e.target.value)}
-                    />
-                  )}
-                  {!isRegistrator && point.observation && (
-                    <div className="text-sm bg-muted p-2 rounded">Resp: {point.observation}</div>
-                  )}
+            {revisionPoints.map((point) => (
+              <div key={point.id} className="border rounded-md p-4 bg-card flex flex-col gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-semibold bg-muted px-2 py-1 rounded">
+                    {point.expand?.user_id?.name || point.expand?.user_id?.email || 'Usuário'}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(point.created).toLocaleString()}
+                  </span>
                 </div>
-                {isRegistrator && (
-                  <div className="flex sm:flex-col gap-2 justify-center border-t sm:border-t-0 sm:border-l pt-3 sm:pt-0 sm:pl-4">
-                    <Button
-                      size="sm"
-                      variant={point.resolved === true ? 'default' : 'outline'}
-                      className={point.resolved === true ? 'bg-emerald-600' : ''}
-                      onClick={() => resolvePoint(point.id, true)}
-                    >
-                      <Check className="h-4 w-4 sm:mr-2" />{' '}
-                      <span className="hidden sm:inline">Corrigido</span>
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={point.resolved === false ? 'destructive' : 'outline'}
-                      onClick={() => resolvePoint(point.id, false)}
-                    >
-                      <X className="h-4 w-4 sm:mr-2" />{' '}
-                      <span className="hidden sm:inline">Não Procede</span>
-                    </Button>
-                  </div>
-                )}
-                {!isRegistrator && (
-                  <div className="flex items-center justify-center sm:border-l pl-4">
-                    {point.resolved === true && <Badge className="bg-emerald-600">Corrigido</Badge>}
-                    {point.resolved === false && <Badge variant="destructive">Rejeitado</Badge>}
-                    {point.resolved === null && <Badge variant="outline">Aguardando</Badge>}
+                <p className="font-medium mt-1 text-sm sm:text-base">{point.description}</p>
+                {point.files && point.files.length > 0 && (
+                  <div className="flex gap-2 mt-2 flex-wrap">
+                    {point.files.map((fileStr, i) => (
+                      <Badge key={i} variant="secondary" className="text-xs">
+                        Anexo {i + 1}
+                      </Badge>
+                    ))}
                   </div>
                 )}
               </div>

@@ -5,6 +5,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { StatusBadge } from '../CatalogList'
 import { useAuth } from '@/hooks/use-auth'
 import { ImagePlus } from 'lucide-react'
+import { useRef } from 'react'
 
 interface Props {
   product: Product
@@ -13,6 +14,24 @@ interface Props {
 
 export function TabGeneral({ product, setProduct }: Props) {
   const { user } = useAuth()
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      setProduct({ ...product, files: [...(product.files || []), ...Array.from(e.target.files)] })
+    }
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    if (e.dataTransfer.files) {
+      setProduct({
+        ...product,
+        files: [...(product.files || []), ...Array.from(e.dataTransfer.files)],
+      })
+    }
+  }
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="grid gap-6 md:grid-cols-2">
@@ -32,8 +51,8 @@ export function TabGeneral({ product, setProduct }: Props) {
             <Textarea
               id="details"
               className="min-h-[120px]"
-              value={product.details}
-              onChange={(e) => setProduct({ ...product, details: e.target.value })}
+              value={product.description}
+              onChange={(e) => setProduct({ ...product, description: e.target.value })}
               placeholder="Informações adicionais do produto..."
             />
           </div>
@@ -48,7 +67,19 @@ export function TabGeneral({ product, setProduct }: Props) {
         <div className="space-y-4">
           <Label>Imagens do Produto</Label>
           <div className="grid grid-cols-2 gap-4">
-            <div className="border-2 border-dashed rounded-lg p-4 flex flex-col items-center justify-center text-center h-[200px] hover:bg-muted/50 transition-colors cursor-pointer">
+            <div
+              className="border-2 border-dashed rounded-lg p-4 flex flex-col items-center justify-center text-center h-[200px] hover:bg-muted/50 transition-colors cursor-pointer"
+              onClick={() => fileInputRef.current?.click()}
+              onDrop={handleDrop}
+              onDragOver={(e) => e.preventDefault()}
+            >
+              <input
+                type="file"
+                className="hidden"
+                ref={fileInputRef}
+                multiple
+                onChange={handleFileChange}
+              />
               <ImagePlus className="h-8 w-8 text-muted-foreground mb-2" />
               <span className="text-sm font-medium">Renderização / Vista Explodida</span>
               <span className="text-xs text-muted-foreground mt-1">Arraste ou clique</span>

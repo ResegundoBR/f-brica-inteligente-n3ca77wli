@@ -21,6 +21,24 @@ import { useAuth } from '@/hooks/use-auth'
 export function StatusBadge({ status }: { status?: ProductStatusModel | string }) {
   if (!status) return <Badge variant="secondary">Desconhecido</Badge>
 
+  const statusName = typeof status === 'string' ? status : status.name
+  const nameLower = statusName.toLowerCase()
+
+  if (nameLower === 'iniciado') {
+    return (
+      <Badge className="bg-orange-500 hover:bg-orange-600 text-white border-transparent">
+        {statusName}
+      </Badge>
+    )
+  }
+  if (nameLower === 'validado') {
+    return (
+      <Badge className="bg-green-600 hover:bg-green-700 text-white border-transparent">
+        {statusName}
+      </Badge>
+    )
+  }
+
   if (typeof status === 'string') {
     return <Badge variant="secondary">{status}</Badge>
   }

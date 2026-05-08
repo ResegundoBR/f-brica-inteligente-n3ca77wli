@@ -5,11 +5,38 @@ import { format } from 'date-fns'
 import { Clock, User, Search } from 'lucide-react'
 import { useRealtime } from '@/hooks/use-realtime'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+
+const HighlightText = ({ text, term }: { text: string; term: string }) => {
+  if (!term || !text) return <>{text}</>
+  const regex = new RegExp(`(${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi')
+  const parts = text.split(regex)
+  return (
+    <>
+      {parts.map((part, i) =>
+        regex.test(part) ? (
+          <mark key={i} className="bg-yellow-200 text-yellow-900 rounded-sm px-0.5 font-medium">
+            {part}
+          </mark>
+        ) : (
+          <span key={i}>{part}</span>
+        ),
+      )}
+    </>
+  )
+}
 
 export function TabHistory({ product }: { product: Product }) {
   const [logs, setLogs] = useState<Log[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
+  const [userFilter, setUserFilter] = useState('all')
 
   const fetchLogs = async () => {
     if (!product.id || product.id === 'novo') {
@@ -45,12 +72,23 @@ export function TabHistory({ product }: { product: Product }) {
     return <div className="text-sm text-muted-foreground p-4">Carregando histórico...</div>
   }
 
+  const allUsers = Array.from(
+    new Map(
+      logs.filter((l) => l.expand?.user_id).map((l) => [l.expand!.user_id!.id, l.expand!.user_id!]),
+    ).values(),
+  )
+
   const filteredLogs = logs.filter((log) => {
+    const matchesUser = userFilter === 'all' || log.user_id === userFilter
+    if (!matchesUser) return false
+
     if (!searchTerm) return true
     const term = searchTerm.toLowerCase()
     return (
       log.action.toLowerCase().includes(term) ||
-      (log.expand?.user_id?.name || 'Sistema').toLowerCase().includes(term)
+      (log.expand?.user_id?.name || log.expand?.user_id?.email || 'Sistema')
+        .toLowerCase()
+        .includes(term)
     )
   })
 
@@ -63,14 +101,31 @@ export function TabHistory({ product }: { product: Product }) {
             Acompanhe todas as alterações e atualizações de status deste produto.
           </p>
         </div>
-        <div className="relative w-full sm:w-64 shrink-0">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Buscar no histórico..."
-            className="pl-8"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto shrink-0">
+          {allUsers.length > 0 && (
+            <Select value={userFilter} onValueChange={setUserFilter}>
+              <SelectTrigger className="w-full sm:w-[180px]">
+                <SelectValue placeholder="Filtrar usuário" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os usuários</SelectItem>
+                {allUsers.map((u: any) => (
+                  <SelectItem key={u.id} value={u.id}>
+                    {u.name || u.email}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar no histórico..."
+              className="pl-8"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
         </div>
       </div>
 
@@ -90,7 +145,7 @@ export function TabHistory({ product }: { product: Product }) {
             const dateFormatted = log.created
               ? format(new Date(log.created), 'dd/MM/yyyy HH:mm')
               : 'N/A'
-            const userName = log.expand?.user_id?.name || 'Sistema'
+            const userName = log.expand?.user_id?.name || log.expand?.user_id?.email || 'Sistema'
 
             return (
               <div key={log.id} className="relative">
@@ -103,11 +158,12 @@ export function TabHistory({ product }: { product: Product }) {
                   <p
                     className={`text-sm font-medium ${isValidated ? 'text-green-600 dark:text-green-500' : ''}`}
                   >
-                    {log.action}
+                    <HighlightText text={log.action} term={searchTerm} />
                   </p>
                   <div className="flex items-center gap-4 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1">
-                      <User className="h-3 w-3" /> {userName}
+                      <User className="h-3 w-3" />{' '}
+                      <HighlightText text={userName} term={searchTerm} />
                     </span>
                     <span className="flex items-center gap-1">
                       <Clock className="h-3 w-3" /> {dateFormatted}

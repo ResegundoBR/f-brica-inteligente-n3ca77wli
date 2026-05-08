@@ -32,9 +32,22 @@ interface PendingProcess {
   name: string
   order: number
   description: string
+  color?: string
   imageFiles?: File[]
   imagePreviews?: string[]
 }
+
+const defaultColors: Record<string, string> = {
+  corte: '#22c55e',
+  desbaste: '#facc15',
+  dobra: '#3b82f6',
+  calandra: '#a855f7',
+  solda: '#f97316',
+  'acabamento solda': '#fb923c',
+  furo: '#ec4899',
+  rosca: '#06b6d4',
+}
+const getColorForName = (name: string) => defaultColors[name.toLowerCase()] || '#94a3b8'
 
 export function TabProcesses({
   product,
@@ -125,6 +138,7 @@ export function TabProcesses({
         name,
         order: newOrder,
         description: '',
+        color: getColorForName(name),
       }
       setPendingProcesses([...pendingProcesses, newProc])
       toast({ title: 'Processo adicionado' })
@@ -138,6 +152,7 @@ export function TabProcesses({
         name,
         order: newOrder,
         description: '',
+        color: getColorForName(name),
       })
       setProcesses([...processes, created])
       toast({ title: 'Processo adicionado' })
@@ -151,6 +166,21 @@ export function TabProcesses({
     handleAddProcess(newProcessName.trim())
     setNewProcessName('')
     setShowOtherInput(false)
+  }
+
+  const updateProcessColor = async (id: string, color: string) => {
+    if (isNew && setPendingProcesses) {
+      setPendingProcesses(pendingProcesses.map((p) => (p.id === id ? { ...p, color } : p)))
+      return
+    }
+    try {
+      const updated = await pb
+        .collection('product_processes')
+        .update<ProductProcessModel>(id, { color })
+      setProcesses((prev) => prev.map((p) => (p.id === id ? updated : p)))
+    } catch (err) {
+      toast({ title: 'Erro ao atualizar cor', variant: 'destructive' })
+    }
   }
 
   const updateProcessDesc = async (id: string, desc: string) => {
@@ -382,8 +412,9 @@ export function TabProcesses({
                   onDragOver={handleDragOver}
                   onDrop={(e) => handleDrop(e, idx)}
                   onDragEnd={() => setDraggedIndex(null)}
+                  style={{ borderLeftColor: proc.color || getColorForName(proc.name) }}
                   className={cn(
-                    'border rounded-md bg-card shadow-sm overflow-hidden group transition-all',
+                    'border border-l-4 rounded-md bg-card shadow-sm overflow-hidden group transition-all',
                     draggedIndex === idx ? 'opacity-50 border-primary border-dashed' : '',
                   )}
                 >
@@ -404,6 +435,13 @@ export function TabProcesses({
                     <ProcessDescriptionInput proc={proc} />
 
                     <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                      <input
+                        type="color"
+                        value={proc.color || getColorForName(proc.name)}
+                        onChange={(e) => updateProcessColor(proc.id, e.target.value)}
+                        className="h-9 w-9 p-0.5 rounded border cursor-pointer bg-background"
+                        title="Cor do processo"
+                      />
                       <input
                         type="file"
                         multiple

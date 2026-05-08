@@ -11,6 +11,32 @@ import { useToast } from '@/hooks/use-toast'
 import { useAuth } from '@/hooks/use-auth'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+
+const HighlightText = ({ text, term }: { text: string; term: string }) => {
+  if (!term || !text) return <>{text}</>
+  const regex = new RegExp(`(${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi')
+  const parts = text.split(regex)
+  return (
+    <>
+      {parts.map((part, i) =>
+        regex.test(part) ? (
+          <mark key={i} className="bg-yellow-200 text-yellow-900 rounded-sm px-0.5 font-medium">
+            {part}
+          </mark>
+        ) : (
+          <span key={i}>{part}</span>
+        ),
+      )}
+    </>
+  )
+}
 
 export function TabReview({
   product,
@@ -33,6 +59,7 @@ export function TabReview({
   const [newNoteText, setNewNoteText] = useState<Record<string, string>>({})
   const [isSubmittingNote, setIsSubmittingNote] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
+  const [userFilter, setUserFilter] = useState('all')
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -158,6 +185,14 @@ export function TabReview({
     setOpenNotesId(openNotesId === point.id ? null : point.id)
   }
 
+  const allUsers = Array.from(
+    new Map(
+      [...revisionPoints, ...revisionNotes]
+        .filter((item) => item.expand?.user_id)
+        .map((item) => [item.expand!.user_id!.id, item.expand!.user_id!]),
+    ).values(),
+  )
+
   const saveNote = async (pointId: string) => {
     const text = newNoteText[pointId]
     if (!text?.trim()) return
@@ -272,15 +307,32 @@ export function TabReview({
       <div className="space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <h3 className="font-medium text-lg">Pontos de Revisão ({revisionPoints.length})</h3>
-          {revisionPoints.length > 0 && (
-            <div className="relative w-full sm:w-72 shrink-0">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar em pontos e histórico..."
-                className="pl-8"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
+          {(revisionPoints.length > 0 || revisionNotes.length > 0) && (
+            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto shrink-0">
+              {allUsers.length > 0 && (
+                <Select value={userFilter} onValueChange={setUserFilter}>
+                  <SelectTrigger className="w-full sm:w-[180px]">
+                    <SelectValue placeholder="Filtrar usuário" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos os usuários</SelectItem>
+                    {allUsers.map((u: any) => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.name || u.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              <div className="relative w-full sm:w-72">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar em pontos e histórico..."
+                  className="pl-8"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
             </div>
           )}
         </div>
@@ -290,6 +342,15 @@ export function TabReview({
           <div className="flex flex-col gap-3">
             {revisionPoints
               .filter((point) => {
+                const matchesUser =
+                  userFilter === 'all' ||
+                  point.user_id === userFilter ||
+                  revisionNotes.some(
+                    (n) => n.revision_point_id === point.id && n.user_id === userFilter,
+                  )
+
+                if (!matchesUser) return false
+
                 if (!searchTerm) return true
                 const term = searchTerm.toLowerCase()
                 const pMatch =
@@ -313,6 +374,10 @@ export function TabReview({
                 const allNotes = revisionNotes.filter((n) => n.revision_point_id === point.id)
                 let displayNotes = allNotes
 
+                if (userFilter !== 'all' && point.user_id !== userFilter) {
+                  displayNotes = displayNotes.filter((n) => n.user_id === userFilter)
+                }
+
                 if (searchTerm) {
                   const term = searchTerm.toLowerCase()
                   const pMatch =
@@ -321,7 +386,7 @@ export function TabReview({
                       .toLowerCase()
                       .includes(term)
                   if (!pMatch) {
-                    displayNotes = allNotes.filter(
+                    displayNotes = displayNotes.filter(
                       (n) =>
                         n.content.toLowerCase().includes(term) ||
                         (n.expand?.user_id?.name || n.expand?.user_id?.email || '')
@@ -341,14 +406,21 @@ export function TabReview({
                       data-state={openNotesId === point.id ? 'open' : 'closed'}
                     >
                       <div className="flex items-center gap-2 flex-1 overflow-hidden">
-                        <span className="text-[10px] font-semibold bg-muted px-1.5 py-0.5 rounded shrink-0">
-                          {point.expand?.user_id?.name || point.expand?.user_id?.email || 'Usuário'}
+                        <span className="text-[10px] font-semibold bg-primary/10 text-primary px-1.5 py-0.5 rounded shrink-0">
+                          <HighlightText
+                            text={
+                              point.expand?.user_id?.name ||
+                              point.expand?.user_id?.email ||
+                              'Usuário'
+                            }
+                            term={searchTerm}
+                          />
                         </span>
                         <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">
                           {new Date(point.created).toLocaleDateString()}
                         </span>
                         <p className="font-medium text-sm truncate" title={point.description}>
-                          {point.description}
+                          <HighlightText text={point.description} term={searchTerm} />
                         </p>
 
                         {point.files && point.files.length > 0 && (
@@ -449,9 +521,14 @@ export function TabReview({
                                 <div key={note.id} className="flex flex-col gap-1">
                                   <div className="flex items-center gap-2">
                                     <span className="font-semibold text-xs text-primary">
-                                      {note.expand?.user_id?.name ||
-                                        note.expand?.user_id?.email ||
-                                        'Usuário'}
+                                      <HighlightText
+                                        text={
+                                          note.expand?.user_id?.name ||
+                                          note.expand?.user_id?.email ||
+                                          'Usuário'
+                                        }
+                                        term={searchTerm}
+                                      />
                                     </span>
                                     <span className="text-[10px] text-muted-foreground">
                                       {new Date(note.created).toLocaleString('pt-BR', {
@@ -461,7 +538,7 @@ export function TabReview({
                                     </span>
                                   </div>
                                   <p className="text-sm bg-background border rounded px-3 py-2 text-foreground whitespace-pre-wrap">
-                                    {note.content}
+                                    <HighlightText text={note.content} term={searchTerm} />
                                   </p>
                                 </div>
                               ))

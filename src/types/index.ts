@@ -87,6 +87,7 @@ export interface ProductProcessModel {
   description: string
   image?: string | string[]
   order: number
+  color?: string
   created: string
   updated: string
 }

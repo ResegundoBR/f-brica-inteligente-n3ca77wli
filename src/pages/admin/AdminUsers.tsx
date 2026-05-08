@@ -193,13 +193,14 @@ export default function AdminUsers() {
 
     try {
       const payload: any = {
-        name: formData.name,
-        email: formData.email,
-        role: formData.role,
+        name: formData.name.trim(),
+        email: formData.email.trim(),
+        // PocketBase relation fields require null instead of empty string to clear or skip
+        role: formData.role || null,
         active: formData.active,
         must_change_password: formData.must_change_password,
-        access_start_time: formData.access_start_time,
-        access_end_time: formData.access_end_time,
+        access_start_time: formData.access_start_time || null,
+        access_end_time: formData.access_end_time || null,
         access_days: formData.access_days,
         emailVisibility: true,
       }
@@ -263,10 +264,16 @@ export default function AdminUsers() {
       }
 
       setFieldErrors(fErrors)
+
+      // Ensure all field errors are visible to the user if the generic message is confusing
+      const errorDetails = Object.entries(fErrors)
+        .map(([k, v]) => `${k === 'role' ? 'Função' : k}: ${v}`)
+        .join(', ')
+
       toast({
         title: 'Erro ao salvar',
         description:
-          fErrors.email ||
+          errorDetails ||
           msg ||
           'Não foi possível atualizar o registro. Verifique os dados e tente novamente.',
         variant: 'destructive',
@@ -419,12 +426,18 @@ export default function AdminUsers() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Função / Papel</Label>
+                    <Label className={fieldErrors.role ? 'text-destructive' : ''}>
+                      Função / Papel
+                    </Label>
                     <Select
                       value={formData.role}
                       onValueChange={(v) => setFormData({ ...formData, role: v })}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger
+                        className={
+                          fieldErrors.role ? 'border-destructive focus:ring-destructive' : ''
+                        }
+                      >
                         <SelectValue placeholder="Selecione a função" />
                       </SelectTrigger>
                       <SelectContent>
@@ -435,6 +448,9 @@ export default function AdminUsers() {
                         ))}
                       </SelectContent>
                     </Select>
+                    {fieldErrors.role && (
+                      <p className="text-xs text-destructive">{fieldErrors.role}</p>
+                    )}
                   </div>
                 </div>
 

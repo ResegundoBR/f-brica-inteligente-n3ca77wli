@@ -79,7 +79,11 @@ export default function AdminLogs() {
                       </TableCell>
                       <TableCell className="font-medium">{log?.action || '-'}</TableCell>
                       <TableCell>
-                        {log?.expand?.product_id?.name || log?.product_id || 'N/A'}
+                        {log?.expand?.product_id?.name ||
+                          log?.details?.target_user_name ||
+                          log?.details?.target_user_email ||
+                          log?.product_id ||
+                          'N/A'}
                       </TableCell>
                     </TableRow>
                   ))

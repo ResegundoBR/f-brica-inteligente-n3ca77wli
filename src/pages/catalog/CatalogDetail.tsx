@@ -111,8 +111,8 @@ export default function CatalogDetail() {
   const performSave = async (action: 'draft' | 'review' | 'validate') => {
     if (!product) return
 
-    if (!product.code?.trim()) {
-      toast({ title: 'Código do Produto é obrigatório', variant: 'destructive' })
+    if (!product.code?.trim() || !product.name?.trim()) {
+      toast({ title: 'Código e Nome do Produto são obrigatórios', variant: 'destructive' })
       setShowSaveDialog(false)
       return
     }

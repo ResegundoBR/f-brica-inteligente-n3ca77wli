@@ -56,7 +56,8 @@ export function TabProcesses({
     }
   }
 
-  const displayList = product.id === 'novo' ? pendingProcesses : processes
+  const isNew = !product.id
+  const displayList = isNew ? pendingProcesses : processes
 
   const handleDragStart = (e: React.DragEvent, index: number) => {
     setDraggedIndex(index)
@@ -78,7 +79,7 @@ export function TabProcesses({
 
     const updatedList = newList.map((item, idx) => ({ ...item, order: idx + 1 }))
 
-    if (product.id === 'novo' && setPendingProcesses) {
+    if (isNew && setPendingProcesses) {
       setPendingProcesses(updatedList)
     } else {
       setProcesses(updatedList)
@@ -98,7 +99,7 @@ export function TabProcesses({
   }
 
   const handleAddProcess = async (name: string) => {
-    if (product.id === 'novo' && setPendingProcesses) {
+    if (isNew && setPendingProcesses) {
       const newOrder =
         pendingProcesses.length > 0 ? Math.max(...pendingProcesses.map((p) => p.order)) + 1 : 1
       const newProc = { id: 'temp_' + Date.now(), name, order: newOrder, description: '' }
@@ -130,7 +131,7 @@ export function TabProcesses({
   }
 
   const updateProcessDesc = async (id: string, desc: string) => {
-    if (product.id === 'novo' && setPendingProcesses) {
+    if (isNew && setPendingProcesses) {
       setPendingProcesses(
         pendingProcesses.map((p) => (p.id === id ? { ...p, description: desc } : p)),
       )
@@ -148,7 +149,7 @@ export function TabProcesses({
   }
 
   const updateProcessImage = async (id: string, file: File) => {
-    if (product.id === 'novo' && setPendingProcesses) {
+    if (isNew && setPendingProcesses) {
       const preview = URL.createObjectURL(file)
       setPendingProcesses(
         pendingProcesses.map((p) =>
@@ -173,7 +174,7 @@ export function TabProcesses({
   }
 
   const removeProcessImage = async (id: string) => {
-    if (product.id === 'novo' && setPendingProcesses) {
+    if (isNew && setPendingProcesses) {
       setPendingProcesses(
         pendingProcesses.map((p) =>
           p.id === id ? { ...p, imageFile: null, imagePreview: null } : p,
@@ -195,7 +196,7 @@ export function TabProcesses({
   }
 
   const removeProcess = async (id: string) => {
-    if (product.id === 'novo' && setPendingProcesses) {
+    if (isNew && setPendingProcesses) {
       setPendingProcesses(pendingProcesses.filter((p) => p.id !== id))
       toast({ title: 'Processo removido' })
       return

@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/hooks/use-toast'
-import { getErrorMessage } from '@/lib/pocketbase/errors'
+import { extractFieldErrors, getErrorMessage } from '@/lib/pocketbase/errors'
 import { Factory, Info } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 
@@ -41,7 +41,16 @@ export default function Login() {
         navigate('/')
       }
     } catch (err: any) {
-      const errorMsg = err.status === 400 ? 'Usuário ou senha incorretos.' : getErrorMessage(err)
+      const fErrors = extractFieldErrors(err)
+      const defaultMsg = getErrorMessage(err)
+
+      let errorMsg = defaultMsg
+
+      if (Object.keys(fErrors).length > 0) {
+        errorMsg = Object.values(fErrors).join(', ')
+      } else if (err.status === 400 && defaultMsg === 'Failed to authenticate.') {
+        errorMsg = 'Usuário não encontrado ou senha incorreta.'
+      }
 
       setFormError(errorMsg)
 

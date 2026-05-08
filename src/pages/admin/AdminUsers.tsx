@@ -18,6 +18,17 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -34,7 +45,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { MoreHorizontal, Plus, Pencil, CheckCircle2, XCircle } from 'lucide-react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { MoreHorizontal, Plus, Pencil, CheckCircle2, XCircle, Trash2 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
@@ -56,7 +68,9 @@ export default function AdminUsers() {
   const { toast } = useToast()
   const [users, setUsers] = useState<User[]>([])
   const [roles, setRoles] = useState<Role[]>([])
+  const [logs, setLogs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingLogs, setLoadingLogs] = useState(true)
   const [open, setOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
@@ -94,13 +108,35 @@ export default function AdminUsers() {
     }
   }
 
+  const loadLogs = async () => {
+    try {
+      const records = await pb.collection('activity_logs').getFullList({
+        filter: "action ~ 'USER_'",
+        sort: '-created',
+        expand: 'user_id',
+      })
+      setLogs(records)
+    } catch (error) {
+      console.error('Failed to load logs:', error)
+    } finally {
+      setLoadingLogs(false)
+    }
+  }
+
   useEffect(() => {
     loadUsers()
     loadRoles()
+    loadLogs()
   }, [])
 
   useRealtime('users', () => {
     loadUsers()
+  })
+
+  useRealtime('activity_logs', (e) => {
+    if (e.record.action && String(e.record.action).startsWith('USER_')) {
+      loadLogs()
+    }
   })
 
   const handleEdit = (user: User) => {
@@ -143,7 +179,7 @@ export default function AdminUsers() {
         })
         toast({ title: 'Usuário atualizado com sucesso' })
 
-        if ((emailChanged || roleChanged) && pb.authStore.record?.id) {
+        if (pb.authStore.record?.id) {
           await pb.collection('activity_logs').create({
             user_id: pb.authStore.record.id,
             action: 'USER_UPDATE',
@@ -207,6 +243,32 @@ export default function AdminUsers() {
     }
   }
 
+  const handleDeleteUser = async (userToDelete: User) => {
+    try {
+      await pb.collection('users').delete(userToDelete.id)
+      toast({ title: 'Usuário excluído com sucesso' })
+
+      if (pb.authStore.record?.id) {
+        await pb.collection('activity_logs').create({
+          user_id: pb.authStore.record.id,
+          action: 'USER_DELETE',
+          details: {
+            target_user_id: userToDelete.id,
+            target_user_name: userToDelete.name,
+            target_user_email: userToDelete.email,
+          },
+        })
+      }
+    } catch (error) {
+      console.error(error)
+      toast({
+        title: 'Erro ao excluir',
+        description: getErrorMessage(error),
+        variant: 'destructive',
+      })
+    }
+  }
+
   const handleCreateNew = () => {
     setEditingUser(null)
     setFieldErrors({})
@@ -223,271 +285,402 @@ export default function AdminUsers() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in-up">
-      <div className="flex justify-between items-center">
+    <Tabs defaultValue="users" className="space-y-6 animate-fade-in-up">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold">Gestão de Usuários</h1>
           <p className="text-muted-foreground">Controle de acessos e perfis do sistema.</p>
         </div>
-        <Dialog
-          open={open}
-          onOpenChange={(val) => {
-            setOpen(val)
-            if (!val) setEditingUser(null)
-          }}
-        >
-          <DialogTrigger asChild>
-            <Button onClick={handleCreateNew}>
-              <Plus className="mr-2 h-4 w-4" /> Novo Usuário
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>{editingUser ? 'Editar Usuário' : 'Novo Usuário'}</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className={fieldErrors.name ? 'text-destructive' : ''}>
-                    Nome Completo *
-                  </Label>
-                  <Input
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="Ex: João da Silva"
-                    className={
-                      fieldErrors.name ? 'border-destructive focus-visible:ring-destructive' : ''
-                    }
-                  />
-                  {fieldErrors.name && (
-                    <p className="text-xs text-destructive">{fieldErrors.name}</p>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label className={fieldErrors.email ? 'text-destructive' : ''}>
-                    Email corporativo *
-                  </Label>
-                  <Input
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    placeholder="joao@fabrica.com"
-                    className={
-                      fieldErrors.email ? 'border-destructive focus-visible:ring-destructive' : ''
-                    }
-                  />
-                  {fieldErrors.email && (
-                    <p className="text-xs text-destructive">{fieldErrors.email}</p>
-                  )}
-                </div>
-              </div>
+        <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end">
+          <TabsList>
+            <TabsTrigger value="users">Usuários</TabsTrigger>
+            <TabsTrigger value="logs">Audit Logs</TabsTrigger>
+          </TabsList>
 
-              <div className="space-y-2">
-                <Label>Função / Papel</Label>
-                <Select
-                  value={formData.role}
-                  onValueChange={(v) => setFormData({ ...formData, role: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione a função" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {roles.map((r) => (
-                      <SelectItem key={r.id} value={r.id}>
-                        {r.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-4 border p-4 rounded-md bg-muted/20">
-                <Label className="text-base font-semibold">
-                  Horário e Dias de Acesso (Opcional)
-                </Label>
-                <div className="grid grid-cols-2 gap-4">
+          <Dialog
+            open={open}
+            onOpenChange={(val) => {
+              setOpen(val)
+              if (!val) setEditingUser(null)
+            }}
+          >
+            <DialogTrigger asChild>
+              <Button onClick={handleCreateNew}>
+                <Plus className="mr-2 h-4 w-4" /> Novo Usuário
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>{editingUser ? 'Editar Usuário' : 'Novo Usuário'}</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label className="text-sm">Hora Inicial</Label>
+                    <Label className={fieldErrors.name ? 'text-destructive' : ''}>
+                      Nome Completo *
+                    </Label>
                     <Input
-                      type="time"
-                      value={formData.access_start_time}
-                      onChange={(e) =>
-                        setFormData({ ...formData, access_start_time: e.target.value })
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      placeholder="Ex: João da Silva"
+                      className={
+                        fieldErrors.name ? 'border-destructive focus-visible:ring-destructive' : ''
                       }
                     />
+                    {fieldErrors.name && (
+                      <p className="text-xs text-destructive">{fieldErrors.name}</p>
+                    )}
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-sm">Hora Final</Label>
+                    <Label className={fieldErrors.email ? 'text-destructive' : ''}>
+                      Email corporativo *
+                    </Label>
                     <Input
-                      type="time"
-                      value={formData.access_end_time}
-                      onChange={(e) =>
-                        setFormData({ ...formData, access_end_time: e.target.value })
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      placeholder="joao@fabrica.com"
+                      className={
+                        fieldErrors.email ? 'border-destructive focus-visible:ring-destructive' : ''
                       }
                     />
+                    {fieldErrors.email && (
+                      <p className="text-xs text-destructive">{fieldErrors.email}</p>
+                    )}
                   </div>
                 </div>
-                <div className="space-y-2 pt-2">
-                  <Label className="text-sm">Dias Permitidos</Label>
-                  <div className="grid grid-cols-2 gap-3 pt-1">
-                    {daysOptions.map((d) => (
-                      <div key={d.value} className="flex items-center space-x-2">
-                        <Checkbox
-                          id={`day_${d.value}`}
-                          checked={formData.access_days.includes(d.value)}
-                          onCheckedChange={(c) => {
-                            if (c) {
-                              setFormData({
-                                ...formData,
-                                access_days: [...formData.access_days, d.value],
-                              })
-                            } else {
-                              setFormData({
-                                ...formData,
-                                access_days: formData.access_days.filter((x) => x !== d.value),
-                              })
-                            }
-                          }}
-                        />
-                        <Label
-                          htmlFor={`day_${d.value}`}
-                          className="font-normal text-sm cursor-pointer"
-                        >
-                          {d.label}
-                        </Label>
-                      </div>
-                    ))}
+
+                <div className="space-y-2">
+                  <Label>Função / Papel</Label>
+                  <Select
+                    value={formData.role}
+                    onValueChange={(v) => setFormData({ ...formData, role: v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione a função" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {roles.map((r) => (
+                        <SelectItem key={r.id} value={r.id}>
+                          {r.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-4 border p-4 rounded-md bg-muted/20">
+                  <Label className="text-base font-semibold">
+                    Horário e Dias de Acesso (Opcional)
+                  </Label>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-sm">Hora Inicial</Label>
+                      <Input
+                        type="time"
+                        value={formData.access_start_time}
+                        onChange={(e) =>
+                          setFormData({ ...formData, access_start_time: e.target.value })
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm">Hora Final</Label>
+                      <Input
+                        type="time"
+                        value={formData.access_end_time}
+                        onChange={(e) =>
+                          setFormData({ ...formData, access_end_time: e.target.value })
+                        }
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2 pt-2">
+                    <Label className="text-sm">Dias Permitidos</Label>
+                    <div className="grid grid-cols-2 gap-3 pt-1">
+                      {daysOptions.map((d) => (
+                        <div key={d.value} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`day_${d.value}`}
+                            checked={formData.access_days.includes(d.value)}
+                            onCheckedChange={(c) => {
+                              if (c) {
+                                setFormData({
+                                  ...formData,
+                                  access_days: [...formData.access_days, d.value],
+                                })
+                              } else {
+                                setFormData({
+                                  ...formData,
+                                  access_days: formData.access_days.filter((x) => x !== d.value),
+                                })
+                              }
+                            }}
+                          />
+                          <Label
+                            htmlFor={`day_${d.value}`}
+                            className="font-normal text-sm cursor-pointer"
+                          >
+                            {d.label}
+                          </Label>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="flex items-center justify-between border p-3 rounded-md">
-                <div className="space-y-0.5">
-                  <Label>Usuário Ativo</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Permitir que este usuário acesse o sistema
-                  </p>
+                <div className="flex items-center justify-between border p-3 rounded-md">
+                  <div className="space-y-0.5">
+                    <Label>Usuário Ativo</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Permitir que este usuário acesse o sistema
+                    </p>
+                  </div>
+                  <Switch
+                    checked={formData.active}
+                    onCheckedChange={(v) => setFormData({ ...formData, active: v })}
+                  />
                 </div>
-                <Switch
-                  checked={formData.active}
-                  onCheckedChange={(v) => setFormData({ ...formData, active: v })}
-                />
-              </div>
 
-              <div className="flex items-center justify-between border p-3 rounded-md">
-                <div className="space-y-0.5">
-                  <Label>Forçar troca de senha</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Exigir nova senha no próximo login
-                  </p>
+                <div className="flex items-center justify-between border p-3 rounded-md">
+                  <div className="space-y-0.5">
+                    <Label>Forçar troca de senha</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Exigir nova senha no próximo login
+                    </p>
+                  </div>
+                  <Switch
+                    checked={formData.must_change_password}
+                    onCheckedChange={(v) => setFormData({ ...formData, must_change_password: v })}
+                  />
                 </div>
-                <Switch
-                  checked={formData.must_change_password}
-                  onCheckedChange={(v) => setFormData({ ...formData, must_change_password: v })}
-                />
-              </div>
 
-              <div className="flex justify-end gap-2 pt-4">
-                <Button variant="outline" onClick={() => setOpen(false)}>
-                  Cancelar
-                </Button>
-                <Button onClick={handleSave}>{editingUser ? 'Salvar Alterações' : 'Salvar'}</Button>
+                <div className="flex justify-end gap-2 pt-4">
+                  <Button variant="outline" onClick={() => setOpen(false)}>
+                    Cancelar
+                  </Button>
+                  <Button onClick={handleSave}>
+                    {editingUser ? 'Salvar Alterações' : 'Salvar'}
+                  </Button>
+                </div>
               </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nome</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Função</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Ações</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <TableRow key={i}>
-                    <TableCell>
-                      <Skeleton className="h-4 w-[150px]" />
-                    </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-4 w-[200px]" />
-                    </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-4 w-[100px]" />
-                    </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-6 w-[60px] rounded-full" />
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Skeleton className="h-8 w-8 ml-auto rounded-md" />
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : !users || users.length === 0 ? (
+      <TabsContent value="users" className="mt-0">
+        <Card>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-6 text-muted-foreground">
-                    Nenhum usuário encontrado.
-                  </TableCell>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Função</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
-              ) : (
-                users.map((u) => (
-                  <TableRow key={u.id}>
-                    <TableCell className="font-medium">{u.name || '-'}</TableCell>
-                    <TableCell>{u.email}</TableCell>
-                    <TableCell className="capitalize">{u.expand?.role?.name || '-'}</TableCell>
-                    <TableCell>
-                      {u.active ? (
-                        <Badge className="bg-emerald-600">Ativo</Badge>
-                      ) : (
-                        <Badge variant="destructive">Inativo</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handleEdit(u)}>
-                            <Pencil className="mr-2 h-4 w-4" /> Editar Perfil
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => {
-                              pb.collection('users')
-                                .update(u.id, { active: !u.active })
-                                .catch(console.error)
-                            }}
-                          >
-                            {u.active ? (
-                              <>
-                                <XCircle className="mr-2 h-4 w-4" /> Desativar
-                              </>
-                            ) : (
-                              <>
-                                <CheckCircle2 className="mr-2 h-4 w-4" /> Ativar
-                              </>
-                            )}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <TableRow key={i}>
+                      <TableCell>
+                        <Skeleton className="h-4 w-[150px]" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-4 w-[200px]" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-4 w-[100px]" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-6 w-[60px] rounded-full" />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Skeleton className="h-8 w-8 ml-auto rounded-md" />
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : !users || users.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center py-6 text-muted-foreground">
+                      Nenhum usuário encontrado.
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-    </div>
+                ) : (
+                  users.map((u) => (
+                    <TableRow key={u.id}>
+                      <TableCell className="font-medium">{u.name || '-'}</TableCell>
+                      <TableCell>{u.email}</TableCell>
+                      <TableCell className="capitalize">{u.expand?.role?.name || '-'}</TableCell>
+                      <TableCell>
+                        {u.active ? (
+                          <Badge className="bg-emerald-600">Ativo</Badge>
+                        ) : (
+                          <Badge variant="destructive">Inativo</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end items-center gap-2">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleEdit(u)}>
+                                <Pencil className="mr-2 h-4 w-4" /> Editar Perfil
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  pb.collection('users')
+                                    .update(u.id, { active: !u.active })
+                                    .catch(console.error)
+                                }}
+                              >
+                                {u.active ? (
+                                  <>
+                                    <XCircle className="mr-2 h-4 w-4" /> Desativar
+                                  </>
+                                ) : (
+                                  <>
+                                    <CheckCircle2 className="mr-2 h-4 w-4" /> Ativar
+                                  </>
+                                )}
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Excluir Usuário</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Tem certeza que deseja excluir permanentemente este usuário? Esta
+                                  ação não pode ser desfeita.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                <AlertDialogAction
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                  onClick={() => handleDeleteUser(u)}
+                                >
+                                  Excluir
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </TabsContent>
+
+      <TabsContent value="logs" className="mt-0">
+        <Card>
+          <CardHeader>
+            <CardTitle>Histórico de Alterações de Usuários</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Data/Hora</TableHead>
+                  <TableHead>Responsável</TableHead>
+                  <TableHead>Ação</TableHead>
+                  <TableHead>Detalhes</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loadingLogs ? (
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <TableRow key={i}>
+                      <TableCell>
+                        <Skeleton className="h-4 w-[120px]" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-4 w-[150px]" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-4 w-[100px]" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-4 w-[250px]" />
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : !logs || logs.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center py-6 text-muted-foreground">
+                      Nenhum registro de auditoria encontrado.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  logs.map((log) => (
+                    <TableRow key={log.id}>
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        {new Date(log.created).toLocaleString()}
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {log.expand?.user_id?.name || log.user_id || 'Sistema'}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className={
+                            log.action === 'USER_DELETE'
+                              ? 'border-destructive text-destructive'
+                              : log.action === 'USER_CREATE'
+                                ? 'border-emerald-600 text-emerald-600'
+                                : 'border-blue-600 text-blue-600'
+                          }
+                        >
+                          {log.action}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {log.details?.target_user_name && (
+                          <span className="font-semibold mr-1">{log.details.target_user_name}</span>
+                        )}
+                        {log.action === 'USER_DELETE' && 'foi excluído do sistema.'}
+                        {log.action === 'USER_CREATE' && 'foi criado.'}
+                        {log.action === 'USER_UPDATE' && 'foi atualizado.'}
+                        {log.details?.changes && (
+                          <span className="text-muted-foreground ml-2">
+                            (Alterações:{' '}
+                            {Object.keys(log.details.changes)
+                              .filter((k) => log.details.changes[k] !== undefined)
+                              .join(', ')}
+                            )
+                          </span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </TabsContent>
+    </Tabs>
   )
 }

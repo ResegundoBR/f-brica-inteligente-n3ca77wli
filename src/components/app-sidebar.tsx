@@ -20,6 +20,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from '@/components/ui/sidebar'
 
 const navItems = [
@@ -35,6 +36,7 @@ const navItems = [
 export function AppSidebar() {
   const location = useLocation()
   const { user } = useAuth()
+  const { setOpenMobile } = useSidebar()
 
   const role = user?.expand?.role
   const isSuperAdmin = user?.role === 'admin' || role?.name === 'admin'
@@ -98,7 +100,7 @@ export function AppSidebar() {
                     return (
                       <SidebarMenuItem key={item.title}>
                         <SidebarMenuButton asChild isActive={isActive} tooltip={item.title}>
-                          <Link to={item.url}>
+                          <Link to={item.url} onClick={() => setOpenMobile(false)}>
                             <item.icon />
                             <span>{item.title}</span>
                           </Link>

@@ -69,6 +69,16 @@ onRecordAfterUpdateSuccess((e) => {
       log.set('action', `Produto atualizado: ${changes.join(', ')}`)
       log.set('details', details)
       $app.saveNoValidate(log)
+
+      const ownerId = e.record.getString('owner')
+      if (ownerId && ownerId !== userId) {
+        const notifications = $app.findCollectionByNameOrId('notifications')
+        const notif = new Record(notifications)
+        notif.set('user_id', ownerId)
+        notif.set('message', `O produto "${e.record.getString('name')}" foi atualizado.`)
+        notif.set('read', false)
+        $app.saveNoValidate(notif)
+      }
     }
 
     if (oldStatusId !== newStatusId && newStatusId) {

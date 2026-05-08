@@ -54,7 +54,7 @@ export function TabReview({
     try {
       const res = await pb.collection('revision_notes').getFullList<RevisionNoteModel>({
         filter: `revision_point_id.product_id = "${product.id}"`,
-        sort: 'created',
+        sort: '-created',
         expand: 'user_id',
       })
       setRevisionNotes(res)

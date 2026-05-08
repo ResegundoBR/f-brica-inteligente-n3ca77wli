@@ -294,7 +294,7 @@ export function TabProcesses({
           onChange={(e) => setValue(e.target.value)}
           onBlur={handleBlur}
           placeholder="Detalhes para o processo..."
-          className={cn('h-9 text-sm', isOverflowing ? 'pr-8' : '')}
+          className={cn('h-11 sm:h-9 text-sm', isOverflowing ? 'pr-[48px] sm:pr-8' : '')}
         />
         {isOverflowing && (
           <Dialog>
@@ -302,12 +302,12 @@ export function TabProcesses({
               <Button
                 variant="ghost"
                 size="icon"
-                className="absolute right-1 h-7 w-7 text-muted-foreground hover:text-foreground"
+                className="absolute right-0 top-1/2 -translate-y-1/2 h-[44px] w-[44px] sm:h-7 sm:w-7 sm:right-1 text-muted-foreground hover:text-foreground touch-manipulation"
               >
-                <Maximize2 className="h-3 w-3" />
+                <Maximize2 className="h-4 w-4 sm:h-3 sm:w-3" />
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
+            <DialogContent className="w-[calc(100vw-32px)] max-w-full sm:max-w-md mx-auto overflow-hidden">
               <DialogHeader>
                 <DialogTitle>Processo: {proc.name}</DialogTitle>
               </DialogHeader>

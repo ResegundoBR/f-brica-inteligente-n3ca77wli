@@ -101,7 +101,8 @@ export default function Dashboard() {
   const getStatusInfo = (names: string[], fallbackLabel: string, defaultColor: string) => {
     const st = statuses.find((s) => names.includes(s.name.toLowerCase()))
     const count = st ? products.filter((p) => p.status === st.id).length : 0
-    return { count, color: defaultColor, label: st?.name || fallbackLabel }
+    const percentage = ((count / TARGET) * 100).toFixed(1)
+    return { count, color: defaultColor, label: st?.name || fallbackLabel, percentage }
   }
 
   const kpiIniciado = getStatusInfo(['iniciado', 'rascunho'], 'Iniciado', '#F97316')
@@ -111,6 +112,8 @@ export default function Dashboard() {
 
   const totalProducts = products.length
   const faltam = Math.max(TARGET - totalProducts, 0)
+  const faltamPercentage = ((faltam / TARGET) * 100).toFixed(1)
+  const totalPercentage = ((totalProducts / TARGET) * 100).toFixed(1)
   const today = new Date().getTime()
   const validadoId = statuses.find((s) => s.name?.toLowerCase() === 'validado')?.id
 
@@ -166,7 +169,10 @@ export default function Dashboard() {
         <Card className="border-l-4" style={{ borderLeftColor: '#D946EF' }}>
           <CardContent className="p-4 flex flex-col justify-center">
             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
-              Faltam Cadastrar
+              Faltam Cadastrar{' '}
+              <span className="text-gray-500 dark:text-gray-400 normal-case ml-1">
+                ({faltamPercentage}%)
+              </span>
             </p>
             <h3 className="text-2xl font-bold mt-1" style={{ color: '#D946EF' }}>
               {faltam}
@@ -178,7 +184,10 @@ export default function Dashboard() {
           <Card key={kpi.label} className="border-l-4" style={{ borderLeftColor: kpi.color }}>
             <CardContent className="p-4 flex flex-col justify-center">
               <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
-                {kpi.label}
+                {kpi.label}{' '}
+                <span className="text-gray-500 dark:text-gray-400 normal-case ml-1">
+                  ({kpi.percentage}%)
+                </span>
               </p>
               <h3 className="text-2xl font-bold mt-1" style={{ color: kpi.color }}>
                 {kpi.count}
@@ -190,7 +199,10 @@ export default function Dashboard() {
         <Card className="border-l-4" style={{ borderLeftColor: 'hsl(var(--foreground))' }}>
           <CardContent className="p-4 flex flex-col justify-center">
             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
-              Total
+              Total{' '}
+              <span className="text-gray-500 dark:text-gray-400 normal-case ml-1">
+                ({totalPercentage}%)
+              </span>
             </p>
             <h3 className="text-2xl font-bold mt-1">{totalProducts}</h3>
           </CardContent>

@@ -42,7 +42,9 @@ export function TabComposition({
 
     const reader = new FileReader()
     reader.onload = (event) => {
-      const text = (event.target?.result as string).replace(/^\uFEFF/, '')
+      const result = event.target?.result
+      if (typeof result !== 'string') return
+      const text = result.replace(/^\uFEFF/, '')
       const lines = text.split(/\r?\n/)
       const newItems = []
       const delimiter = lines[0]?.includes(';') ? ';' : ','

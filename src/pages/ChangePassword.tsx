@@ -37,8 +37,10 @@ export default function ChangePassword() {
       return
     }
 
-    if (password.length < 8) {
-      setFieldErrors({ password: 'A senha deve ter no mínimo 8 caracteres.' })
+    if (password.length < 8 || !/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
+      setFieldErrors({
+        password: 'A senha deve conter no mínimo 8 caracteres, uma letra maiúscula e um número.',
+      })
       return
     }
 

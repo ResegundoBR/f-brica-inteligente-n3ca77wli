@@ -33,7 +33,7 @@ export function TabGeneral({ product, setProduct }: Props) {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <div className="space-y-2 md:col-span-1">
           <Label htmlFor="code">
             Código do Produto <span className="text-destructive">*</span>
@@ -45,7 +45,7 @@ export function TabGeneral({ product, setProduct }: Props) {
             onChange={(e) => setProduct({ ...product, code: e.target.value })}
           />
         </div>
-        <div className="space-y-2 md:col-span-2">
+        <div className="space-y-2 md:col-span-3">
           <Label htmlFor="name">
             Nome do Produto <span className="text-destructive">*</span>
           </Label>

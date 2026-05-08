@@ -32,6 +32,7 @@ export default function CatalogDetail() {
   const [showSaveDialog, setShowSaveDialog] = useState(false)
   const [activeTab, setActiveTab] = useState('geral')
   const [statuses, setStatuses] = useState<ProductStatusModel[]>([])
+  const [pendingProcesses, setPendingProcesses] = useState<any[]>([])
 
   useEffect(() => {
     let defaultStatus = ''
@@ -164,7 +165,21 @@ export default function CatalogDetail() {
       }
 
       if (id === 'novo') {
-        await pb.collection('products').create(dataToSave)
+        const createdProduct = await pb.collection('products').create(dataToSave)
+
+        if (pendingProcesses.length > 0) {
+          for (const proc of pendingProcesses) {
+            const formData = new FormData()
+            formData.append('product_id', createdProduct.id)
+            formData.append('name', proc.name)
+            formData.append('description', proc.description || '')
+            formData.append('order', proc.order.toString())
+            if (proc.imageFile) {
+              formData.append('image', proc.imageFile)
+            }
+            await pb.collection('product_processes').create(formData)
+          }
+        }
       } else {
         await pb.collection('products').update(product.id, dataToSave)
       }
@@ -270,7 +285,12 @@ export default function CatalogDetail() {
               <TabEngineering product={product} setProduct={setProduct} />
             </TabsContent>
             <TabsContent value="processos" className="m-0">
-              <TabProcesses product={product} setProduct={setProduct} />
+              <TabProcesses
+                product={product}
+                setProduct={setProduct}
+                pendingProcesses={pendingProcesses}
+                setPendingProcesses={setPendingProcesses}
+              />
             </TabsContent>
             <TabsContent value="composicao" className="m-0">
               <TabComposition product={product} setProduct={setProduct} />

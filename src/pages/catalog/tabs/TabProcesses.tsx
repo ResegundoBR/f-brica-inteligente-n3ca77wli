@@ -19,7 +19,17 @@ const defaultProcessTypes = [
   'Rosca',
 ]
 
-export function TabProcesses({ product }: { product: Product; setProduct: (p: Product) => void }) {
+export function TabProcesses({
+  product,
+  setProduct,
+  pendingProcesses = [],
+  setPendingProcesses,
+}: {
+  product: Product
+  setProduct: (p: Product) => void
+  pendingProcesses?: any[]
+  setPendingProcesses?: (p: any[]) => void
+}) {
   const { toast } = useToast()
   const [processes, setProcesses] = useState<ProductProcessModel[]>([])
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -44,19 +54,18 @@ export function TabProcesses({ product }: { product: Product; setProduct: (p: Pr
     }
   }
 
-  if (!product.id || product.id === 'novo') {
-    return (
-      <div className="p-8 text-center border rounded-lg bg-muted/20 text-muted-foreground animate-fade-in">
-        <p className="font-medium text-lg mb-2">Produto não salvo</p>
-        <p>
-          Salve o produto primeiro (mesmo como rascunho) para gerenciar seus processos de
-          fabricação.
-        </p>
-      </div>
-    )
-  }
+  const displayList = product.id === 'novo' ? pendingProcesses : processes
 
   const handleAddProcess = async (name: string) => {
+    if (product.id === 'novo' && setPendingProcesses) {
+      const newOrder =
+        pendingProcesses.length > 0 ? Math.max(...pendingProcesses.map((p) => p.order)) + 1 : 1
+      const newProc = { id: 'temp_' + Date.now(), name, order: newOrder, description: '' }
+      setPendingProcesses([...pendingProcesses, newProc])
+      toast({ title: 'Processo adicionado' })
+      return
+    }
+
     try {
       const newOrder = processes.length > 0 ? Math.max(...processes.map((p) => p.order)) + 1 : 1
       const created = await pb.collection('product_processes').create<ProductProcessModel>({
@@ -80,6 +89,13 @@ export function TabProcesses({ product }: { product: Product; setProduct: (p: Pr
   }
 
   const updateProcessDesc = async (id: string, desc: string) => {
+    if (product.id === 'novo' && setPendingProcesses) {
+      setPendingProcesses(
+        pendingProcesses.map((p) => (p.id === id ? { ...p, description: desc } : p)),
+      )
+      return
+    }
+
     try {
       const updated = await pb.collection('product_processes').update<ProductProcessModel>(id, {
         description: desc,
@@ -91,6 +107,17 @@ export function TabProcesses({ product }: { product: Product; setProduct: (p: Pr
   }
 
   const updateProcessImage = async (id: string, file: File) => {
+    if (product.id === 'novo' && setPendingProcesses) {
+      const preview = URL.createObjectURL(file)
+      setPendingProcesses(
+        pendingProcesses.map((p) =>
+          p.id === id ? { ...p, imageFile: file, imagePreview: preview } : p,
+        ),
+      )
+      toast({ title: 'Imagem atualizada' })
+      return
+    }
+
     try {
       const formData = new FormData()
       formData.append('image', file)
@@ -105,6 +132,16 @@ export function TabProcesses({ product }: { product: Product; setProduct: (p: Pr
   }
 
   const removeProcessImage = async (id: string) => {
+    if (product.id === 'novo' && setPendingProcesses) {
+      setPendingProcesses(
+        pendingProcesses.map((p) =>
+          p.id === id ? { ...p, imageFile: null, imagePreview: null } : p,
+        ),
+      )
+      toast({ title: 'Imagem removida' })
+      return
+    }
+
     try {
       const updated = await pb.collection('product_processes').update<ProductProcessModel>(id, {
         image: null,
@@ -117,6 +154,12 @@ export function TabProcesses({ product }: { product: Product; setProduct: (p: Pr
   }
 
   const removeProcess = async (id: string) => {
+    if (product.id === 'novo' && setPendingProcesses) {
+      setPendingProcesses(pendingProcesses.filter((p) => p.id !== id))
+      toast({ title: 'Processo removido' })
+      return
+    }
+
     try {
       await pb.collection('product_processes').delete(id)
       setProcesses((prev) => prev.filter((p) => p.id !== id))
@@ -132,7 +175,7 @@ export function TabProcesses({ product }: { product: Product; setProduct: (p: Pr
         <Label>Adicionar Etapa de Processo</Label>
         <div className="flex flex-wrap gap-2">
           {defaultProcessTypes.map((pt) => {
-            const isAdded = processes.some((p) => p.name.toLowerCase() === pt.toLowerCase())
+            const isAdded = displayList.some((p) => p.name.toLowerCase() === pt.toLowerCase())
             return (
               <Button
                 key={pt}
@@ -166,11 +209,11 @@ export function TabProcesses({ product }: { product: Product; setProduct: (p: Pr
         )}
       </div>
 
-      {processes.length > 0 && (
+      {displayList.length > 0 && (
         <div className="space-y-3 pt-4 border-t">
           <Label className="text-base">Fluxo de Processos de Fabricação</Label>
           <div className="flex flex-col gap-2">
-            {processes.map((proc, idx) => (
+            {displayList.map((proc, idx) => (
               <div
                 key={proc.id}
                 className="border rounded-md bg-card shadow-sm overflow-hidden group"
@@ -227,10 +270,10 @@ export function TabProcesses({ product }: { product: Product; setProduct: (p: Pr
                     </div>
                     <div className="space-y-2">
                       <Label className="text-xs text-muted-foreground">Imagem de Referência</Label>
-                      {proc.image ? (
+                      {proc.imagePreview || proc.image ? (
                         <div className="relative w-full aspect-square border rounded-md group/img overflow-hidden bg-background">
                           <img
-                            src={pb.files.getUrl(proc, proc.image)}
+                            src={proc.imagePreview || pb.files.getUrl(proc, proc.image)}
                             alt={proc.name}
                             className="w-full h-full object-cover"
                           />

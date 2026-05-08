@@ -1,12 +1,20 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Product, ProductProcessModel } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import pb from '@/lib/pocketbase/client'
 import { useToast } from '@/hooks/use-toast'
-import { Trash, X, GripVertical, Paperclip } from 'lucide-react'
+import { Trash, X, GripVertical, Paperclip, Maximize2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
+import { Textarea } from '@/components/ui/textarea'
 
 const defaultProcessTypes = [
   'Corte',
@@ -250,6 +258,75 @@ export function TabProcesses({
     return [proc.image]
   }
 
+  const ProcessDescriptionInput = ({ proc }: { proc: any }) => {
+    const inputRef = useRef<HTMLInputElement>(null)
+    const [isOverflowing, setIsOverflowing] = useState(false)
+    const [value, setValue] = useState(proc.description || '')
+
+    const checkOverflow = () => {
+      if (inputRef.current) {
+        setIsOverflowing(inputRef.current.scrollWidth > inputRef.current.clientWidth)
+      }
+    }
+
+    useEffect(() => {
+      setValue(proc.description || '')
+    }, [proc.description])
+
+    useEffect(() => {
+      const timer = setTimeout(checkOverflow, 50)
+      window.addEventListener('resize', checkOverflow)
+      return () => {
+        clearTimeout(timer)
+        window.removeEventListener('resize', checkOverflow)
+      }
+    }, [value])
+
+    const handleBlur = () => {
+      if (value !== proc.description) updateProcessDesc(proc.id, value)
+    }
+
+    return (
+      <div className="flex-1 w-full min-w-[200px] relative flex items-center">
+        <Input
+          ref={inputRef}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={handleBlur}
+          placeholder="Detalhes para o processo..."
+          className={cn('h-9 text-sm', isOverflowing ? 'pr-8' : '')}
+        />
+        {isOverflowing && (
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute right-1 h-7 w-7 text-muted-foreground hover:text-foreground"
+              >
+                <Maximize2 className="h-3 w-3" />
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Processo: {proc.name}</DialogTitle>
+              </DialogHeader>
+              <div className="py-4">
+                <Textarea
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  onBlur={handleBlur}
+                  className="min-h-[150px] resize-y"
+                  placeholder="Detalhes para o processo..."
+                />
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="space-y-3">
@@ -324,14 +401,7 @@ export function TabProcesses({
                       <div className="font-semibold text-sm truncate">{proc.name}</div>
                     </div>
 
-                    <div className="flex-1 w-full min-w-[200px]">
-                      <Input
-                        defaultValue={proc.description}
-                        onBlur={(e) => updateProcessDesc(proc.id, e.target.value)}
-                        placeholder="Detalhes para o processo..."
-                        className="h-9 text-sm"
-                      />
-                    </div>
+                    <ProcessDescriptionInput proc={proc} />
 
                     <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
                       <input

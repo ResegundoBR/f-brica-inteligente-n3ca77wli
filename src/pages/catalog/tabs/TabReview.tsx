@@ -229,9 +229,12 @@ export function TabReview({
         ) : (
           <div className="flex flex-col gap-3">
             {revisionPoints.map((point) => (
-              <div key={point.id} className="flex flex-col group shadow-sm">
+              <div
+                key={point.id}
+                className={`flex flex-col group shadow-sm rounded-md border-l-4 ${point.resolved ? 'border-l-blue-500' : 'border-l-red-500'}`}
+              >
                 <div
-                  className="border rounded-t-md px-3 py-2 bg-card flex flex-col sm:flex-row sm:items-center gap-3 hover:bg-accent/10 transition-colors h-auto sm:h-12 border-b-0 data-[state=closed]:border-b data-[state=closed]:rounded-b-md"
+                  className="border border-l-0 rounded-tr-md px-3 py-2 bg-card flex flex-col sm:flex-row sm:items-center gap-3 hover:bg-accent/10 transition-colors h-auto sm:h-12 border-b-0 data-[state=closed]:border-b data-[state=closed]:rounded-br-md"
                   data-state={openNotesId === point.id || point.notes ? 'open' : 'closed'}
                 >
                   <div className="flex items-center gap-2 flex-1 overflow-hidden">
@@ -305,7 +308,7 @@ export function TabReview({
                 </div>
 
                 {openNotesId === point.id && (
-                  <div className="p-3 border-x border-b rounded-b-md bg-muted/20 animate-fade-in-down shadow-inner">
+                  <div className="p-3 border-x border-b border-l-0 rounded-br-md bg-muted/20 animate-fade-in-down shadow-inner">
                     <Textarea
                       value={notesText}
                       onChange={(e) => setNotesText(e.target.value)}
@@ -324,7 +327,7 @@ export function TabReview({
                 )}
 
                 {point.notes && openNotesId !== point.id && (
-                  <div className="px-3 py-2.5 text-sm bg-muted/10 border-x border-b text-muted-foreground rounded-b-md border-l-4 border-l-primary flex items-start gap-2 shadow-inner">
+                  <div className="px-3 py-2.5 text-sm bg-muted/10 border-x border-b border-l-0 text-muted-foreground rounded-br-md flex items-start gap-2 shadow-inner">
                     <MessageSquareText className="h-4 w-4 shrink-0 mt-0.5 opacity-50" />
                     <div className="whitespace-pre-wrap">{point.notes}</div>
                   </div>

@@ -64,6 +64,7 @@ export default function CatalogDetail() {
           reviewPoints: [],
         },
         files: [],
+        engineering_files: [],
         composition_files: [],
         created: '',
         updated: '',
@@ -148,6 +149,12 @@ export default function CatalogDetail() {
         dataToSave.files = product.files
       } else {
         dataToSave.files = null
+      }
+
+      if (product.engineering_files && product.engineering_files.length > 0) {
+        dataToSave.engineering_files = product.engineering_files
+      } else {
+        dataToSave.engineering_files = null
       }
 
       if (product.composition_files && product.composition_files.length > 0) {

@@ -13,11 +13,14 @@ export function TabEngineering({ product, setProduct }: Props) {
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      setProduct({ ...product, files: [...(product.files || []), ...Array.from(e.target.files)] })
+      setProduct({
+        ...product,
+        engineering_files: [...(product.engineering_files || []), ...Array.from(e.target.files)],
+      })
     }
   }
 
-  const allFiles = product.files || []
+  const allFiles = product.engineering_files || []
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -90,7 +93,7 @@ export function TabEngineering({ product, setProduct }: Props) {
                       onClick={() => {
                         const newFiles = [...allFiles]
                         newFiles.splice(i, 1)
-                        setProduct({ ...product, files: newFiles })
+                        setProduct({ ...product, engineering_files: newFiles })
                       }}
                     >
                       <Trash2 className="h-4 w-4" />

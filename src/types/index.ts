@@ -88,6 +88,7 @@ export interface Product {
   description: string
   status: string
   files: any[]
+  engineering_files?: any[]
   composition_files?: any[]
   owner: string
   data: ProductData

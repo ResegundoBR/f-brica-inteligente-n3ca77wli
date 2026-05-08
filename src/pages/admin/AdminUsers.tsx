@@ -205,16 +205,31 @@ export default function AdminUsers() {
         emailVisibility: true,
       }
 
-      if (formData.password) {
-        payload.password = formData.password
-        payload.passwordConfirm = formData.password
-      }
-
       if (editingUser) {
         const emailChanged = editingUser.email !== formData.email
         const roleChanged = editingUser.role !== formData.role
 
         const savedUser = await pb.collection('users').update(editingUser.id, payload)
+
+        if (formData.password) {
+          try {
+            await pb.send(`/backend/v1/users/${savedUser.id}/password`, {
+              method: 'POST',
+              body: JSON.stringify({
+                password: formData.password,
+                must_change_password: formData.must_change_password,
+              }),
+            })
+          } catch (pwError: unknown) {
+            console.error('Password update failed', pwError)
+            toast({
+              title: 'Erro ao atualizar a senha',
+              description: getErrorMessage(pwError),
+              variant: 'destructive',
+            })
+          }
+        }
+
         toast({ title: 'Usuário atualizado com sucesso' })
 
         if (pb.authStore.record?.id) {
@@ -227,11 +242,17 @@ export default function AdminUsers() {
               changes: {
                 email: emailChanged ? formData.email : undefined,
                 role: roleChanged ? formData.role : undefined,
+                password: formData.password ? 'updated' : undefined,
               },
             },
           })
         }
       } else {
+        if (formData.password) {
+          payload.password = formData.password
+          payload.passwordConfirm = formData.password
+        }
+
         const savedUser = await pb.collection('users').create(payload)
         toast({ title: 'Usuário criado com sucesso' })
 

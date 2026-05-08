@@ -252,7 +252,7 @@ export default function Learning() {
                           {record.description}
                         </p>
                         <div className="pt-3 flex items-center justify-between border-t border-border/40 mt-3">
-                          <span className="text-xs text-muted-foreground/70">
+                          <span className="text-[10px] text-muted-foreground/50">
                             Por: {record.expand?.user_id?.name || 'Usuário'}
                           </span>
 
@@ -261,14 +261,13 @@ export default function Learning() {
                               variant={record.validated ? 'outline' : 'default'}
                               size="sm"
                               className={cn(
-                                'h-5 text-[9px] px-2 py-0',
                                 record.validated
                                   ? 'text-muted-foreground'
                                   : 'bg-blue-600 hover:bg-blue-700 text-white',
                               )}
                               onClick={() => toggleValidation(record.id, !!record.validated)}
                             >
-                              <ShieldCheck className="w-3 h-3 mr-1" />
+                              <ShieldCheck className="w-4 h-4 mr-1" />
                               {record.validated ? 'Desfazer' : 'Validar'}
                             </Button>
                           )}

@@ -10,7 +10,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts'
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
@@ -22,13 +22,13 @@ function Gauge({ value, max }: { value: number; max: number }) {
   const percentage = Math.min(value / max, 1)
   const angle = percentage * 180
 
-  let color = '#22C55E' // Default to Green
+  let color = '#22C55E' // Default to Green (181-242)
   if (value <= 30)
     color = '#EF4444' // Red
   else if (value <= 75)
     color = '#F97316' // Orange
   else if (value <= 120)
-    color = '#A855F7' // Purple
+    color = '#C084FC' // Lilac
   else if (value <= 180) color = '#3B82F6' // Blue
 
   return (
@@ -129,18 +129,27 @@ export default function Dashboard() {
       }
     })
 
-  const userProductCounts = users
-    .map((u) => ({
-      name: u.name || u.email || 'Desconhecido',
-      count: products.filter((p) => p.owner === u.id).length,
-    }))
-    .filter((u) => u.count > 0)
-    .sort((a, b) => b.count - a.count)
+  const last14Days = Array.from({ length: 14 }).map((_, i) => {
+    const d = new Date()
+    d.setDate(d.getDate() - (13 - i))
+    return d.toISOString().split('T')[0]
+  })
+
+  const chartData = last14Days.map((dateStr) => {
+    const count = products.filter((p) => p.updated.startsWith(dateStr)).length
+    const dateObj = new Date(dateStr)
+    // Fix timezone offset for string display
+    dateObj.setMinutes(dateObj.getMinutes() + dateObj.getTimezoneOffset())
+    return {
+      date: dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
+      count,
+    }
+  })
 
   const chartConfig = {
     count: {
-      label: 'Produtos',
-      color: 'hsl(var(--primary))',
+      label: 'Atividades',
+      color: '#22C55E',
     },
   }
 
@@ -154,12 +163,12 @@ export default function Dashboard() {
       </div>
 
       <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
-        <Card className="border-l-4" style={{ borderLeftColor: '#FF00FF' }}>
+        <Card className="border-l-4" style={{ borderLeftColor: '#D946EF' }}>
           <CardContent className="p-4 flex flex-col justify-center">
             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
               Faltam Cadastrar
             </p>
-            <h3 className="text-2xl font-bold mt-1" style={{ color: '#FF00FF' }}>
+            <h3 className="text-2xl font-bold mt-1" style={{ color: '#D946EF' }}>
               {faltam}
             </h3>
           </CardContent>
@@ -202,17 +211,20 @@ export default function Dashboard() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Produtividade da Equipe</CardTitle>
-            <CardDescription>Quantidade de produtos cadastrados por usuário</CardDescription>
+            <CardDescription>Atividades e atualizações nos últimos 14 dias</CardDescription>
           </CardHeader>
           <CardContent className="h-[250px] pt-4">
             <ChartContainer config={chartConfig} className="h-full w-full">
-              <BarChart
-                data={userProductCounts}
-                margin={{ top: 0, right: 0, left: -20, bottom: 0 }}
-              >
+              <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#22C55E" stopOpacity={0.4} />
+                    <stop offset="95%" stopColor="#22C55E" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" />
                 <XAxis
-                  dataKey="name"
+                  dataKey="date"
                   tickLine={false}
                   axisLine={false}
                   tickMargin={8}
@@ -223,8 +235,15 @@ export default function Dashboard() {
                   cursor={{ fill: 'var(--color-secondary)' }}
                   content={<ChartTooltipContent />}
                 />
-                <Bar dataKey="count" fill="var(--color-count)" radius={[4, 4, 0, 0]} />
-              </BarChart>
+                <Area
+                  type="monotone"
+                  dataKey="count"
+                  stroke="#22C55E"
+                  strokeWidth={2}
+                  fillOpacity={1}
+                  fill="url(#colorCount)"
+                />
+              </AreaChart>
             </ChartContainer>
           </CardContent>
         </Card>

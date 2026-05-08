@@ -186,7 +186,7 @@ export default function CatalogList() {
                         <Button variant="ghost" size="sm" asChild>
                           <Link to={`/catalogo/${p.id}`}>Editar</Link>
                         </Button>
-                        {isSuperAdmin && (
+                        {canCreate && (
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
                               <Button
@@ -201,9 +201,9 @@ export default function CatalogList() {
                               <AlertDialogHeader>
                                 <AlertDialogTitle>Excluir produto?</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  Tem certeza que deseja excluir este produto? Esta ação não pode
-                                  ser desfeita.
-                                </AlertDialogDescription>{' '}
+                                  Deseja realmente excluir este produto? Esta ação não pode ser
+                                  desfeita.
+                                </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
                                 <AlertDialogCancel>Cancelar</AlertDialogCancel>

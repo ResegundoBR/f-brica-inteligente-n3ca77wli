@@ -24,7 +24,7 @@ export function TabComposition({
 
   const downloadTemplate = () => {
     const csvContent =
-      'Codigo;Descricao;Quantidade;Medidas\nCOMP-001;Parafuso 10mm;100;10mm x 5mm\nCOMP-002;Porca 10mm;100;10mm'
+      '#;Cód.;Descrição;Qtd.;Medidas\n1;COMP-001;Parafuso 10mm;100;10mm x 5mm\n2;COMP-002;Porca 10mm;100;10mm'
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
     const url = URL.createObjectURL(blob)
@@ -46,6 +46,9 @@ export function TabComposition({
       const lines = text.split('\n')
       const newItems = []
       const delimiter = lines[0]?.includes(';') ? ';' : ','
+      const headerCols = lines[0]?.split(delimiter).map((c) => c.trim().toLowerCase()) || []
+      const hasIndex = headerCols[0] === '#' || headerCols[0] === 'index' || headerCols[0] === 'id'
+      const offset = hasIndex ? 1 : 0
 
       for (let i = 1; i < lines.length; i++) {
         if (!lines[i].trim()) continue
@@ -53,10 +56,10 @@ export function TabComposition({
         if (cols.length >= 2) {
           newItems.push({
             id: Date.now().toString() + i,
-            code: cols[0]?.trim() || '',
-            description: cols[1]?.trim() || '',
-            quantity: parseInt(cols[2]?.trim() || '1') || 1,
-            measurements: cols[3]?.trim() || '',
+            code: cols[offset]?.trim() || '',
+            description: cols[offset + 1]?.trim() || '',
+            quantity: parseInt(cols[offset + 2]?.trim() || '1') || 1,
+            measurements: cols[offset + 3]?.trim() || '',
           })
         }
       }

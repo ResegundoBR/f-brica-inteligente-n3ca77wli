@@ -1,17 +1,33 @@
-import { useEffect, useState, useRef } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { useEffect, useState, useRef, useMemo } from 'react'
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardFooter,
+} from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { useAuth } from '@/hooks/use-auth'
-import { Save, Loader2, Image as ImageIcon, CheckCircle, ShieldCheck } from 'lucide-react'
+import {
+  Save,
+  Loader2,
+  Image as ImageIcon,
+  CheckCircle,
+  ShieldCheck,
+  TrendingUp,
+} from 'lucide-react'
 import { LearningRecord } from '@/types'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { CartesianGrid, Line, LineChart, XAxis } from 'recharts'
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
 
 export default function Learning() {
   const { user: currentUser } = useAuth()
@@ -113,6 +129,49 @@ export default function Learning() {
     }
   }
 
+  const chartData = useMemo(() => {
+    const months = []
+    const now = new Date()
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      months.push({
+        label: d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', ''),
+        year: d.getFullYear(),
+        month: d.getMonth(),
+        registros: 0,
+        validados: 0,
+      })
+    }
+
+    learningRecords.forEach((record) => {
+      const d = new Date(record.created)
+      const target = months.find((m) => m.year === d.getFullYear() && m.month === d.getMonth())
+      if (target) {
+        target.registros++
+        if (record.validated) {
+          target.validados++
+        }
+      }
+    })
+
+    return months.map((m) => ({
+      month: m.label.charAt(0).toUpperCase() + m.label.slice(1),
+      registros: m.registros,
+      validados: m.validados,
+    }))
+  }, [learningRecords])
+
+  const chartConfig = {
+    registros: {
+      label: 'Total de Registros',
+      color: 'hsl(var(--primary))',
+    },
+    validados: {
+      label: 'Validados',
+      color: 'hsl(var(--chart-2))',
+    },
+  }
+
   return (
     <div className="space-y-8 animate-fade-in-up max-w-6xl mx-auto pb-10">
       <div>
@@ -188,120 +247,177 @@ export default function Learning() {
           </CardContent>
         </Card>
 
-        <div className="bg-muted/30 rounded-xl p-6 border shadow-sm h-full min-h-[500px]">
-          <div className="mb-8">
-            <h2 className="text-lg font-semibold text-primary">Histórico de Capacitação</h2>
-            <p className="text-sm text-muted-foreground">
-              Todos os aprendizados documentados da equipe.
-            </p>
-          </div>
-
-          <div className="relative border-l-2 border-border ml-4 md:ml-6 space-y-8 pb-8">
-            {!learningRecords || learningRecords.length === 0 ? (
-              <div className="text-muted-foreground pl-8 text-sm py-4">
-                Nenhum registro encontrado.
-              </div>
-            ) : (
-              learningRecords.map((record) => (
-                <div
-                  key={record.id}
-                  className={cn(
-                    'relative pl-8 md:pl-10 transition-opacity',
-                    !record.validated && 'opacity-60',
-                  )}
+        <div className="space-y-8">
+          <Card>
+            <CardHeader>
+              <CardTitle>Produtividade da Equipe</CardTitle>
+              <CardDescription>
+                Evolução de aprendizados documentados nos últimos 6 meses
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ChartContainer config={chartConfig} className="h-[250px] w-full">
+                <LineChart
+                  accessibilityLayer
+                  data={chartData}
+                  margin={{
+                    left: 12,
+                    right: 12,
+                    top: 12,
+                    bottom: 12,
+                  }}
                 >
+                  <CartesianGrid vertical={false} />
+                  <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
+                  <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+                  <Line
+                    dataKey="registros"
+                    type="monotone"
+                    stroke="var(--color-registros)"
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                  <Line
+                    dataKey="validados"
+                    type="monotone"
+                    stroke="var(--color-validados)"
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                </LineChart>
+              </ChartContainer>
+            </CardContent>
+            <CardFooter>
+              <div className="flex w-full items-start gap-2 text-sm">
+                <div className="grid gap-2">
+                  <div className="flex items-center gap-2 font-medium leading-none">
+                    Tendência de crescimento <TrendingUp className="h-4 w-4" />
+                  </div>
+                  <div className="flex items-center gap-2 leading-none text-muted-foreground">
+                    Comparativo entre registros totais e validados
+                  </div>
+                </div>
+              </div>
+            </CardFooter>
+          </Card>
+
+          <div className="bg-muted/30 rounded-xl p-6 border shadow-sm min-h-[500px]">
+            <div className="mb-8">
+              <h2 className="text-lg font-semibold text-primary">Histórico de Capacitação</h2>
+              <p className="text-sm text-muted-foreground">
+                Todos os aprendizados documentados da equipe.
+              </p>
+            </div>
+
+            <div className="relative border-l-2 border-border ml-4 md:ml-6 space-y-8 pb-8">
+              {!learningRecords || learningRecords.length === 0 ? (
+                <div className="text-muted-foreground pl-8 text-sm py-4">
+                  Nenhum registro encontrado.
+                </div>
+              ) : (
+                learningRecords.map((record) => (
                   <div
+                    key={record.id}
                     className={cn(
-                      'absolute -left-[11px] top-1.5 h-5 w-5 rounded-full flex items-center justify-center ring-4 ring-background',
-                      record.validated ? 'bg-green-500/20' : 'bg-primary/20',
+                      'relative pl-8 md:pl-10 transition-opacity',
+                      !record.validated && 'opacity-60',
                     )}
                   >
                     <div
                       className={cn(
-                        'h-2 w-2 rounded-full',
-                        record.validated ? 'bg-green-600' : 'bg-primary',
+                        'absolute -left-[11px] top-1.5 h-5 w-5 rounded-full flex items-center justify-center ring-4 ring-background',
+                        record.validated ? 'bg-green-500/20' : 'bg-primary/20',
                       )}
-                    />
-                  </div>
-                  <Card
-                    className={cn(
-                      'shadow-sm border-border/60',
-                      record.validated && 'border-green-500/30',
-                    )}
-                  >
-                    <CardContent className="p-0 flex flex-col md:flex-row overflow-hidden">
-                      <div className="p-5 flex-1 space-y-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-                          <div className="flex items-center gap-2">
-                            <h3 className="font-semibold text-lg leading-tight">{record.title}</h3>
-                            {record.validated && (
-                              <Badge
-                                variant="outline"
-                                className="bg-green-50 text-green-700 border-green-200 gap-1 px-1.5"
+                    >
+                      <div
+                        className={cn(
+                          'h-2 w-2 rounded-full',
+                          record.validated ? 'bg-green-600' : 'bg-primary',
+                        )}
+                      />
+                    </div>
+                    <Card
+                      className={cn(
+                        'shadow-sm border-border/60',
+                        record.validated && 'border-green-500/30',
+                      )}
+                    >
+                      <CardContent className="p-0 flex flex-col md:flex-row overflow-hidden">
+                        <div className="p-5 flex-1 space-y-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-semibold text-lg leading-tight">
+                                {record.title}
+                              </h3>
+                              {record.validated && (
+                                <Badge
+                                  variant="outline"
+                                  className="bg-green-50 text-green-700 border-green-200 gap-1 px-1.5"
+                                >
+                                  <CheckCircle className="w-3 h-3" />
+                                  Validado
+                                </Badge>
+                              )}
+                            </div>
+                            <Badge variant="secondary" className="text-xs font-normal">
+                              {new Date(record.created).toLocaleDateString()}
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                            {record.description}
+                          </p>
+                          <div className="pt-3 flex items-center justify-between border-t border-border/40 mt-3">
+                            <span className="text-[10px] text-muted-foreground/50">
+                              Por: {record.expand?.user_id?.name || 'Usuário'}
+                            </span>
+
+                            {isAdminOrRevisor && (
+                              <Button
+                                variant={record.validated ? 'outline' : 'default'}
+                                size="sm"
+                                className={cn(
+                                  record.validated
+                                    ? 'text-muted-foreground'
+                                    : 'bg-blue-600 hover:bg-blue-700 text-white',
+                                )}
+                                onClick={() => toggleValidation(record.id, !!record.validated)}
                               >
-                                <CheckCircle className="w-3 h-3" />
-                                Validado
-                              </Badge>
+                                <ShieldCheck className="w-4 h-4 mr-1" />
+                                {record.validated ? 'Desfazer' : 'Validar'}
+                              </Button>
                             )}
                           </div>
-                          <Badge variant="secondary" className="text-xs font-normal">
-                            {new Date(record.created).toLocaleDateString()}
-                          </Badge>
                         </div>
-                        <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                          {record.description}
-                        </p>
-                        <div className="pt-3 flex items-center justify-between border-t border-border/40 mt-3">
-                          <span className="text-[10px] text-muted-foreground/50">
-                            Por: {record.expand?.user_id?.name || 'Usuário'}
-                          </span>
-
-                          {isAdminOrRevisor && (
-                            <Button
-                              variant={record.validated ? 'outline' : 'default'}
-                              size="sm"
-                              className={cn(
-                                record.validated
-                                  ? 'text-muted-foreground'
-                                  : 'bg-blue-600 hover:bg-blue-700 text-white',
-                              )}
-                              onClick={() => toggleValidation(record.id, !!record.validated)}
-                            >
-                              <ShieldCheck className="w-4 h-4 mr-1" />
-                              {record.validated ? 'Desfazer' : 'Validar'}
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                      {record.evidence && (
-                        <div className="w-full md:w-64 h-48 md:h-auto bg-muted/50 flex items-center justify-center border-t md:border-t-0 md:border-l border-border/60 shrink-0 overflow-hidden">
-                          {record.evidence.match(/\.(jpeg|jpg|gif|png|webp)$/i) != null ? (
-                            <img
-                              src={pb.files.getUrl(record, record.evidence)}
-                              alt="Evidência"
-                              className="w-full h-full object-cover hover:scale-105 transition-transform duration-500 cursor-pointer"
-                              onClick={() =>
-                                window.open(pb.files.getUrl(record, record.evidence), '_blank')
-                              }
-                            />
-                          ) : (
-                            <div
-                              className="flex flex-col items-center justify-center text-muted-foreground p-4 cursor-pointer hover:bg-muted/80 transition-colors w-full h-full"
-                              onClick={() =>
-                                window.open(pb.files.getUrl(record, record.evidence), '_blank')
-                              }
-                            >
-                              <ImageIcon className="h-8 w-8 mb-2 opacity-50" />
-                              <span className="text-xs text-center break-all">Ver anexo</span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                </div>
-              ))
-            )}
+                        {record.evidence && (
+                          <div className="w-full md:w-64 h-48 md:h-auto bg-muted/50 flex items-center justify-center border-t md:border-t-0 md:border-l border-border/60 shrink-0 overflow-hidden">
+                            {record.evidence.match(/\.(jpeg|jpg|gif|png|webp)$/i) != null ? (
+                              <img
+                                src={pb.files.getUrl(record, record.evidence)}
+                                alt="Evidência"
+                                className="w-full h-full object-cover hover:scale-105 transition-transform duration-500 cursor-pointer"
+                                onClick={() =>
+                                  window.open(pb.files.getUrl(record, record.evidence), '_blank')
+                                }
+                              />
+                            ) : (
+                              <div
+                                className="flex flex-col items-center justify-center text-muted-foreground p-4 cursor-pointer hover:bg-muted/80 transition-colors w-full h-full"
+                                onClick={() =>
+                                  window.open(pb.files.getUrl(record, record.evidence), '_blank')
+                                }
+                              >
+                                <ImageIcon className="h-8 w-8 mb-2 opacity-50" />
+                                <span className="text-xs text-center break-all">Ver anexo</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </div>
       </div>

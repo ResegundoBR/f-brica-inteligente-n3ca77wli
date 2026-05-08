@@ -119,7 +119,10 @@ export default function AdminUsers() {
   const handleSave = async () => {
     try {
       if (editingUser) {
-        await pb.collection('users').update(editingUser.id, formData)
+        await pb.collection('users').update(editingUser.id, {
+          ...formData,
+          emailVisibility: true,
+        })
         toast({ title: 'Usuário atualizado com sucesso' })
       } else {
         await pb.collection('users').create({
@@ -127,6 +130,7 @@ export default function AdminUsers() {
           password: 'Password123!',
           passwordConfirm: 'Password123!',
           must_change_password: true,
+          emailVisibility: true,
         })
         toast({ title: 'Usuário criado com sucesso' })
       }

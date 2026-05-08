@@ -262,8 +262,8 @@ export function TabProcesses({
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDrop(e, idx)}
                 className={cn(
-                  "border rounded-md bg-card shadow-sm overflow-hidden group transition-all",
-                  draggedIndex === idx ? "opacity-50 border-primary border-dashed" : ""
+                  'border rounded-md bg-card shadow-sm overflow-hidden group transition-all',
+                  draggedIndex === idx ? 'opacity-50 border-primary border-dashed' : '',
                 )}
               >
                 <div className="flex items-center justify-between p-2 sm:p-3 hover:bg-accent/10 transition-colors">

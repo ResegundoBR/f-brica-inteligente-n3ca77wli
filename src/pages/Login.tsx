@@ -49,7 +49,8 @@ export default function Login() {
             <Info className="h-4 w-4" />
             <AlertDescription className="space-y-2">
               <p>
-                Para seu primeiro acesso use o seu email e a senha inicial: <strong>Skip@Pass</strong>
+                Para seu primeiro acesso use o seu email e a senha inicial:{' '}
+                <strong>Skip@Pass</strong>
               </p>
               <p className="text-xs text-muted-foreground">
                 Link de acesso para novos membros:{' '}

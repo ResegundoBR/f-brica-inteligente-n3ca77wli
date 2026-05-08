@@ -18,7 +18,7 @@ import { TabProcesses } from './tabs/TabProcesses'
 import { TabComposition } from './tabs/TabComposition'
 import { TabChecklist } from './tabs/TabChecklist'
 import { TabReview } from './tabs/TabReview'
-import { ArrowLeftIcon, SaveIcon, SendIcon } from 'lucide-react'
+import { ArrowLeftIcon, SaveIcon, SendIcon, CheckCircle } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
 
@@ -71,21 +71,41 @@ export default function CatalogDetail() {
       pb.collection('products')
         .getOne<Product>(id, { expand: 'status,owner' })
         .then((found) => {
+          const statusName = found.expand?.status?.name?.toLowerCase() || ''
+          const rName = user?.expand?.role?.name?.toLowerCase() || ''
+          const isUserHighLevel =
+            rName.includes('admin') || rName.includes('revis') || rName.includes('administrador')
+
+          if (statusName === 'validado' && !isUserHighLevel) {
+            toast({
+              title: 'Acesso Negado',
+              description: 'Você não tem permissão para editar um produto validado.',
+              variant: 'destructive',
+            })
+            navigate('/catalogo')
+            return
+          }
+
           setProduct({
             ...found,
             data: found.data || {},
           })
-          if (found.expand?.status?.name.toLowerCase() === 'pendencia') setActiveTab('revisao')
+          if (statusName.includes('pendencia') || statusName.includes('pendência'))
+            setActiveTab('revisao')
         })
         .catch(console.error)
     }
-  }, [id, user])
+  }, [id, user, navigate, toast])
+
+  const roleName = user?.expand?.role?.name?.toLowerCase() || ''
+  const isHighLevel =
+    roleName.includes('admin') || roleName.includes('revis') || roleName.includes('administrador')
 
   const handleSaveClick = () => {
     setShowSaveDialog(true)
   }
 
-  const performSave = async (action: 'draft' | 'review') => {
+  const performSave = async (action: 'draft' | 'review' | 'validate') => {
     if (!product) return
 
     if (!product.code?.trim()) {
@@ -97,8 +117,13 @@ export default function CatalogDetail() {
     try {
       let targetStatus = product.status
       if (action === 'review') {
-        const revStatus = statuses.find((s) => s.name.toLowerCase() === 'revisao')
+        const revStatus = statuses.find(
+          (s) => s.name.toLowerCase() === 'revisao' || s.name.toLowerCase() === 'revisão',
+        )
         if (revStatus) targetStatus = revStatus.id
+      } else if (action === 'validate') {
+        const valStatus = statuses.find((s) => s.name.toLowerCase() === 'validado')
+        if (valStatus) targetStatus = valStatus.id
       } else if (id === 'novo') {
         const iniciado = statuses.find((s) => s.name.toLowerCase() === 'iniciado')
         if (iniciado) targetStatus = iniciado.id
@@ -262,6 +287,19 @@ export default function CatalogDetail() {
               <SaveIcon className="mr-2 h-5 w-5" /> Manter como Rascunho
               <span className="ml-auto text-xs opacity-70">Salva e mantém em Andamento</span>
             </Button>
+            {isHighLevel && (
+              <Button
+                variant="default"
+                className="w-full justify-start bg-green-600 hover:bg-green-700 text-white"
+                size="lg"
+                onClick={() => performSave('validate')}
+              >
+                <CheckCircle className="mr-2 h-5 w-5" /> Validar Cadastro
+                <span className="ml-auto text-xs opacity-70">
+                  Finaliza o registro e define como Validado
+                </span>
+              </Button>
+            )}
           </div>
         </DialogContent>
       </Dialog>

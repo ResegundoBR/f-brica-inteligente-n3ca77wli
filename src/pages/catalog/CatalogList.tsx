@@ -113,8 +113,9 @@ export default function CatalogList() {
   )
 
   const role = user?.expand?.role
-  const isSuperAdmin =
-    role?.name?.toLowerCase() === 'admin' || role?.name?.toLowerCase() === 'administrador'
+  const roleName = role?.name?.toLowerCase() || ''
+  const isSuperAdmin = roleName === 'admin' || roleName === 'administrador'
+  const isHighLevel = isSuperAdmin || roleName.includes('revis')
   const canCreate = isSuperAdmin || !!role?.access_catalog || !role
 
   const handleDelete = async (id: string) => {
@@ -183,9 +184,22 @@ export default function CatalogList() {
                     <TableCell>{new Date(p.updated).toLocaleDateString()}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <Button variant="ghost" size="sm" asChild>
-                          <Link to={`/catalogo/${p.id}`}>Editar</Link>
-                        </Button>
+                        {!isHighLevel &&
+                        (p.expand?.status?.name || (p.status as any)?.name || '').toLowerCase() ===
+                          'validado' ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled
+                            title="Produto validado não pode ser editado."
+                          >
+                            Bloqueado
+                          </Button>
+                        ) : (
+                          <Button variant="ghost" size="sm" asChild>
+                            <Link to={`/catalogo/${p.id}`}>Editar</Link>
+                          </Button>
+                        )}
                         {canCreate && (
                           <AlertDialog>
                             <AlertDialogTrigger asChild>

@@ -25,9 +25,7 @@ export function Header() {
   const loadNotifications = async () => {
     if (!user) return
     try {
-      const res = await pb
-        .collection('notifications')
-        .getFullList({ filter: 'read = false', sort: '-created' })
+      const res = await pb.collection('notifications').getFullList({ sort: '-created' })
       setNotifications(res)
     } catch {
       /* intentionally ignored */
@@ -84,7 +82,7 @@ export function Header() {
           <PopoverTrigger asChild>
             <Button variant="ghost" size="icon" className="relative">
               <Bell className="h-5 w-5" />
-              {notifications.length > 0 && (
+              {notifications.some((n) => !n.read) && (
                 <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-destructive" />
               )}
             </Button>
@@ -100,20 +98,33 @@ export function Header() {
                 notifications.map((n) => (
                   <div
                     key={n.id}
-                    className="p-4 border-b last:border-b-0 flex flex-col gap-2 hover:bg-muted/50 transition-colors"
+                    className={`p-4 border-b last:border-b-0 flex flex-col gap-2 hover:bg-muted/50 transition-colors ${n.read ? 'opacity-60' : 'bg-muted/20'}`}
                   >
                     <div className="flex justify-between gap-3">
-                      <div className="flex-1 text-sm">{n.message}</div>
-                      <div className="flex shrink-0 gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 text-muted-foreground hover:text-emerald-600"
-                          onClick={() => markAsRead(n.id)}
-                          title="Marcar como lida"
+                      <div className="flex-1 text-sm flex gap-2">
+                        {!n.read && (
+                          <span className="h-2 w-2 mt-1.5 rounded-full bg-blue-600 shrink-0" />
+                        )}
+                        <span
+                          className={
+                            n.read ? 'text-muted-foreground' : 'font-medium text-foreground'
+                          }
                         >
-                          <CheckCircle className="h-4 w-4" />
-                        </Button>
+                          {n.message}
+                        </span>
+                      </div>
+                      <div className="flex shrink-0 gap-1">
+                        {!n.read && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-muted-foreground hover:text-emerald-600"
+                            onClick={() => markAsRead(n.id)}
+                            title="Marcar como lida"
+                          >
+                            <CheckCircle className="h-4 w-4" />
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="icon"

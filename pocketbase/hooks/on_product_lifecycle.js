@@ -57,7 +57,16 @@ onRecordAfterUpdateSuccess((e) => {
     const notifications = $app.findCollectionByNameOrId('notifications')
     const productName = e.record.getString('name')
 
-    if (newStatusNameLower.includes('revisão') || newStatusNameLower.includes('revisao')) {
+    if (newStatusNameLower === 'validado') {
+      const ownerId = e.record.getString('owner')
+      if (ownerId) {
+        const notif = new Record(notifications)
+        notif.set('user_id', ownerId)
+        notif.set('message', `O produto "${productName}" foi validado com sucesso.`)
+        notif.set('read', false)
+        $app.saveNoValidate(notif)
+      }
+    } else if (newStatusNameLower.includes('revisão') || newStatusNameLower.includes('revisao')) {
       try {
         const roles = $app.findRecordsByFilter(
           'roles',

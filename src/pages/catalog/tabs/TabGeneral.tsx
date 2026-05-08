@@ -3,18 +3,9 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { StatusBadge } from '../CatalogList'
-import { useAuth } from '@/hooks/use-auth'
-import { FilePlus } from 'lucide-react'
+import { FilePlus, X, File as FileIcon } from 'lucide-react'
 import { useRef } from 'react'
 import pb from '@/lib/pocketbase/client'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 
 interface Props {
   product: Product
@@ -22,7 +13,6 @@ interface Props {
 }
 
 export function TabGeneral({ product, setProduct }: Props) {
-  const { user } = useAuth()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -52,6 +42,7 @@ export function TabGeneral({ product, setProduct }: Props) {
               </Label>
               <Input
                 id="code"
+                className="font-bold"
                 value={product.code || ''}
                 onChange={(e) => setProduct({ ...product, code: e.target.value })}
               />
@@ -62,8 +53,9 @@ export function TabGeneral({ product, setProduct }: Props) {
               </Label>
               <Input
                 id="name"
+                className="font-bold uppercase"
                 value={product.name || ''}
-                onChange={(e) => setProduct({ ...product, name: e.target.value })}
+                onChange={(e) => setProduct({ ...product, name: e.target.value.toUpperCase() })}
               />
             </div>
           </div>
@@ -87,12 +79,66 @@ export function TabGeneral({ product, setProduct }: Props) {
 
         <div className="space-y-4">
           <Label>Arquivos do Produto</Label>
-          <div className="grid grid-cols-1 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            {(product.files || []).map((file: any, idx: number) => {
+              const isFileObj = file instanceof File
+              const url = isFileObj
+                ? URL.createObjectURL(file)
+                : pb.files.getUrl(product as any, file)
+
+              const isImage = isFileObj
+                ? file.type.startsWith('image/')
+                : typeof file === 'string' && /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(file)
+
+              let slotLabel = ''
+              if (idx === 0) slotLabel = 'Vista Explodida (Renderizada)'
+              else if (idx === 1) slotLabel = 'Imagem Real'
+              else slotLabel = `Anexo ${idx + 1}`
+
+              return (
+                <div
+                  key={idx}
+                  className="relative rounded-lg border overflow-hidden group aspect-square bg-muted/30"
+                >
+                  {isImage ? (
+                    <img src={url} alt={slotLabel} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex flex-col items-center justify-center text-muted-foreground p-2 pb-8">
+                      <FileIcon className="h-8 w-8 mb-2 opacity-50" />
+                      <span
+                        className="text-[10px] text-center truncate w-full px-1"
+                        title={isFileObj ? file.name : file}
+                      >
+                        {isFileObj ? file.name : file}
+                      </span>
+                    </div>
+                  )}
+                  <div className="absolute bottom-0 inset-x-0 bg-background/90 backdrop-blur-sm py-1.5 px-2 text-[10px] font-medium text-center truncate border-t">
+                    {slotLabel}
+                  </div>
+                  <button
+                    type="button"
+                    className="absolute top-2 right-2 bg-destructive/90 text-destructive-foreground hover:bg-destructive rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      const newFiles = (product.files || []).filter((f) => f !== file)
+                      setProduct({ ...product, files: newFiles })
+                    }}
+                    title="Remover"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              )
+            })}
+
             <div
-              className="border-2 border-dashed rounded-lg p-4 flex flex-col items-center justify-center text-center h-[120px] hover:bg-muted/50 transition-colors cursor-pointer"
+              className="border-2 border-dashed rounded-lg flex flex-col items-center justify-center text-center aspect-square hover:bg-muted/50 transition-colors cursor-pointer"
               onClick={() => fileInputRef.current?.click()}
               onDrop={handleDrop}
               onDragOver={(e) => e.preventDefault()}
+              onDragEnter={(e) => e.preventDefault()}
             >
               <input
                 type="file"
@@ -101,81 +147,9 @@ export function TabGeneral({ product, setProduct }: Props) {
                 multiple
                 onChange={handleFileChange}
               />
-              <FilePlus className="h-8 w-8 text-muted-foreground mb-2" />
-              <span className="text-sm font-medium">Adicionar Arquivo</span>
-              <span className="text-xs text-muted-foreground mt-1">
-                Qualquer formato (PDF, JPG, DWG...)
-              </span>
+              <FilePlus className="h-6 w-6 text-muted-foreground mb-2" />
+              <span className="text-xs font-medium px-2">Adicionar</span>
             </div>
-
-            {(product.files?.length || 0) > 0 && (
-              <div className="rounded-md border mt-2 overflow-hidden">
-                <Table>
-                  <TableHeader className="bg-muted/50">
-                    <TableRow>
-                      <TableHead>Arquivo</TableHead>
-                      <TableHead className="w-[100px]">Tipo</TableHead>
-                      <TableHead className="w-[100px] text-right">Ações</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {(product.files || []).map((file: any, idx: number) => {
-                      const isFileObj = file instanceof File
-                      const name = isFileObj
-                        ? file.name
-                        : typeof file === 'string'
-                          ? file.split('_').slice(0, -1).join('_') || file
-                          : `Arquivo ${idx + 1}`
-                      const extMatch = name.match(/\.([^.]+)$/)
-                      const ext = extMatch ? extMatch[1].toUpperCase() : 'OUTRO'
-                      const url = isFileObj
-                        ? URL.createObjectURL(file)
-                        : pb.files.getUrl(product as any, file)
-
-                      return (
-                        <TableRow key={idx}>
-                          <TableCell>
-                            <a
-                              href={url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-primary hover:underline font-medium flex items-center gap-2"
-                            >
-                              <span className="truncate max-w-[180px]" title={name}>
-                                {name}
-                              </span>
-                              {isFileObj && (
-                                <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded text-[10px] uppercase font-bold">
-                                  Novo
-                                </span>
-                              )}
-                            </a>
-                          </TableCell>
-                          <TableCell>
-                            <span className="bg-muted px-2 py-1 rounded text-xs font-mono">
-                              {ext}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <button
-                              type="button"
-                              className="text-destructive hover:text-destructive/80 text-xs font-medium"
-                              onClick={(e) => {
-                                e.preventDefault()
-                                const newFiles = (product.files || []).filter((f) => f !== file)
-                                setProduct({ ...product, files: newFiles })
-                              }}
-                            >
-                              Remover
-                            </button>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
           </div>
         </div>
       </div>

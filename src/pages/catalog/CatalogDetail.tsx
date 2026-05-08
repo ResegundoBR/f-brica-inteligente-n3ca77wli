@@ -162,7 +162,16 @@ export default function CatalogDetail() {
         await pb.collection('products').update(product.id, dataToSave)
       }
 
-      toast({ title: 'Produto salvo com sucesso!' })
+      if (action === 'validate') {
+        toast({
+          title: 'Produto validado com sucesso!',
+          description: 'O cadastro foi finalizado e bloqueado para edições.',
+          className: 'bg-green-600 text-white border-green-700',
+        })
+      } else {
+        toast({ title: 'Produto salvo com sucesso!' })
+      }
+
       setShowSaveDialog(false)
       navigate('/catalogo')
     } catch (err) {

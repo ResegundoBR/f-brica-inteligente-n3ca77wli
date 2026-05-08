@@ -16,6 +16,7 @@ import Login from './pages/Login'
 import ChangePassword from './pages/ChangePassword'
 import { AuthProvider } from './hooks/use-auth'
 import { AuthGuard } from './components/AuthGuard'
+import { StatusNotifier } from './components/StatusNotifier'
 
 const App = () => (
   <AuthProvider>
@@ -28,7 +29,14 @@ const App = () => (
           <Route path="/change-password" element={<ChangePassword />} />
 
           <Route element={<AuthGuard />}>
-            <Route element={<Layout />}>
+            <Route
+              element={
+                <>
+                  <StatusNotifier />
+                  <Layout />
+                </>
+              }
+            >
               <Route path="/" element={<Dashboard />} />
               <Route path="/catalogo" element={<CatalogList />} />
               <Route path="/catalogo/:id" element={<CatalogDetail />} />

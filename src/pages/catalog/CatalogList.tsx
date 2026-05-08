@@ -17,6 +17,13 @@ import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   Table,
   TableBody,
   TableCell,
@@ -85,6 +92,8 @@ export default function CatalogList() {
   const { user } = useAuth()
   const [products, setProducts] = useState<Product[]>([])
   const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [statuses, setStatuses] = useState<ProductStatusModel[]>([])
 
   const loadData = async () => {
     try {
@@ -100,17 +109,26 @@ export default function CatalogList() {
 
   useEffect(() => {
     loadData()
+    pb.collection('product_statuses')
+      .getFullList<ProductStatusModel>()
+      .then(setStatuses)
+      .catch(() => {})
   }, [])
   useRealtime('products', () => {
     loadData()
   })
 
-  const filtered = products.filter(
-    (p) =>
+  const filtered = products.filter((p) => {
+    const matchesSearch =
       p.name.toLowerCase().includes(search.toLowerCase()) ||
       p.id.toLowerCase().includes(search.toLowerCase()) ||
-      p.code?.toLowerCase().includes(search.toLowerCase()),
-  )
+      p.code?.toLowerCase().includes(search.toLowerCase())
+
+    const matchesStatus =
+      statusFilter === 'all' || p.status === statusFilter || p.expand?.status?.id === statusFilter
+
+    return matchesSearch && matchesStatus
+  })
 
   const role = user?.expand?.role
   const roleName = role?.name?.toLowerCase() || ''
@@ -143,8 +161,8 @@ export default function CatalogList() {
 
       <Card>
         <CardHeader className="py-4">
-          <div className="flex items-center gap-4">
-            <div className="relative flex-1 max-w-sm">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <div className="relative flex-1 w-full max-w-sm">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Buscar por código ou nome..."
@@ -152,6 +170,21 @@ export default function CatalogList() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
+            </div>
+            <div className="w-full sm:w-[200px]">
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Filtrar por status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os Status</SelectItem>
+                  {statuses.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </CardHeader>

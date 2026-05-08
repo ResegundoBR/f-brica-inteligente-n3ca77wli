@@ -78,7 +78,10 @@ export function TabProcesses({
 
   const handleDrop = async (e: React.DragEvent, dropIndex: number) => {
     e.preventDefault()
-    if (draggedIndex === null || draggedIndex === dropIndex) return
+    if (draggedIndex === null || draggedIndex === dropIndex) {
+      setDraggedIndex(null)
+      return
+    }
 
     const newList = [...displayList]
     const [draggedItem] = newList.splice(draggedIndex, 1)
@@ -183,7 +186,7 @@ export function TabProcesses({
     try {
       const formData = new FormData()
       Array.from(files).forEach((file) => {
-        formData.append('image', file)
+        formData.append('image+', file)
       })
 
       const updated = await pb
@@ -301,6 +304,7 @@ export function TabProcesses({
                   onDragStart={(e) => handleDragStart(e, idx)}
                   onDragOver={handleDragOver}
                   onDrop={(e) => handleDrop(e, idx)}
+                  onDragEnd={() => setDraggedIndex(null)}
                   className={cn(
                     'border rounded-md bg-card shadow-sm overflow-hidden group transition-all',
                     draggedIndex === idx ? 'opacity-50 border-primary border-dashed' : '',

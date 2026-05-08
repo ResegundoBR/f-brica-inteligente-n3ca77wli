@@ -40,6 +40,7 @@ import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { useToast } from '@/hooks/use-toast'
 import { Role, User } from '@/types'
+import { extractFieldErrors, getErrorMessage } from '@/lib/pocketbase/errors'
 
 const daysOptions = [
   { label: 'Segunda-feira', value: 1 },
@@ -58,6 +59,7 @@ export default function AdminUsers() {
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   const [formData, setFormData] = useState({
     name: '',
@@ -103,6 +105,7 @@ export default function AdminUsers() {
 
   const handleEdit = (user: User) => {
     setEditingUser(user)
+    setFieldErrors({})
     setFormData({
       name: user.name || '',
       email: user.email,
@@ -117,15 +120,45 @@ export default function AdminUsers() {
   }
 
   const handleSave = async () => {
+    setFieldErrors({})
+
+    if (!formData.name.trim()) {
+      setFieldErrors((prev) => ({ ...prev, name: 'Nome é obrigatório.' }))
+      return
+    }
+
+    if (!/^\S+@\S+\.\S+$/.test(formData.email)) {
+      setFieldErrors((prev) => ({ ...prev, email: 'Formato de e-mail inválido.' }))
+      return
+    }
+
     try {
       if (editingUser) {
-        await pb.collection('users').update(editingUser.id, {
+        const emailChanged = editingUser.email !== formData.email
+        const roleChanged = editingUser.role !== formData.role
+
+        const savedUser = await pb.collection('users').update(editingUser.id, {
           ...formData,
           emailVisibility: true,
         })
         toast({ title: 'Usuário atualizado com sucesso' })
+
+        if ((emailChanged || roleChanged) && pb.authStore.record?.id) {
+          await pb.collection('activity_logs').create({
+            user_id: pb.authStore.record.id,
+            action: 'USER_UPDATE',
+            details: {
+              target_user_id: savedUser.id,
+              target_user_name: savedUser.name,
+              changes: {
+                email: emailChanged ? formData.email : undefined,
+                role: roleChanged ? formData.role : undefined,
+              },
+            },
+          })
+        }
       } else {
-        await pb.collection('users').create({
+        const savedUser = await pb.collection('users').create({
           ...formData,
           password: 'Password123!',
           passwordConfirm: 'Password123!',
@@ -133,16 +166,50 @@ export default function AdminUsers() {
           emailVisibility: true,
         })
         toast({ title: 'Usuário criado com sucesso' })
+
+        if (pb.authStore.record?.id) {
+          await pb.collection('activity_logs').create({
+            user_id: pb.authStore.record.id,
+            action: 'USER_CREATE',
+            details: {
+              target_user_id: savedUser.id,
+              target_user_name: savedUser.name,
+              email: formData.email,
+            },
+          })
+        }
       }
       setOpen(false)
       setEditingUser(null)
-    } catch (error: any) {
-      toast({ title: 'Erro ao salvar', description: error.message, variant: 'destructive' })
+    } catch (error: unknown) {
+      const fErrors = extractFieldErrors(error)
+      const msg = getErrorMessage(error)
+
+      if (
+        fErrors.email &&
+        (fErrors.email.includes('already in use') ||
+          fErrors.email.includes('invalid or already in use') ||
+          fErrors.email.includes('taken') ||
+          fErrors.email.includes('Validation'))
+      ) {
+        fErrors.email = 'Este e-mail já está em uso por outro usuário.'
+      }
+
+      setFieldErrors(fErrors)
+      toast({
+        title: 'Erro ao salvar',
+        description:
+          fErrors.email ||
+          msg ||
+          'Não foi possível atualizar o registro. Verifique os dados e tente novamente.',
+        variant: 'destructive',
+      })
     }
   }
 
   const handleCreateNew = () => {
     setEditingUser(null)
+    setFieldErrors({})
     setFormData({
       name: '',
       email: '',
@@ -181,21 +248,37 @@ export default function AdminUsers() {
             <div className="space-y-4 py-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Nome Completo *</Label>
+                  <Label className={fieldErrors.name ? 'text-destructive' : ''}>
+                    Nome Completo *
+                  </Label>
                   <Input
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     placeholder="Ex: João da Silva"
+                    className={
+                      fieldErrors.name ? 'border-destructive focus-visible:ring-destructive' : ''
+                    }
                   />
+                  {fieldErrors.name && (
+                    <p className="text-xs text-destructive">{fieldErrors.name}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
-                  <Label>Email corporativo *</Label>
+                  <Label className={fieldErrors.email ? 'text-destructive' : ''}>
+                    Email corporativo *
+                  </Label>
                   <Input
                     type="email"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     placeholder="joao@fabrica.com"
+                    className={
+                      fieldErrors.email ? 'border-destructive focus-visible:ring-destructive' : ''
+                    }
                   />
+                  {fieldErrors.email && (
+                    <p className="text-xs text-destructive">{fieldErrors.email}</p>
+                  )}
                 </div>
               </div>
 

@@ -46,7 +46,16 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { MoreHorizontal, Plus, Pencil, CheckCircle2, XCircle, Trash2 } from 'lucide-react'
+import {
+  MoreHorizontal,
+  Plus,
+  Pencil,
+  CheckCircle2,
+  XCircle,
+  Trash2,
+  Eye,
+  EyeOff,
+} from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
@@ -74,11 +83,13 @@ export default function AdminUsers() {
   const [open, setOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  const [showPassword, setShowPassword] = useState(false)
 
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     role: '',
+    password: '',
     active: true,
     must_change_password: false,
     access_start_time: '',
@@ -142,10 +153,12 @@ export default function AdminUsers() {
   const handleEdit = (user: User) => {
     setEditingUser(user)
     setFieldErrors({})
+    setShowPassword(false)
     setFormData({
       name: user.name || '',
       email: user.email,
       role: user.role || '',
+      password: '',
       active: user.active ?? true,
       must_change_password: user.must_change_password || false,
       access_start_time: user.access_start_time || '',
@@ -168,15 +181,39 @@ export default function AdminUsers() {
       return
     }
 
+    if (!editingUser && !formData.password) {
+      setFieldErrors((prev) => ({ ...prev, password: 'Senha é obrigatória para novos usuários.' }))
+      return
+    }
+
+    if (formData.password && formData.password.length < 8) {
+      setFieldErrors((prev) => ({ ...prev, password: 'A senha deve ter no mínimo 8 caracteres.' }))
+      return
+    }
+
     try {
+      const payload: any = {
+        name: formData.name,
+        email: formData.email,
+        role: formData.role,
+        active: formData.active,
+        must_change_password: formData.must_change_password,
+        access_start_time: formData.access_start_time,
+        access_end_time: formData.access_end_time,
+        access_days: formData.access_days,
+        emailVisibility: true,
+      }
+
+      if (formData.password) {
+        payload.password = formData.password
+        payload.passwordConfirm = formData.password
+      }
+
       if (editingUser) {
         const emailChanged = editingUser.email !== formData.email
         const roleChanged = editingUser.role !== formData.role
 
-        const savedUser = await pb.collection('users').update(editingUser.id, {
-          ...formData,
-          emailVisibility: true,
-        })
+        const savedUser = await pb.collection('users').update(editingUser.id, payload)
         toast({ title: 'Usuário atualizado com sucesso' })
 
         if (pb.authStore.record?.id) {
@@ -194,13 +231,7 @@ export default function AdminUsers() {
           })
         }
       } else {
-        const savedUser = await pb.collection('users').create({
-          ...formData,
-          password: 'Password123!',
-          passwordConfirm: 'Password123!',
-          must_change_password: true,
-          emailVisibility: true,
-        })
+        const savedUser = await pb.collection('users').create(payload)
         toast({ title: 'Usuário criado com sucesso' })
 
         if (pb.authStore.record?.id) {
@@ -272,10 +303,12 @@ export default function AdminUsers() {
   const handleCreateNew = () => {
     setEditingUser(null)
     setFieldErrors({})
+    setShowPassword(false)
     setFormData({
       name: '',
       email: '',
       role: '',
+      password: '',
       active: true,
       must_change_password: false,
       access_start_time: '',
@@ -350,23 +383,59 @@ export default function AdminUsers() {
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Função / Papel</Label>
-                  <Select
-                    value={formData.role}
-                    onValueChange={(v) => setFormData({ ...formData, role: v })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione a função" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {roles.map((r) => (
-                        <SelectItem key={r.id} value={r.id}>
-                          {r.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className={fieldErrors.password ? 'text-destructive' : ''}>
+                      Senha {editingUser ? '(deixe em branco para manter)' : '*'}
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        type={showPassword ? 'text' : 'password'}
+                        value={formData.password}
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                        className={
+                          fieldErrors.password
+                            ? 'border-destructive focus-visible:ring-destructive pr-10'
+                            : 'pr-10'
+                        }
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                        onClick={() => setShowPassword(!showPassword)}
+                      >
+                        {showPassword ? (
+                          <EyeOff className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <Eye className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </Button>
+                    </div>
+                    {fieldErrors.password && (
+                      <p className="text-xs text-destructive">{fieldErrors.password}</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Função / Papel</Label>
+                    <Select
+                      value={formData.role}
+                      onValueChange={(v) => setFormData({ ...formData, role: v })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione a função" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {roles.map((r) => (
+                          <SelectItem key={r.id} value={r.id}>
+                            {r.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
 
                 <div className="space-y-4 border p-4 rounded-md bg-muted/20">

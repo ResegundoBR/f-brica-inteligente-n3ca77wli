@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Navigate } from 'react-router-dom'
 import pb from '@/lib/pocketbase/client'
 import { useAuth } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
@@ -75,8 +75,7 @@ export default function ChangePassword() {
 
   // Ensure unauthenticated users cannot access this page
   if (!user && !loading) {
-    navigate('/login')
-    return null
+    return <Navigate to="/login" replace />
   }
 
   return (

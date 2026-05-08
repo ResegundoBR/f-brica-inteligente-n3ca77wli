@@ -7,7 +7,8 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/hooks/use-toast'
 import { getErrorMessage } from '@/lib/pocketbase/errors'
-import { Factory } from 'lucide-react'
+import { Factory, Info } from 'lucide-react'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -44,6 +45,12 @@ export default function Login() {
           <CardDescription>Acesse sua conta para continuar</CardDescription>
         </CardHeader>
         <CardContent>
+          <Alert className="mb-6 bg-muted/50 text-left">
+            <Info className="h-4 w-4" />
+            <AlertDescription>
+              Para seu primeiro acesso use o seu email e na senha use <strong>Skip@Pass</strong>
+            </AlertDescription>
+          </Alert>
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">E-mail</Label>

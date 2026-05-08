@@ -42,15 +42,33 @@ export function TabComposition({
 
     const reader = new FileReader()
     reader.onload = (event) => {
-      const text = event.target?.result as string
-      const lines = text.split('\n')
+      const text = (event.target?.result as string).replace(/^\uFEFF/, '')
+      const lines = text.split(/\r?\n/)
       const newItems = []
       const delimiter = lines[0]?.includes(';') ? ';' : ','
       const headerCols = lines[0]?.split(delimiter).map((c) => c.trim().toLowerCase()) || []
-      const hasIndex = headerCols[0] === '#' || headerCols[0] === 'index' || headerCols[0] === 'id'
+
+      const hasIndex =
+        headerCols[0] === '#' ||
+        headerCols[0] === 'nº' ||
+        headerCols[0] === 'index' ||
+        headerCols[0] === 'id' ||
+        headerCols[0] === 'item' ||
+        headerCols.length >= 5
+
       const offset = hasIndex ? 1 : 0
 
-      for (let i = 1; i < lines.length; i++) {
+      const isHeaderRow = headerCols.some(
+        (c) =>
+          c.includes('cód') ||
+          c.includes('descri') ||
+          c.includes('qtd') ||
+          c.includes('medida') ||
+          c === '#',
+      )
+      const startIdx = isHeaderRow ? 1 : 0
+
+      for (let i = startIdx; i < lines.length; i++) {
         if (!lines[i].trim()) continue
         const cols = lines[i].split(delimiter)
         if (cols.length >= 2) {

@@ -17,26 +17,17 @@ export function TabEngineering({ product, setProduct }: Props) {
     }
   }
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    if (e.dataTransfer.files) {
-      setProduct({
-        ...product,
-        files: [...(product.files || []), ...Array.from(e.dataTransfer.files)],
-      })
-    }
-  }
-
   const allFiles = product.files || []
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div
-        className="border-2 border-dashed rounded-lg p-8 flex flex-col items-center justify-center text-center bg-muted/30 cursor-pointer hover:bg-muted/50"
-        onClick={() => fileInputRef.current?.click()}
-        onDrop={handleDrop}
-        onDragOver={(e) => e.preventDefault()}
-      >
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-muted/20 p-4 rounded-lg border">
+        <div>
+          <h3 className="text-lg font-medium">Arquivos Técnicos</h3>
+          <p className="text-sm text-muted-foreground">
+            Anexe manuais, PDFs, arquivos SolidWorks (.sldprt, .sldasm).
+          </p>
+        </div>
         <input
           type="file"
           className="hidden"
@@ -44,19 +35,14 @@ export function TabEngineering({ product, setProduct }: Props) {
           multiple
           onChange={handleFileChange}
         />
-        <UploadCloud className="h-10 w-10 text-muted-foreground mb-4" />
-        <h3 className="text-lg font-medium mb-1">Importar Arquivos Técnicos</h3>
-        <p className="text-sm text-muted-foreground max-w-sm mb-4">
-          Arraste e solte manuais, PDFs, arquivos SolidWorks (.sldprt, .sldasm) aqui.
-        </p>
-        <Button variant="secondary" type="button">
-          Selecionar Arquivos
+        <Button onClick={() => fileInputRef.current?.click()} className="shrink-0">
+          <UploadCloud className="mr-2 h-4 w-4" /> Selecionar Arquivos
         </Button>
       </div>
 
       {allFiles.length > 0 && (
         <div className="space-y-4">
-          <h4 className="font-medium">Arquivos Anexados</h4>
+          <h4 className="font-medium">Arquivos Anexados ({allFiles.length})</h4>
           <div className="grid gap-3">
             {allFiles.map((file: any, i: number) => (
               <div

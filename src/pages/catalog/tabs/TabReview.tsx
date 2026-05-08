@@ -143,14 +143,19 @@ export function TabReview({
     <div className="space-y-6 animate-fade-in">
       <div className="bg-slate-50 dark:bg-muted/20 p-4 rounded-lg border space-y-4">
         <Label className="text-lg font-bold">Adicionar Ponto de Revisão</Label>
-        <div className="flex flex-col gap-2 max-w-xl">
+        <div className="flex flex-col gap-3 max-w-xl">
           <Input
             placeholder="Apontar erro, correção ou feedback..."
             value={newPointDesc}
             onChange={(e) => setNewPointDesc(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && addPoint()}
           />
-          <div className="flex items-center gap-2 mt-1">
+
+          <div className="flex items-center gap-3">
+            <Button onClick={addPoint} variant="default" size="sm">
+              Adicionar Ponto
+            </Button>
+
             <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
               <Paperclip className="mr-2 h-4 w-4" /> Anexar Evidência
             </Button>
@@ -165,6 +170,7 @@ export function TabReview({
               }}
             />
           </div>
+
           {newPointFiles.length > 0 && (
             <div className="flex flex-wrap gap-2 mt-1">
               {newPointFiles.map((file, idx) => (
@@ -187,9 +193,6 @@ export function TabReview({
               ))}
             </div>
           )}
-          <Button onClick={addPoint} variant="secondary" className="w-fit mt-2">
-            Adicionar Ponto
-          </Button>
         </div>
 
         {isReviewer && (

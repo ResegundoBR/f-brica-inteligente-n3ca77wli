@@ -21,13 +21,31 @@ export default function Login() {
     e.preventDefault()
     setLoading(true)
     try {
-      await pb.collection('users').authWithPassword(email, password)
-      navigate('/')
+      const authData = await pb.collection('users').authWithPassword(email, password)
+
+      if (!authData.record.active) {
+        pb.authStore.clear()
+        toast({
+          variant: 'destructive',
+          title: 'Acesso Negado',
+          description: 'Sua conta está inativa. Entre em contato com o administrador.',
+        })
+        return
+      }
+
+      if (authData.record.must_change_password) {
+        navigate('/change-password')
+      } else {
+        navigate('/')
+      }
     } catch (err: any) {
       toast({
         variant: 'destructive',
         title: 'Erro ao fazer login',
-        description: getErrorMessage(err),
+        description:
+          err.status === 400
+            ? 'Credenciais inválidas. Verifique seu e-mail e senha.'
+            : getErrorMessage(err),
       })
     } finally {
       setLoading(false)

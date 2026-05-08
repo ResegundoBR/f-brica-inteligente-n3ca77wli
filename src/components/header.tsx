@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Bell, Search, UserCircle, CheckCircle } from 'lucide-react'
+import { Bell, Search, UserCircle, CheckCircle, Trash2 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { SidebarTrigger } from '@/components/ui/sidebar'
@@ -15,6 +15,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { useAuth } from '@/hooks/use-auth'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
+import { formatDistanceToNow } from 'date-fns'
+import { ptBR } from 'date-fns/locale'
 
 export function Header() {
   const { user, signOut } = useAuth()
@@ -43,6 +45,15 @@ export function Header() {
   const markAsRead = async (id: string) => {
     try {
       await pb.collection('notifications').update(id, { read: true })
+      setNotifications((prev) => prev.filter((n) => n.id !== id))
+    } catch {
+      /* intentionally ignored */
+    }
+  }
+
+  const deleteNotification = async (id: string) => {
+    try {
+      await pb.collection('notifications').delete(id)
       setNotifications((prev) => prev.filter((n) => n.id !== id))
     } catch {
       /* intentionally ignored */
@@ -89,17 +100,39 @@ export function Header() {
                 notifications.map((n) => (
                   <div
                     key={n.id}
-                    className="p-4 border-b last:border-b-0 flex gap-3 hover:bg-muted/50 transition-colors"
+                    className="p-4 border-b last:border-b-0 flex flex-col gap-2 hover:bg-muted/50 transition-colors"
                   >
-                    <div className="flex-1 text-sm">{n.message}</div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6 shrink-0 text-muted-foreground hover:text-emerald-600"
-                      onClick={() => markAsRead(n.id)}
-                    >
-                      <CheckCircle className="h-4 w-4" />
-                    </Button>
+                    <div className="flex justify-between gap-3">
+                      <div className="flex-1 text-sm">{n.message}</div>
+                      <div className="flex shrink-0 gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-muted-foreground hover:text-emerald-600"
+                          onClick={() => markAsRead(n.id)}
+                          title="Marcar como lida"
+                        >
+                          <CheckCircle className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                          onClick={() => deleteNotification(n.id)}
+                          title="Excluir notificação"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {n.created
+                        ? formatDistanceToNow(new Date(n.created), {
+                            addSuffix: true,
+                            locale: ptBR,
+                          })
+                        : ''}
+                    </div>
                   </div>
                 ))
               )}

@@ -9,18 +9,6 @@ onRecordAfterCreateSuccess((e) => {
     $app.saveNoValidate(log)
 
     const product = $app.findRecordById('products', e.record.getString('product_id'))
-    const ownerId = product.getString('owner')
-    if (ownerId && ownerId !== userId) {
-      const notifications = $app.findCollectionByNameOrId('notifications')
-      const notif = new Record(notifications)
-      notif.set('user_id', ownerId)
-      notif.set(
-        'message',
-        `Um novo processo "${e.record.getString('name')}" foi adicionado ao produto "${product.getString('name')}".`,
-      )
-      notif.set('read', false)
-      $app.saveNoValidate(notif)
-    }
   } catch (err) {
     $app.logger().error('Error logging process create', 'error', String(err))
   }
@@ -60,20 +48,6 @@ onRecordAfterUpdateSuccess((e) => {
       log.set('details', details)
 
       $app.saveNoValidate(log)
-
-      const product = $app.findRecordById('products', e.record.getString('product_id'))
-      const ownerId = product.getString('owner')
-      if (ownerId && ownerId !== userId) {
-        const notifications = $app.findCollectionByNameOrId('notifications')
-        const notif = new Record(notifications)
-        notif.set('user_id', ownerId)
-        notif.set(
-          'message',
-          `O processo "${e.record.getString('name')}" do produto "${product.getString('name')}" foi atualizado.`,
-        )
-        notif.set('read', false)
-        $app.saveNoValidate(notif)
-      }
     }
   } catch (err) {
     $app.logger().error('Error logging process update', 'error', String(err))

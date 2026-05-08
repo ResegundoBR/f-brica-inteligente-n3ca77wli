@@ -75,7 +75,7 @@ export default function AdminLogs() {
                         {log?.created ? new Date(log.created).toLocaleString() : '-'}
                       </TableCell>
                       <TableCell>
-                        {log?.expand?.user_id?.name || log?.user_id || 'Sistema'}
+                        {log?.expand?.user_id?.name || log?.expand?.user_id?.email || 'Sistema'}
                       </TableCell>
                       <TableCell className="font-medium">{log?.action || '-'}</TableCell>
                       <TableCell>

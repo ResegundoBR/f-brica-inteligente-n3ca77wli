@@ -3,7 +3,8 @@ onRecordAfterCreateSuccess((e) => {
     const logs = $app.findCollectionByNameOrId('activity_logs')
     const log = new Record(logs)
     log.set('product_id', e.record.id)
-    log.set('user_id', e.record.getString('owner') || null)
+    const userId = e.auth ? e.auth.id : null
+    log.set('user_id', userId || e.record.getString('owner') || null)
 
     let statusName = e.record.getString('status')
     try {
@@ -16,6 +17,32 @@ onRecordAfterCreateSuccess((e) => {
     log.set('action', `Produto criado com status ${statusName || 'Nenhum'}`)
     log.set('details', { status: e.record.getString('status') })
     $app.saveNoValidate(log)
+
+    try {
+      const roles = $app.findRecordsByFilter(
+        'roles',
+        "name = 'admin' || name = 'Administrador' || name = 'reviewer' || name = 'revisador' || name = 'Revisador'",
+        '',
+        100,
+        0,
+      )
+      if (roles.length > 0) {
+        const roleConditions = roles.map((r) => `role = '${r.id}'`).join(' || ')
+        const reviewers = $app.findRecordsByFilter('users', roleConditions, '', 1000, 0)
+        const notifications = $app.findCollectionByNameOrId('notifications')
+
+        for (const rev of reviewers) {
+          if (rev.id === userId) continue // don't notify the creator
+          const notif = new Record(notifications)
+          notif.set('user_id', rev.id)
+          notif.set('message', `Um novo produto foi cadastrado: "${e.record.getString('name')}".`)
+          notif.set('read', false)
+          $app.saveNoValidate(notif)
+        }
+      }
+    } catch (notifErr) {
+      $app.logger().error('Failed to send product create notifications', 'error', String(notifErr))
+    }
   } catch (err) {
     $app.logger().error('Error logging product create', 'error', String(err))
   }
@@ -69,16 +96,6 @@ onRecordAfterUpdateSuccess((e) => {
       log.set('action', `Produto atualizado: ${changes.join(', ')}`)
       log.set('details', details)
       $app.saveNoValidate(log)
-
-      const ownerId = e.record.getString('owner')
-      if (ownerId && ownerId !== userId) {
-        const notifications = $app.findCollectionByNameOrId('notifications')
-        const notif = new Record(notifications)
-        notif.set('user_id', ownerId)
-        notif.set('message', `O produto "${e.record.getString('name')}" foi atualizado.`)
-        notif.set('read', false)
-        $app.saveNoValidate(notif)
-      }
     }
 
     if (oldStatusId !== newStatusId && newStatusId) {
@@ -112,7 +129,7 @@ onRecordAfterUpdateSuccess((e) => {
 
       if (newStatusNameLower === 'validado') {
         const ownerId = e.record.getString('owner')
-        if (ownerId) {
+        if (ownerId && ownerId !== userId) {
           const notif = new Record(notifications)
           notif.set('user_id', ownerId)
           notif.set('message', `O produto "${productName}" foi validado com sucesso.`)
@@ -133,6 +150,7 @@ onRecordAfterUpdateSuccess((e) => {
             const reviewers = $app.findRecordsByFilter('users', roleConditions, '', 1000, 0)
 
             for (const rev of reviewers) {
+              if (rev.id === userId) continue // don't notify the person who sent it
               const notif = new Record(notifications)
               notif.set('user_id', rev.id)
               notif.set('message', `O produto "${productName}" foi enviado para revisão.`)
@@ -150,7 +168,7 @@ onRecordAfterUpdateSuccess((e) => {
         newStatusNameLower.includes('correcao')
       ) {
         const ownerId = e.record.getString('owner')
-        if (ownerId) {
+        if (ownerId && ownerId !== userId) {
           const notif = new Record(notifications)
           notif.set('user_id', ownerId)
           notif.set('message', `O revisor solicitou ajustes no produto "${productName}".`)

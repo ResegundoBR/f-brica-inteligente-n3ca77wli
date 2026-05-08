@@ -436,13 +436,6 @@ export function TabProcesses({
 
                     <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
                       <input
-                        type="color"
-                        value={proc.color || getColorForName(proc.name)}
-                        onChange={(e) => updateProcessColor(proc.id, e.target.value)}
-                        className="h-9 w-9 p-0.5 rounded border cursor-pointer bg-background"
-                        title="Cor do processo"
-                      />
-                      <input
                         type="file"
                         multiple
                         accept="image/jpeg,image/png,image/webp"

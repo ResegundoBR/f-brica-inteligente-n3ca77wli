@@ -92,7 +92,12 @@ export function RoleGuard({ module, children }: RoleGuardProps) {
   }
 
   if (!user) return <Navigate to="/login" replace />
-  if (!hasAccess) return <Navigate to="/unauthorized" replace />
+  if (!hasAccess) {
+    if (module !== 'dashboard') {
+      return <Navigate to="/" replace />
+    }
+    return <Navigate to="/unauthorized" replace />
+  }
 
   return <>{children}</>
 }

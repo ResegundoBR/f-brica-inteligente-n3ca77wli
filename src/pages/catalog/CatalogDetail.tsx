@@ -18,6 +18,7 @@ import { TabProcesses } from './tabs/TabProcesses'
 import { TabComposition } from './tabs/TabComposition'
 import { TabChecklist } from './tabs/TabChecklist'
 import { TabReview } from './tabs/TabReview'
+import { TabHistory } from './tabs/TabHistory'
 import { ArrowLeftIcon, SaveIcon, SendIcon, CheckCircle } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
@@ -237,6 +238,12 @@ export default function CatalogDetail() {
                 </span>
               )}
             </TabsTrigger>
+            <TabsTrigger
+              value="historico"
+              className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none py-3 px-6"
+            >
+              Histórico
+            </TabsTrigger>
           </TabsList>
 
           <div className="p-6">
@@ -257,6 +264,9 @@ export default function CatalogDetail() {
             </TabsContent>
             <TabsContent value="revisao" className="m-0">
               <TabReview product={product} setProduct={setProduct} />
+            </TabsContent>
+            <TabsContent value="historico" className="m-0">
+              <TabHistory product={product} />
             </TabsContent>
           </div>
         </Tabs>

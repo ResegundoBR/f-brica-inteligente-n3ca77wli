@@ -12,6 +12,7 @@ import {
 import { FileUp, Plus, Trash2, Download, FilePlus, FileText } from 'lucide-react'
 import { useRef } from 'react'
 import pb from '@/lib/pocketbase/client'
+import { useToast } from '@/hooks/use-toast'
 
 export function TabComposition({
   product,
@@ -21,6 +22,7 @@ export function TabComposition({
   setProduct: (p: Product) => void
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const { toast } = useToast()
 
   const downloadTemplate = () => {
     const csvContent =
@@ -50,15 +52,26 @@ export function TabComposition({
       const delimiter = lines[0]?.includes(';') ? ';' : ','
       const headerCols = lines[0]?.split(delimiter).map((c) => c.trim().toLowerCase()) || []
 
-      const hasIndex =
-        headerCols[0] === '#' ||
-        headerCols[0] === 'nº' ||
-        headerCols[0] === 'index' ||
-        headerCols[0] === 'id' ||
-        headerCols[0] === 'item' ||
-        headerCols.length >= 5
+      const hasIndexCol = headerCols.some(
+        (c) => c === '#' || c === 'nº' || c === 'index' || c === 'id' || c === 'item',
+      )
+      const hasCode = headerCols.some((c) => c.includes('cód') || c.includes('cod'))
+      const hasDesc = headerCols.some((c) => c.includes('descri'))
+      const hasQtd = headerCols.some((c) => c.includes('qtd') || c.includes('quant'))
+      const hasMed = headerCols.some((c) => c.includes('medida'))
 
-      const offset = hasIndex ? 1 : 0
+      if (!hasIndexCol || !hasCode || !hasDesc || !hasQtd || !hasMed) {
+        toast({
+          title: 'Erro na importação',
+          description:
+            'A planilha não contém todas as colunas obrigatórias (#, Cód., Descrição, Qtd., Medidas).',
+          variant: 'destructive',
+        })
+        if (fileInputRef.current) fileInputRef.current.value = ''
+        return
+      }
+
+      const offset = hasIndexCol ? 1 : 0
 
       const isHeaderRow = headerCols.some(
         (c) =>
@@ -303,11 +316,16 @@ export function TabComposition({
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
-                {isFileObj && (
-                  <span className="text-[10px] font-medium absolute top-2 right-2 bg-primary/90 text-primary-foreground px-1.5 py-0.5 rounded">
-                    Novo
+                <div className="absolute top-2 right-2 flex flex-col gap-1 items-end">
+                  {isFileObj && (
+                    <span className="text-[10px] font-medium bg-primary/90 text-primary-foreground px-1.5 py-0.5 rounded">
+                      Novo
+                    </span>
+                  )}
+                  <span className="text-[10px] font-medium bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded border border-border uppercase">
+                    {fileName.split('.').pop()?.substring(0, 4) || '?'}
                   </span>
-                )}
+                </div>
               </div>
             )
           })}

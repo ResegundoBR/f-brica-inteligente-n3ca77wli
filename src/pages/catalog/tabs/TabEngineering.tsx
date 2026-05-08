@@ -50,11 +50,11 @@ export function TabEngineering({ product, setProduct }: Props) {
                 className="flex items-center justify-between p-3 border rounded-md bg-card"
               >
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-primary/10 rounded">
+                  <div className="p-2 bg-primary/10 rounded flex-shrink-0">
                     <FileText className="h-5 w-5 text-primary" />
                   </div>
-                  <div>
-                    <p className="text-sm font-medium">
+                  <div className="flex flex-col max-w-[150px] sm:max-w-[300px]">
+                    <p className="text-sm font-medium truncate">
                       {file instanceof File
                         ? file.name
                         : typeof file === 'string'
@@ -68,22 +68,34 @@ export function TabEngineering({ product, setProduct }: Props) {
                     </p>
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <Button variant="ghost" size="icon">
-                    <Download className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="text-destructive"
-                    onClick={() => {
-                      const newFiles = [...allFiles]
-                      newFiles.splice(i, 1)
-                      setProduct({ ...product, files: newFiles })
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                <div className="flex items-center gap-2 sm:gap-4">
+                  <div className="hidden sm:flex flex-col items-center px-4 border-l border-r border-border">
+                    <span className="text-[10px] text-muted-foreground uppercase">Tipo</span>
+                    <span className="text-sm font-medium uppercase text-primary">
+                      {file instanceof File
+                        ? file.name.split('.').pop()
+                        : typeof file === 'string'
+                          ? file.split('.').pop()
+                          : '-'}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="ghost" size="icon">
+                      <Download className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-destructive"
+                      onClick={() => {
+                        const newFiles = [...allFiles]
+                        newFiles.splice(i, 1)
+                        setProduct({ ...product, files: newFiles })
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               </div>
             ))}

@@ -2,11 +2,10 @@ import { useState, useEffect } from 'react'
 import { Product, ProductProcessModel } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import pb from '@/lib/pocketbase/client'
 import { useToast } from '@/hooks/use-toast'
-import { ChevronDown, ChevronUp, Trash, X, GripVertical } from 'lucide-react'
+import { Trash, X, GripVertical, Paperclip } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const defaultProcessTypes = [
@@ -19,6 +18,15 @@ const defaultProcessTypes = [
   'Furo',
   'Rosca',
 ]
+
+interface PendingProcess {
+  id: string
+  name: string
+  order: number
+  description: string
+  imageFiles?: File[]
+  imagePreviews?: string[]
+}
 
 export function TabProcesses({
   product,
@@ -33,7 +41,6 @@ export function TabProcesses({
 }) {
   const { toast } = useToast()
   const [processes, setProcesses] = useState<ProductProcessModel[]>([])
-  const [expandedId, setExpandedId] = useState<string | null>(null)
   const [showOtherInput, setShowOtherInput] = useState(false)
   const [newProcessName, setNewProcessName] = useState('')
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
@@ -102,7 +109,12 @@ export function TabProcesses({
     if (isNew && setPendingProcesses) {
       const newOrder =
         pendingProcesses.length > 0 ? Math.max(...pendingProcesses.map((p) => p.order)) + 1 : 1
-      const newProc = { id: 'temp_' + Date.now(), name, order: newOrder, description: '' }
+      const newProc: PendingProcess = {
+        id: 'temp_' + Date.now(),
+        name,
+        order: newOrder,
+        description: '',
+      }
       setPendingProcesses([...pendingProcesses, newProc])
       toast({ title: 'Processo adicionado' })
       return
@@ -148,37 +160,55 @@ export function TabProcesses({
     }
   }
 
-  const updateProcessImage = async (id: string, file: File) => {
+  const updateProcessImage = async (id: string, files: FileList) => {
     if (isNew && setPendingProcesses) {
-      const preview = URL.createObjectURL(file)
+      const newFiles = Array.from(files)
+      const newPreviews = newFiles.map((f) => URL.createObjectURL(f))
       setPendingProcesses(
-        pendingProcesses.map((p) =>
-          p.id === id ? { ...p, imageFile: file, imagePreview: preview } : p,
-        ),
+        pendingProcesses.map((p) => {
+          if (p.id === id) {
+            return {
+              ...p,
+              imageFiles: [...(p.imageFiles || []), ...newFiles],
+              imagePreviews: [...(p.imagePreviews || []), ...newPreviews],
+            }
+          }
+          return p
+        }),
       )
-      toast({ title: 'Imagem atualizada' })
+      toast({ title: 'Imagens adicionadas' })
       return
     }
 
     try {
       const formData = new FormData()
-      formData.append('image', file)
+      Array.from(files).forEach((file) => {
+        formData.append('image', file)
+      })
+
       const updated = await pb
         .collection('product_processes')
         .update<ProductProcessModel>(id, formData)
       setProcesses((prev) => prev.map((p) => (p.id === id ? updated : p)))
-      toast({ title: 'Imagem atualizada' })
+      toast({ title: 'Imagens adicionadas' })
     } catch (err) {
-      toast({ title: 'Erro ao salvar imagem', variant: 'destructive' })
+      toast({ title: 'Erro ao adicionar imagens', variant: 'destructive' })
     }
   }
 
-  const removeProcessImage = async (id: string) => {
+  const removeProcessImage = async (id: string, filenameOrIndex: string | number) => {
     if (isNew && setPendingProcesses) {
       setPendingProcesses(
-        pendingProcesses.map((p) =>
-          p.id === id ? { ...p, imageFile: null, imagePreview: null } : p,
-        ),
+        pendingProcesses.map((p) => {
+          if (p.id === id) {
+            const nf = [...(p.imageFiles || [])]
+            const np = [...(p.imagePreviews || [])]
+            nf.splice(filenameOrIndex as number, 1)
+            np.splice(filenameOrIndex as number, 1)
+            return { ...p, imageFiles: nf, imagePreviews: np }
+          }
+          return p
+        }),
       )
       toast({ title: 'Imagem removida' })
       return
@@ -186,7 +216,7 @@ export function TabProcesses({
 
     try {
       const updated = await pb.collection('product_processes').update<ProductProcessModel>(id, {
-        image: null,
+        'image-': filenameOrIndex,
       })
       setProcesses((prev) => prev.map((p) => (p.id === id ? updated : p)))
       toast({ title: 'Imagem removida' })
@@ -209,6 +239,12 @@ export function TabProcesses({
     } catch (err) {
       toast({ title: 'Erro ao remover processo', variant: 'destructive' })
     }
+  }
+
+  const getImages = (proc: any): string[] => {
+    if (!proc.image) return []
+    if (Array.isArray(proc.image)) return proc.image
+    return [proc.image]
   }
 
   return (
@@ -254,114 +290,105 @@ export function TabProcesses({
       {displayList.length > 0 && (
         <div className="space-y-3 pt-4 border-t">
           <Label className="text-base">Fluxo de Processos de Fabricação</Label>
-          <div className="flex flex-col gap-2">
-            {displayList.map((proc, idx) => (
-              <div
-                key={proc.id}
-                draggable
-                onDragStart={(e) => handleDragStart(e, idx)}
-                onDragOver={handleDragOver}
-                onDrop={(e) => handleDrop(e, idx)}
-                className={cn(
-                  'border rounded-md bg-card shadow-sm overflow-hidden group transition-all',
-                  draggedIndex === idx ? 'opacity-50 border-primary border-dashed' : '',
-                )}
-              >
-                <div className="flex items-center justify-between p-2 sm:p-3 hover:bg-accent/10 transition-colors">
-                  <div
-                    className="flex flex-1 items-center gap-3 cursor-pointer"
-                    onClick={() => setExpandedId(expandedId === proc.id ? null : proc.id)}
-                  >
-                    <div
-                      className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1 -ml-1 rounded hover:bg-muted"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <GripVertical className="h-4 w-4" />
-                    </div>
-                    <div className="flex items-center justify-center h-6 w-6 rounded-full bg-primary/10 text-primary font-bold text-xs shrink-0">
-                      {idx + 1}
-                    </div>
-                    <div className="font-semibold text-sm">{proc.name}</div>
-                    <div className="text-xs text-muted-foreground truncate hidden sm:block max-w-[200px] lg:max-w-[400px]">
-                      {proc.description || 'Sem descrição'}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={() => setExpandedId(expandedId === proc.id ? null : proc.id)}
-                    >
-                      {expandedId === proc.id ? (
-                        <ChevronUp className="h-4 w-4" />
-                      ) : (
-                        <ChevronDown className="h-4 w-4" />
-                      )}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={() => removeProcess(proc.id)}
-                    >
-                      <Trash className="text-destructive h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
+          <div className="flex flex-col gap-3">
+            {displayList.map((proc, idx) => {
+              const images = isNew ? proc.imagePreviews || [] : getImages(proc)
 
-                {expandedId === proc.id && (
-                  <div className="p-3 border-t bg-muted/10 grid grid-cols-1 md:grid-cols-[1fr,200px] gap-4 animate-fade-in-down">
-                    <div className="space-y-2">
-                      <Label className="text-xs text-muted-foreground">
-                        Descrição / Instruções
-                      </Label>
-                      <Textarea
+              return (
+                <div
+                  key={proc.id}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, idx)}
+                  onDragOver={handleDragOver}
+                  onDrop={(e) => handleDrop(e, idx)}
+                  className={cn(
+                    'border rounded-md bg-card shadow-sm overflow-hidden group transition-all',
+                    draggedIndex === idx ? 'opacity-50 border-primary border-dashed' : '',
+                  )}
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 p-2 sm:p-3 hover:bg-accent/10 transition-colors">
+                    <div className="flex items-center gap-3 sm:w-[220px] shrink-0">
+                      <div
+                        className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1 -ml-1 rounded hover:bg-muted"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <GripVertical className="h-4 w-4" />
+                      </div>
+                      <div className="flex items-center justify-center h-6 w-6 rounded-full bg-primary/10 text-primary font-bold text-xs shrink-0">
+                        {idx + 1}
+                      </div>
+                      <div className="font-semibold text-sm truncate">{proc.name}</div>
+                    </div>
+
+                    <div className="flex-1 w-full min-w-[200px]">
+                      <Input
                         defaultValue={proc.description}
                         onBlur={(e) => updateProcessDesc(proc.id, e.target.value)}
-                        placeholder={`Detalhes para o processo de ${proc.name}...`}
-                        className="min-h-[100px] resize-none"
+                        placeholder="Detalhes para o processo..."
+                        className="h-9 text-sm"
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs text-muted-foreground">Imagem de Referência</Label>
-                      {proc.imagePreview || proc.image ? (
-                        <div className="relative w-full aspect-square border rounded-md group/img overflow-hidden bg-background">
+
+                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/jpeg,image/png,image/webp"
+                        className="hidden"
+                        id={`file-upload-${proc.id}`}
+                        onChange={(e) => {
+                          if (e.target.files) updateProcessImage(proc.id, e.target.files)
+                        }}
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-9"
+                        onClick={() => document.getElementById(`file-upload-${proc.id}`)?.click()}
+                      >
+                        <Paperclip className="h-4 w-4 sm:mr-1.5" />
+                        <span className="hidden sm:inline">Anexar</span>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => removeProcess(proc.id)}
+                      >
+                        <Trash className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {images.length > 0 && (
+                    <div className="px-3 py-2 border-t bg-muted/20 flex flex-wrap gap-2 items-center">
+                      {images.map((img: string, i: number) => (
+                        <div
+                          key={i}
+                          className="relative w-14 h-14 rounded-md border bg-background group/img overflow-hidden shadow-sm"
+                        >
                           <img
-                            src={proc.imagePreview || pb.files.getUrl(proc, proc.image)}
-                            alt={proc.name}
+                            src={isNew ? img : pb.files.getUrl(proc, img)}
+                            alt={`Anexo ${i + 1}`}
                             className="w-full h-full object-cover"
                           />
-                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
+                          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover/img:opacity-100 flex items-center justify-center transition-all duration-200">
                             <Button
+                              variant="ghost"
                               size="icon"
-                              variant="destructive"
-                              onClick={() => removeProcessImage(proc.id)}
+                              className="h-6 w-6 text-white hover:text-white hover:bg-white/20 rounded-full"
+                              onClick={() => removeProcessImage(proc.id, isNew ? i : img)}
                             >
-                              <X className="h-4 w-4" />
+                              <X className="h-3 w-3" />
                             </Button>
                           </div>
                         </div>
-                      ) : (
-                        <div className="relative w-full aspect-square border-2 border-dashed rounded-md flex flex-col items-center justify-center text-muted-foreground hover:bg-muted/50 transition-colors bg-background">
-                          <input
-                            type="file"
-                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                            accept="image/jpeg,image/png,image/webp"
-                            onChange={(e) => {
-                              if (e.target.files && e.target.files[0]) {
-                                updateProcessImage(proc.id, e.target.files[0])
-                              }
-                            }}
-                          />
-                          <span className="text-xs font-medium">Adicionar Imagem</span>
-                        </div>
-                      )}
+                      ))}
                     </div>
-                  </div>
-                )}
-              </div>
-            ))}
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
       )}

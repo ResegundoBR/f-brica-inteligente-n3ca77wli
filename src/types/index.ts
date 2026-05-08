@@ -70,12 +70,22 @@ export interface RevisionPointModel {
   expand?: { user_id?: User; product_id?: Product }
 }
 
+export interface RevisionNoteModel {
+  id: string
+  revision_point_id: string
+  user_id: string
+  content: string
+  created: string
+  updated: string
+  expand?: { user_id?: User }
+}
+
 export interface ProductProcessModel {
   id: string
   product_id: string
   name: string
   description: string
-  image?: string
+  image?: string | string[]
   order: number
   created: string
   updated: string

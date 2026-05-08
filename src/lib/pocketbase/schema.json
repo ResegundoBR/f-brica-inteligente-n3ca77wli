@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-08T19:30:33.652Z",
+  "generatedAt": "2026-05-08T20:15:31.398Z",
   "collections": [
     {
       "name": "users",
@@ -550,6 +550,54 @@
           "name": "order",
           "type": "number",
           "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "name": "revision_notes",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != '' && user_id = @request.auth.id",
+        "delete": "@request.auth.id != '' && user_id = @request.auth.id"
+      },
+      "fields": [
+        {
+          "name": "revision_point_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "revision_points"
+        },
+        {
+          "name": "user_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "content",
+          "type": "text",
+          "required": true,
           "system": false
         },
         {

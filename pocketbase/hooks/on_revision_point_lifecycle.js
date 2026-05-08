@@ -4,10 +4,24 @@ onRecordAfterCreateSuccess((e) => {
     const log = new Record(logs)
     log.set('product_id', e.record.getString('product_id'))
     log.set('user_id', e.auth ? e.auth.id : null)
-    log.set('action', `Novo ponto de revisão adicionado`)
+    log.set('action', `Novo ponto de revisão adicionado: ${e.record.getString('description')}`)
     $app.saveNoValidate(log)
   } catch (err) {
     $app.logger().error('Error logging revision point create', 'error', String(err))
+  }
+  e.next()
+}, 'revision_points')
+
+onRecordAfterDeleteSuccess((e) => {
+  try {
+    const logs = $app.findCollectionByNameOrId('activity_logs')
+    const log = new Record(logs)
+    log.set('product_id', e.record.getString('product_id'))
+    log.set('user_id', e.auth ? e.auth.id : null)
+    log.set('action', `Ponto de revisão removido: ${e.record.getString('description')}`)
+    $app.saveNoValidate(log)
+  } catch (err) {
+    $app.logger().error('Error logging revision point delete', 'error', String(err))
   }
   e.next()
 }, 'revision_points')

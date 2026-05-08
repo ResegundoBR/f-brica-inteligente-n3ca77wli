@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Send, CheckCircle2, Paperclip, X, Clock, MessageSquareText } from 'lucide-react'
+import { Send, CheckCircle2, Paperclip, X, Clock, MessageSquareText, Search } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { useToast } from '@/hooks/use-toast'
 import { useAuth } from '@/hooks/use-auth'
@@ -32,6 +32,7 @@ export function TabReview({
 
   const [newNoteText, setNewNoteText] = useState<Record<string, string>>({})
   const [isSubmittingNote, setIsSubmittingNote] = useState<string | null>(null)
+  const [searchTerm, setSearchTerm] = useState('')
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -269,154 +270,209 @@ export function TabReview({
       </div>
 
       <div className="space-y-4">
-        <h3 className="font-medium text-lg">Pontos de Revisão ({revisionPoints.length})</h3>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <h3 className="font-medium text-lg">Pontos de Revisão ({revisionPoints.length})</h3>
+          {revisionPoints.length > 0 && (
+            <div className="relative w-full sm:w-72 shrink-0">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar em pontos e histórico..."
+                className="pl-8"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+          )}
+        </div>
         {revisionPoints.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nenhum ponto de revisão apontado.</p>
         ) : (
           <div className="flex flex-col gap-3">
-            {revisionPoints.map((point) => {
-              const notesForPoint = revisionNotes.filter((n) => n.revision_point_id === point.id)
+            {revisionPoints
+              .filter((point) => {
+                if (!searchTerm) return true
+                const term = searchTerm.toLowerCase()
+                const pMatch =
+                  point.description.toLowerCase().includes(term) ||
+                  (point.expand?.user_id?.name || point.expand?.user_id?.email || '')
+                    .toLowerCase()
+                    .includes(term)
+                if (pMatch) return true
+                const nMatch = revisionNotes
+                  .filter((n) => n.revision_point_id === point.id)
+                  .some(
+                    (n) =>
+                      n.content.toLowerCase().includes(term) ||
+                      (n.expand?.user_id?.name || n.expand?.user_id?.email || '')
+                        .toLowerCase()
+                        .includes(term),
+                  )
+                return nMatch
+              })
+              .map((point) => {
+                const allNotes = revisionNotes.filter((n) => n.revision_point_id === point.id)
+                let displayNotes = allNotes
 
-              return (
-                <div
-                  key={point.id}
-                  className={`flex flex-col group shadow-sm rounded-md border-l-4 ${point.resolved ? 'border-l-blue-500' : 'border-l-red-500'}`}
-                >
+                if (searchTerm) {
+                  const term = searchTerm.toLowerCase()
+                  const pMatch =
+                    point.description.toLowerCase().includes(term) ||
+                    (point.expand?.user_id?.name || point.expand?.user_id?.email || '')
+                      .toLowerCase()
+                      .includes(term)
+                  if (!pMatch) {
+                    displayNotes = allNotes.filter(
+                      (n) =>
+                        n.content.toLowerCase().includes(term) ||
+                        (n.expand?.user_id?.name || n.expand?.user_id?.email || '')
+                          .toLowerCase()
+                          .includes(term),
+                    )
+                  }
+                }
+
+                return (
                   <div
-                    className="border border-l-0 rounded-tr-md px-3 py-2 bg-card flex flex-col sm:flex-row sm:items-center gap-3 hover:bg-accent/10 transition-colors h-auto sm:h-12 border-b-0 data-[state=closed]:border-b data-[state=closed]:rounded-br-md"
-                    data-state={openNotesId === point.id ? 'open' : 'closed'}
+                    key={point.id}
+                    className={`flex flex-col group shadow-sm rounded-md border-l-4 ${point.resolved ? 'border-l-blue-500' : 'border-l-red-500'}`}
                   >
-                    <div className="flex items-center gap-2 flex-1 overflow-hidden">
-                      <span className="text-[10px] font-semibold bg-muted px-1.5 py-0.5 rounded shrink-0">
-                        {point.expand?.user_id?.name || point.expand?.user_id?.email || 'Usuário'}
-                      </span>
-                      <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">
-                        {new Date(point.created).toLocaleDateString()}
-                      </span>
-                      <p className="font-medium text-sm truncate" title={point.description}>
-                        {point.description}
-                      </p>
+                    <div
+                      className="border border-l-0 rounded-tr-md px-3 py-2 bg-card flex flex-col sm:flex-row sm:items-center gap-3 hover:bg-accent/10 transition-colors h-auto sm:h-12 border-b-0 data-[state=closed]:border-b data-[state=closed]:rounded-br-md"
+                      data-state={openNotesId === point.id ? 'open' : 'closed'}
+                    >
+                      <div className="flex items-center gap-2 flex-1 overflow-hidden">
+                        <span className="text-[10px] font-semibold bg-muted px-1.5 py-0.5 rounded shrink-0">
+                          {point.expand?.user_id?.name || point.expand?.user_id?.email || 'Usuário'}
+                        </span>
+                        <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">
+                          {new Date(point.created).toLocaleDateString()}
+                        </span>
+                        <p className="font-medium text-sm truncate" title={point.description}>
+                          {point.description}
+                        </p>
 
-                      {point.files && point.files.length > 0 && (
-                        <div className="flex gap-1 shrink-0 ml-1">
-                          {point.files.map((fileStr, i) => {
-                            const fileUrl = pb.files.getUrl(point, fileStr) + '?download=1'
-                            return (
-                              <a
-                                key={i}
-                                href={fileUrl}
-                                download={fileStr}
-                                onClick={(e) => e.stopPropagation()}
-                                title={`Baixar Anexo ${i + 1}`}
-                              >
-                                <Badge
-                                  variant="secondary"
-                                  className="text-[10px] px-1 py-0 hover:bg-secondary/80 cursor-pointer"
+                        {point.files && point.files.length > 0 && (
+                          <div className="flex gap-1 shrink-0 ml-1">
+                            {point.files.map((fileStr, i) => {
+                              const fileUrl = pb.files.getUrl(point, fileStr) + '?download=1'
+                              return (
+                                <a
+                                  key={i}
+                                  href={fileUrl}
+                                  download={fileStr}
+                                  onClick={(e) => e.stopPropagation()}
+                                  title={`Baixar Anexo ${i + 1}`}
                                 >
-                                  <Paperclip className="h-3 w-3" />
-                                </Badge>
-                              </a>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 text-xs relative"
-                        onClick={() => handleOpenNotes(point)}
-                      >
-                        <MessageSquareText className="h-3 w-3 mr-1.5" />
-                        Histórico
-                        {notesForPoint.length > 0 && (
-                          <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-[9px] w-4 h-4 flex items-center justify-center rounded-full">
-                            {notesForPoint.length}
-                          </span>
+                                  <Badge
+                                    variant="secondary"
+                                    className="text-[10px] px-1 py-0 hover:bg-secondary/80 cursor-pointer"
+                                  >
+                                    <Paperclip className="h-3 w-3" />
+                                  </Badge>
+                                </a>
+                              )
+                            })}
+                          </div>
                         )}
-                      </Button>
-                      <div className="flex items-center space-x-2 bg-background border px-2 py-1 rounded-md h-8">
-                        <Switch
-                          id={`resolved-${point.id}`}
-                          checked={point.resolved}
-                          onCheckedChange={(checked) => toggleResolved(point, checked)}
-                        />
-                        <Label
-                          htmlFor={`resolved-${point.id}`}
-                          className="text-xs cursor-pointer min-w-[70px]"
-                        >
-                          {point.resolved ? (
-                            <span className="flex items-center text-emerald-600 font-medium">
-                              <CheckCircle2 className="h-3 w-3 mr-1" /> Resolvido
-                            </span>
-                          ) : (
-                            <span className="flex items-center text-amber-600 font-medium">
-                              <Clock className="h-3 w-3 mr-1" /> Pendente
-                            </span>
-                          )}
-                        </Label>
                       </div>
-                    </div>
-                  </div>
 
-                  {openNotesId === point.id && (
-                    <div className="flex flex-col bg-muted/10 border-t border-x border-b border-l-0 rounded-br-md shadow-inner animate-fade-in-down">
-                      <ScrollArea className="max-h-[300px] w-full p-3">
-                        <div className="flex flex-col gap-3">
-                          {notesForPoint.length === 0 ? (
-                            <p className="text-xs text-muted-foreground text-center py-2">
-                              Nenhum histórico ainda. Inicie a conversa abaixo.
-                            </p>
-                          ) : (
-                            notesForPoint.map((note) => (
-                              <div key={note.id} className="flex flex-col gap-1">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-semibold text-xs text-primary">
-                                    {note.expand?.user_id?.name ||
-                                      note.expand?.user_id?.email ||
-                                      'Usuário'}
-                                  </span>
-                                  <span className="text-[10px] text-muted-foreground">
-                                    {new Date(note.created).toLocaleString('pt-BR', {
-                                      dateStyle: 'short',
-                                      timeStyle: 'short',
-                                    })}
-                                  </span>
-                                </div>
-                                <p className="text-sm bg-background border rounded px-3 py-2 text-foreground whitespace-pre-wrap">
-                                  {note.content}
-                                </p>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </ScrollArea>
-                      <div className="p-3 border-t bg-background/50 flex gap-2 items-center">
-                        <Input
-                          placeholder="Adicionar comentário ao histórico..."
-                          value={newNoteText[point.id] || ''}
-                          onChange={(e) =>
-                            setNewNoteText({ ...newNoteText, [point.id]: e.target.value })
-                          }
-                          onKeyDown={(e) => e.key === 'Enter' && saveNote(point.id)}
-                          className="h-9"
-                        />
+                      <div className="flex items-center gap-2 shrink-0">
                         <Button
+                          variant="ghost"
                           size="sm"
-                          className="h-9 px-4 shrink-0"
-                          onClick={() => saveNote(point.id)}
-                          disabled={isSubmittingNote === point.id}
+                          className="h-8 text-xs relative"
+                          onClick={() => handleOpenNotes(point)}
                         >
-                          <Send className="h-4 w-4" />
+                          <MessageSquareText className="h-3 w-3 mr-1.5" />
+                          Histórico
+                          {allNotes.length > 0 && (
+                            <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-[9px] w-4 h-4 flex items-center justify-center rounded-full">
+                              {allNotes.length}
+                            </span>
+                          )}
                         </Button>
+                        <div className="flex items-center space-x-2 bg-background border px-2 py-1 rounded-md h-8">
+                          <Switch
+                            id={`resolved-${point.id}`}
+                            checked={point.resolved}
+                            onCheckedChange={(checked) => toggleResolved(point, checked)}
+                          />
+                          <Label
+                            htmlFor={`resolved-${point.id}`}
+                            className="text-xs cursor-pointer min-w-[70px]"
+                          >
+                            {point.resolved ? (
+                              <span className="flex items-center text-emerald-600 font-medium">
+                                <CheckCircle2 className="h-3 w-3 mr-1" /> Resolvido
+                              </span>
+                            ) : (
+                              <span className="flex items-center text-amber-600 font-medium">
+                                <Clock className="h-3 w-3 mr-1" /> Pendente
+                              </span>
+                            )}
+                          </Label>
+                        </div>
                       </div>
                     </div>
-                  )}
-                </div>
-              )
-            })}
+
+                    {openNotesId === point.id && (
+                      <div className="flex flex-col bg-muted/10 border-t border-x border-b border-l-0 rounded-br-md shadow-inner animate-fade-in-down">
+                        <div className="p-3 border-b bg-background/50 flex gap-2 items-center">
+                          <Input
+                            placeholder="Adicionar comentário ao histórico..."
+                            value={newNoteText[point.id] || ''}
+                            onChange={(e) =>
+                              setNewNoteText({ ...newNoteText, [point.id]: e.target.value })
+                            }
+                            onKeyDown={(e) => e.key === 'Enter' && saveNote(point.id)}
+                            className="h-9 bg-background"
+                          />
+                          <Button
+                            size="sm"
+                            className="h-9 px-4 shrink-0"
+                            onClick={() => saveNote(point.id)}
+                            disabled={isSubmittingNote === point.id}
+                          >
+                            <Send className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <ScrollArea className="max-h-[300px] w-full p-3">
+                          <div className="flex flex-col gap-3">
+                            {displayNotes.length === 0 ? (
+                              <p className="text-xs text-muted-foreground text-center py-2">
+                                {searchTerm
+                                  ? 'Nenhum histórico corresponde à busca.'
+                                  : 'Nenhum histórico ainda. Inicie a conversa acima.'}
+                              </p>
+                            ) : (
+                              displayNotes.map((note) => (
+                                <div key={note.id} className="flex flex-col gap-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-semibold text-xs text-primary">
+                                      {note.expand?.user_id?.name ||
+                                        note.expand?.user_id?.email ||
+                                        'Usuário'}
+                                    </span>
+                                    <span className="text-[10px] text-muted-foreground">
+                                      {new Date(note.created).toLocaleString('pt-BR', {
+                                        dateStyle: 'short',
+                                        timeStyle: 'short',
+                                      })}
+                                    </span>
+                                  </div>
+                                  <p className="text-sm bg-background border rounded px-3 py-2 text-foreground whitespace-pre-wrap">
+                                    {note.content}
+                                  </p>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </ScrollArea>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
           </div>
         )}
       </div>

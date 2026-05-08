@@ -20,7 +20,19 @@ import {
   CheckCircle,
   ShieldCheck,
   TrendingUp,
+  Trash2,
 } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import { LearningRecord } from '@/types'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
@@ -84,6 +96,16 @@ export default function Learning() {
     e.preventDefault()
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       setFile(e.dataTransfer.files[0])
+    }
+  }
+
+  const deleteLearningRecord = async (id: string) => {
+    try {
+      await pb.collection('learning_evolution').delete(id)
+      toast.success('Registro excluído com sucesso!')
+    } catch (err: any) {
+      console.error(err)
+      toast.error('Erro ao excluir o registro.')
     }
   }
 
@@ -381,21 +403,56 @@ export default function Learning() {
                               Por: {record.expand?.user_id?.name || 'Usuário'}
                             </span>
 
-                            {isAdminOrRevisor && (
-                              <Button
-                                variant={record.validated ? 'outline' : 'default'}
-                                size="sm"
-                                className={cn(
-                                  record.validated
-                                    ? 'text-muted-foreground'
-                                    : 'bg-blue-600 hover:bg-blue-700 text-white',
-                                )}
-                                onClick={() => toggleValidation(record.id, !!record.validated)}
-                              >
-                                <ShieldCheck className="w-4 h-4 mr-1" />
-                                {record.validated ? 'Desfazer' : 'Validar'}
-                              </Button>
-                            )}
+                            <div className="flex items-center gap-2">
+                              {(currentUser?.id === record.user_id || isAdminOrRevisor) && (
+                                <AlertDialog>
+                                  <AlertDialogTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-8 px-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                  </AlertDialogTrigger>
+                                  <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                      <AlertDialogTitle>Excluir registro?</AlertDialogTitle>
+                                      <AlertDialogDescription>
+                                        Esta ação não pode ser desfeita. Isso excluirá
+                                        permanentemente o registro de aprendizado.
+                                      </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                      <AlertDialogAction
+                                        onClick={() => deleteLearningRecord(record.id)}
+                                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                      >
+                                        Excluir
+                                      </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                  </AlertDialogContent>
+                                </AlertDialog>
+                              )}
+
+                              {isAdminOrRevisor && (
+                                <Button
+                                  variant={record.validated ? 'outline' : 'default'}
+                                  size="sm"
+                                  className={cn(
+                                    'h-8',
+                                    record.validated
+                                      ? 'text-muted-foreground'
+                                      : 'bg-blue-600 hover:bg-blue-700 text-white',
+                                  )}
+                                  onClick={() => toggleValidation(record.id, !!record.validated)}
+                                >
+                                  <ShieldCheck className="w-4 h-4 mr-1" />
+                                  {record.validated ? 'Desfazer' : 'Validar'}
+                                </Button>
+                              )}
+                            </div>
                           </div>
                         </div>
                         {record.evidence && (

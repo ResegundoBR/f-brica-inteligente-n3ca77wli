@@ -17,6 +17,8 @@ import ChangePassword from './pages/ChangePassword'
 import { AuthProvider } from './hooks/use-auth'
 import { AuthGuard } from './components/AuthGuard'
 import { StatusNotifier } from './components/StatusNotifier'
+import { RoleGuard } from './components/RoleGuard'
+import Unauthorized from './pages/Unauthorized'
 
 const App = () => (
   <AuthProvider>
@@ -37,14 +39,71 @@ const App = () => (
                 </>
               }
             >
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/catalogo" element={<CatalogList />} />
-              <Route path="/catalogo/:id" element={<CatalogDetail />} />
-              <Route path="/aprendizado" element={<Learning />} />
-              <Route path="/admin/usuarios" element={<AdminUsers />} />
-              <Route path="/admin/funcoes" element={<AdminRoles />} />
-              <Route path="/admin/status" element={<AdminStatuses />} />
-              <Route path="/admin/logs" element={<AdminLogs />} />
+              <Route
+                path="/"
+                element={
+                  <RoleGuard module="dashboard">
+                    <Dashboard />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/catalogo"
+                element={
+                  <RoleGuard module="catalog">
+                    <CatalogList />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/catalogo/:id"
+                element={
+                  <RoleGuard module="catalog">
+                    <CatalogDetail />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/aprendizado"
+                element={
+                  <RoleGuard module="learning">
+                    <Learning />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/admin/usuarios"
+                element={
+                  <RoleGuard module="users">
+                    <AdminUsers />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/admin/funcoes"
+                element={
+                  <RoleGuard module="users">
+                    <AdminRoles />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/admin/status"
+                element={
+                  <RoleGuard module="users">
+                    <AdminStatuses />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/admin/logs"
+                element={
+                  <RoleGuard module="users">
+                    <AdminLogs />
+                  </RoleGuard>
+                }
+              />
+              <Route path="/unauthorized" element={<Unauthorized />} />
             </Route>
           </Route>
           <Route path="*" element={<NotFound />} />

@@ -39,11 +39,15 @@ export function AppSidebar() {
   const { setOpenMobile } = useSidebar()
 
   const role = user?.expand?.role
-  const isSuperAdmin = user?.role === 'admin' || role?.name === 'admin'
+  const isSuperAdmin =
+    user?.role === 'admin' ||
+    role?.name === 'admin' ||
+    role?.name === 'Administrador' ||
+    user?.email === 'reginaldo.segundo@planagroup.com.br'
 
   const hasAccess = (itemTitle: string) => {
     if (isSuperAdmin) return true
-    if (!role) return true
+    if (!role) return false
 
     switch (itemTitle) {
       case 'Dashboard':

@@ -28,7 +28,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     if (pb.authStore.isValid && pb.authStore.record) {
       pb.collection('users')
-        .authRefresh()
+        .authRefresh({ expand: 'role' })
         .catch(() => pb.authStore.clear())
         .finally(() => setLoading(false))
     } else {

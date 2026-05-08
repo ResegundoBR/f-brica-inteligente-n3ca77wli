@@ -14,12 +14,14 @@ export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [formError, setFormError] = useState('')
   const navigate = useNavigate()
   const { toast } = useToast()
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
+    setFormError('')
     try {
       const authData = await pb.collection('users').authWithPassword(email, password)
 
@@ -39,13 +41,14 @@ export default function Login() {
         navigate('/')
       }
     } catch (err: any) {
+      const errorMsg = err.status === 400 ? 'Usuário ou senha incorretos.' : getErrorMessage(err)
+
+      setFormError(errorMsg)
+
       toast({
         variant: 'destructive',
         title: 'Erro ao fazer login',
-        description:
-          err.status === 400
-            ? 'Credenciais inválidas. Verifique seu e-mail e senha.'
-            : getErrorMessage(err),
+        description: errorMsg,
       })
     } finally {
       setLoading(false)
@@ -98,9 +101,16 @@ export default function Login() {
                 id="password"
                 type="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => {
+                  setPassword(e.target.value)
+                  setFormError('')
+                }}
                 required
+                className={formError ? 'border-destructive focus-visible:ring-destructive' : ''}
               />
+              {formError && (
+                <p className="text-sm font-bold text-destructive mt-1.5">{formError}</p>
+              )}
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? 'Entrando...' : 'Entrar'}

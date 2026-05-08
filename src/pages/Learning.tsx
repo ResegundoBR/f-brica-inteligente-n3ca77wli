@@ -34,6 +34,7 @@ export default function Learning() {
   const [learningRecords, setLearningRecords] = useState<LearningRecord[]>([])
   const [loading, setLoading] = useState(false)
   const [isAdminOrRevisor, setIsAdminOrRevisor] = useState(false)
+  const [titleError, setTitleError] = useState('')
 
   useEffect(() => {
     if (currentUser?.role) {
@@ -99,10 +100,12 @@ export default function Learning() {
   }
 
   const handleSubmit = async () => {
-    if (!title) {
+    if (!title.trim()) {
+      setTitleError('O título/atividade é obrigatório')
       toast.error('O título/atividade é obrigatório')
       return
     }
+    setTitleError('')
 
     try {
       setLoading(true)
@@ -195,8 +198,15 @@ export default function Learning() {
               <Input
                 placeholder="Digite o nome ou código do produto..."
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                onChange={(e) => {
+                  setTitle(e.target.value)
+                  setTitleError('')
+                }}
+                className={titleError ? 'border-destructive focus-visible:ring-destructive' : ''}
               />
+              {titleError && (
+                <p className="text-sm font-bold text-destructive mt-1.5">{titleError}</p>
+              )}
             </div>
             <div className="space-y-2">
               <Label className="text-sm font-semibold">O que foi aprendido?</Label>
@@ -223,7 +233,7 @@ export default function Learning() {
                   ref={fileInputRef}
                   type="file"
                   className="hidden"
-                  accept="image/*"
+                  accept="image/jpeg,image/png,image/webp,image/*"
                   onChange={(e) => {
                     if (e.target.files && e.target.files.length > 0) {
                       setFile(e.target.files[0])

@@ -39,7 +39,8 @@ export default function ChangePassword() {
 
     if (password.length < 8 || !/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
       setFieldErrors({
-        password: 'A senha deve conter no mínimo 8 caracteres, uma letra maiúscula e um número.',
+        password:
+          'A senha deve conter pelo menos 8 caracteres, incluindo uma letra maiúscula e um número.',
       })
       return
     }
@@ -115,7 +116,7 @@ export default function ChangePassword() {
                 )}
               />
               {fieldErrors.password && (
-                <p className="text-sm text-red-500">{fieldErrors.password}</p>
+                <p className="text-sm font-bold text-destructive mt-1.5">{fieldErrors.password}</p>
               )}
             </div>
             <div className="space-y-2">
@@ -143,7 +144,9 @@ export default function ChangePassword() {
                 )}
               />
               {fieldErrors.passwordConfirm && (
-                <p className="text-sm text-red-500">{fieldErrors.passwordConfirm}</p>
+                <p className="text-sm font-bold text-destructive mt-1.5">
+                  {fieldErrors.passwordConfirm}
+                </p>
               )}
             </div>
             <Button

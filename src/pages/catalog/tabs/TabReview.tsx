@@ -22,7 +22,9 @@ export function TabReview({
   const { user: currentUser } = useAuth()
   const { toast } = useToast()
   const [newPointDesc, setNewPointDesc] = useState('')
+  const [descError, setDescError] = useState('')
   const [newPointFiles, setNewPointFiles] = useState<File[]>([])
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [statuses, setStatuses] = useState<ProductStatusModel[]>([])
   const [revisionPoints, setRevisionPoints] = useState<RevisionPointModel[]>([])
   const [openNotesId, setOpenNotesId] = useState<string | null>(null)
@@ -63,9 +65,12 @@ export function TabReview({
 
   const addPoint = async () => {
     if (!newPointDesc.trim()) {
+      setDescError('A descrição é obrigatória')
       toast({ title: 'A descrição é obrigatória', variant: 'destructive' })
       return
     }
+    setDescError('')
+
     if (!product.id || product.id === 'novo') {
       toast({
         title: 'Atenção',
@@ -76,6 +81,7 @@ export function TabReview({
     }
 
     try {
+      setIsSubmitting(true)
       const formData = new FormData()
       formData.append('product_id', product.id)
       formData.append('user_id', currentUser?.id || '')
@@ -92,6 +98,8 @@ export function TabReview({
       toast({ title: 'Ponto adicionado com sucesso!' })
     } catch (err) {
       toast({ title: 'Erro ao adicionar ponto', variant: 'destructive' })
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -144,16 +152,23 @@ export function TabReview({
       <div className="bg-slate-50 dark:bg-muted/20 p-4 rounded-lg border space-y-4">
         <Label className="text-lg font-bold">Adicionar Ponto de Revisão</Label>
         <div className="flex flex-col gap-3 max-w-xl">
-          <Input
-            placeholder="Apontar erro, correção ou feedback..."
-            value={newPointDesc}
-            onChange={(e) => setNewPointDesc(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && addPoint()}
-          />
+          <div className="space-y-1.5">
+            <Input
+              placeholder="Apontar erro, correção ou feedback..."
+              value={newPointDesc}
+              onChange={(e) => {
+                setNewPointDesc(e.target.value)
+                setDescError('')
+              }}
+              onKeyDown={(e) => e.key === 'Enter' && addPoint()}
+              className={descError ? 'border-destructive focus-visible:ring-destructive' : ''}
+            />
+            {descError && <p className="text-sm font-bold text-destructive mt-1.5">{descError}</p>}
+          </div>
 
           <div className="flex items-center gap-3">
-            <Button onClick={addPoint} variant="default" size="sm">
-              Adicionar Ponto
+            <Button onClick={addPoint} variant="default" size="sm" disabled={isSubmitting}>
+              {isSubmitting ? 'Adicionando...' : 'Adicionar Ponto'}
             </Button>
 
             <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
@@ -162,6 +177,7 @@ export function TabReview({
             <input
               type="file"
               multiple
+              accept="image/jpeg,image/png,image/webp,application/pdf"
               className="hidden"
               ref={fileInputRef}
               onChange={(e) => {

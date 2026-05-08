@@ -4,11 +4,10 @@ import pb from '@/lib/pocketbase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/hooks/use-toast'
 import { extractFieldErrors, getErrorMessage } from '@/lib/pocketbase/errors'
-import { Factory, Info } from 'lucide-react'
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Factory } from 'lucide-react'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -66,33 +65,17 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-muted/40 p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div className="mx-auto w-12 h-12 bg-primary rounded-lg flex items-center justify-center text-primary-foreground mb-4">
+      <Card className="w-full max-w-md overflow-hidden">
+        <CardHeader className="text-center bg-slate-900 pb-8 pt-8">
+          <div className="mx-auto w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center text-white mb-4">
             <Factory className="h-6 w-6" />
           </div>
-          <CardTitle className="text-2xl">Fábrica Inteligente</CardTitle>
-          <CardDescription>Acesse sua conta para continuar</CardDescription>
+          <CardTitle className="text-2xl tracking-tight">
+            <span className="text-green-600">Fábrica</span>{' '}
+            <span className="text-orange-500">Inteligente</span>
+          </CardTitle>
         </CardHeader>
-        <CardContent>
-          <Alert className="mb-6 bg-muted/50 text-left">
-            <Info className="h-4 w-4" />
-            <AlertDescription className="space-y-2">
-              <p>
-                Para seu primeiro acesso use o seu email e a senha inicial:{' '}
-                <strong>Skip@Pass</strong>
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Link de acesso para novos membros:{' '}
-                <a
-                  href="https://analise-documental-4f8b1.goskip.app"
-                  className="underline hover:text-foreground font-medium"
-                >
-                  https://analise-documental-4f8b1.goskip.app
-                </a>
-              </p>
-            </AlertDescription>
-          </Alert>
+        <CardContent className="pt-6">
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">E-mail</Label>

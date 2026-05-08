@@ -47,8 +47,19 @@ export default function Login() {
         <CardContent>
           <Alert className="mb-6 bg-muted/50 text-left">
             <Info className="h-4 w-4" />
-            <AlertDescription>
-              Para seu primeiro acesso use o seu email e na senha use <strong>Skip@Pass</strong>
+            <AlertDescription className="space-y-2">
+              <p>
+                Para seu primeiro acesso use o seu email e a senha inicial: <strong>Skip@Pass</strong>
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Link de acesso para novos membros:{' '}
+                <a
+                  href="https://analise-documental-4f8b1.goskip.app"
+                  className="underline hover:text-foreground font-medium"
+                >
+                  https://analise-documental-4f8b1.goskip.app
+                </a>
+              </p>
             </AlertDescription>
           </Alert>
           <form onSubmit={handleLogin} className="space-y-4">

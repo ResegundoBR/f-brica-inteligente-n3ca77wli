@@ -6,7 +6,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import pb from '@/lib/pocketbase/client'
 import { useToast } from '@/hooks/use-toast'
-import { ChevronDown, ChevronUp, Trash, X } from 'lucide-react'
+import { ChevronDown, ChevronUp, Trash, X, GripVertical } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 const defaultProcessTypes = [
   'Corte',
@@ -35,6 +36,7 @@ export function TabProcesses({
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [showOtherInput, setShowOtherInput] = useState(false)
   const [newProcessName, setNewProcessName] = useState('')
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
 
   useEffect(() => {
     if (product.id && product.id !== 'novo') {
@@ -55,6 +57,45 @@ export function TabProcesses({
   }
 
   const displayList = product.id === 'novo' ? pendingProcesses : processes
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+  }
+
+  const handleDrop = async (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault()
+    if (draggedIndex === null || draggedIndex === dropIndex) return
+
+    const newList = [...displayList]
+    const [draggedItem] = newList.splice(draggedIndex, 1)
+    newList.splice(dropIndex, 0, draggedItem)
+
+    const updatedList = newList.map((item, idx) => ({ ...item, order: idx + 1 }))
+
+    if (product.id === 'novo' && setPendingProcesses) {
+      setPendingProcesses(updatedList)
+    } else {
+      setProcesses(updatedList)
+      try {
+        await Promise.all(
+          updatedList.map((p) =>
+            pb.collection('product_processes').update(p.id, { order: p.order }),
+          ),
+        )
+        toast({ title: 'Ordem dos processos atualizada' })
+      } catch (err) {
+        toast({ title: 'Erro ao salvar nova ordem', variant: 'destructive' })
+        loadProcesses()
+      }
+    }
+    setDraggedIndex(null)
+  }
 
   const handleAddProcess = async (name: string) => {
     if (product.id === 'novo' && setPendingProcesses) {
@@ -216,13 +257,26 @@ export function TabProcesses({
             {displayList.map((proc, idx) => (
               <div
                 key={proc.id}
-                className="border rounded-md bg-card shadow-sm overflow-hidden group"
+                draggable
+                onDragStart={(e) => handleDragStart(e, idx)}
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDrop(e, idx)}
+                className={cn(
+                  "border rounded-md bg-card shadow-sm overflow-hidden group transition-all",
+                  draggedIndex === idx ? "opacity-50 border-primary border-dashed" : ""
+                )}
               >
                 <div className="flex items-center justify-between p-2 sm:p-3 hover:bg-accent/10 transition-colors">
                   <div
                     className="flex flex-1 items-center gap-3 cursor-pointer"
                     onClick={() => setExpandedId(expandedId === proc.id ? null : proc.id)}
                   >
+                    <div
+                      className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1 -ml-1 rounded hover:bg-muted"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <GripVertical className="h-4 w-4" />
+                    </div>
                     <div className="flex items-center justify-center h-6 w-6 rounded-full bg-primary/10 text-primary font-bold text-xs shrink-0">
                       {idx + 1}
                     </div>

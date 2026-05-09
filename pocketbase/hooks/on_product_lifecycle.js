@@ -98,6 +98,52 @@ onRecordAfterUpdateSuccess((e) => {
       $app.saveNoValidate(log)
     }
 
+    let oldData = original.get('data')
+    if (typeof oldData === 'string') {
+      try {
+        oldData = JSON.parse(oldData)
+      } catch (_) {
+        oldData = {}
+      }
+    }
+    oldData = oldData || {}
+
+    let newData = e.record.get('data')
+    if (typeof newData === 'string') {
+      try {
+        newData = JSON.parse(newData)
+      } catch (_) {
+        newData = {}
+      }
+    }
+    newData = newData || {}
+
+    const oldComp = Array.isArray(oldData.composition) ? oldData.composition : []
+    const newComp = Array.isArray(newData.composition) ? newData.composition : []
+
+    if (JSON.stringify(oldComp) !== JSON.stringify(newComp)) {
+      const added = newComp.filter((n) => !oldComp.find((o) => o.id === n.id))
+      const removed = oldComp.filter((o) => !newComp.find((n) => n.id === o.id))
+      const modified = newComp.filter((n) => {
+        const o = oldComp.find((old) => old.id === n.id)
+        return o && JSON.stringify(o) !== JSON.stringify(n)
+      })
+
+      const isImport =
+        added.length >= 2 && modified.length === 0 && removed.length <= oldComp.length
+      const compLog = new Record(logs)
+      compLog.set('product_id', e.record.id)
+      compLog.set('user_id', userId)
+      compLog.set('action', isImport ? 'Importação de Planilha' : 'Alteração de Composição')
+      compLog.set('details', {
+        summary: `Adicionados: ${added.length}, Removidos: ${removed.length}, Modificados: ${modified.length}`,
+        added,
+        removed,
+        modified,
+      })
+      $app.saveNoValidate(compLog)
+    }
+
     if (oldStatusId !== newStatusId && newStatusId) {
       const log = new Record(logs)
       log.set('product_id', e.record.id)

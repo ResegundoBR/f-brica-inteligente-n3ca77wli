@@ -160,7 +160,13 @@ export function TabHistory({ product }: { product: Product }) {
                   >
                     <HighlightText text={log.action} term={searchTerm} />
                   </p>
+                  {log.details?.summary && (
+                    <p className="text-xs text-muted-foreground mt-0.5 mb-1.5 p-2 rounded-md bg-muted/30 border border-border/50">
+                      {log.details.summary}
+                    </p>
+                  )}
                   <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                    {' '}
                     <span className="flex items-center gap-1">
                       <User className="h-3 w-3" />{' '}
                       <HighlightText text={userName} term={searchTerm} />

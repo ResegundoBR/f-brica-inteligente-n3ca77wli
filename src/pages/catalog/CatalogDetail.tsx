@@ -33,6 +33,7 @@ export default function CatalogDetail() {
   const [activeTab, setActiveTab] = useState('geral')
   const [statuses, setStatuses] = useState<ProductStatusModel[]>([])
   const [pendingProcesses, setPendingProcesses] = useState<any[]>([])
+  const [isAssemblyPhaseUnlocked, setIsAssemblyPhaseUnlocked] = useState(false)
 
   useEffect(() => {
     let defaultStatus = ''
@@ -78,6 +79,8 @@ export default function CatalogDetail() {
           const rName = user?.expand?.role?.name?.toLowerCase() || ''
           const isUserHighLevel =
             rName.includes('admin') || rName.includes('revis') || rName.includes('administrador')
+
+          setIsAssemblyPhaseUnlocked(statusName === 'validado')
 
           if (statusName === 'validado' && !isUserHighLevel) {
             toast({
@@ -205,7 +208,7 @@ export default function CatalogDetail() {
   if (!product) return <div>Carregando...</div>
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-assembly-unlocked={isAssemblyPhaseUnlocked}>
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div className="flex items-center gap-4">
           <Button variant="outline" size="icon" onClick={() => navigate('/catalogo')}>

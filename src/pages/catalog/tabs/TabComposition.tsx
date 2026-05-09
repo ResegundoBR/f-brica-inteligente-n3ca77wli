@@ -177,11 +177,27 @@ export function TabComposition({
   const composition = product.data?.composition || []
 
   const STAGE_GROUPS = [
-    { name: 'FABRICAÇÃO', STAGE_KEY: 'FABRICAÇÃO' },
-    { name: 'PREPARAÇÃO', STAGE_KEY: 'PREPARAÇÃO' },
-    { name: 'MONTAGEM', STAGE_KEY: 'MONTAGEM' },
-    { name: 'EXPEDIÇÃO', STAGE_KEY: 'EXPEDIÇÃO' },
-    { name: 'SEM ETAPA', STAGE_KEY: '' },
+    {
+      name: 'FABRICAÇÃO',
+      STAGE_KEY: 'FABRICAÇÃO',
+      colorClass: 'bg-slate-100 hover:bg-slate-100/80 text-slate-900',
+    },
+    {
+      name: 'PREPARAÇÃO',
+      STAGE_KEY: 'PREPARAÇÃO',
+      colorClass: 'bg-yellow-100 hover:bg-yellow-100/80 text-yellow-900',
+    },
+    {
+      name: 'MONTAGEM',
+      STAGE_KEY: 'MONTAGEM',
+      colorClass: 'bg-green-100 hover:bg-green-100/80 text-green-900',
+    },
+    {
+      name: 'EXPEDIÇÃO',
+      STAGE_KEY: 'EXPEDIÇÃO',
+      colorClass: 'bg-purple-100 hover:bg-purple-100/80 text-purple-900',
+    },
+    { name: 'SEM ETAPA', STAGE_KEY: '', colorClass: 'bg-muted/50 hover:bg-muted/50' },
   ]
 
   const groupedComposition = STAGE_GROUPS.map((group) => {
@@ -244,7 +260,7 @@ export function TabComposition({
                   if (group.items.length === 0) return null
                   return (
                     <Fragment key={group.name}>
-                      <TableRow className="bg-muted/50 hover:bg-muted/50">
+                      <TableRow className={group.colorClass}>
                         <TableCell colSpan={7} className="font-semibold text-xs tracking-wider">
                           {group.name}
                         </TableCell>

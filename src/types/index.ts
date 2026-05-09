@@ -40,7 +40,7 @@ export interface CompositionItem {
   index?: string
   code: string
   description: string
-  quantity: number
+  quantity: number | string
   measurements: string
   etapa?: string
 }

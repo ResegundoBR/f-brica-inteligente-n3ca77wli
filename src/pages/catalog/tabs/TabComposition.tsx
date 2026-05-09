@@ -94,16 +94,34 @@ export function TabComposition({
 
       for (let i = startIdx; i < lines.length; i++) {
         if (!lines[i].trim()) continue
-        const cols = lines[i].split(delimiter)
+
+        const rowStr = lines[i]
+        const cols = []
+        let current = ''
+        let inQuotes = false
+        for (let j = 0; j < rowStr.length; j++) {
+          const char = rowStr[j]
+          if (char === '"') {
+            inQuotes = !inQuotes
+          } else if (char === delimiter && !inQuotes) {
+            cols.push(current)
+            current = ''
+          } else {
+            current += char
+          }
+        }
+        cols.push(current)
+
         if (cols.length >= 2) {
           newItems.push({
             id: Date.now().toString() + i,
-            index: indexIdx !== -1 ? cols[indexIdx]?.trim() || '' : '',
-            code: codeIdx !== -1 ? cols[codeIdx]?.trim() || '' : '',
-            description: descIdx !== -1 ? cols[descIdx]?.trim() || '' : '',
-            quantity: qtdIdx !== -1 ? parseInt(cols[qtdIdx]?.trim() || '1') || 1 : 1,
-            measurements: medIdx !== -1 ? cols[medIdx]?.trim() || '' : '',
-            etapa: etapaIdx !== -1 ? cols[etapaIdx]?.trim()?.toUpperCase() : '',
+            index: indexIdx !== -1 ? cols[indexIdx]?.trim().replace(/^"|"$/g, '') || '' : '',
+            code: codeIdx !== -1 ? cols[codeIdx]?.trim().replace(/^"|"$/g, '') || '' : '',
+            description: descIdx !== -1 ? cols[descIdx]?.trim().replace(/^"|"$/g, '') || '' : '',
+            quantity: qtdIdx !== -1 ? cols[qtdIdx]?.trim().replace(/^"|"$/g, '') || '1' : '1',
+            measurements: medIdx !== -1 ? cols[medIdx]?.trim().replace(/^"|"$/g, '') || '' : '',
+            etapa:
+              etapaIdx !== -1 ? cols[etapaIdx]?.trim().replace(/^"|"$/g, '')?.toUpperCase() : '',
           })
         }
       }
@@ -122,7 +140,7 @@ export function TabComposition({
       index: '',
       code: '',
       description: '',
-      quantity: 1,
+      quantity: '1',
       measurements: '',
       etapa: stage || '',
     }
@@ -180,7 +198,7 @@ export function TabComposition({
     {
       name: 'FABRICAÇÃO',
       STAGE_KEY: 'FABRICAÇÃO',
-      colorClass: 'bg-slate-100 hover:bg-slate-100/80 text-slate-900',
+      colorClass: 'bg-blue-100 hover:bg-blue-100/80 text-blue-900',
     },
     {
       name: 'PREPARAÇÃO',
@@ -304,11 +322,9 @@ export function TabComposition({
                           </TableCell>
                           <TableCell>
                             <Input
-                              type="number"
+                              type="text"
                               value={item.quantity}
-                              onChange={(e) =>
-                                updateItem(item.id, 'quantity', parseInt(e.target.value))
-                              }
+                              onChange={(e) => updateItem(item.id, 'quantity', e.target.value)}
                               className="h-8 text-sm"
                             />
                           </TableCell>

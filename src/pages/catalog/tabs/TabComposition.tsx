@@ -28,7 +28,7 @@ export function TabComposition({
 
   const downloadTemplate = () => {
     const csvContent =
-      '#;Etapa;Cód.;Descrição;Qtd.;Medidas\n1;FABRICAÇÃO;COMP-001;Parafuso 10mm;100;10mm x 5mm\n2;MONTAGEM;COMP-002;Porca 10mm;100;10mm'
+      '#;Etapa;Cód.;Descrição;Qtd.;Medida\n1;FABRICAÇÃO;COMP-001;Parafuso 10mm;100;10mm\n2;MONTAGEM;COMP-002;Porca 10mm;100;10mm'
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
     const url = URL.createObjectURL(blob)
@@ -60,28 +60,27 @@ export function TabComposition({
       const hasCode = headerCols.some((c) => c.includes('cód') || c.includes('cod'))
       const hasDesc = headerCols.some((c) => c.includes('descri'))
       const hasQtd = headerCols.some((c) => c.includes('qtd') || c.includes('quant'))
+      const hasMedida = headerCols.some((c) => c.includes('medida'))
 
-      if (!hasCode || !hasDesc || !hasQtd) {
+      if (!hasIndexCol || !hasCode || !hasDesc || !hasQtd || !hasMedida) {
         toast({
           title: 'Erro na importação',
-          description: 'A planilha não contém as colunas obrigatórias (Cód., Descrição, Qtd.).',
+          description:
+            'A planilha não contém as colunas obrigatórias (#, Cód., Descrição, Qtd., Medida).',
           variant: 'destructive',
         })
         if (fileInputRef.current) fileInputRef.current.value = ''
         return
       }
 
-      const offset = hasIndexCol ? 1 : 0
+      let indexIdx = headerCols.findIndex(
+        (c) => c === '#' || c === 'nº' || c === 'index' || c === 'id' || c === 'item',
+      )
       let codeIdx = headerCols.findIndex((c) => c.includes('cód') || c.includes('cod'))
       let descIdx = headerCols.findIndex((c) => c.includes('descri'))
       let qtdIdx = headerCols.findIndex((c) => c.includes('qtd') || c.includes('quant'))
       let medIdx = headerCols.findIndex((c) => c.includes('medida'))
       let etapaIdx = headerCols.findIndex((c) => c.includes('etapa'))
-
-      if (codeIdx === -1) codeIdx = offset
-      if (descIdx === -1) descIdx = offset + 1
-      if (qtdIdx === -1) qtdIdx = offset + 2
-      if (medIdx === -1) medIdx = offset + 3
 
       const isHeaderRow = headerCols.some(
         (c) =>
@@ -99,9 +98,10 @@ export function TabComposition({
         if (cols.length >= 2) {
           newItems.push({
             id: Date.now().toString() + i,
-            code: cols[codeIdx]?.trim() || '',
-            description: cols[descIdx]?.trim() || '',
-            quantity: parseInt(cols[qtdIdx]?.trim() || '1') || 1,
+            index: indexIdx !== -1 ? cols[indexIdx]?.trim() || '' : '',
+            code: codeIdx !== -1 ? cols[codeIdx]?.trim() || '' : '',
+            description: descIdx !== -1 ? cols[descIdx]?.trim() || '' : '',
+            quantity: qtdIdx !== -1 ? parseInt(cols[qtdIdx]?.trim() || '1') || 1 : 1,
             measurements: medIdx !== -1 ? cols[medIdx]?.trim() || '' : '',
             etapa: etapaIdx !== -1 ? cols[etapaIdx]?.trim()?.toUpperCase() : '',
           })
@@ -119,6 +119,7 @@ export function TabComposition({
   const addItem = (stage?: string) => {
     const newItem = {
       id: Date.now().toString(),
+      index: '',
       code: '',
       description: '',
       quantity: 1,
@@ -223,17 +224,18 @@ export function TabComposition({
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[150px]">Etapa</TableHead>
+                <TableHead className="w-[80px]">#</TableHead>
                 <TableHead className="w-[120px]">Cód.</TableHead>
                 <TableHead>Descrição</TableHead>
                 <TableHead className="w-[100px]">Qtd.</TableHead>
-                <TableHead className="w-[150px]">Medidas</TableHead>
+                <TableHead className="w-[150px]">Medida</TableHead>
                 <TableHead className="w-[60px]"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {composition.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                     Nenhum componente adicionado.
                   </TableCell>
                 </TableRow>
@@ -243,7 +245,7 @@ export function TabComposition({
                   return (
                     <Fragment key={group.name}>
                       <TableRow className="bg-muted/50 hover:bg-muted/50">
-                        <TableCell colSpan={6} className="font-semibold text-xs tracking-wider">
+                        <TableCell colSpan={7} className="font-semibold text-xs tracking-wider">
                           {group.name}
                         </TableCell>
                       </TableRow>
@@ -262,6 +264,13 @@ export function TabComposition({
                                 </option>
                               ))}
                             </select>
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              value={item.index || ''}
+                              onChange={(e) => updateItem(item.id, 'index', e.target.value)}
+                              className="h-8 text-sm"
+                            />
                           </TableCell>
                           <TableCell>
                             <Input

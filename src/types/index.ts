@@ -37,6 +37,7 @@ export interface Process {
 
 export interface CompositionItem {
   id: string
+  index?: string
   code: string
   description: string
   quantity: number

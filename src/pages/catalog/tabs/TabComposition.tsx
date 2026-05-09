@@ -10,9 +10,11 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { FileUp, Plus, Trash2, Download, FilePlus, FileText } from 'lucide-react'
-import { useRef } from 'react'
+import { Fragment, useRef } from 'react'
 import pb from '@/lib/pocketbase/client'
 import { useToast } from '@/hooks/use-toast'
+
+const STAGES = ['FABRICAÇÃO', 'PREPARAÇÃO', 'MONTAGEM', 'EXPEDIÇÃO']
 
 export function TabComposition({
   product,
@@ -26,7 +28,7 @@ export function TabComposition({
 
   const downloadTemplate = () => {
     const csvContent =
-      '#;Cód.;Descrição;Qtd.;Medidas\n1;COMP-001;Parafuso 10mm;100;10mm x 5mm\n2;COMP-002;Porca 10mm;100;10mm'
+      '#;Etapa;Cód.;Descrição;Qtd.;Medidas\n1;FABRICAÇÃO;COMP-001;Parafuso 10mm;100;10mm x 5mm\n2;MONTAGEM;COMP-002;Porca 10mm;100;10mm'
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
     const url = URL.createObjectURL(blob)
@@ -58,13 +60,11 @@ export function TabComposition({
       const hasCode = headerCols.some((c) => c.includes('cód') || c.includes('cod'))
       const hasDesc = headerCols.some((c) => c.includes('descri'))
       const hasQtd = headerCols.some((c) => c.includes('qtd') || c.includes('quant'))
-      const hasMed = headerCols.some((c) => c.includes('medida'))
 
-      if (!hasIndexCol || !hasCode || !hasDesc || !hasQtd || !hasMed) {
+      if (!hasCode || !hasDesc || !hasQtd) {
         toast({
           title: 'Erro na importação',
-          description:
-            'A planilha não contém todas as colunas obrigatórias (#, Cód., Descrição, Qtd., Medidas).',
+          description: 'A planilha não contém as colunas obrigatórias (Cód., Descrição, Qtd.).',
           variant: 'destructive',
         })
         if (fileInputRef.current) fileInputRef.current.value = ''
@@ -72,6 +72,16 @@ export function TabComposition({
       }
 
       const offset = hasIndexCol ? 1 : 0
+      let codeIdx = headerCols.findIndex((c) => c.includes('cód') || c.includes('cod'))
+      let descIdx = headerCols.findIndex((c) => c.includes('descri'))
+      let qtdIdx = headerCols.findIndex((c) => c.includes('qtd') || c.includes('quant'))
+      let medIdx = headerCols.findIndex((c) => c.includes('medida'))
+      let etapaIdx = headerCols.findIndex((c) => c.includes('etapa'))
+
+      if (codeIdx === -1) codeIdx = offset
+      if (descIdx === -1) descIdx = offset + 1
+      if (qtdIdx === -1) qtdIdx = offset + 2
+      if (medIdx === -1) medIdx = offset + 3
 
       const isHeaderRow = headerCols.some(
         (c) =>
@@ -89,10 +99,11 @@ export function TabComposition({
         if (cols.length >= 2) {
           newItems.push({
             id: Date.now().toString() + i,
-            code: cols[offset]?.trim() || '',
-            description: cols[offset + 1]?.trim() || '',
-            quantity: parseInt(cols[offset + 2]?.trim() || '1') || 1,
-            measurements: cols[offset + 3]?.trim() || '',
+            code: cols[codeIdx]?.trim() || '',
+            description: cols[descIdx]?.trim() || '',
+            quantity: parseInt(cols[qtdIdx]?.trim() || '1') || 1,
+            measurements: medIdx !== -1 ? cols[medIdx]?.trim() || '' : '',
+            etapa: etapaIdx !== -1 ? cols[etapaIdx]?.trim()?.toUpperCase() : '',
           })
         }
       }
@@ -105,13 +116,14 @@ export function TabComposition({
     reader.readAsText(file)
   }
 
-  const addItem = () => {
+  const addItem = (stage?: string) => {
     const newItem = {
       id: Date.now().toString(),
       code: '',
       description: '',
       quantity: 1,
       measurements: '',
+      etapa: stage || '',
     }
     setProduct({
       ...product,
@@ -161,6 +173,26 @@ export function TabComposition({
     }
   }
 
+  const composition = product.data?.composition || []
+
+  const STAGE_GROUPS = [
+    { name: 'FABRICAÇÃO', STAGE_KEY: 'FABRICAÇÃO' },
+    { name: 'PREPARAÇÃO', STAGE_KEY: 'PREPARAÇÃO' },
+    { name: 'MONTAGEM', STAGE_KEY: 'MONTAGEM' },
+    { name: 'EXPEDIÇÃO', STAGE_KEY: 'EXPEDIÇÃO' },
+    { name: 'SEM ETAPA', STAGE_KEY: '' },
+  ]
+
+  const groupedComposition = STAGE_GROUPS.map((group) => {
+    let items
+    if (group.STAGE_KEY === '') {
+      items = composition.filter((c) => !c.etapa || !STAGES.includes(c.etapa.toUpperCase()))
+    } else {
+      items = composition.filter((c) => c.etapa?.toUpperCase() === group.STAGE_KEY)
+    }
+    return { ...group, items }
+  }).filter((group) => group.items.length > 0 || group.STAGE_KEY === '')
+
   return (
     <div className="space-y-8 animate-fade-in">
       <div className="space-y-4">
@@ -180,7 +212,7 @@ export function TabComposition({
               ref={fileInputRef}
               onChange={handleImport}
             />
-            <Button onClick={addItem}>
+            <Button onClick={() => addItem()}>
               <Plus className="mr-2 h-4 w-4" /> Novo Item
             </Button>
           </div>
@@ -190,7 +222,7 @@ export function TabComposition({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[50px]">#</TableHead>
+                <TableHead className="w-[150px]">Etapa</TableHead>
                 <TableHead className="w-[120px]">Cód.</TableHead>
                 <TableHead>Descrição</TableHead>
                 <TableHead className="w-[100px]">Qtd.</TableHead>
@@ -199,57 +231,84 @@ export function TabComposition({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(product.data?.composition?.length ?? 0) === 0 ? (
+              {composition.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                     Nenhum componente adicionado.
                   </TableCell>
                 </TableRow>
               ) : (
-                product.data?.composition?.map((item, idx) => (
-                  <TableRow key={item.id}>
-                    <TableCell>{idx + 1}</TableCell>
-                    <TableCell>
-                      <Input
-                        value={item.code}
-                        onChange={(e) => updateItem(item.id, 'code', e.target.value)}
-                        className="h-8"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        value={item.description}
-                        onChange={(e) => updateItem(item.id, 'description', e.target.value)}
-                        className="h-8"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        type="number"
-                        value={item.quantity}
-                        onChange={(e) => updateItem(item.id, 'quantity', parseInt(e.target.value))}
-                        className="h-8"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        value={item.measurements}
-                        onChange={(e) => updateItem(item.id, 'measurements', e.target.value)}
-                        className="h-8"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => removeItem(item.id)}
-                        className="text-destructive h-8 w-8"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
+                groupedComposition.map((group) => {
+                  if (group.items.length === 0) return null
+                  return (
+                    <Fragment key={group.name}>
+                      <TableRow className="bg-muted/50 hover:bg-muted/50">
+                        <TableCell colSpan={6} className="font-semibold text-xs tracking-wider">
+                          {group.name}
+                        </TableCell>
+                      </TableRow>
+                      {group.items.map((item) => (
+                        <TableRow key={item.id}>
+                          <TableCell>
+                            <select
+                              value={item.etapa?.toUpperCase() || ''}
+                              onChange={(e) => updateItem(item.id, 'etapa', e.target.value)}
+                              className="flex h-8 w-full items-center justify-between rounded-md border border-input bg-background px-2 py-1 text-xs shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <option value="">Sem Etapa</option>
+                              {STAGES.map((stage) => (
+                                <option key={stage} value={stage}>
+                                  {stage}
+                                </option>
+                              ))}
+                            </select>
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              value={item.code}
+                              onChange={(e) => updateItem(item.id, 'code', e.target.value)}
+                              className="h-8 text-sm"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              value={item.description}
+                              onChange={(e) => updateItem(item.id, 'description', e.target.value)}
+                              className="h-8 text-sm"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              value={item.quantity}
+                              onChange={(e) =>
+                                updateItem(item.id, 'quantity', parseInt(e.target.value))
+                              }
+                              className="h-8 text-sm"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              value={item.measurements}
+                              onChange={(e) => updateItem(item.id, 'measurements', e.target.value)}
+                              className="h-8 text-sm"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => removeItem(item.id)}
+                              className="text-destructive h-8 w-8"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </Fragment>
+                  )
+                })
               )}
             </TableBody>
           </Table>

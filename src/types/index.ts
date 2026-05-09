@@ -41,6 +41,7 @@ export interface CompositionItem {
   description: string
   quantity: number
   measurements: string
+  etapa?: string
 }
 
 export interface ReviewPoint {

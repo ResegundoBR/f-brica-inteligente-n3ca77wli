@@ -1,7 +1,15 @@
 import { UploadCloud, FileText, Download, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Product } from '@/types'
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
+import pb from '@/lib/pocketbase/client'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog'
 
 interface Props {
   product: Product
@@ -21,6 +29,7 @@ export function TabEngineering({ product, setProduct }: Props) {
   }
 
   const allFiles = product.engineering_files || []
+  const [previewFile, setPreviewFile] = useState<{ url: string; name: string } | null>(null)
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -57,7 +66,28 @@ export function TabEngineering({ product, setProduct }: Props) {
                     <FileText className="h-5 w-5 text-primary" />
                   </div>
                   <div className="flex flex-col max-w-[150px] sm:max-w-[300px]">
-                    <p className="text-sm font-medium truncate">
+                    <p
+                      className="text-sm font-medium truncate cursor-pointer hover:underline text-primary"
+                      onClick={() => {
+                        const name =
+                          file instanceof File
+                            ? file.name
+                            : typeof file === 'string'
+                              ? file
+                              : 'Arquivo'
+                        const url =
+                          file instanceof File
+                            ? URL.createObjectURL(file)
+                            : typeof file === 'string'
+                              ? pb.files.getUrl(product as any, file)
+                              : ''
+                        if (name.toLowerCase().endsWith('.pdf')) {
+                          setPreviewFile({ url, name })
+                        } else {
+                          window.open(url, '_blank')
+                        }
+                      }}
+                    >
                       {file instanceof File
                         ? file.name
                         : typeof file === 'string'
@@ -83,7 +113,19 @@ export function TabEngineering({ product, setProduct }: Props) {
                     </span>
                   </div>
                   <div className="flex gap-2">
-                    <Button variant="ghost" size="icon">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => {
+                        const url =
+                          file instanceof File
+                            ? URL.createObjectURL(file)
+                            : typeof file === 'string'
+                              ? pb.files.getUrl(product as any, file)
+                              : ''
+                        window.open(url, '_blank')
+                      }}
+                    >
                       <Download className="h-4 w-4" />
                     </Button>
                     <Button
@@ -105,6 +147,24 @@ export function TabEngineering({ product, setProduct }: Props) {
           </div>
         </div>
       )}
+
+      <Dialog open={!!previewFile} onOpenChange={(open) => !open && setPreviewFile(null)}>
+        <DialogContent className="max-w-4xl h-[85vh] flex flex-col p-4 sm:p-6">
+          <DialogHeader>
+            <DialogTitle className="truncate">{previewFile?.name}</DialogTitle>
+            <DialogDescription className="sr-only">Visualização de documento PDF</DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 w-full h-full min-h-0 bg-muted/20 rounded-md overflow-hidden border mt-2">
+            {previewFile && (
+              <iframe
+                src={previewFile.url}
+                className="w-full h-full border-0"
+                title={previewFile.name}
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

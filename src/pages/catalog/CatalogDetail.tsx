@@ -130,7 +130,7 @@ export default function CatalogDetail() {
       } else if (action === 'validate') {
         const valStatus = statuses.find((s) => s.name.toLowerCase() === 'validado')
         if (valStatus) targetStatus = valStatus.id
-      } else if (id === 'novo') {
+      } else if (id === 'novo' && !targetStatus) {
         const iniciado = statuses.find((s) => s.name.toLowerCase() === 'iniciado')
         if (iniciado) targetStatus = iniciado.id
       }
@@ -169,6 +169,17 @@ export default function CatalogDetail() {
 
       if (id === 'novo') {
         const createdProduct = await pb.collection('products').create(dataToSave)
+
+        if (product.data?.checklist && product.data.checklist.length > 0) {
+          for (const desc of product.data.checklist) {
+            await pb.collection('revision_points').create({
+              product_id: createdProduct.id,
+              user_id: user?.id || createdProduct.owner,
+              description: desc,
+              resolved: false,
+            })
+          }
+        }
 
         if (pendingProcesses.length > 0) {
           for (const proc of pendingProcesses) {

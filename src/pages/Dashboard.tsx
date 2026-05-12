@@ -10,7 +10,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts'
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis, ReferenceLine } from 'recharts'
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
@@ -243,6 +243,18 @@ export default function Dashboard() {
                   fontSize={12}
                 />
                 <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
+                <ReferenceLine
+                  y={8}
+                  stroke="#EF4444"
+                  strokeDasharray="3 3"
+                  label={{
+                    position: 'insideTopLeft',
+                    value: 'Meta Diária',
+                    fill: '#EF4444',
+                    fontSize: 12,
+                    fontWeight: 'bold',
+                  }}
+                />
                 <ChartTooltip
                   cursor={{ fill: 'var(--color-secondary)' }}
                   content={<ChartTooltipContent />}

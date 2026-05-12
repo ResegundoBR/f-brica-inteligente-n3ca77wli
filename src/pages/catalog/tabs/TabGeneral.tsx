@@ -4,8 +4,9 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { StatusBadge } from '../CatalogList'
 import { FilePlus, X, File as FileIcon } from 'lucide-react'
-import { useRef } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import pb from '@/lib/pocketbase/client'
+import { useAuth } from '@/hooks/use-auth'
 
 interface Props {
   product: Product
@@ -14,6 +15,15 @@ interface Props {
 
 export function TabGeneral({ product, setProduct }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const { user } = useAuth()
+  const [statuses, setStatuses] = useState<any[]>([])
+
+  useEffect(() => {
+    pb.collection('product_statuses').getFullList().then(setStatuses).catch(console.error)
+  }, [])
+
+  const roleName = user?.expand?.role?.name?.toLowerCase() || ''
+  const isAdmin = roleName === 'admin' || roleName === 'administrador'
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -149,7 +159,24 @@ export function TabGeneral({ product, setProduct }: Props) {
       <div className="space-y-2 pt-2">
         <Label>Status Atual</Label>
         <div className="pt-1">
-          <StatusBadge status={product.expand?.status || product.status} />
+          {isAdmin ? (
+            <select
+              className="flex h-10 w-full max-w-xs items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              value={product.status || ''}
+              onChange={(e) => setProduct({ ...product, status: e.target.value })}
+            >
+              <option value="" disabled>
+                Selecione um status...
+              </option>
+              {statuses.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <StatusBadge status={product.expand?.status || product.status} />
+          )}
         </div>
       </div>
     </div>

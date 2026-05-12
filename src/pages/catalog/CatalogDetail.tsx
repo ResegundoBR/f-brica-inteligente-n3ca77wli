@@ -170,17 +170,6 @@ export default function CatalogDetail() {
       if (id === 'novo') {
         const createdProduct = await pb.collection('products').create(dataToSave)
 
-        if (product.data?.checklist && product.data.checklist.length > 0) {
-          for (const desc of product.data.checklist) {
-            await pb.collection('revision_points').create({
-              product_id: createdProduct.id,
-              user_id: user?.id || createdProduct.owner,
-              description: desc,
-              resolved: false,
-            })
-          }
-        }
-
         if (pendingProcesses.length > 0) {
           for (const proc of pendingProcesses) {
             const formData = new FormData()

@@ -10,11 +10,11 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis, ReferenceLine } from 'recharts'
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis, ReferenceLine, Legend } from 'recharts'
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
-import { Product } from '@/types'
+import { Product, Log } from '@/types'
 
 const TARGET = 242
 
@@ -71,17 +71,20 @@ export default function Dashboard() {
   const [products, setProducts] = useState<Product[]>([])
   const [statuses, setStatuses] = useState<any[]>([])
   const [users, setUsers] = useState<any[]>([])
+  const [logs, setLogs] = useState<Log[]>([])
 
   const loadData = async () => {
     try {
-      const [prodRes, statRes, usersRes] = await Promise.all([
+      const [prodRes, statRes, usersRes, logsRes] = await Promise.all([
         pb.collection('products').getFullList<Product>(),
         pb.collection('product_statuses').getFullList(),
         pb.collection('users').getFullList(),
+        pb.collection('activity_logs').getFullList<Log>(),
       ])
       setProducts(prodRes)
       setStatuses(statRes)
       setUsers(usersRes)
+      setLogs(logsRes)
     } catch {
       /* intentionally ignored */
     }
@@ -95,6 +98,9 @@ export default function Dashboard() {
     loadData()
   })
   useRealtime('product_statuses', () => {
+    loadData()
+  })
+  useRealtime('activity_logs', () => {
     loadData()
   })
 
@@ -139,20 +145,35 @@ export default function Dashboard() {
   })
 
   const chartData = last14Days.map((dateStr) => {
-    const count = products.filter((p) => p.updated.startsWith(dateStr)).length
     const dateObj = new Date(dateStr)
     // Fix timezone offset for string display
     dateObj.setMinutes(dateObj.getMinutes() + dateObj.getTimezoneOffset())
+
+    // Cadastros: logs for this date where action is create
+    const cadastros = logs.filter(
+      (l) => l.created.startsWith(dateStr) && l.action === 'create',
+    ).length
+
+    // Atividades: logs for this date where action is NOT create
+    const atividades = logs.filter(
+      (l) => l.created.startsWith(dateStr) && l.action !== 'create',
+    ).length
+
     return {
       date: dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
-      count,
+      cadastros,
+      atividades,
     }
   })
 
   const chartConfig = {
-    count: {
-      label: 'Atividades',
+    cadastros: {
+      label: 'Cadastros',
       color: '#22C55E',
+    },
+    atividades: {
+      label: 'Atividades',
+      color: '#64748B',
     },
   }
 
@@ -223,17 +244,11 @@ export default function Dashboard() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Produtividade da Equipe</CardTitle>
-            <CardDescription>Atividades e atualizações nos últimos 14 dias</CardDescription>
+            <CardDescription>Cadastros vs. Outras Atividades (14 dias)</CardDescription>
           </CardHeader>
           <CardContent className="h-[250px] pt-4">
             <ChartContainer config={chartConfig} className="h-full w-full">
-              <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#22C55E" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="#22C55E" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
+              <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" />
                 <XAxis
                   dataKey="date"
@@ -249,7 +264,7 @@ export default function Dashboard() {
                   strokeDasharray="3 3"
                   label={{
                     position: 'insideTopLeft',
-                    value: 'Meta Diária',
+                    value: 'Meta Diária (8)',
                     fill: '#EF4444',
                     fontSize: 12,
                     fontWeight: 'bold',
@@ -259,15 +274,20 @@ export default function Dashboard() {
                   cursor={{ fill: 'var(--color-secondary)' }}
                   content={<ChartTooltipContent />}
                 />
-                <Area
-                  type="monotone"
-                  dataKey="count"
-                  stroke="#22C55E"
-                  strokeWidth={2}
-                  fillOpacity={1}
-                  fill="url(#colorCount)"
+                <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
+                <Bar
+                  dataKey="cadastros"
+                  fill="var(--color-cadastros)"
+                  radius={[4, 4, 0, 0]}
+                  name="Cadastros"
                 />
-              </AreaChart>
+                <Bar
+                  dataKey="atividades"
+                  fill="var(--color-atividades)"
+                  radius={[4, 4, 0, 0]}
+                  name="Outras Atividades"
+                />
+              </BarChart>
             </ChartContainer>
           </CardContent>
         </Card>

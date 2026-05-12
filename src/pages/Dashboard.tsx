@@ -149,31 +149,45 @@ export default function Dashboard() {
     // Fix timezone offset for string display
     dateObj.setMinutes(dateObj.getMinutes() + dateObj.getTimezoneOffset())
 
-    // Cadastros: logs for this date where action is create
-    const cadastros = logs.filter(
-      (l) => l.created.startsWith(dateStr) && l.action === 'create',
-    ).length
-
-    // Atividades: logs for this date where action is NOT create
-    const atividades = logs.filter(
-      (l) => l.created.startsWith(dateStr) && l.action !== 'create',
-    ).length
+    // Cadastros: products created on this date
+    const cadastros = products.filter((p) => p.created.startsWith(dateStr)).length
 
     return {
       date: dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
       cadastros,
-      atividades,
     }
   })
 
   const chartConfig = {
     cadastros: {
       label: 'Cadastros',
-      color: '#22C55E',
+      color: '#3B82F6',
     },
-    atividades: {
-      label: 'Atividades',
-      color: '#64748B',
+  }
+
+  // User Activity Data
+  const userActivityCounts: Record<string, number> = {}
+  logs.forEach((l) => {
+    if (l.user_id) {
+      userActivityCounts[l.user_id] = (userActivityCounts[l.user_id] || 0) + 1
+    }
+  })
+
+  const userActivityData = Object.entries(userActivityCounts)
+    .map(([userId, count]) => {
+      const user = users.find((u) => u.id === userId)
+      return {
+        name: user?.name?.split(' ')[0] || 'Desconhecido',
+        count,
+      }
+    })
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10) // Top 10 users
+
+  const userActivityConfig = {
+    count: {
+      label: 'Ações',
+      color: '#8B5CF6',
     },
   }
 
@@ -230,8 +244,8 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card>
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className="md:col-span-1">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Progresso de Cadastros</CardTitle>
             <CardDescription>Meta: {TARGET} produtos</CardDescription>
@@ -241,10 +255,10 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="md:col-span-2">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Produtividade da Equipe</CardTitle>
-            <CardDescription>Cadastros vs. Outras Atividades (14 dias)</CardDescription>
+            <CardDescription>Cadastros realizados nos últimos 14 dias</CardDescription>
           </CardHeader>
           <CardContent className="h-[250px] pt-4">
             <ChartContainer config={chartConfig} className="h-full w-full">
@@ -274,18 +288,11 @@ export default function Dashboard() {
                   cursor={{ fill: 'var(--color-secondary)' }}
                   content={<ChartTooltipContent />}
                 />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
                 <Bar
                   dataKey="cadastros"
                   fill="var(--color-cadastros)"
                   radius={[4, 4, 0, 0]}
                   name="Cadastros"
-                />
-                <Bar
-                  dataKey="atividades"
-                  fill="var(--color-atividades)"
-                  radius={[4, 4, 0, 0]}
-                  name="Outras Atividades"
                 />
               </BarChart>
             </ChartContainer>
@@ -293,51 +300,108 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Cadastros Parados (Mais de 5 dias)</CardTitle>
-          <CardDescription>Atenção necessária para itens ociosos (não validados).</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Produto</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Última Atualização</TableHead>
-                <TableHead className="text-right">Dias Parado</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {idleProducts.length === 0 ? (
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Atividade por Usuário</CardTitle>
+            <CardDescription>Total de ações (edições, status) no sistema</CardDescription>
+          </CardHeader>
+          <CardContent className="h-[300px]">
+            {userActivityData.length === 0 ? (
+              <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
+                Nenhuma atividade registrada.
+              </div>
+            ) : (
+              <ChartContainer config={userActivityConfig} className="h-full w-full">
+                <BarChart
+                  data={userActivityData}
+                  margin={{ top: 0, right: 20, left: 10, bottom: 0 }}
+                  layout="vertical"
+                >
+                  <CartesianGrid horizontal={false} strokeDasharray="3 3" />
+                  <XAxis
+                    type="number"
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    fontSize={12}
+                  />
+                  <YAxis
+                    dataKey="name"
+                    type="category"
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    fontSize={12}
+                    width={80}
+                  />
+                  <ChartTooltip
+                    cursor={{ fill: 'var(--color-secondary)' }}
+                    content={<ChartTooltipContent hideLabel />}
+                  />
+                  <Bar
+                    dataKey="count"
+                    fill="var(--color-count)"
+                    radius={[0, 4, 4, 0]}
+                    name="Ações"
+                  />
+                </BarChart>
+              </ChartContainer>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Cadastros Parados (Mais de 5 dias)</CardTitle>
+            <CardDescription>Atenção necessária para itens ociosos.</CardDescription>
+          </CardHeader>
+          <CardContent className="max-h-[300px] overflow-auto">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground py-6">
-                    Nenhum cadastro parado encontrado.
-                  </TableCell>
+                  <TableHead>Produto</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Últ. Atualização</TableHead>
+                  <TableHead className="text-right">Parado</TableHead>
                 </TableRow>
-              ) : (
-                idleProducts.map((p) => (
-                  <TableRow key={p.id}>
-                    <TableCell className="font-medium">{p.name}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="outline"
-                        style={{ borderColor: p.statusColor, color: p.statusColor }}
-                      >
-                        {p.statusName}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{new Date(p.updated).toLocaleDateString()}</TableCell>
-                    <TableCell className="text-right text-destructive font-bold">
-                      {p.daysIdle} dias
+              </TableHeader>
+              <TableBody>
+                {idleProducts.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={4}
+                      className="text-center text-muted-foreground py-6 text-sm"
+                    >
+                      Nenhum cadastro parado encontrado.
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                ) : (
+                  idleProducts.map((p) => (
+                    <TableRow key={p.id}>
+                      <TableCell className="font-medium text-sm py-2">{p.name}</TableCell>
+                      <TableCell className="py-2">
+                        <Badge
+                          variant="outline"
+                          style={{ borderColor: p.statusColor, color: p.statusColor }}
+                        >
+                          {p.statusName}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="py-2 text-sm text-muted-foreground">
+                        {new Date(p.updated).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell className="text-right text-destructive font-bold text-sm py-2">
+                        {p.daysIdle}d
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { UploadCloud, FileText, Download, Trash2 } from 'lucide-react'
+import { UploadCloud, FileText, Download, Trash2, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Product } from '@/types'
 import { useRef, useState } from 'react'
@@ -161,26 +161,62 @@ export function TabEngineering({ product, setProduct }: Props) {
 
       <Dialog open={!!previewFile} onOpenChange={(open) => !open && setPreviewFile(null)}>
         <DialogContent className="max-w-4xl h-[85vh] flex flex-col p-4 sm:p-6">
-          <DialogHeader>
-            <DialogTitle className="truncate">{previewFile?.name}</DialogTitle>
-            <DialogDescription className="sr-only">Visualização de documento PDF</DialogDescription>
+          <DialogHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex flex-col gap-1 min-w-0">
+              <DialogTitle className="truncate" title={previewFile?.name}>
+                {previewFile?.name}
+              </DialogTitle>
+              <DialogDescription className="sr-only">
+                Visualização de documento PDF
+              </DialogDescription>
+            </div>
+            {previewFile && (
+              <div className="flex items-center gap-2 shrink-0">
+                <Button variant="outline" size="sm" asChild>
+                  <a href={previewFile.url} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="w-4 h-4 mr-2" />
+                    Nova Guia
+                  </a>
+                </Button>
+                <Button size="sm" asChild>
+                  <a href={previewFile.url} download={previewFile.name}>
+                    <Download className="w-4 h-4 mr-2" />
+                    Baixar
+                  </a>
+                </Button>
+              </div>
+            )}
           </DialogHeader>
-          <div className="flex-1 w-full h-full min-h-0 bg-muted/20 rounded-md overflow-hidden border mt-2">
+          <div className="flex-1 w-full h-full min-h-0 bg-muted/20 rounded-md overflow-hidden border mt-2 relative">
             {previewFile && (
               <object
-                data={previewFile.url}
+                data={`${previewFile.url}#toolbar=0`}
                 type="application/pdf"
-                className="w-full h-full border-0"
+                className="w-full h-full border-0 absolute inset-0 z-10"
               >
-                <div className="flex flex-col items-center justify-center h-full gap-4 text-muted-foreground p-4 text-center">
-                  <p>Seu navegador não suporta visualização direta de PDFs.</p>
-                  <a
-                    href={previewFile.url}
-                    download={previewFile.name}
-                    className="text-primary underline"
-                  >
-                    Clique aqui para baixar o documento
-                  </a>
+                <div className="flex flex-col items-center justify-center h-full gap-4 text-muted-foreground p-6 text-center bg-background absolute inset-0 z-20">
+                  <FileText className="w-16 h-16 text-muted-foreground/30 mb-2" />
+                  <p className="font-medium text-foreground text-lg">
+                    Não foi possível carregar a pré-visualização
+                  </p>
+                  <p className="text-sm max-w-[400px]">
+                    Seu navegador pode estar bloqueando o PDF ou não possui um visualizador nativo
+                    suportado.
+                  </p>
+                  <div className="flex gap-3 mt-4">
+                    <Button variant="outline" asChild>
+                      <a href={previewFile.url} target="_blank" rel="noopener noreferrer">
+                        <ExternalLink className="w-4 h-4 mr-2" />
+                        Abrir em Nova Guia
+                      </a>
+                    </Button>
+                    <Button asChild>
+                      <a href={previewFile.url} download={previewFile.name}>
+                        <Download className="w-4 h-4 mr-2" />
+                        Baixar Arquivo
+                      </a>
+                    </Button>
+                  </div>
                 </div>
               </object>
             )}

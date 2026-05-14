@@ -282,9 +282,9 @@ export function TabReview({
             <Button
               onClick={() =>
                 updateStatus(
-                  'pendencia',
+                  'ajuste/pendência',
                   'Enviado para Registrador',
-                  'O status mudou para Pendência.',
+                  'O status mudou para Ajuste/Pendência.',
                 )
               }
               variant="outline"

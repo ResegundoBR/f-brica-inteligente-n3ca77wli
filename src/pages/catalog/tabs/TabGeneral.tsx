@@ -2,7 +2,7 @@ import { Product } from '@/types'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { StatusBadge } from '../CatalogList'
+import { LightPanelStatus } from '../CatalogList'
 import { FilePlus, X, File as FileIcon } from 'lucide-react'
 import { useRef, useEffect, useState } from 'react'
 import pb from '@/lib/pocketbase/client'
@@ -175,7 +175,7 @@ export function TabGeneral({ product, setProduct }: Props) {
               ))}
             </select>
           ) : (
-            <StatusBadge status={product.expand?.status || product.status} />
+            <LightPanelStatus status={product.expand?.status || product.status} />
           )}
         </div>
       </div>

@@ -31,60 +31,51 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Badge } from '@/components/ui/badge'
 import { Product, ProductStatusModel } from '@/types'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { useAuth } from '@/hooks/use-auth'
+import { format } from 'date-fns'
 
-export function StatusBadge({ status }: { status?: ProductStatusModel | string }) {
-  if (!status) return <Badge variant="secondary">Desconhecido</Badge>
-
-  const statusName = typeof status === 'string' ? status : status.name
-  const nameLower = statusName.toLowerCase()
-
-  if (nameLower === 'iniciado') {
+export function LightPanelStatus({ status }: { status?: ProductStatusModel | string }) {
+  if (!status) {
     return (
-      <Badge className="bg-orange-500 hover:bg-orange-600 text-white border-transparent">
-        {statusName}
-      </Badge>
-    )
-  }
-  if (nameLower === 'validado') {
-    return (
-      <Badge className="bg-green-600 hover:bg-green-700 text-white border-transparent">
-        {statusName}
-      </Badge>
+      <div className="flex items-center gap-2">
+        <div className="relative flex h-3 w-3 shrink-0">
+          <span className="relative inline-flex rounded-full h-3 w-3 bg-muted-foreground" />
+        </div>
+        <span className="text-sm font-medium text-muted-foreground">Desconhecido</span>
+      </div>
     )
   }
 
-  if (typeof status === 'string') {
-    return <Badge variant="secondary">{status}</Badge>
+  const statusObj = typeof status === 'string' ? null : status
+  const statusName = statusObj ? statusObj.name : (status as string)
+  let color = statusObj?.color || '#94a3b8'
+
+  if (!statusObj?.color) {
+    const lower = statusName.toLowerCase()
+    if (lower === 'falta docs' || lower === 'iniciado') color = '#FFEB3B'
+    else if (lower === 'pronto p/ revisão' || lower === 'revisão') color = '#FF9800'
+    else if (lower === 'ajuste/pendência' || lower === 'pendência') color = '#2196F3'
+    else if (lower === 'validado') color = '#4CAF50'
   }
 
-  if (status.color && status.color.startsWith('bg-')) {
-    return <Badge className={status.color}>{status.name}</Badge>
-  }
-
-  if (status.color === 'warning')
-    return (
-      <Badge className="bg-orange-500 hover:bg-orange-600 text-white border-transparent">
-        {status.name}
-      </Badge>
-    )
-  if (status.color === 'success')
-    return (
-      <Badge className="bg-green-600 hover:bg-green-700 text-white border-transparent">
-        {status.name}
-      </Badge>
-    )
-
-  const color = status.color || 'secondary'
-  const variant = ['default', 'secondary', 'destructive', 'outline'].includes(color)
-    ? (color as any)
-    : 'secondary'
-
-  return <Badge variant={variant}>{status.name}</Badge>
+  return (
+    <div className="flex items-center gap-2">
+      <div className="relative flex h-3 w-3 shrink-0">
+        <span
+          className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+          style={{ backgroundColor: color }}
+        />
+        <span
+          className="relative inline-flex rounded-full h-3 w-3"
+          style={{ backgroundColor: color }}
+        />
+      </div>
+      <span className="text-sm font-medium">{statusName}</span>
+    </div>
+  )
 }
 
 export default function CatalogList() {
@@ -103,7 +94,7 @@ export default function CatalogList() {
       })
       setProducts(records)
     } catch {
-      /* intentionally ignored */
+      // ignored
     }
   }
 
@@ -114,6 +105,7 @@ export default function CatalogList() {
       .then(setStatuses)
       .catch(() => {})
   }, [])
+
   useRealtime('products', () => {
     loadData()
   })
@@ -194,7 +186,8 @@ export default function CatalogList() {
               <TableRow>
                 <TableHead>Código</TableHead>
                 <TableHead>Nome do Produto</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>Painel de Luzes</TableHead>
+                <TableHead>Data de Cadastro</TableHead>
                 <TableHead>Última Att.</TableHead>
                 <TableHead className="text-right">Ação</TableHead>
               </TableRow>
@@ -202,7 +195,7 @@ export default function CatalogList() {
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-6 text-muted-foreground">
+                  <TableCell colSpan={6} className="text-center py-6 text-muted-foreground">
                     Nenhum produto encontrado.
                   </TableCell>
                 </TableRow>
@@ -212,9 +205,14 @@ export default function CatalogList() {
                     <TableCell className="font-mono text-xs">{p.code || p.id}</TableCell>
                     <TableCell className="font-medium">{p.name}</TableCell>
                     <TableCell>
-                      <StatusBadge status={p.expand?.status || p.status} />
+                      <LightPanelStatus status={p.expand?.status || p.status} />
                     </TableCell>
-                    <TableCell>{new Date(p.updated).toLocaleDateString()}</TableCell>
+                    <TableCell>
+                      {p.created ? format(new Date(p.created), 'dd/MM/yyyy') : '-'}
+                    </TableCell>
+                    <TableCell>
+                      {p.updated ? format(new Date(p.updated), 'dd/MM/yyyy HH:mm') : '-'}
+                    </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
                         {!isHighLevel &&

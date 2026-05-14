@@ -49,6 +49,52 @@ onRecordAfterCreateSuccess((e) => {
   e.next()
 }, 'products')
 
+onRecordUpdate((e) => {
+  try {
+    const original = e.record.original()
+
+    const oldFiles = original.getStringSlice('files').length
+    const newFiles = e.record.getStringSlice('files').length
+    const oldCompFiles = original.getStringSlice('composition_files').length
+    const newCompFiles = e.record.getStringSlice('composition_files').length
+    const oldEngFiles = original.getStringSlice('engineering_files').length
+    const newEngFiles = e.record.getStringSlice('engineering_files').length
+
+    const filesAdded =
+      newFiles > oldFiles || newCompFiles > oldCompFiles || newEngFiles > oldEngFiles
+
+    if (filesAdded) {
+      const currentStatusId = e.record.getString('status')
+      if (currentStatusId) {
+        try {
+          const currentStatus = $app.findRecordById('product_statuses', currentStatusId)
+          if (currentStatus.getString('name') === 'Falta Docs') {
+            const nextStatus = $app.findFirstRecordByData(
+              'product_statuses',
+              'name',
+              'Pronto p/ Revisão',
+            )
+            e.record.set('status', nextStatus.id)
+          }
+        } catch (_) {}
+      }
+    }
+  } catch (err) {
+    $app.logger().error('Error in onRecordUpdate for product status', 'error', String(err))
+  }
+  e.next()
+}, 'products')
+
+onRecordCreate((e) => {
+  try {
+    if (!e.record.getString('status')) {
+      const defaultStatus = $app.findFirstRecordByData('product_statuses', 'name', 'Falta Docs')
+      e.record.set('status', defaultStatus.id)
+    }
+  } catch (_) {}
+  e.next()
+}, 'products')
+
 onRecordAfterUpdateSuccess((e) => {
   try {
     const original = e.record.original()

@@ -2,10 +2,18 @@ onRecordAfterCreateSuccess((e) => {
   try {
     const logs = $app.findCollectionByNameOrId('activity_logs')
     const log = new Record(logs)
-    log.set('product_id', e.record.getString('product_id'))
+    const productId = e.record.getString('product_id')
+    log.set('product_id', productId)
     log.set('user_id', e.auth ? e.auth.id : null)
     log.set('action', `Novo ponto de revisão adicionado: ${e.record.getString('description')}`)
     $app.saveNoValidate(log)
+
+    try {
+      const product = $app.findRecordById('products', productId)
+      const status = $app.findFirstRecordByData('product_statuses', 'name', 'Ajuste/Pendência')
+      product.set('status', status.id)
+      $app.saveNoValidate(product)
+    } catch (_) {}
   } catch (err) {
     $app.logger().error('Error logging revision point create', 'error', String(err))
   }
@@ -54,6 +62,39 @@ onRecordAfterUpdateSuccess((e) => {
       log.set('action', action)
       $app.saveNoValidate(log)
     }
+
+    try {
+      if (
+        original.getBool('resolved') !== e.record.getBool('resolved') &&
+        e.record.getBool('resolved')
+      ) {
+        const productId = e.record.getString('product_id')
+        const allPoints = $app.findRecordsByFilter(
+          'revision_points',
+          `product_id = '${productId}'`,
+          '',
+          1000,
+          0,
+        )
+        const allResolved = allPoints.every((p) => p.getBool('resolved') === true)
+
+        if (allResolved) {
+          const product = $app.findRecordById('products', productId)
+          const status = $app.findFirstRecordByData('product_statuses', 'name', 'Pronto p/ Revisão')
+          product.set('status', status.id)
+          $app.saveNoValidate(product)
+        }
+      } else if (
+        original.getBool('resolved') !== e.record.getBool('resolved') &&
+        !e.record.getBool('resolved')
+      ) {
+        const productId = e.record.getString('product_id')
+        const product = $app.findRecordById('products', productId)
+        const status = $app.findFirstRecordByData('product_statuses', 'name', 'Ajuste/Pendência')
+        product.set('status', status.id)
+        $app.saveNoValidate(product)
+      }
+    } catch (_) {}
   } catch (err) {
     $app.logger().error('Error logging revision point update', 'error', String(err))
   }

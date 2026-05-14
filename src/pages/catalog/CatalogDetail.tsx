@@ -22,6 +22,7 @@ import { TabHistory } from './tabs/TabHistory'
 import { ArrowLeftIcon, SaveIcon, SendIcon, CheckCircle } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
+import { useRealtime } from '@/hooks/use-realtime'
 
 export default function CatalogDetail() {
   const { id } = useParams()
@@ -35,15 +36,51 @@ export default function CatalogDetail() {
   const [pendingProcesses, setPendingProcesses] = useState<any[]>([])
   const [isAssemblyPhaseUnlocked, setIsAssemblyPhaseUnlocked] = useState(false)
 
+  const loadProduct = async () => {
+    if (!id || id === 'novo') return
+    try {
+      const found = await pb.collection('products').getOne<Product>(id, { expand: 'status,owner' })
+      const statusName = found.expand?.status?.name?.toLowerCase() || ''
+      const rName = user?.expand?.role?.name?.toLowerCase() || ''
+      const isUserHighLevel =
+        rName.includes('admin') || rName.includes('revis') || rName.includes('administrador')
+
+      setIsAssemblyPhaseUnlocked(statusName === 'validado')
+
+      if (statusName === 'validado' && !isUserHighLevel) {
+        toast({
+          title: 'Acesso Negado',
+          description: 'Você não tem permissão para editar um produto validado.',
+          variant: 'destructive',
+        })
+        navigate('/catalogo')
+        return
+      }
+
+      setProduct((prev) => {
+        return {
+          ...found,
+          data: found.data || {},
+        }
+      })
+
+      if (statusName.includes('pendencia') || statusName.includes('pendência')) {
+        setActiveTab('revisao')
+      }
+    } catch (error) {
+      console.error(error)
+    }
+  }
+
   useEffect(() => {
     let defaultStatus = ''
     pb.collection('product_statuses')
       .getFullList<ProductStatusModel>()
       .then((list) => {
         setStatuses(list)
-        const iniciado = list.find((s) => s.name.toLowerCase() === 'iniciado')
-        if (iniciado) {
-          defaultStatus = iniciado.id
+        const faltaDocs = list.find((s) => s.name.toLowerCase() === 'falta docs')
+        if (faltaDocs) {
+          defaultStatus = faltaDocs.id
           if (id === 'novo') {
             setProduct((p) => (p ? { ...p, status: defaultStatus } : p))
           }
@@ -71,37 +108,16 @@ export default function CatalogDetail() {
         created: '',
         updated: '',
       } as any)
-    } else if (id) {
-      pb.collection('products')
-        .getOne<Product>(id, { expand: 'status,owner' })
-        .then((found) => {
-          const statusName = found.expand?.status?.name?.toLowerCase() || ''
-          const rName = user?.expand?.role?.name?.toLowerCase() || ''
-          const isUserHighLevel =
-            rName.includes('admin') || rName.includes('revis') || rName.includes('administrador')
-
-          setIsAssemblyPhaseUnlocked(statusName === 'validado')
-
-          if (statusName === 'validado' && !isUserHighLevel) {
-            toast({
-              title: 'Acesso Negado',
-              description: 'Você não tem permissão para editar um produto validado.',
-              variant: 'destructive',
-            })
-            navigate('/catalogo')
-            return
-          }
-
-          setProduct({
-            ...found,
-            data: found.data || {},
-          })
-          if (statusName.includes('pendencia') || statusName.includes('pendência'))
-            setActiveTab('revisao')
-        })
-        .catch(console.error)
+    } else {
+      loadProduct()
     }
   }, [id, user, navigate, toast])
+
+  useRealtime('products', (e) => {
+    if (e.action === 'update' && e.record.id === id) {
+      loadProduct()
+    }
+  })
 
   const roleName = user?.expand?.role?.name?.toLowerCase() || ''
   const isHighLevel =
@@ -124,15 +140,15 @@ export default function CatalogDetail() {
       let targetStatus = product.status
       if (action === 'review') {
         const revStatus = statuses.find(
-          (s) => s.name.toLowerCase() === 'revisao' || s.name.toLowerCase() === 'revisão',
+          (s) => s.name.toLowerCase() === 'pronto p/ revisão' || s.name.toLowerCase() === 'revisão',
         )
         if (revStatus) targetStatus = revStatus.id
       } else if (action === 'validate') {
         const valStatus = statuses.find((s) => s.name.toLowerCase() === 'validado')
         if (valStatus) targetStatus = valStatus.id
       } else if (id === 'novo' && !targetStatus) {
-        const iniciado = statuses.find((s) => s.name.toLowerCase() === 'iniciado')
-        if (iniciado) targetStatus = iniciado.id
+        const falStatus = statuses.find((s) => s.name.toLowerCase() === 'falta docs')
+        if (falStatus) targetStatus = falStatus.id
       }
 
       const dataToSave: any = {
@@ -205,10 +221,76 @@ export default function CatalogDetail() {
     }
   }
 
+  const getBannerProps = (statusName: string) => {
+    const lower = statusName.toLowerCase()
+    if (lower === 'falta docs' || lower === 'iniciado') {
+      return {
+        text: 'Aguardando inserção de documentos e fotos pelo Registrador.',
+        bg: 'bg-[#FFEB3B]/20',
+        border: 'border-[#FFEB3B]/50',
+        textCol: 'text-yellow-800 dark:text-yellow-200',
+        color: '#FFEB3B',
+      }
+    }
+    if (lower === 'pronto p/ revisão' || lower === 'revisão') {
+      return {
+        text: 'Documentos enviados. Aguardando revisão técnica.',
+        bg: 'bg-[#FF9800]/20',
+        border: 'border-[#FF9800]/50',
+        textCol: 'text-orange-800 dark:text-orange-200',
+        color: '#FF9800',
+      }
+    }
+    if (lower === 'ajuste/pendência' || lower === 'pendência') {
+      return {
+        text: 'Existem pendências sinalizadas. O Registrador deve realizar os ajustes.',
+        bg: 'bg-[#2196F3]/20',
+        border: 'border-[#2196F3]/50',
+        textCol: 'text-blue-800 dark:text-blue-200',
+        color: '#2196F3',
+      }
+    }
+    if (lower === 'validado') {
+      return {
+        text: 'Produto validado com sucesso. Edições não são permitidas nesta etapa.',
+        bg: 'bg-[#4CAF50]/20',
+        border: 'border-[#4CAF50]/50',
+        textCol: 'text-green-800 dark:text-green-200',
+        color: '#4CAF50',
+      }
+    }
+    return null
+  }
+
   if (!product) return <div>Carregando...</div>
+
+  const statusName =
+    product.expand?.status?.name || statuses.find((s) => s.id === product.status)?.name || ''
+  const banner = getBannerProps(statusName)
 
   return (
     <div className="space-y-6" data-assembly-unlocked={isAssemblyPhaseUnlocked}>
+      {banner && (
+        <div
+          className={`p-4 rounded-md border ${banner.bg} ${banner.border} ${banner.textCol} flex flex-col sm:flex-row sm:items-center gap-3 animate-fade-in`}
+        >
+          <div className="relative flex h-4 w-4 shrink-0">
+            <span
+              className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+              style={{ backgroundColor: banner.color }}
+            />
+            <span
+              className="relative inline-flex rounded-full h-4 w-4"
+              style={{ backgroundColor: banner.color }}
+            />
+          </div>
+          <div className="flex-1">
+            <h4 className="font-semibold text-sm mb-0.5">Status: {statusName}</h4>
+            <p className="text-sm opacity-90">{banner.text}</p>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div className="flex items-center gap-4">
           <Button variant="outline" size="icon" onClick={() => navigate('/catalogo')}>
@@ -334,7 +416,7 @@ export default function CatalogDetail() {
               onClick={() => performSave('draft')}
             >
               <SaveIcon className="mr-2 h-5 w-5" /> Manter como Rascunho
-              <span className="ml-auto text-xs opacity-70">Salva e mantém em Andamento</span>
+              <span className="ml-auto text-xs opacity-70">Salva no estado atual</span>
             </Button>
             {isHighLevel && (
               <Button

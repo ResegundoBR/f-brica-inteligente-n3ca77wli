@@ -110,6 +110,16 @@ export interface Product {
   expand?: { owner?: User; status?: ProductStatusModel }
 }
 
+export interface LearningStep {
+  id: string
+  learning_id: string
+  description: string
+  image?: string
+  order: number
+  created: string
+  updated: string
+}
+
 export interface LearningRecord {
   id: string
   user_id: string
@@ -119,7 +129,10 @@ export interface LearningRecord {
   validated?: boolean
   created: string
   updated: string
-  expand?: { user_id?: User }
+  expand?: {
+    user_id?: User
+    learning_steps_via_learning_id?: LearningStep[]
+  }
 }
 
 export interface Log {

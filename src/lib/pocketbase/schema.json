@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-14T21:27:14.312Z",
+  "generatedAt": "2026-05-14T21:40:00.905Z",
   "collections": [
     {
       "name": "users",
@@ -622,6 +622,59 @@
         }
       ],
       "indexes": []
+    },
+    {
+      "name": "learning_steps",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "learning_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "learning_evolution"
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "image",
+          "type": "file",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "order",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": ["CREATE INDEX idx_learning_steps_learning_id ON learning_steps (learning_id)"]
     }
   ]
 }

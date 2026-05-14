@@ -110,6 +110,18 @@ export interface Product {
   expand?: { owner?: User; status?: ProductStatusModel }
 }
 
+export interface LearningStepComment {
+  id: string
+  step_id: string
+  user_id: string
+  content: string
+  created: string
+  updated: string
+  expand?: {
+    user_id?: User
+  }
+}
+
 export interface LearningStep {
   id: string
   learning_id: string
@@ -118,6 +130,9 @@ export interface LearningStep {
   order: number
   created: string
   updated: string
+  expand?: {
+    learning_step_comments_via_step_id?: LearningStepComment[]
+  }
 }
 
 export interface LearningRecord {

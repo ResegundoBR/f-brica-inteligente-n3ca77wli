@@ -22,14 +22,20 @@ function Gauge({ value, max }: { value: number; max: number }) {
   const percentage = Math.min(value / max, 1)
   const angle = percentage * 180
 
-  let color = '#22C55E' // Default to Green (181-242)
+  let color = '#1D4ED8' // Default Dark Blue
   if (value <= 30)
     color = '#EF4444' // Red
-  else if (value <= 75)
+  else if (value <= 50)
     color = '#F97316' // Orange
-  else if (value <= 120)
-    color = '#C084FC' // Lilac
-  else if (value <= 180) color = '#3B82F6' // Blue
+  else if (value <= 80)
+    color = '#EAB308' // Yellow
+  else if (value <= 130)
+    color = '#4ADE80' // Light Green
+  else if (value <= 170)
+    color = '#15803D' // Dark Green
+  else if (value <= 210)
+    color = '#60A5FA' // Light Blue
+  else color = '#1D4ED8' // Dark Blue (211+)
 
   return (
     <div className="relative w-full aspect-[2/1] max-h-[180px] mx-auto overflow-hidden flex items-end justify-center">
@@ -111,10 +117,22 @@ export default function Dashboard() {
     return { count, color: defaultColor, label: st?.name || fallbackLabel, percentage }
   }
 
-  const kpiIniciado = getStatusInfo(['iniciado', 'rascunho'], 'Iniciado', '#F97316')
-  const kpiRevisao = getStatusInfo(['revisão', 'revisao'], 'Revisão', '#3B82F6')
-  const kpiPendencia = getStatusInfo(['pendência', 'pendencia'], 'Pendência', '#EF4444')
-  const kpiValidado = getStatusInfo(['validado'], 'Validado', '#22C55E')
+  const kpiFaltaDocs = getStatusInfo(
+    ['falta docs', 'iniciado', 'rascunho'],
+    'Falta docs',
+    '#FFEB3B',
+  )
+  const kpiProntoRevisao = getStatusInfo(
+    ['pronto p/ revisão', 'pronto p/ revisao', 'revisão', 'revisao'],
+    'Pronto p/ Revisão',
+    '#FF9800',
+  )
+  const kpiAjustePendencia = getStatusInfo(
+    ['ajuste/pendência', 'ajuste/pendencia', 'pendência', 'pendencia'],
+    'Ajuste/Pendência',
+    '#2196F3',
+  )
+  const kpiValidado = getStatusInfo(['validado'], 'Validado', '#4CAF50')
 
   const totalProducts = products.length
   const faltam = Math.max(TARGET - totalProducts, 0)
@@ -215,7 +233,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {[kpiIniciado, kpiRevisao, kpiPendencia, kpiValidado].map((kpi) => (
+        {[kpiFaltaDocs, kpiProntoRevisao, kpiAjustePendencia, kpiValidado].map((kpi) => (
           <Card key={kpi.label} className="border-l-4" style={{ borderLeftColor: kpi.color }}>
             <CardContent className="p-4 flex flex-col justify-center">
               <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">

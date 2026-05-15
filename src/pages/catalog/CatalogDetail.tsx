@@ -151,56 +151,58 @@ export default function CatalogDetail() {
         if (falStatus) targetStatus = falStatus.id
       }
 
-      const dataToSave: any = {
-        code: product.code,
-        name: product.name,
-        description: product.description,
-        status: targetStatus,
-        owner: product.owner || user?.id || '',
-        data: {
+      const formData = new FormData()
+      formData.append('code', product.code)
+      formData.append('name', product.name)
+      formData.append('description', product.description || '')
+      if (targetStatus) formData.append('status', targetStatus)
+      formData.append('owner', product.owner || user?.id || '')
+      formData.append(
+        'data',
+        JSON.stringify({
           processes: product.data?.processes || [],
           composition: product.data?.composition || [],
           checklist: product.data?.checklist || [],
           reviewPoints: product.data?.reviewPoints || [],
-        },
-      }
+        }),
+      )
 
       if (product.files && product.files.length > 0) {
-        dataToSave.files = product.files
+        product.files.forEach((f: any) => formData.append('files', f))
       } else {
-        dataToSave.files = null
+        formData.append('files', '')
       }
 
       if (product.engineering_files && product.engineering_files.length > 0) {
-        dataToSave.engineering_files = product.engineering_files
+        product.engineering_files.forEach((f: any) => formData.append('engineering_files', f))
       } else {
-        dataToSave.engineering_files = null
+        formData.append('engineering_files', '')
       }
 
       if (product.composition_files && product.composition_files.length > 0) {
-        dataToSave.composition_files = product.composition_files
+        product.composition_files.forEach((f: any) => formData.append('composition_files', f))
       } else {
-        dataToSave.composition_files = null
+        formData.append('composition_files', '')
       }
 
       if (id === 'novo') {
-        const createdProduct = await pb.collection('products').create(dataToSave)
+        const createdProduct = await pb.collection('products').create(formData)
 
         if (pendingProcesses.length > 0) {
           for (const proc of pendingProcesses) {
-            const formData = new FormData()
-            formData.append('product_id', createdProduct.id)
-            formData.append('name', proc.name)
-            formData.append('description', proc.description || '')
-            formData.append('order', proc.order.toString())
+            const procFormData = new FormData()
+            procFormData.append('product_id', createdProduct.id)
+            procFormData.append('name', proc.name)
+            procFormData.append('description', proc.description || '')
+            procFormData.append('order', proc.order.toString())
             if (proc.imageFile) {
-              formData.append('image', proc.imageFile)
+              procFormData.append('image', proc.imageFile)
             }
-            await pb.collection('product_processes').create(formData)
+            await pb.collection('product_processes').create(procFormData)
           }
         }
       } else {
-        await pb.collection('products').update(product.id, dataToSave)
+        await pb.collection('products').update(product.id, formData)
       }
 
       if (action === 'validate') {
@@ -215,8 +217,12 @@ export default function CatalogDetail() {
 
       setShowSaveDialog(false)
       navigate('/catalogo')
-    } catch (err) {
-      toast({ title: 'Erro ao salvar', variant: 'destructive' })
+    } catch (err: any) {
+      toast({
+        title: 'Erro ao salvar',
+        description: err?.message || 'Verifique sua conexão e os dados preenchidos.',
+        variant: 'destructive',
+      })
       console.error(err)
     }
   }

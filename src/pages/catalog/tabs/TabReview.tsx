@@ -115,7 +115,13 @@ export function TabReview({
   })
 
   const roleName = currentUser?.expand?.role?.name || currentUser?.role
-  const isReviewer = roleName === 'reviewer' || roleName === 'admin' || roleName === 'Administrador'
+  const isReviewer =
+    roleName === 'reviewer' ||
+    roleName === 'admin' ||
+    roleName === 'Administrador' ||
+    roleName === 'revisador' ||
+    roleName === 'Revisador'
+  const isOwner = Boolean(currentUser?.id && product.owner === currentUser.id)
 
   const addPoint = async () => {
     if (!newPointDesc.trim()) {
@@ -140,6 +146,7 @@ export function TabReview({
       formData.append('product_id', product.id)
       formData.append('user_id', currentUser?.id || '')
       formData.append('description', newPointDesc)
+      formData.append('resolved', 'false')
 
       newPointFiles.forEach((file) => {
         formData.append('files', file)
@@ -468,10 +475,11 @@ export function TabReview({
                             id={`resolved-${point.id}`}
                             checked={point.resolved}
                             onCheckedChange={(checked) => toggleResolved(point, checked)}
+                            disabled={!isReviewer && !isOwner}
                           />
                           <Label
                             htmlFor={`resolved-${point.id}`}
-                            className="text-xs cursor-pointer min-w-[70px]"
+                            className={`text-xs min-w-[70px] ${isReviewer || isOwner ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'}`}
                           >
                             {point.resolved ? (
                               <span className="flex items-center text-emerald-600 font-medium">

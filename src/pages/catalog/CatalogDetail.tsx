@@ -64,7 +64,10 @@ export default function CatalogDetail() {
         }
       })
 
-      if (statusName.includes('pendencia') || statusName.includes('pendência')) {
+      const urlParams = new URLSearchParams(window.location.search)
+      if (urlParams.get('tab') === 'revisao') {
+        setActiveTab('revisao')
+      } else if (statusName.includes('pendencia') || statusName.includes('pendência')) {
         setActiveTab('revisao')
       }
     } catch (error) {

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Bell, Search, UserCircle, CheckCircle, Trash2 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -21,6 +22,7 @@ import { ptBR } from 'date-fns/locale'
 export function Header() {
   const { user, signOut } = useAuth()
   const [notifications, setNotifications] = useState<any[]>([])
+  const navigate = useNavigate()
 
   const loadNotifications = async () => {
     if (!user) return
@@ -98,7 +100,13 @@ export function Header() {
                 notifications.map((n) => (
                   <div
                     key={n.id}
-                    className={`p-4 border-b last:border-b-0 flex flex-col gap-2 hover:bg-muted/50 transition-colors ${n.read ? 'opacity-60' : 'bg-muted/20'}`}
+                    className={`p-4 border-b last:border-b-0 flex flex-col gap-2 hover:bg-muted/50 transition-colors ${n.read ? 'opacity-60' : 'bg-muted/20'} ${n.action_url ? 'cursor-pointer' : ''}`}
+                    onClick={(e) => {
+                      if (n.action_url) {
+                        if (!n.read) markAsRead(n.id)
+                        navigate(n.action_url)
+                      }
+                    }}
                   >
                     <div className="flex justify-between gap-3">
                       <div className="flex-1 text-sm flex gap-2">
@@ -119,7 +127,10 @@ export function Header() {
                             variant="ghost"
                             size="icon"
                             className="h-6 w-6 text-muted-foreground hover:text-emerald-600"
-                            onClick={() => markAsRead(n.id)}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              markAsRead(n.id)
+                            }}
                             title="Marcar como lida"
                           >
                             <CheckCircle className="h-4 w-4" />
@@ -129,7 +140,10 @@ export function Header() {
                           variant="ghost"
                           size="icon"
                           className="h-6 w-6 text-muted-foreground hover:text-destructive"
-                          onClick={() => deleteNotification(n.id)}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            deleteNotification(n.id)
+                          }}
                           title="Excluir notificação"
                         >
                           <Trash2 className="h-4 w-4" />

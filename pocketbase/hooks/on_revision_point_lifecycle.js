@@ -64,6 +64,38 @@ onRecordAfterUpdateSuccess((e) => {
     }
 
     try {
+      if (original.getBool('resolved') !== e.record.getBool('resolved')) {
+        const isResolved = e.record.getBool('resolved')
+        const historyCol = $app.findCollectionByNameOrId('revision_history')
+        const historyRec = new Record(historyCol)
+        historyRec.set('revision_point_id', e.record.id)
+        historyRec.set('user_id', userId)
+        historyRec.set(
+          'action',
+          isResolved ? 'Status alterado para Resolvido' : 'Status alterado para Pendente',
+        )
+        $app.saveNoValidate(historyRec)
+
+        if (isResolved) {
+          const pointCreatorId = e.record.getString('user_id')
+          if (pointCreatorId && userId && pointCreatorId !== userId) {
+            const product = $app.findRecordById('products', e.record.getString('product_id'))
+            const notifsCol = $app.findCollectionByNameOrId('notifications')
+            const notif = new Record(notifsCol)
+            notif.set('user_id', pointCreatorId)
+            const authorName = e.auth
+              ? e.auth.getString('name') || e.auth.getString('email')
+              : 'Sistema'
+            notif.set(
+              'message',
+              `O ponto de revisão no produto ${product.getString('name')} foi marcado como Resolvido por ${authorName}.`,
+            )
+            notif.set('action_url', `/catalogo/${product.id}?tab=revisao`)
+            $app.saveNoValidate(notif)
+          }
+        }
+      }
+
       if (
         original.getBool('resolved') !== e.record.getBool('resolved') &&
         e.record.getBool('resolved')

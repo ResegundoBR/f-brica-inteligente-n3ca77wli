@@ -72,6 +72,16 @@ export interface RevisionPointModel {
   expand?: { user_id?: User; product_id?: Product }
 }
 
+export interface RevisionHistoryModel {
+  id: string
+  revision_point_id: string
+  user_id: string
+  action: string
+  created: string
+  updated: string
+  expand?: { user_id?: User }
+}
+
 export interface RevisionNoteModel {
   id: string
   revision_point_id: string

@@ -1,11 +1,28 @@
 import { useState, useEffect, useRef } from 'react'
-import { Product, ProductStatusModel, RevisionPointModel, RevisionNoteModel } from '@/types'
+import {
+  Product,
+  ProductStatusModel,
+  RevisionPointModel,
+  RevisionNoteModel,
+  RevisionHistoryModel,
+} from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Send, CheckCircle2, Paperclip, X, Clock, MessageSquareText, Search } from 'lucide-react'
+import {
+  Send,
+  CheckCircle2,
+  Paperclip,
+  X,
+  Clock,
+  MessageSquareText,
+  Search,
+  Edit2,
+  Save,
+  Activity,
+} from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { useToast } from '@/hooks/use-toast'
 import { useAuth } from '@/hooks/use-auth'
@@ -54,12 +71,16 @@ export function TabReview({
   const [statuses, setStatuses] = useState<ProductStatusModel[]>([])
   const [revisionPoints, setRevisionPoints] = useState<RevisionPointModel[]>([])
   const [revisionNotes, setRevisionNotes] = useState<RevisionNoteModel[]>([])
+  const [revisionHistory, setRevisionHistory] = useState<RevisionHistoryModel[]>([])
   const [openNotesId, setOpenNotesId] = useState<string | null>(null)
 
   const [newNoteText, setNewNoteText] = useState<Record<string, string>>({})
   const [isSubmittingNote, setIsSubmittingNote] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [userFilter, setUserFilter] = useState('all')
+
+  const [editingPointId, setEditingPointId] = useState<string | null>(null)
+  const [editPointDesc, setEditPointDesc] = useState('')
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -82,10 +103,24 @@ export function TabReview({
     try {
       const res = await pb.collection('revision_notes').getFullList<RevisionNoteModel>({
         filter: `revision_point_id.product_id = "${product.id}"`,
-        sort: '-created',
+        sort: 'created',
         expand: 'user_id',
       })
       setRevisionNotes(res)
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const loadHistory = async () => {
+    if (!product.id || product.id === 'novo') return
+    try {
+      const res = await pb.collection('revision_history').getFullList<RevisionHistoryModel>({
+        filter: `revision_point_id.product_id = "${product.id}"`,
+        sort: '-created',
+        expand: 'user_id',
+      })
+      setRevisionHistory(res)
     } catch (err) {
       console.error(err)
     }
@@ -99,6 +134,7 @@ export function TabReview({
 
     loadPoints()
     loadNotes()
+    loadHistory()
   }, [product.id])
 
   useRealtime('revision_points', (e) => {
@@ -111,6 +147,13 @@ export function TabReview({
     const belongsToProduct = revisionPoints.some((p) => p.id === e.record.revision_point_id)
     if (belongsToProduct || e.record.revision_point_id) {
       loadNotes()
+    }
+  })
+
+  useRealtime('revision_history', (e) => {
+    const belongsToProduct = revisionPoints.some((p) => p.id === e.record.revision_point_id)
+    if (belongsToProduct || e.record.revision_point_id) {
+      loadHistory()
     }
   })
 
@@ -161,6 +204,17 @@ export function TabReview({
       toast({ title: 'Erro ao adicionar ponto', variant: 'destructive' })
     } finally {
       setIsSubmitting(false)
+    }
+  }
+
+  const updatePointDescription = async (pointId: string) => {
+    if (!editPointDesc.trim()) return
+    try {
+      await pb.collection('revision_points').update(pointId, { description: editPointDesc })
+      setEditingPointId(null)
+      toast({ title: 'Descrição atualizada com sucesso!' })
+    } catch (err) {
+      toast({ title: 'Erro ao atualizar ponto', variant: 'destructive' })
     }
   }
 
@@ -303,7 +357,7 @@ export function TabReview({
               onClick={() =>
                 updateStatus('validado', 'Produto Validado', 'O cadastro foi aprovado com sucesso.')
               }
-              className="bg-emerald-600 hover:bg-emerald-700"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
             >
               <CheckCircle2 className="mr-2 h-4 w-4" /> Aprovar / Validar
             </Button>
@@ -406,7 +460,7 @@ export function TabReview({
                 return (
                   <div
                     key={point.id}
-                    className={`flex flex-col group shadow-sm rounded-md border-l-4 ${point.resolved ? 'border-l-blue-500' : 'border-l-red-500'}`}
+                    className={`flex flex-col group shadow-sm rounded-md border-l-4 ${point.resolved ? 'border-l-emerald-500' : 'border-l-amber-500'}`}
                   >
                     <div
                       className="border border-l-0 rounded-tr-md px-3 py-2 bg-card flex flex-col sm:flex-row sm:items-center gap-3 hover:bg-accent/10 transition-colors h-auto sm:h-12 border-b-0 data-[state=closed]:border-b data-[state=closed]:rounded-br-md"
@@ -426,9 +480,58 @@ export function TabReview({
                         <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">
                           {new Date(point.created).toLocaleDateString()}
                         </span>
-                        <p className="font-medium text-sm truncate" title={point.description}>
-                          <HighlightText text={point.description} term={searchTerm} />
-                        </p>
+
+                        {editingPointId === point.id && !point.resolved ? (
+                          <div className="flex items-center gap-2 flex-1">
+                            <Input
+                              value={editPointDesc}
+                              onChange={(e) => setEditPointDesc(e.target.value)}
+                              className="h-7 text-sm"
+                              autoFocus
+                              onKeyDown={(e) =>
+                                e.key === 'Enter' && updatePointDescription(point.id)
+                              }
+                            />
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 p-0"
+                              onClick={() => updatePointDescription(point.id)}
+                            >
+                              <Save className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 p-0"
+                              onClick={() => setEditingPointId(null)}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <>
+                            <p
+                              className={`font-medium text-sm truncate ${point.resolved ? 'opacity-70 line-through' : ''}`}
+                              title={point.description}
+                            >
+                              <HighlightText text={point.description} term={searchTerm} />
+                            </p>
+                            {!point.resolved && (isReviewer || isOwner) && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={() => {
+                                  setEditingPointId(point.id)
+                                  setEditPointDesc(point.description)
+                                }}
+                              >
+                                <Edit2 className="h-3 w-3" />
+                              </Button>
+                            )}
+                          </>
+                        )}
 
                         {point.files && point.files.length > 0 && (
                           <div className="flex gap-1 shrink-0 ml-1">
@@ -463,14 +566,16 @@ export function TabReview({
                           onClick={() => handleOpenNotes(point)}
                         >
                           <MessageSquareText className="h-3 w-3 mr-1.5" />
-                          Histórico
+                          Detalhes
                           {allNotes.length > 0 && (
                             <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-[9px] w-4 h-4 flex items-center justify-center rounded-full">
                               {allNotes.length}
                             </span>
                           )}
                         </Button>
-                        <div className="flex items-center space-x-2 bg-background border px-2 py-1 rounded-md h-8">
+                        <div
+                          className={`flex items-center space-x-2 bg-background border px-2 py-1 rounded-md h-8 ${point.resolved ? 'border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20' : ''}`}
+                        >
                           <Switch
                             id={`resolved-${point.id}`}
                             checked={point.resolved}
@@ -499,7 +604,7 @@ export function TabReview({
                       <div className="flex flex-col bg-muted/10 border-t border-x border-b border-l-0 rounded-br-md shadow-inner animate-fade-in-down">
                         <div className="p-3 border-b bg-background/50 flex gap-2 items-center">
                           <Input
-                            placeholder="Adicionar comentário ao histórico..."
+                            placeholder="Adicionar comentário..."
                             value={newNoteText[point.id] || ''}
                             onChange={(e) =>
                               setNewNoteText({ ...newNoteText, [point.id]: e.target.value })
@@ -516,13 +621,13 @@ export function TabReview({
                             <Send className="h-4 w-4" />
                           </Button>
                         </div>
-                        <ScrollArea className="max-h-[300px] w-full p-3">
+                        <ScrollArea className="max-h-[350px] w-full p-3">
                           <div className="flex flex-col gap-3">
                             {displayNotes.length === 0 ? (
                               <p className="text-xs text-muted-foreground text-center py-2">
                                 {searchTerm
-                                  ? 'Nenhum histórico corresponde à busca.'
-                                  : 'Nenhum histórico ainda. Inicie a conversa acima.'}
+                                  ? 'Nenhum comentário corresponde à busca.'
+                                  : 'Nenhum comentário ainda. Inicie a conversa acima.'}
                               </p>
                             ) : (
                               displayNotes.map((note) => (
@@ -551,6 +656,52 @@ export function TabReview({
                                 </div>
                               ))
                             )}
+                          </div>
+
+                          {/* Audit History Section */}
+                          <div className="mt-4 pt-3 border-t border-border/50">
+                            <h4 className="text-xs font-semibold text-muted-foreground flex items-center mb-3 uppercase tracking-wider">
+                              <Activity className="h-3.5 w-3.5 mr-1.5" /> Histórico de Alterações
+                            </h4>
+                            <div className="flex flex-col gap-2.5 relative before:absolute before:inset-0 before:ml-[11px] before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-200 before:to-transparent">
+                              {revisionHistory.filter((h) => h.revision_point_id === point.id)
+                                .length === 0 ? (
+                                <p className="text-[11px] text-muted-foreground italic ml-6">
+                                  Nenhum registro de alteração de status.
+                                </p>
+                              ) : (
+                                revisionHistory
+                                  .filter((h) => h.revision_point_id === point.id)
+                                  .map((history) => (
+                                    <div
+                                      key={history.id}
+                                      className="relative flex items-start space-x-3 text-xs"
+                                    >
+                                      <div className="relative z-10 w-6 h-6 flex items-center justify-center bg-background border-2 border-slate-200 rounded-full shrink-0">
+                                        <Activity className="h-3 w-3 text-muted-foreground" />
+                                      </div>
+                                      <div className="flex-1 bg-background/50 border rounded-md px-3 py-2">
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-1">
+                                          <span className="font-medium text-primary">
+                                            {history.expand?.user_id?.name ||
+                                              history.expand?.user_id?.email ||
+                                              'Sistema'}
+                                          </span>
+                                          <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                                            {new Date(history.created).toLocaleString('pt-BR', {
+                                              dateStyle: 'short',
+                                              timeStyle: 'short',
+                                            })}
+                                          </span>
+                                        </div>
+                                        <span className="text-muted-foreground">
+                                          {history.action}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  ))
+                              )}
+                            </div>
                           </div>
                         </ScrollArea>
                       </div>

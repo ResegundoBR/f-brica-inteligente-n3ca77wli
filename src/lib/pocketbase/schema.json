@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-19T19:38:19.688Z",
+  "generatedAt": "2026-05-19T19:45:41.311Z",
   "collections": [
     {
       "name": "users",
@@ -265,6 +265,12 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "action_url",
+          "type": "url",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": []
@@ -725,6 +731,54 @@
       "indexes": [
         "CREATE INDEX idx_learning_step_comments_step ON learning_step_comments (step_id)"
       ]
+    },
+    {
+      "name": "revision_history",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": null,
+        "update": null,
+        "delete": null
+      },
+      "fields": [
+        {
+          "name": "revision_point_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "revision_points"
+        },
+        {
+          "name": "user_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "action",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": ["CREATE INDEX idx_revision_history_point ON revision_history (revision_point_id)"]
     }
   ]
 }

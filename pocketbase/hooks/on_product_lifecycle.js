@@ -63,19 +63,38 @@ onRecordUpdate((e) => {
     const filesAdded =
       newFiles > oldFiles || newCompFiles > oldCompFiles || newEngFiles > oldEngFiles
 
-    if (filesAdded) {
-      const currentStatusId = e.record.getString('status')
-      if (currentStatusId) {
+    let targetStatusId = e.record.getString('status')
+    let targetStatusName = ''
+    if (targetStatusId) {
+      try {
+        const s = $app.findRecordById('product_statuses', targetStatusId)
+        targetStatusName = s.getString('name')
+      } catch (_) {}
+    }
+
+    const hasFiles = newFiles > 0
+    const hasEngFiles = newEngFiles > 0
+
+    if (filesAdded && targetStatusName === 'Falta Docs') {
+      if (hasFiles && hasEngFiles) {
         try {
-          const currentStatus = $app.findRecordById('product_statuses', currentStatusId)
-          if (currentStatus.getString('name') === 'Falta Docs') {
-            const nextStatus = $app.findFirstRecordByData(
-              'product_statuses',
-              'name',
-              'Pronto p/ Revisão',
-            )
-            e.record.set('status', nextStatus.id)
-          }
+          const nextStatus = $app.findFirstRecordByData(
+            'product_statuses',
+            'name',
+            'Pronto p/ Revisão',
+          )
+          e.record.set('status', nextStatus.id)
+          targetStatusId = nextStatus.id
+          targetStatusName = 'Pronto p/ Revisão'
+        } catch (_) {}
+      }
+    }
+
+    if (targetStatusName === 'Pronto p/ Revisão') {
+      if (!hasFiles || !hasEngFiles) {
+        try {
+          const faltaDocs = $app.findFirstRecordByData('product_statuses', 'name', 'Falta Docs')
+          e.record.set('status', faltaDocs.id)
         } catch (_) {}
       }
     }
@@ -87,9 +106,38 @@ onRecordUpdate((e) => {
 
 onRecordCreate((e) => {
   try {
-    if (!e.record.getString('status')) {
-      const defaultStatus = $app.findFirstRecordByData('product_statuses', 'name', 'Falta Docs')
-      e.record.set('status', defaultStatus.id)
+    let targetStatusId = e.record.getString('status')
+    let targetStatusName = ''
+    if (targetStatusId) {
+      try {
+        const s = $app.findRecordById('product_statuses', targetStatusId)
+        targetStatusName = s.getString('name')
+      } catch (_) {}
+    }
+
+    const hasFiles = e.record.getStringSlice('files').length > 0
+    const hasEngFiles = e.record.getStringSlice('engineering_files').length > 0
+
+    if (
+      !targetStatusId ||
+      targetStatusName === 'Falta Docs' ||
+      targetStatusName === 'Pronto p/ Revisão'
+    ) {
+      if (!hasFiles || !hasEngFiles) {
+        try {
+          const defaultStatus = $app.findFirstRecordByData('product_statuses', 'name', 'Falta Docs')
+          e.record.set('status', defaultStatus.id)
+        } catch (_) {}
+      } else if (!targetStatusId) {
+        try {
+          const nextStatus = $app.findFirstRecordByData(
+            'product_statuses',
+            'name',
+            'Pronto p/ Revisão',
+          )
+          e.record.set('status', nextStatus.id)
+        } catch (_) {}
+      }
     }
   } catch (_) {}
   e.next()

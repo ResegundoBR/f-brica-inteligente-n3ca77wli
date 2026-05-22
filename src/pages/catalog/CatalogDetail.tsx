@@ -165,6 +165,19 @@ export default function CatalogDetail() {
     try {
       let targetStatus = product.status
       if (action === 'review') {
+        const hasFiles = product.files && product.files.length > 0
+        const hasEngFiles = product.engineering_files && product.engineering_files.length > 0
+        if (!hasFiles || !hasEngFiles) {
+          toast({
+            title: 'Documentação Incompleta',
+            description:
+              'O produto precisa ter imagens gerais e arquivos de engenharia anexados para ser enviado para revisão.',
+            variant: 'destructive',
+          })
+          setShowSaveDialog(false)
+          return
+        }
+
         const revStatus = statuses.find(
           (s) => s.name.toLowerCase() === 'pronto p/ revisão' || s.name.toLowerCase() === 'revisão',
         )

@@ -25,7 +25,16 @@ onRecordAfterCreateSuccess((e) => {
         )
         if (allPoints.length > 0) {
           const allResolved = allPoints.every((p) => p.getBool('resolved') === true)
-          const targetStatusName = allResolved ? 'Pronto p/ Revisão' : 'Ajuste/Pendência'
+          let targetStatusName = allResolved ? 'Pronto p/ Revisão' : 'Ajuste/Pendência'
+
+          if (allResolved) {
+            const hasFiles = product.getStringSlice('files').length > 0
+            const hasEngFiles = product.getStringSlice('engineering_files').length > 0
+            if (!hasFiles || !hasEngFiles) {
+              targetStatusName = 'Falta Docs'
+            }
+          }
+
           const status = $app.findFirstRecordByData('product_statuses', 'name', targetStatusName)
           if (product.getString('status') !== status.id) {
             product.set('status', status.id)
@@ -67,7 +76,16 @@ onRecordAfterDeleteSuccess((e) => {
         )
         if (allPoints.length > 0) {
           const allResolved = allPoints.every((p) => p.getBool('resolved') === true)
-          const targetStatusName = allResolved ? 'Pronto p/ Revisão' : 'Ajuste/Pendência'
+          let targetStatusName = allResolved ? 'Pronto p/ Revisão' : 'Ajuste/Pendência'
+
+          if (allResolved) {
+            const hasFiles = product.getStringSlice('files').length > 0
+            const hasEngFiles = product.getStringSlice('engineering_files').length > 0
+            if (!hasFiles || !hasEngFiles) {
+              targetStatusName = 'Falta Docs'
+            }
+          }
+
           const status = $app.findFirstRecordByData('product_statuses', 'name', targetStatusName)
           if (product.getString('status') !== status.id) {
             product.set('status', status.id)
@@ -161,7 +179,16 @@ onRecordAfterUpdateSuccess((e) => {
         )
         if (allPoints.length > 0) {
           const allResolved = allPoints.every((p) => p.getBool('resolved') === true)
-          const targetStatusName = allResolved ? 'Pronto p/ Revisão' : 'Ajuste/Pendência'
+          let targetStatusName = allResolved ? 'Pronto p/ Revisão' : 'Ajuste/Pendência'
+
+          if (allResolved) {
+            const hasFiles = product.getStringSlice('files').length > 0
+            const hasEngFiles = product.getStringSlice('engineering_files').length > 0
+            if (!hasFiles || !hasEngFiles) {
+              targetStatusName = 'Falta Docs'
+            }
+          }
+
           const status = $app.findFirstRecordByData('product_statuses', 'name', targetStatusName)
           if (product.getString('status') !== status.id) {
             product.set('status', status.id)

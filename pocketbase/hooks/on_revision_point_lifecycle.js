@@ -10,9 +10,29 @@ onRecordAfterCreateSuccess((e) => {
 
     try {
       const product = $app.findRecordById('products', productId)
-      const status = $app.findFirstRecordByData('product_statuses', 'name', 'Ajuste/Pendência')
-      product.set('status', status.id)
-      $app.saveNoValidate(product)
+      let validadoId = null
+      try {
+        validadoId = $app.findFirstRecordByData('product_statuses', 'name', 'Validado').id
+      } catch (_) {}
+
+      if (product.getString('status') !== validadoId) {
+        const allPoints = $app.findRecordsByFilter(
+          'revision_points',
+          `product_id = '${productId}'`,
+          '',
+          1000,
+          0,
+        )
+        if (allPoints.length > 0) {
+          const allResolved = allPoints.every((p) => p.getBool('resolved') === true)
+          const targetStatusName = allResolved ? 'Pronto p/ Revisão' : 'Ajuste/Pendência'
+          const status = $app.findFirstRecordByData('product_statuses', 'name', targetStatusName)
+          if (product.getString('status') !== status.id) {
+            product.set('status', status.id)
+            $app.saveNoValidate(product)
+          }
+        }
+      }
     } catch (_) {}
   } catch (err) {
     $app.logger().error('Error logging revision point create', 'error', String(err))
@@ -24,10 +44,38 @@ onRecordAfterDeleteSuccess((e) => {
   try {
     const logs = $app.findCollectionByNameOrId('activity_logs')
     const log = new Record(logs)
-    log.set('product_id', e.record.getString('product_id'))
+    const productId = e.record.getString('product_id')
+    log.set('product_id', productId)
     log.set('user_id', e.auth ? e.auth.id : null)
     log.set('action', `Ponto de revisão removido: ${e.record.getString('description')}`)
     $app.saveNoValidate(log)
+
+    try {
+      const product = $app.findRecordById('products', productId)
+      let validadoId = null
+      try {
+        validadoId = $app.findFirstRecordByData('product_statuses', 'name', 'Validado').id
+      } catch (_) {}
+
+      if (product.getString('status') !== validadoId) {
+        const allPoints = $app.findRecordsByFilter(
+          'revision_points',
+          `product_id = '${productId}'`,
+          '',
+          1000,
+          0,
+        )
+        if (allPoints.length > 0) {
+          const allResolved = allPoints.every((p) => p.getBool('resolved') === true)
+          const targetStatusName = allResolved ? 'Pronto p/ Revisão' : 'Ajuste/Pendência'
+          const status = $app.findFirstRecordByData('product_statuses', 'name', targetStatusName)
+          if (product.getString('status') !== status.id) {
+            product.set('status', status.id)
+            $app.saveNoValidate(product)
+          }
+        }
+      }
+    } catch (_) {}
   } catch (err) {
     $app.logger().error('Error logging revision point delete', 'error', String(err))
   }
@@ -96,11 +144,14 @@ onRecordAfterUpdateSuccess((e) => {
         }
       }
 
-      if (
-        original.getBool('resolved') !== e.record.getBool('resolved') &&
-        e.record.getBool('resolved')
-      ) {
-        const productId = e.record.getString('product_id')
+      const productId = e.record.getString('product_id')
+      const product = $app.findRecordById('products', productId)
+      let validadoId = null
+      try {
+        validadoId = $app.findFirstRecordByData('product_statuses', 'name', 'Validado').id
+      } catch (_) {}
+
+      if (product.getString('status') !== validadoId) {
         const allPoints = $app.findRecordsByFilter(
           'revision_points',
           `product_id = '${productId}'`,
@@ -108,23 +159,15 @@ onRecordAfterUpdateSuccess((e) => {
           1000,
           0,
         )
-        const allResolved = allPoints.every((p) => p.getBool('resolved') === true)
-
-        if (allResolved) {
-          const product = $app.findRecordById('products', productId)
-          const status = $app.findFirstRecordByData('product_statuses', 'name', 'Pronto p/ Revisão')
-          product.set('status', status.id)
-          $app.saveNoValidate(product)
+        if (allPoints.length > 0) {
+          const allResolved = allPoints.every((p) => p.getBool('resolved') === true)
+          const targetStatusName = allResolved ? 'Pronto p/ Revisão' : 'Ajuste/Pendência'
+          const status = $app.findFirstRecordByData('product_statuses', 'name', targetStatusName)
+          if (product.getString('status') !== status.id) {
+            product.set('status', status.id)
+            $app.saveNoValidate(product)
+          }
         }
-      } else if (
-        original.getBool('resolved') !== e.record.getBool('resolved') &&
-        !e.record.getBool('resolved')
-      ) {
-        const productId = e.record.getString('product_id')
-        const product = $app.findRecordById('products', productId)
-        const status = $app.findFirstRecordByData('product_statuses', 'name', 'Ajuste/Pendência')
-        product.set('status', status.id)
-        $app.saveNoValidate(product)
       }
     } catch (_) {}
   } catch (err) {

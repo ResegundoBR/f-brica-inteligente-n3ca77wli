@@ -35,6 +35,19 @@ export default function CatalogDetail() {
   const [statuses, setStatuses] = useState<ProductStatusModel[]>([])
   const [pendingProcesses, setPendingProcesses] = useState<any[]>([])
   const [isAssemblyPhaseUnlocked, setIsAssemblyPhaseUnlocked] = useState(false)
+  const [unresolvedPointsCount, setUnresolvedPointsCount] = useState(0)
+
+  const loadUnresolvedPoints = async (productId: string) => {
+    if (!productId || productId === 'novo') return
+    try {
+      const res = await pb.collection('revision_points').getList(1, 1, {
+        filter: `product_id = "${productId}" && resolved = false`,
+      })
+      setUnresolvedPointsCount(res.totalItems)
+    } catch (e) {
+      console.error(e)
+    }
+  }
 
   const loadProduct = async () => {
     if (!id || id === 'novo') return
@@ -70,6 +83,8 @@ export default function CatalogDetail() {
       } else if (statusName.includes('pendencia') || statusName.includes('pendência')) {
         setActiveTab('revisao')
       }
+
+      await loadUnresolvedPoints(id)
     } catch (error) {
       console.error(error)
     }
@@ -122,6 +137,12 @@ export default function CatalogDetail() {
     }
   })
 
+  useRealtime('revision_points', (e) => {
+    if (e.record.product_id === id) {
+      loadUnresolvedPoints(id)
+    }
+  })
+
   const roleName = user?.expand?.role?.name?.toLowerCase() || ''
   const isHighLevel =
     roleName.includes('admin') || roleName.includes('revis') || roleName.includes('administrador')
@@ -130,7 +151,9 @@ export default function CatalogDetail() {
     setShowSaveDialog(true)
   }
 
-  const performSave = async (action: 'draft' | 'review' | 'validate') => {
+  const performSave = async (
+    action: 'draft' | 'review' | 'validate' | 'return_for_adjustments',
+  ) => {
     if (!product) return
 
     if (!product.code?.trim() || !product.name?.trim()) {
@@ -149,6 +172,12 @@ export default function CatalogDetail() {
       } else if (action === 'validate') {
         const valStatus = statuses.find((s) => s.name.toLowerCase() === 'validado')
         if (valStatus) targetStatus = valStatus.id
+      } else if (action === 'return_for_adjustments') {
+        const adjStatus = statuses.find(
+          (s) =>
+            s.name.toLowerCase().includes('pendência') || s.name.toLowerCase().includes('ajuste'),
+        )
+        if (adjStatus) targetStatus = adjStatus.id
       } else if (id === 'novo' && !targetStatus) {
         const falStatus = statuses.find((s) => s.name.toLowerCase() === 'falta docs')
         if (falStatus) targetStatus = falStatus.id
@@ -213,6 +242,12 @@ export default function CatalogDetail() {
           title: 'Produto validado com sucesso!',
           description: 'O cadastro foi finalizado e bloqueado para edições.',
           className: 'bg-green-600 text-white border-green-700',
+        })
+      } else if (action === 'return_for_adjustments') {
+        toast({
+          title: 'Devolvido para ajustes!',
+          description: 'O produto foi devolvido ao Registrador para correção dos pontos apontados.',
+          className: 'bg-amber-600 text-white border-amber-700',
         })
       } else {
         toast({ title: 'Produto salvo com sucesso!' })
@@ -314,9 +349,18 @@ export default function CatalogDetail() {
             </p>
           </div>
         </div>
-        <Button onClick={handleSaveClick}>
-          <SaveIcon className="mr-2 h-4 w-4" /> Salvar Cadastro
-        </Button>
+        {isHighLevel && unresolvedPointsCount > 0 ? (
+          <Button
+            onClick={handleSaveClick}
+            className="bg-amber-600 hover:bg-amber-700 text-white border-none shadow-sm"
+          >
+            <SendIcon className="mr-2 h-4 w-4" /> Devolver para Ajustes
+          </Button>
+        ) : (
+          <Button onClick={handleSaveClick}>
+            <SaveIcon className="mr-2 h-4 w-4" /> Salvar Cadastro
+          </Button>
+        )}
       </div>
 
       <Card className="p-1">
@@ -409,15 +453,27 @@ export default function CatalogDetail() {
             <DialogDescription>Como deseja prosseguir com este registro?</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3 py-4">
-            <Button
-              variant="default"
-              className="w-full justify-start"
-              size="lg"
-              onClick={() => performSave('review')}
-            >
-              <SendIcon className="mr-2 h-5 w-5" /> Enviar para Revisão
-              <span className="ml-auto text-xs opacity-70">Notifica o revisador</span>
-            </Button>
+            {isHighLevel && unresolvedPointsCount > 0 ? (
+              <Button
+                variant="default"
+                className="w-full justify-start bg-amber-600 hover:bg-amber-700 text-white"
+                size="lg"
+                onClick={() => performSave('return_for_adjustments')}
+              >
+                <SendIcon className="mr-2 h-5 w-5" /> Devolver para Ajustes
+                <span className="ml-auto text-xs opacity-70">Há pontos pendentes</span>
+              </Button>
+            ) : (
+              <Button
+                variant="default"
+                className="w-full justify-start"
+                size="lg"
+                onClick={() => performSave('review')}
+              >
+                <SendIcon className="mr-2 h-5 w-5" /> Enviar para Revisão
+                <span className="ml-auto text-xs opacity-70">Notifica o revisador</span>
+              </Button>
+            )}
             <Button
               variant="outline"
               className="w-full justify-start"

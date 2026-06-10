@@ -9,10 +9,24 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { FileUp, Plus, Trash2, Download, FilePlus, FileText } from 'lucide-react'
-import { Fragment, useRef } from 'react'
+import {
+  FileUp,
+  Plus,
+  Trash2,
+  Download,
+  FilePlus,
+  FileText,
+  Check,
+  ChevronsUpDown,
+  Search,
+} from 'lucide-react'
+import { Fragment, useRef, useState, useEffect } from 'react'
 import pb from '@/lib/pocketbase/client'
 import { useToast } from '@/hooks/use-toast'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { cn } from '@/lib/utils'
+import { useRealtime } from '@/hooks/use-realtime'
+import type { CompositionCategory } from '@/types'
 
 const STAGES = ['FABRICAÇÃO', 'PREPARAÇÃO', 'MONTAGEM', 'EXPEDIÇÃO']
 
@@ -25,6 +39,59 @@ export function TabComposition({
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
+
+  const [categories, setCategories] = useState<CompositionCategory[]>([])
+  const [categorySearch, setCategorySearch] = useState('')
+  const [categoryOpen, setCategoryOpen] = useState(false)
+
+  const loadCategories = async () => {
+    try {
+      const records = await pb
+        .collection('composition_categories')
+        .getFullList<CompositionCategory>({ sort: 'name' })
+      setCategories(records)
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  useEffect(() => {
+    loadCategories()
+  }, [])
+
+  useRealtime('composition_categories', () => {
+    loadCategories()
+  })
+
+  const filteredCategories = categories.filter((c) =>
+    c.name.toLowerCase().includes(categorySearch.toLowerCase()),
+  )
+
+  const handleCreateCategory = async () => {
+    const term = categorySearch.trim()
+    if (!term) return
+
+    try {
+      const existing = categories.find((c) => c.name.toLowerCase() === term.toLowerCase())
+      if (existing) {
+        setProduct({ ...product, category: existing.id })
+      } else {
+        const record = await pb
+          .collection('composition_categories')
+          .create<CompositionCategory>({ name: term })
+        setProduct({ ...product, category: record.id })
+      }
+      setCategoryOpen(false)
+      setCategorySearch('')
+    } catch (e) {
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível criar a categoria. Talvez já exista com o mesmo nome.',
+        variant: 'destructive',
+      })
+      loadCategories()
+    }
+  }
 
   const downloadTemplate = () => {
     const csvContent =
@@ -230,6 +297,84 @@ export function TabComposition({
 
   return (
     <div className="space-y-8 animate-fade-in">
+      <div className="space-y-4 bg-muted/20 p-4 rounded-lg border">
+        <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
+          <div className="flex flex-col gap-1.5 w-full sm:max-w-[350px]">
+            <label className="text-sm font-semibold">Categoria do Produto</label>
+            <Popover open={categoryOpen} onOpenChange={setCategoryOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={categoryOpen}
+                  className="w-full justify-between font-normal bg-background"
+                >
+                  {product.category
+                    ? categories.find((c) => c.id === product.category)?.name || 'Selecione...'
+                    : 'Selecione a categoria...'}
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[350px] p-0" align="start">
+                <div className="flex items-center border-b px-3">
+                  <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
+                  <Input
+                    placeholder="Buscar ou criar categoria..."
+                    className="h-9 w-full border-0 focus-visible:ring-0 px-0"
+                    value={categorySearch}
+                    onChange={(e) => setCategorySearch(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        handleCreateCategory()
+                      }
+                    }}
+                  />
+                </div>
+                <div className="max-h-[200px] overflow-y-auto p-1">
+                  {filteredCategories.length === 0 && !categorySearch && (
+                    <div className="p-4 text-sm text-muted-foreground text-center">
+                      Nenhuma categoria encontrada.
+                    </div>
+                  )}
+                  {filteredCategories.map((cat) => (
+                    <div
+                      key={cat.id}
+                      className="relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+                      onClick={() => {
+                        setProduct({ ...product, category: cat.id })
+                        setCategoryOpen(false)
+                        setCategorySearch('')
+                      }}
+                    >
+                      <Check
+                        className={cn(
+                          'mr-2 h-4 w-4',
+                          product.category === cat.id ? 'opacity-100' : 'opacity-0',
+                        )}
+                      />
+                      {cat.name}
+                    </div>
+                  ))}
+                  {categorySearch &&
+                    !categories.some(
+                      (c) => c.name.toLowerCase() === categorySearch.trim().toLowerCase(),
+                    ) && (
+                      <div
+                        className="relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground text-primary font-medium"
+                        onClick={handleCreateCategory}
+                      >
+                        <Plus className="mr-2 h-4 w-4" />
+                        Criar nova categoria: "{categorySearch.trim()}"
+                      </div>
+                    )}
+                </div>
+              </PopoverContent>
+            </Popover>
+          </div>
+        </div>
+      </div>
+
       <div className="space-y-4">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <h3 className="text-lg font-medium">Lista de Componentes</h3>

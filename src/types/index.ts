@@ -29,6 +29,13 @@ export interface User {
   expand?: { role?: Role }
 }
 
+export interface CompositionCategory {
+  id: string
+  name: string
+  created: string
+  updated: string
+}
+
 export interface Process {
   id: string
   name: string
@@ -110,6 +117,7 @@ export interface Product {
   name: string
   description: string
   status: string
+  category?: string
   files: any[]
   engineering_files?: any[]
   composition_files?: any[]
@@ -117,7 +125,7 @@ export interface Product {
   data: ProductData
   created: string
   updated: string
-  expand?: { owner?: User; status?: ProductStatusModel }
+  expand?: { owner?: User; status?: ProductStatusModel; category?: CompositionCategory }
 }
 
 export interface LearningStepComment {

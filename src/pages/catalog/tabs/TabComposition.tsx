@@ -26,9 +26,102 @@ import { useToast } from '@/hooks/use-toast'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { useRealtime } from '@/hooks/use-realtime'
-import type { CompositionCategory } from '@/types'
+import type { CompositionCategory, CompositionItem } from '@/types'
 
 const STAGES = ['FABRICAÇÃO', 'PREPARAÇÃO', 'MONTAGEM', 'EXPEDIÇÃO']
+
+function CategorySelector({
+  value,
+  onChange,
+  categories,
+  onAddCategory,
+}: {
+  value?: string
+  onChange: (id: string) => void
+  categories: CompositionCategory[]
+  onAddCategory: (name: string) => Promise<string | undefined>
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+
+  const filtered = categories.filter((c) => c.name.toLowerCase().includes(search.toLowerCase()))
+  const selected = categories.find((c) => c.id === value)
+
+  const handleSelect = (id: string) => {
+    onChange(id)
+    setOpen(false)
+    setSearch('')
+  }
+
+  const handleCreate = async () => {
+    const term = search.trim()
+    if (!term) return
+    const newId = await onAddCategory(term)
+    if (newId) {
+      onChange(newId)
+      setOpen(false)
+      setSearch('')
+    }
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          role="combobox"
+          aria-expanded={open}
+          className="w-full justify-between h-8 px-2 text-xs font-normal bg-background"
+        >
+          <span className="truncate">{selected ? selected.name : 'Selecionar'}</span>
+          <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[200px] p-0" align="start">
+        <div className="flex items-center border-b px-2">
+          <Search className="mr-2 h-3 w-3 shrink-0 opacity-50" />
+          <Input
+            placeholder="Buscar ou criar..."
+            className="h-8 w-full border-0 focus-visible:ring-0 px-0 text-xs"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                handleCreate()
+              }
+            }}
+          />
+        </div>
+        <div className="max-h-[150px] overflow-y-auto p-1">
+          {filtered.map((cat) => (
+            <div
+              key={cat.id}
+              className="relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-xs outline-none hover:bg-accent hover:text-accent-foreground"
+              onClick={() => handleSelect(cat.id)}
+            >
+              <Check
+                className={cn('mr-2 h-3 w-3', value === cat.id ? 'opacity-100' : 'opacity-0')}
+              />
+              {cat.name}
+            </div>
+          ))}
+          {search &&
+            !categories.some((c) => c.name.toLowerCase() === search.trim().toLowerCase()) && (
+              <div
+                className="relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-xs outline-none hover:bg-accent hover:text-accent-foreground text-primary font-medium"
+                onClick={handleCreate}
+              >
+                <Plus className="mr-2 h-3 w-3" />
+                Criar: "{search.trim()}"
+              </div>
+            )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
 
 export function TabComposition({
   product,
@@ -41,8 +134,6 @@ export function TabComposition({
   const { toast } = useToast()
 
   const [categories, setCategories] = useState<CompositionCategory[]>([])
-  const [categorySearch, setCategorySearch] = useState('')
-  const [categoryOpen, setCategoryOpen] = useState(false)
 
   const loadCategories = async () => {
     try {
@@ -63,26 +154,18 @@ export function TabComposition({
     loadCategories()
   })
 
-  const filteredCategories = categories.filter((c) =>
-    c.name.toLowerCase().includes(categorySearch.toLowerCase()),
-  )
-
-  const handleCreateCategory = async () => {
-    const term = categorySearch.trim()
-    if (!term) return
+  const handleCreateCategory = async (term: string) => {
+    if (!term) return undefined
 
     try {
       const existing = categories.find((c) => c.name.toLowerCase() === term.toLowerCase())
       if (existing) {
-        setProduct({ ...product, category: existing.id })
-      } else {
-        const record = await pb
-          .collection('composition_categories')
-          .create<CompositionCategory>({ name: term })
-        setProduct({ ...product, category: record.id })
+        return existing.id
       }
-      setCategoryOpen(false)
-      setCategorySearch('')
+      const record = await pb
+        .collection('composition_categories')
+        .create<CompositionCategory>({ name: term })
+      return record.id
     } catch (e) {
       toast({
         title: 'Erro',
@@ -90,6 +173,7 @@ export function TabComposition({
         variant: 'destructive',
       })
       loadCategories()
+      return undefined
     }
   }
 
@@ -117,7 +201,7 @@ export function TabComposition({
       if (typeof result !== 'string') return
       const text = result.replace(/^\uFEFF/, '')
       const lines = text.split(/\r?\n/)
-      const newItems = []
+      const newItems: CompositionItem[] = []
       const delimiter = lines[0]?.includes(';') ? ';' : ','
       const headerCols = lines[0]?.split(delimiter).map((c) => c.trim().toLowerCase()) || []
 
@@ -189,6 +273,10 @@ export function TabComposition({
             measurements: medIdx !== -1 ? cols[medIdx]?.trim().replace(/^"|"$/g, '') || '' : '',
             etapa:
               etapaIdx !== -1 ? cols[etapaIdx]?.trim().replace(/^"|"$/g, '')?.toUpperCase() : '',
+            category_id: '',
+            buy_or_make: undefined,
+            supplier_id: '',
+            unit_cost: undefined,
           })
         }
       }
@@ -202,7 +290,7 @@ export function TabComposition({
   }
 
   const addItem = (stage?: string) => {
-    const newItem = {
+    const newItem: CompositionItem = {
       id: Date.now().toString(),
       index: '',
       code: '',
@@ -210,6 +298,10 @@ export function TabComposition({
       quantity: '1',
       measurements: '',
       etapa: stage || '',
+      category_id: '',
+      buy_or_make: undefined,
+      supplier_id: '',
+      unit_cost: undefined,
     }
     setProduct({
       ...product,
@@ -217,7 +309,7 @@ export function TabComposition({
     })
   }
 
-  const updateItem = (id: string, field: string, value: string | number) => {
+  const updateItem = (id: string, field: keyof CompositionItem, value: any) => {
     const newComp = (product.data?.composition || []).map((c) =>
       c.id === id ? { ...c, [field]: value } : c,
     )
@@ -297,84 +389,6 @@ export function TabComposition({
 
   return (
     <div className="space-y-8 animate-fade-in">
-      <div className="space-y-4 bg-muted/20 p-4 rounded-lg border">
-        <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
-          <div className="flex flex-col gap-1.5 w-full sm:max-w-[350px]">
-            <label className="text-sm font-semibold">Categoria do Produto</label>
-            <Popover open={categoryOpen} onOpenChange={setCategoryOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  role="combobox"
-                  aria-expanded={categoryOpen}
-                  className="w-full justify-between font-normal bg-background"
-                >
-                  {product.category
-                    ? categories.find((c) => c.id === product.category)?.name || 'Selecione...'
-                    : 'Selecione a categoria...'}
-                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[350px] p-0" align="start">
-                <div className="flex items-center border-b px-3">
-                  <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
-                  <Input
-                    placeholder="Buscar ou criar categoria..."
-                    className="h-9 w-full border-0 focus-visible:ring-0 px-0"
-                    value={categorySearch}
-                    onChange={(e) => setCategorySearch(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        handleCreateCategory()
-                      }
-                    }}
-                  />
-                </div>
-                <div className="max-h-[200px] overflow-y-auto p-1">
-                  {filteredCategories.length === 0 && !categorySearch && (
-                    <div className="p-4 text-sm text-muted-foreground text-center">
-                      Nenhuma categoria encontrada.
-                    </div>
-                  )}
-                  {filteredCategories.map((cat) => (
-                    <div
-                      key={cat.id}
-                      className="relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
-                      onClick={() => {
-                        setProduct({ ...product, category: cat.id })
-                        setCategoryOpen(false)
-                        setCategorySearch('')
-                      }}
-                    >
-                      <Check
-                        className={cn(
-                          'mr-2 h-4 w-4',
-                          product.category === cat.id ? 'opacity-100' : 'opacity-0',
-                        )}
-                      />
-                      {cat.name}
-                    </div>
-                  ))}
-                  {categorySearch &&
-                    !categories.some(
-                      (c) => c.name.toLowerCase() === categorySearch.trim().toLowerCase(),
-                    ) && (
-                      <div
-                        className="relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground text-primary font-medium"
-                        onClick={handleCreateCategory}
-                      >
-                        <Plus className="mr-2 h-4 w-4" />
-                        Criar nova categoria: "{categorySearch.trim()}"
-                      </div>
-                    )}
-                </div>
-              </PopoverContent>
-            </Popover>
-          </div>
-        </div>
-      </div>
-
       <div className="space-y-4">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <h3 className="text-lg font-medium">Lista de Componentes</h3>
@@ -402,19 +416,20 @@ export function TabComposition({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[150px]">Etapa</TableHead>
+                <TableHead className="w-[130px]">Etapa</TableHead>
+                <TableHead className="w-[150px]">Categoria</TableHead>
                 <TableHead className="w-[80px]">#</TableHead>
                 <TableHead className="w-[120px]">Cód.</TableHead>
                 <TableHead>Descrição</TableHead>
-                <TableHead className="w-[100px]">Qtd.</TableHead>
-                <TableHead className="w-[150px]">Medida</TableHead>
-                <TableHead className="w-[60px]"></TableHead>
+                <TableHead className="w-[80px]">Qtd.</TableHead>
+                <TableHead className="w-[120px]">Medida</TableHead>
+                <TableHead className="w-[50px]"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {composition.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                     Nenhum componente adicionado.
                   </TableCell>
                 </TableRow>
@@ -424,7 +439,7 @@ export function TabComposition({
                   return (
                     <Fragment key={group.name}>
                       <TableRow className={group.colorClass}>
-                        <TableCell colSpan={7} className="font-semibold text-xs tracking-wider">
+                        <TableCell colSpan={8} className="font-semibold text-xs tracking-wider">
                           {group.name}
                         </TableCell>
                       </TableRow>
@@ -443,6 +458,14 @@ export function TabComposition({
                                 </option>
                               ))}
                             </select>
+                          </TableCell>
+                          <TableCell>
+                            <CategorySelector
+                              value={item.category_id}
+                              onChange={(id) => updateItem(item.id, 'category_id', id)}
+                              categories={categories}
+                              onAddCategory={handleCreateCategory}
+                            />
                           </TableCell>
                           <TableCell>
                             <Input

@@ -50,6 +50,10 @@ export interface CompositionItem {
   quantity: number | string
   measurements: string
   etapa?: string
+  category_id?: string
+  buy_or_make?: 'buy' | 'make'
+  supplier_id?: string
+  unit_cost?: number
 }
 
 export interface ReviewPoint {

@@ -118,7 +118,7 @@ export default function PcpOrders() {
       if (opType === 'Assistência') formData.append('manual_product_name', manualProduct)
       if (annex) formData.append('annex', annex)
       formData.append('status', 'Fila')
-      formData.append('stage', 'Corte')
+      formData.append('stage', 'Separação no estoque fisico')
       formData.append('bottleneck_reason', 'Nenhum')
 
       await pb.collection('pcp_orders').create(formData)

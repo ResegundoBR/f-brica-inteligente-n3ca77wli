@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-19T20:24:24.059Z",
+  "generatedAt": "2026-06-19T20:42:16.081Z",
   "collections": [
     {
       "name": "users",
@@ -885,8 +885,6 @@
           "system": false,
           "selectValues": [
             "Separação no estoque fisico",
-            "Levantamento de faltas (Comprado fora)",
-            "Levantamento de faltas (Fabricado internamente)",
             "Cotação",
             "Compra",
             "Retirada",
@@ -906,10 +904,7 @@
             "Verniz",
             "Retoques",
             "Montagem",
-            "Testes (Montagem)",
             "Controle de qualidade",
-            "Testes (Expedição)",
-            "Fotos",
             "Embalagem",
             "Suprimentos",
             "Fabricação",

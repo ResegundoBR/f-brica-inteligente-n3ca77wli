@@ -7,8 +7,10 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { AlertCircle, Layers, Columns, Clock } from 'lucide-react'
+import { AlertCircle, Layers, Columns, Clock, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Input } from '@/components/ui/input'
+import { format, parseISO } from 'date-fns'
 
 const MACRO_GROUPS = [
   {
@@ -17,8 +19,6 @@ const MACRO_GROUPS = [
     borderColor: 'border-blue-200 dark:border-blue-800',
     stages: [
       'Separação no estoque fisico',
-      'Levantamento de faltas (Comprado fora)',
-      'Levantamento de faltas (Fabricado internamente)',
       'Cotação',
       'Compra',
       'Retirada',
@@ -52,13 +52,13 @@ const MACRO_GROUPS = [
     name: 'Montagem',
     color: 'bg-green-100/50 dark:bg-green-900/20 text-green-800 dark:text-green-300',
     borderColor: 'border-green-200 dark:border-green-800',
-    stages: ['Montagem', 'Testes (Montagem)', 'Controle de qualidade'],
+    stages: ['Montagem', 'Controle de qualidade'],
   },
   {
     name: 'Expedição',
     color: 'bg-teal-100/50 dark:bg-teal-900/20 text-teal-800 dark:text-teal-300',
     borderColor: 'border-teal-200 dark:border-teal-800',
-    stages: ['Testes (Expedição)', 'Fotos', 'Embalagem'],
+    stages: ['Embalagem'],
   },
 ]
 
@@ -69,6 +69,7 @@ export default function PcpKanban() {
   const [stuckModalOpen, setStuckModalOpen] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
   const [viewMode, setViewMode] = useState<'status' | 'process'>('process')
+  const [searchQuery, setSearchQuery] = useState('')
 
   const fetchOrders = async () => {
     const res = await pb.collection('pcp_orders').getFullList({
@@ -109,7 +110,22 @@ export default function PcpKanban() {
     }
   }
 
-  const stuckOrders = orders.filter((o) => o.status === 'Parado')
+  const filteredOrders = orders.filter((o) => {
+    if (!searchQuery) return true
+    const q = searchQuery.toLowerCase()
+    const clientName = (o.expand?.client_id?.name || o.client_name || '').toLowerCase()
+    const productName = (
+      o.op_type === 'Assistência' ? o.manual_product_name : o.expand?.product_id?.name || ''
+    ).toLowerCase()
+    const date = o.delivery_date ? format(parseISO(o.delivery_date), 'dd/MM/yyyy') : ''
+    const orderNum = (o.order_number || '').toLowerCase()
+
+    return (
+      clientName.includes(q) || productName.includes(q) || date.includes(q) || orderNum.includes(q)
+    )
+  })
+
+  const stuckOrders = filteredOrders.filter((o) => o.status === 'Parado')
 
   return (
     <div className="flex flex-col h-[calc(100vh-2rem)] p-4 md:p-6 overflow-hidden bg-slate-50/50 dark:bg-background">
@@ -119,6 +135,16 @@ export default function PcpKanban() {
           <p className="text-muted-foreground mt-1">Gerencie as OPs por processo ou status.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Buscar OPs..."
+              className="pl-8 w-[200px] md:w-[300px] h-9"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
           <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-md">
             <Button
               variant={viewMode === 'status' ? 'secondary' : 'ghost'}
@@ -150,7 +176,7 @@ export default function PcpKanban() {
         {viewMode === 'status' && (
           <div className="flex gap-4 overflow-x-auto h-full pb-4 w-full">
             {STATUSES.map((status) => {
-              const statusOrders = orders.filter((o) => o.status === status)
+              const statusOrders = filteredOrders.filter((o) => o.status === status)
               return (
                 <div
                   key={status}
@@ -213,7 +239,7 @@ export default function PcpKanban() {
                 </div>
                 <div className="flex flex-1 divide-x divide-slate-100 dark:divide-slate-800">
                   {group.stages.map((stage) => {
-                    const stageOrders = orders.filter((o) => o.stage === stage)
+                    const stageOrders = filteredOrders.filter((o) => o.stage === stage)
                     return (
                       <div
                         key={stage}

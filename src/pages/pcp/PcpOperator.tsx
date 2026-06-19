@@ -20,7 +20,30 @@ import { Play, CheckCircle, AlertTriangle } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 
-const STAGES = ['Corte', 'Montagem', 'Acabamento', 'Expedição']
+const STAGES = [
+  'Separação no estoque fisico',
+  'Cotação',
+  'Compra',
+  'Retirada',
+  'Aguardar chegar',
+  'Entrega',
+  'Corte',
+  'Acabamento corte',
+  'Dobra',
+  'Calandra',
+  'Solda',
+  'Acabamento de solda',
+  'Furação',
+  'Rosca',
+  'Bases de concreto',
+  'Preparação (wash primer, primer e lixamento)',
+  'Pintura',
+  'Verniz',
+  'Retoques',
+  'Montagem',
+  'Controle de qualidade',
+  'Embalagem',
+]
 
 export default function PcpOperator() {
   const [orders, setOrders] = useState<PcpOrder[]>([])

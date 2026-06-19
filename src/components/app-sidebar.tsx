@@ -9,6 +9,10 @@ import {
   ScrollText,
   Factory,
   Settings,
+  Kanban,
+  FileText,
+  TabletSmartphone,
+  Eye,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -27,6 +31,10 @@ const navItems = [
   { title: 'Dashboard', url: '/', icon: LayoutDashboard, group: 'Engenharia' },
   { title: 'Catálogo Técnico', url: '/catalogo', icon: BookOpen, group: 'Engenharia' },
   { title: 'Evolução Aprendizado', url: '/aprendizado', icon: GraduationCap, group: 'Engenharia' },
+  { title: 'Painel de Controle', url: '/pcp/kanban', icon: Kanban, group: 'PCP' },
+  { title: 'Ordens de Produção', url: '/pcp/ordens', icon: FileText, group: 'PCP' },
+  { title: 'Portal do Operador', url: '/pcp/operador', icon: TabletSmartphone, group: 'PCP' },
+  { title: 'Visão Comercial', url: '/pcp/comercial', icon: Eye, group: 'PCP' },
   { title: 'Usuários', url: '/admin/usuarios', icon: Users, group: 'Administração' },
   { title: 'Funções', url: '/admin/funcoes', icon: Shield, group: 'Administração' },
   { title: 'Status dos Produtos', url: '/admin/status', icon: Settings, group: 'Administração' },
@@ -61,6 +69,13 @@ export function AppSidebar() {
       case 'Status dos Produtos':
       case 'Log de Atividades':
         return !!role.access_users
+      case 'Painel de Controle':
+      case 'Ordens de Produção':
+        return !!role.access_pcp
+      case 'Portal do Operador':
+        return !!role.access_operator || !!role.access_pcp
+      case 'Visão Comercial':
+        return !!role.access_commercial || !!role.access_pcp
       default:
         return true
     }
@@ -90,7 +105,7 @@ export function AppSidebar() {
         </span>
       </SidebarHeader>
       <SidebarContent>
-        {['Engenharia', 'Administração'].map((group) => (
+        {['Engenharia', 'PCP', 'Administração'].map((group) => (
           <SidebarGroup key={group}>
             <SidebarGroupLabel>{group}</SidebarGroupLabel>
             <SidebarGroupContent>

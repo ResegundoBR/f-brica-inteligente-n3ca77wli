@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-19T17:30:04.852Z",
+  "generatedAt": "2026-06-19T17:46:23.143Z",
   "collections": [
     {
       "name": "users",
@@ -345,6 +345,24 @@
         },
         {
           "name": "access_users",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "access_pcp",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "access_operator",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "access_commercial",
           "type": "bool",
           "required": false,
           "system": false
@@ -821,6 +839,114 @@
       ],
       "indexes": [
         "CREATE UNIQUE INDEX idx_composition_categories_name ON composition_categories (name COLLATE NOCASE)"
+      ]
+    },
+    {
+      "name": "pcp_orders",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "order_number",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "client_name",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "product_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "products"
+        },
+        {
+          "name": "is_special",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["Fila", "Em Andamento", "Revisão", "Concluído"]
+        },
+        {
+          "name": "stage",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["Corte", "Montagem", "Acabamento", "Expedição"]
+        },
+        {
+          "name": "annex",
+          "type": "file",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "bottleneck_reason",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["Nenhum", "Falta de Material", "Dúvida Técnica", "Sobrecarga"]
+        },
+        {
+          "name": "delivery_date",
+          "type": "date",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "started_at",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "finished_at",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "operator_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_pcp_orders_status ON pcp_orders (status)",
+        "CREATE INDEX idx_pcp_orders_stage ON pcp_orders (stage)"
       ]
     }
   ]

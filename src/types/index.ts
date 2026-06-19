@@ -7,6 +7,9 @@ export interface Role {
   access_catalog?: boolean
   access_learning?: boolean
   access_users?: boolean
+  access_pcp?: boolean
+  access_operator?: boolean
+  access_commercial?: boolean
 }
 
 export interface ProductStatusModel {
@@ -180,4 +183,26 @@ export interface Log {
   action: string
   details: any
   expand?: { user_id?: User; product_id?: Product }
+}
+
+export interface PcpOrder {
+  id: string
+  order_number: string
+  client_name: string
+  product_id?: string
+  is_special: boolean
+  status: 'Fila' | 'Em Andamento' | 'Revisão' | 'Concluído'
+  stage: 'Corte' | 'Montagem' | 'Acabamento' | 'Expedição'
+  annex?: string
+  bottleneck_reason: 'Nenhum' | 'Falta de Material' | 'Dúvida Técnica' | 'Sobrecarga'
+  delivery_date: string
+  started_at?: string
+  finished_at?: string
+  operator_id?: string
+  created: string
+  updated: string
+  expand?: {
+    product_id?: Product
+    operator_id?: User
+  }
 }

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-19T18:16:37.153Z",
+  "generatedAt": "2026-06-19T18:33:49.287Z",
   "collections": [
     {
       "name": "users",
@@ -882,14 +882,22 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": ["Fila", "Em Andamento", "Revisão", "Concluído"]
+          "selectValues": ["Fila", "Em Andamento", "Parado", "Concluído"]
         },
         {
           "name": "stage",
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": ["Corte", "Montagem", "Acabamento", "Expedição"]
+          "selectValues": [
+            "Corte",
+            "Dobra",
+            "Calandra",
+            "Solda",
+            "Montagem",
+            "Acabamento",
+            "Expedição"
+          ]
         },
         {
           "name": "annex",

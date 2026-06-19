@@ -200,8 +200,8 @@ export interface PcpOrder {
   quantity: number
   product_id?: string
   is_special: boolean
-  status: 'Fila' | 'Em Andamento' | 'Revisão' | 'Concluído'
-  stage: 'Corte' | 'Montagem' | 'Acabamento' | 'Expedição'
+  status: 'Fila' | 'Em Andamento' | 'Parado' | 'Concluído'
+  stage: 'Corte' | 'Dobra' | 'Calandra' | 'Solda' | 'Montagem' | 'Acabamento' | 'Expedição'
   annex?: string
   bottleneck_reason: 'Nenhum' | 'Falta de Material' | 'Dúvida Técnica' | 'Sobrecarga'
   delivery_date: string

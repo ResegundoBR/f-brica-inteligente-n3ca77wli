@@ -17,6 +17,7 @@ import PcpOrders from './pages/pcp/PcpOrders'
 import PcpClients from './pages/pcp/PcpClients'
 import PcpOperator from './pages/pcp/PcpOperator'
 import PcpCommercial from './pages/pcp/PcpCommercial'
+import PcpOcorrencias from './pages/pcp/PcpOcorrencias'
 import Login from './pages/Login'
 import ChangePassword from './pages/ChangePassword'
 import { AuthProvider } from './hooks/use-auth'
@@ -113,6 +114,7 @@ const App = () => (
               <Route path="/pcp/clientes" element={<PcpClients />} />
               <Route path="/pcp/operador" element={<PcpOperator />} />
               <Route path="/pcp/comercial" element={<PcpCommercial />} />
+              <Route path="/pcp/ocorrencias" element={<PcpOcorrencias />} />
               <Route path="/unauthorized" element={<Unauthorized />} />
             </Route>
           </Route>

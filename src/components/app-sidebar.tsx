@@ -13,6 +13,7 @@ import {
   FileText,
   TabletSmartphone,
   Eye,
+  Activity,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -36,6 +37,7 @@ const navItems = [
   { title: 'Clientes', url: '/pcp/clientes', icon: Users, group: 'PCP' },
   { title: 'Portal do Operador', url: '/pcp/operador', icon: TabletSmartphone, group: 'PCP' },
   { title: 'Visão Comercial', url: '/pcp/comercial', icon: Eye, group: 'PCP' },
+  { title: 'Relatório de Ocorrências', url: '/pcp/ocorrencias', icon: Activity, group: 'PCP' },
   { title: 'Usuários', url: '/admin/usuarios', icon: Users, group: 'Administração' },
   { title: 'Funções', url: '/admin/funcoes', icon: Shield, group: 'Administração' },
   { title: 'Status dos Produtos', url: '/admin/status', icon: Settings, group: 'Administração' },

@@ -33,6 +33,7 @@ const navItems = [
   { title: 'Evolução Aprendizado', url: '/aprendizado', icon: GraduationCap, group: 'Engenharia' },
   { title: 'Painel de Controle', url: '/pcp/kanban', icon: Kanban, group: 'PCP' },
   { title: 'Ordens de Produção', url: '/pcp/ordens', icon: FileText, group: 'PCP' },
+  { title: 'Clientes', url: '/pcp/clientes', icon: Users, group: 'PCP' },
   { title: 'Portal do Operador', url: '/pcp/operador', icon: TabletSmartphone, group: 'PCP' },
   { title: 'Visão Comercial', url: '/pcp/comercial', icon: Eye, group: 'PCP' },
   { title: 'Usuários', url: '/admin/usuarios', icon: Users, group: 'Administração' },
@@ -71,6 +72,7 @@ export function AppSidebar() {
         return !!role.access_users
       case 'Painel de Controle':
       case 'Ordens de Produção':
+      case 'Clientes':
         return !!role.access_pcp
       case 'Portal do Operador':
         return !!role.access_operator || !!role.access_pcp

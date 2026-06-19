@@ -24,6 +24,13 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet'
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -39,6 +46,8 @@ export default function PcpOrders() {
   const [products, setProducts] = useState<Product[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [isOpen, setIsOpen] = useState(false)
+  const [isClientModalOpen, setIsClientModalOpen] = useState(false)
+  const [newClientName, setNewClientName] = useState('')
   const { toast } = useToast()
 
   const [orderNumber, setOrderNumber] = useState('')
@@ -59,8 +68,7 @@ export default function PcpOrders() {
         pb.collection('clients').getFullList<Client>({ sort: 'name' }),
       ])
       setOrders(ops)
-      // Filter out explicitly inactive products
-      setProducts(prods.filter((p) => !p.expand?.status || p.expand.status.active))
+      setProducts(prods)
       setClients(clis)
     } catch {
       /* intentionally ignored */
@@ -74,6 +82,20 @@ export default function PcpOrders() {
   useRealtime('pcp_orders', () => {
     loadData()
   })
+
+  const handleQuickClientSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      const record = await pb.collection('clients').create({ name: newClientName })
+      setClients((prev) => [...prev, record].sort((a, b) => a.name.localeCompare(b.name)))
+      setClientId(record.id)
+      setIsClientModalOpen(false)
+      setNewClientName('')
+      toast({ title: 'Sucesso', description: 'Cliente adicionado.' })
+    } catch (err: any) {
+      toast({ title: 'Erro', description: err.message, variant: 'destructive' })
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -114,6 +136,31 @@ export default function PcpOrders() {
 
   return (
     <div className="flex flex-col gap-6 p-6">
+      <Dialog open={isClientModalOpen} onOpenChange={setIsClientModalOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Novo Cliente</DialogTitle>
+            <DialogDescription>
+              Crie um novo cliente rapidamente para vinculá-lo à OP.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleQuickClientSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Nome</Label>
+              <Input
+                required
+                value={newClientName}
+                onChange={(e) => setNewClientName(e.target.value)}
+                placeholder="Ex: Indústria Alpha"
+              />
+            </div>
+            <Button type="submit" className="w-full">
+              Adicionar
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Ordens de Produção</h1>
@@ -143,7 +190,19 @@ export default function PcpOrders() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Cliente</Label>
+                <div className="flex items-center justify-between">
+                  <Label>Cliente</Label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => setIsClientModalOpen(true)}
+                  >
+                    <Plus className="mr-1 size-3" />
+                    Novo Cliente
+                  </Button>
+                </div>
                 <Select required value={clientId} onValueChange={setClientId}>
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione um cliente" />

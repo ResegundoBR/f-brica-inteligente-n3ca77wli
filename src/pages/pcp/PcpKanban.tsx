@@ -19,13 +19,6 @@ import { cn } from '@/lib/utils'
 const STATUS_COLUMNS = ['Fila', 'Em Andamento', 'Parado', 'Concluído'] as const
 const PROCESS_COLUMNS = [
   'Separação no estoque fisico',
-  'Levantamento de faltas (Comprado fora)',
-  'Levantamento de faltas (Fabricado internamente)',
-  'Cotação',
-  'Compra',
-  'Retirada',
-  'Aguardar chegar',
-  'Entrega',
   'Corte',
   'Acabamento corte',
   'Dobra',
@@ -40,10 +33,7 @@ const PROCESS_COLUMNS = [
   'Verniz',
   'Retoques',
   'Montagem',
-  'Testes (Montagem)',
   'Controle de qualidade',
-  'Testes (Expedição)',
-  'Fotos',
   'Embalagem',
 ] as const
 
@@ -177,10 +167,26 @@ export default function PcpKanban() {
     const opId = e.dataTransfer.getData('op_id')
     if (opId) {
       try {
+        const order = orders.find((o) => o.id === opId)
+        if (!order) return
+
         if (viewMode === 'status') {
           await pb.collection('pcp_orders').update(opId, { status: col })
         } else {
-          await pb.collection('pcp_orders').update(opId, { stage: col })
+          let newStatus = order.status
+          const bottleneck = order.bottleneck_reason
+
+          if (bottleneck && bottleneck !== 'Nenhum') {
+            newStatus = 'Parado'
+          } else if (col === 'Embalagem') {
+            newStatus = 'Concluído'
+          } else if (col === 'Separação no estoque fisico') {
+            newStatus = 'Fila'
+          } else {
+            newStatus = 'Em Andamento'
+          }
+
+          await pb.collection('pcp_orders').update(opId, { stage: col, status: newStatus })
         }
       } catch {
         /* intentionally ignored */

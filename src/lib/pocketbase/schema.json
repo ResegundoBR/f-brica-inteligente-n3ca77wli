@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-19T20:19:41.321Z",
+  "generatedAt": "2026-06-19T20:24:24.059Z",
   "collections": [
     {
       "name": "users",
@@ -910,7 +910,11 @@
             "Controle de qualidade",
             "Testes (Expedição)",
             "Fotos",
-            "Embalagem"
+            "Embalagem",
+            "Suprimentos",
+            "Fabricação",
+            "Acabamento",
+            "Expedição"
           ]
         },
         {

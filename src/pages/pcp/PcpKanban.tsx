@@ -6,44 +6,68 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { AlertCircle, Maximize2, Minimize2, ChevronRight, Clock } from 'lucide-react'
+import {
+  AlertCircle,
+  Maximize2,
+  Minimize2,
+  ChevronRight,
+  Clock,
+  Layers,
+  Columns,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-const STAGES = [
-  'Separação no estoque fisico',
-  'Levantamento de faltas (Comprado fora)',
-  'Levantamento de faltas (Fabricado internamente)',
-  'Cotação',
-  'Compra',
-  'Retirada',
-  'Aguardar chegar',
-  'Entrega',
-  'Corte',
-  'Acabamento corte',
-  'Dobra',
-  'Calandra',
-  'Solda',
-  'Acabamento de solda',
-  'Furação',
-  'Rosca',
-  'Bases de concreto',
-  'Preparação (wash primer, primer e lixamento)',
-  'Pintura',
-  'Verniz',
-  'Retoques',
-  'Montagem',
-  'Testes (Montagem)',
-  'Controle de qualidade',
-  'Testes (Expedição)',
-  'Fotos',
-  'Embalagem',
+const MACRO_GROUPS = [
+  {
+    name: 'Suprimentos',
+    stages: [
+      'Separação no estoque fisico',
+      'Levantamento de faltas (Comprado fora)',
+      'Levantamento de faltas (Fabricado internamente)',
+      'Cotação',
+      'Compra',
+      'Retirada',
+      'Aguardar chegar',
+      'Entrega',
+    ],
+  },
+  {
+    name: 'Fabricação',
+    stages: [
+      'Corte',
+      'Acabamento corte',
+      'Dobra',
+      'Calandra',
+      'Solda',
+      'Acabamento de solda',
+      'Furação',
+      'Rosca',
+      'Bases de concreto',
+    ],
+  },
+  {
+    name: 'Acabamento',
+    stages: ['Preparação (wash primer, primer e lixamento)', 'Pintura', 'Verniz', 'Retoques'],
+  },
+  {
+    name: 'Montagem',
+    stages: ['Montagem', 'Testes (Montagem)', 'Controle de qualidade'],
+  },
+  {
+    name: 'Expedição',
+    stages: ['Testes (Expedição)', 'Fotos', 'Embalagem'],
+  },
 ]
+
+const STAGES = MACRO_GROUPS.flatMap((g) => g.stages)
+const STATUSES = ['Fila', 'Em Andamento', 'Parado', 'Concluído']
 
 export default function PcpKanban() {
   const [orders, setOrders] = useState<any[]>([])
   const [collapsedStages, setCollapsedStages] = useState<Set<string>>(new Set())
   const [stuckModalOpen, setStuckModalOpen] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
+  const [viewMode, setViewMode] = useState<'status' | 'process'>('process')
 
   const fetchOrders = async () => {
     const res = await pb.collection('pcp_orders').getFullList({
@@ -62,13 +86,24 @@ export default function PcpKanban() {
     e.dataTransfer.setData('orderId', id)
   }
 
-  const handleDrop = async (e: React.DragEvent, stage: string) => {
+  const handleDropStage = async (e: React.DragEvent, stage: string) => {
     e.preventDefault()
     const orderId = e.dataTransfer.getData('orderId')
     if (!orderId) return
     const order = orders.find((o) => o.id === orderId)
     if (order && order.stage !== stage) {
       await pb.collection('pcp_orders').update(orderId, { stage })
+      fetchOrders()
+    }
+  }
+
+  const handleDropStatus = async (e: React.DragEvent, status: string) => {
+    e.preventDefault()
+    const orderId = e.dataTransfer.getData('orderId')
+    if (!orderId) return
+    const order = orders.find((o) => o.id === orderId)
+    if (order && order.status !== status) {
+      await pb.collection('pcp_orders').update(orderId, { status })
       fetchOrders()
     }
   }
@@ -84,107 +119,190 @@ export default function PcpKanban() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-2rem)] p-4 md:p-6 overflow-hidden bg-slate-50/50 dark:bg-background">
-      <div className="flex items-center justify-between mb-6 shrink-0">
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 shrink-0 gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Painel de Controle</h1>
-          <p className="text-muted-foreground mt-1">Gerencie as OPs por processo.</p>
+          <p className="text-muted-foreground mt-1">Gerencie as OPs por processo ou status.</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-md">
+            <Button
+              variant={viewMode === 'status' ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('status')}
+              className="gap-2"
+            >
+              <Layers className="size-4" />
+              Por Status
+            </Button>
+            <Button
+              variant={viewMode === 'process' ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('process')}
+              className="gap-2"
+            >
+              <Columns className="size-4" />
+              Por Processo
+            </Button>
+          </div>
           {stuckOrders.length > 0 && (
             <Button variant="destructive" className="gap-2" onClick={() => setStuckModalOpen(true)}>
               <AlertCircle className="size-4" />
               Travadas ({stuckOrders.length})
             </Button>
           )}
-          <Button variant="outline" size="sm" onClick={() => setCollapsedStages(new Set())}>
-            <Maximize2 className="mr-2 size-4" /> Expandir tudo
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setCollapsedStages(new Set(STAGES))}>
-            <Minimize2 className="mr-2 size-4" /> Recolher tudo
-          </Button>
+          {viewMode === 'process' && (
+            <>
+              <Button variant="outline" size="sm" onClick={() => setCollapsedStages(new Set())}>
+                <Maximize2 className="mr-2 size-4" /> Expandir tudo
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCollapsedStages(new Set(STAGES))}
+              >
+                <Minimize2 className="mr-2 size-4" /> Recolher tudo
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
       <div className="flex flex-1 gap-4 overflow-x-auto pb-4 items-start">
-        {STAGES.map((stage) => {
-          const stageOrders = orders.filter((o) => o.stage === stage)
-          const isCollapsed = collapsedStages.has(stage)
-          const hasStuck = stageOrders.some((o) => o.status === 'Parado')
-
-          if (isCollapsed) {
+        {viewMode === 'status' &&
+          STATUSES.map((status) => {
+            const statusOrders = orders.filter((o) => o.status === status)
             return (
               <div
-                key={stage}
-                onClick={() => toggleStage(stage)}
+                key={status}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => handleDropStatus(e, status)}
                 className={cn(
-                  'w-12 shrink-0 h-full max-h-full rounded-xl border flex flex-col items-center py-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors',
-                  hasStuck
-                    ? 'bg-red-50 border-red-200 dark:bg-red-950/20 dark:border-red-900'
-                    : 'bg-white dark:bg-slate-900',
+                  'w-80 shrink-0 flex flex-col max-h-full rounded-xl border bg-slate-100/50 dark:bg-slate-900/50 p-3',
+                  status === 'Parado' &&
+                    'border-red-200 bg-red-50/30 dark:border-red-900/50 dark:bg-red-950/10',
                 )}
               >
-                <div className="rotate-180" style={{ writingMode: 'vertical-rl' }}>
-                  <span className="text-sm font-semibold tracking-wider whitespace-nowrap text-slate-700 dark:text-slate-300">
-                    {stage}
-                  </span>
+                <div className="flex items-center justify-between mb-3 px-1">
+                  <div className="flex items-center gap-2 font-semibold text-sm">
+                    {status}
+                    <Badge variant="outline" className="px-1.5 font-normal bg-background">
+                      {statusOrders.length}
+                    </Badge>
+                  </div>
                 </div>
-                <div className="mt-auto flex flex-col items-center gap-2">
-                  {hasStuck && <AlertCircle className="size-4 text-red-500" />}
-                  <Badge variant="secondary" className="px-1.5">
-                    {stageOrders.length}
-                  </Badge>
-                </div>
+
+                <ScrollArea className="flex-1 -mx-3 px-3">
+                  <div className="flex flex-col gap-2 pb-4">
+                    {statusOrders.map((order) => (
+                      <KanbanCard
+                        key={order.id}
+                        order={order}
+                        onDragStart={handleDragStart}
+                        onClick={() => setSelectedOrder(order)}
+                      />
+                    ))}
+                    {statusOrders.length === 0 && (
+                      <div className="text-center text-sm text-muted-foreground py-8 border-2 border-dashed rounded-lg">
+                        Nenhuma OP
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
               </div>
             )
-          }
+          })}
 
-          return (
-            <div
-              key={stage}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => handleDrop(e, stage)}
-              className={cn(
-                'w-80 shrink-0 flex flex-col max-h-full rounded-xl border bg-slate-100/50 dark:bg-slate-900/50 p-3',
-                hasStuck && 'border-red-200 bg-red-50/30 dark:border-red-900/50 dark:bg-red-950/10',
-              )}
-            >
-              <div className="flex items-center justify-between mb-3 px-1">
-                <div className="flex items-center gap-2 font-semibold text-sm">
-                  {stage}
-                  <Badge variant="outline" className="px-1.5 font-normal bg-background">
-                    {stageOrders.length}
-                  </Badge>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6"
-                  onClick={() => toggleStage(stage)}
-                >
-                  <ChevronRight className="size-4 text-muted-foreground" />
-                </Button>
+        {viewMode === 'process' &&
+          MACRO_GROUPS.map((group) => (
+            <div key={group.name} className="flex flex-col shrink-0">
+              <div className="font-semibold text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3 px-2 border-b border-slate-200 dark:border-slate-800 pb-2">
+                {group.name}
               </div>
+              <div className="flex gap-4 flex-1 items-start">
+                {group.stages.map((stage) => {
+                  const stageOrders = orders.filter((o) => o.stage === stage)
+                  const isCollapsed = collapsedStages.has(stage)
+                  const hasStuck = stageOrders.some((o) => o.status === 'Parado')
 
-              <ScrollArea className="flex-1 -mx-3 px-3">
-                <div className="flex flex-col gap-2 pb-4">
-                  {stageOrders.map((order) => (
-                    <KanbanCard
-                      key={order.id}
-                      order={order}
-                      onDragStart={handleDragStart}
-                      onClick={() => setSelectedOrder(order)}
-                    />
-                  ))}
-                  {stageOrders.length === 0 && (
-                    <div className="text-center text-sm text-muted-foreground py-8 border-2 border-dashed rounded-lg">
-                      Nenhuma OP
+                  if (isCollapsed) {
+                    return (
+                      <div
+                        key={stage}
+                        onClick={() => toggleStage(stage)}
+                        className={cn(
+                          'w-12 shrink-0 h-full max-h-full rounded-xl border flex flex-col items-center py-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors',
+                          hasStuck
+                            ? 'bg-red-50 border-red-200 dark:bg-red-950/20 dark:border-red-900'
+                            : 'bg-white dark:bg-slate-900',
+                        )}
+                      >
+                        <div className="flex flex-col items-center gap-2 mb-4">
+                          <Badge variant="secondary" className="px-1.5">
+                            {stageOrders.length}
+                          </Badge>
+                          {hasStuck && <AlertCircle className="size-4 text-red-500" />}
+                        </div>
+                        <div className="rotate-180 mt-2" style={{ writingMode: 'vertical-rl' }}>
+                          <span className="text-sm font-semibold tracking-wider whitespace-nowrap text-slate-700 dark:text-slate-300">
+                            {stage}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  }
+
+                  return (
+                    <div
+                      key={stage}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => handleDropStage(e, stage)}
+                      className={cn(
+                        'w-80 shrink-0 flex flex-col max-h-full rounded-xl border bg-slate-100/50 dark:bg-slate-900/50 p-3 mr-2',
+                        hasStuck &&
+                          'border-red-200 bg-red-50/30 dark:border-red-900/50 dark:bg-red-950/10',
+                      )}
+                    >
+                      <div className="flex items-center justify-between mb-3 px-1">
+                        <div className="flex items-center gap-2 font-semibold text-sm">
+                          {stage}
+                          <Badge variant="outline" className="px-1.5 font-normal bg-background">
+                            {stageOrders.length}
+                          </Badge>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={() => toggleStage(stage)}
+                        >
+                          <ChevronRight className="size-4 text-muted-foreground" />
+                        </Button>
+                      </div>
+
+                      <ScrollArea className="flex-1 -mx-3 px-3">
+                        <div className="flex flex-col gap-2 pb-4">
+                          {stageOrders.map((order) => (
+                            <KanbanCard
+                              key={order.id}
+                              order={order}
+                              onDragStart={handleDragStart}
+                              onClick={() => setSelectedOrder(order)}
+                            />
+                          ))}
+                          {stageOrders.length === 0 && (
+                            <div className="text-center text-sm text-muted-foreground py-8 border-2 border-dashed rounded-lg">
+                              Nenhuma OP
+                            </div>
+                          )}
+                        </div>
+                      </ScrollArea>
                     </div>
-                  )}
-                </div>
-              </ScrollArea>
+                  )
+                })}
+              </div>
             </div>
-          )
-        })}
+          ))}
       </div>
 
       <Dialog open={stuckModalOpen} onOpenChange={setStuckModalOpen}>
@@ -232,6 +350,11 @@ export default function PcpKanban() {
                   </Badge>
                 </div>
               ))}
+              {stuckOrders.length === 0 && (
+                <div className="text-center py-6 text-muted-foreground">
+                  Nenhuma ordem travada no momento.
+                </div>
+              )}
             </div>
           </ScrollArea>
         </DialogContent>
@@ -269,6 +392,10 @@ export default function PcpKanban() {
                   >
                     {selectedOrder.status}
                   </Badge>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-xs">Processo Atual</span>
+                  <span className="font-medium">{selectedOrder.stage}</span>
                 </div>
               </div>
             </div>

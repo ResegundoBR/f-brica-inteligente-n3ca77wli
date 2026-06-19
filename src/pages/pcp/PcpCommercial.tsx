@@ -15,6 +15,7 @@ import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
 import { format, parseISO, isAfter, startOfDay } from 'date-fns'
 import { Search } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 const STAGES = ['Corte', 'Montagem', 'Acabamento', 'Expedição']
 
@@ -123,7 +124,27 @@ export default function PcpCommercial() {
                     <TableCell className="font-semibold">{op.order_number}</TableCell>
                     <TableCell>{op.client_name}</TableCell>
                     <TableCell>
-                      {op.is_special ? 'Produto Especial' : op.expand?.product_id?.name}
+                      <div className="flex flex-col items-start gap-1">
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            'text-[10px] px-1.5 h-4 border-transparent text-white',
+                            op.op_type === 'Assistência' && 'bg-fuchsia-500 hover:bg-fuchsia-600',
+                            op.op_type === 'Especial' &&
+                              'bg-slate-900 dark:bg-slate-100 dark:text-slate-900',
+                            op.op_type === 'Linha' && 'bg-blue-500 hover:bg-blue-600',
+                          )}
+                        >
+                          {op.op_type}
+                        </Badge>
+                        <span className="text-sm">
+                          {op.op_type === 'Assistência'
+                            ? op.manual_product_name
+                            : op.op_type === 'Especial'
+                              ? 'Produto Especial'
+                              : op.expand?.product_id?.name || '-'}
+                        </span>
+                      </div>
                     </TableCell>
                     <TableCell>{format(parseISO(op.delivery_date), 'dd/MM/yyyy')}</TableCell>
                     <TableCell>

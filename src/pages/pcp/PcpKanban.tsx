@@ -6,20 +6,15 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import {
-  AlertCircle,
-  Maximize2,
-  Minimize2,
-  ChevronRight,
-  Clock,
-  Layers,
-  Columns,
-} from 'lucide-react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { AlertCircle, Layers, Columns, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const MACRO_GROUPS = [
   {
     name: 'Suprimentos',
+    color: 'bg-blue-100/50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300',
+    borderColor: 'border-blue-200 dark:border-blue-800',
     stages: [
       'Separação no estoque fisico',
       'Levantamento de faltas (Comprado fora)',
@@ -33,6 +28,8 @@ const MACRO_GROUPS = [
   },
   {
     name: 'Fabricação',
+    color: 'bg-orange-100/50 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300',
+    borderColor: 'border-orange-200 dark:border-orange-800',
     stages: [
       'Corte',
       'Acabamento corte',
@@ -47,24 +44,28 @@ const MACRO_GROUPS = [
   },
   {
     name: 'Acabamento',
+    color: 'bg-purple-100/50 dark:bg-purple-900/20 text-purple-800 dark:text-purple-300',
+    borderColor: 'border-purple-200 dark:border-purple-800',
     stages: ['Preparação (wash primer, primer e lixamento)', 'Pintura', 'Verniz', 'Retoques'],
   },
   {
     name: 'Montagem',
+    color: 'bg-green-100/50 dark:bg-green-900/20 text-green-800 dark:text-green-300',
+    borderColor: 'border-green-200 dark:border-green-800',
     stages: ['Montagem', 'Testes (Montagem)', 'Controle de qualidade'],
   },
   {
     name: 'Expedição',
+    color: 'bg-teal-100/50 dark:bg-teal-900/20 text-teal-800 dark:text-teal-300',
+    borderColor: 'border-teal-200 dark:border-teal-800',
     stages: ['Testes (Expedição)', 'Fotos', 'Embalagem'],
   },
 ]
 
-const STAGES = MACRO_GROUPS.flatMap((g) => g.stages)
 const STATUSES = ['Fila', 'Em Andamento', 'Parado', 'Concluído']
 
 export default function PcpKanban() {
   const [orders, setOrders] = useState<any[]>([])
-  const [collapsedStages, setCollapsedStages] = useState<Set<string>>(new Set())
   const [stuckModalOpen, setStuckModalOpen] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
   const [viewMode, setViewMode] = useState<'status' | 'process'>('process')
@@ -108,18 +109,11 @@ export default function PcpKanban() {
     }
   }
 
-  const toggleStage = (stage: string) => {
-    const next = new Set(collapsedStages)
-    if (next.has(stage)) next.delete(stage)
-    else next.add(stage)
-    setCollapsedStages(next)
-  }
-
   const stuckOrders = orders.filter((o) => o.status === 'Parado')
 
   return (
     <div className="flex flex-col h-[calc(100vh-2rem)] p-4 md:p-6 overflow-hidden bg-slate-50/50 dark:bg-background">
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 shrink-0 gap-4">
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-4 shrink-0 gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Painel de Controle</h1>
           <p className="text-muted-foreground mt-1">Gerencie as OPs por processo ou status.</p>
@@ -132,8 +126,7 @@ export default function PcpKanban() {
               onClick={() => setViewMode('status')}
               className="gap-2"
             >
-              <Layers className="size-4" />
-              Por Status
+              <Layers className="size-4" /> Por Status
             </Button>
             <Button
               variant={viewMode === 'process' ? 'secondary' : 'ghost'}
@@ -141,8 +134,7 @@ export default function PcpKanban() {
               onClick={() => setViewMode('process')}
               className="gap-2"
             >
-              <Columns className="size-4" />
-              Por Processo
+              <Columns className="size-4" /> Por Processo
             </Button>
           </div>
           {stuckOrders.length > 0 && (
@@ -151,158 +143,110 @@ export default function PcpKanban() {
               Travadas ({stuckOrders.length})
             </Button>
           )}
-          {viewMode === 'process' && (
-            <>
-              <Button variant="outline" size="sm" onClick={() => setCollapsedStages(new Set())}>
-                <Maximize2 className="mr-2 size-4" /> Expandir tudo
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCollapsedStages(new Set(STAGES))}
-              >
-                <Minimize2 className="mr-2 size-4" /> Recolher tudo
-              </Button>
-            </>
-          )}
         </div>
       </div>
 
-      <div className="flex flex-1 gap-4 overflow-x-auto pb-4 items-start">
-        {viewMode === 'status' &&
-          STATUSES.map((status) => {
-            const statusOrders = orders.filter((o) => o.status === status)
-            return (
-              <div
-                key={status}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => handleDropStatus(e, status)}
-                className={cn(
-                  'w-80 shrink-0 flex flex-col max-h-full rounded-xl border bg-slate-100/50 dark:bg-slate-900/50 p-3',
-                  status === 'Parado' &&
-                    'border-red-200 bg-red-50/30 dark:border-red-900/50 dark:bg-red-950/10',
-                )}
-              >
-                <div className="flex items-center justify-between mb-3 px-1">
-                  <div className="flex items-center gap-2 font-semibold text-sm">
-                    {status}
-                    <Badge variant="outline" className="px-1.5 font-normal bg-background">
-                      {statusOrders.length}
-                    </Badge>
+      <div className="flex-1 min-h-0 flex gap-4 items-start w-full">
+        {viewMode === 'status' && (
+          <div className="flex gap-4 overflow-x-auto h-full pb-4 w-full">
+            {STATUSES.map((status) => {
+              const statusOrders = orders.filter((o) => o.status === status)
+              return (
+                <div
+                  key={status}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => handleDropStatus(e, status)}
+                  className={cn(
+                    'w-80 shrink-0 flex flex-col max-h-full rounded-xl border bg-slate-100/50 dark:bg-slate-900/50 p-3',
+                    status === 'Parado' &&
+                      'border-red-200 bg-red-50/30 dark:border-red-900/50 dark:bg-red-950/10',
+                  )}
+                >
+                  <div className="flex items-center justify-between mb-3 px-1">
+                    <div className="flex items-center gap-2 font-semibold text-sm">
+                      {status}
+                      <Badge variant="outline" className="px-1.5 font-normal bg-background">
+                        {statusOrders.length}
+                      </Badge>
+                    </div>
                   </div>
+
+                  <ScrollArea className="flex-1 -mx-3 px-3">
+                    <div className="flex flex-col gap-2 pb-4">
+                      {statusOrders.map((order) => (
+                        <KanbanCard
+                          key={order.id}
+                          order={order}
+                          onDragStart={handleDragStart}
+                          onClick={() => setSelectedOrder(order)}
+                        />
+                      ))}
+                      {statusOrders.length === 0 && (
+                        <div className="text-center text-sm text-muted-foreground py-8 border-2 border-dashed rounded-lg">
+                          Nenhuma OP
+                        </div>
+                      )}
+                    </div>
+                  </ScrollArea>
                 </div>
+              )
+            })}
+          </div>
+        )}
 
-                <ScrollArea className="flex-1 -mx-3 px-3">
-                  <div className="flex flex-col gap-2 pb-4">
-                    {statusOrders.map((order) => (
-                      <KanbanCard
-                        key={order.id}
-                        order={order}
-                        onDragStart={handleDragStart}
-                        onClick={() => setSelectedOrder(order)}
-                      />
-                    ))}
-                    {statusOrders.length === 0 && (
-                      <div className="text-center text-sm text-muted-foreground py-8 border-2 border-dashed rounded-lg">
-                        Nenhuma OP
-                      </div>
-                    )}
-                  </div>
-                </ScrollArea>
-              </div>
-            )
-          })}
-
-        {viewMode === 'process' &&
-          MACRO_GROUPS.map((group) => (
-            <div key={group.name} className="flex flex-col shrink-0">
-              <div className="font-semibold text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3 px-2 border-b border-slate-200 dark:border-slate-800 pb-2">
-                {group.name}
-              </div>
-              <div className="flex gap-4 flex-1 items-start">
-                {group.stages.map((stage) => {
-                  const stageOrders = orders.filter((o) => o.stage === stage)
-                  const isCollapsed = collapsedStages.has(stage)
-                  const hasStuck = stageOrders.some((o) => o.status === 'Parado')
-
-                  if (isCollapsed) {
+        {viewMode === 'process' && (
+          <div className="flex w-full h-full border rounded-xl overflow-hidden bg-white dark:bg-slate-950 shadow-sm">
+            {MACRO_GROUPS.map((group) => (
+              <div
+                key={group.name}
+                className={cn('flex flex-col border-r last:border-r-0', group.borderColor)}
+                style={{ flexGrow: group.stages.length, flexBasis: 0, minWidth: 0 }}
+              >
+                <div
+                  className={cn(
+                    'text-[10px] md:text-xs font-bold text-center p-1 truncate border-b',
+                    group.color,
+                    group.borderColor,
+                  )}
+                >
+                  {group.name}
+                </div>
+                <div className="flex flex-1 divide-x divide-slate-100 dark:divide-slate-800">
+                  {group.stages.map((stage) => {
+                    const stageOrders = orders.filter((o) => o.stage === stage)
                     return (
                       <div
                         key={stage}
-                        onClick={() => toggleStage(stage)}
-                        className={cn(
-                          'w-12 shrink-0 h-full max-h-full rounded-xl border flex flex-col items-center py-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors',
-                          hasStuck
-                            ? 'bg-red-50 border-red-200 dark:bg-red-950/20 dark:border-red-900'
-                            : 'bg-white dark:bg-slate-900',
-                        )}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => handleDropStage(e, stage)}
+                        className="flex-1 flex flex-col min-w-0"
                       >
-                        <div className="flex flex-col items-center gap-2 mb-4">
-                          <Badge variant="secondary" className="px-1.5">
-                            {stageOrders.length}
-                          </Badge>
-                          {hasStuck && <AlertCircle className="size-4 text-red-500" />}
-                        </div>
-                        <div className="rotate-180 mt-2" style={{ writingMode: 'vertical-rl' }}>
-                          <span className="text-sm font-semibold tracking-wider whitespace-nowrap text-slate-700 dark:text-slate-300">
+                        <div className="h-32 w-full flex flex-col items-center justify-end pb-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+                          <div
+                            className="rotate-180 text-[10px] leading-tight font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap overflow-hidden"
+                            style={{ writingMode: 'vertical-rl' }}
+                          >
                             {stage}
-                          </span>
+                          </div>
                         </div>
-                      </div>
-                    )
-                  }
-
-                  return (
-                    <div
-                      key={stage}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={(e) => handleDropStage(e, stage)}
-                      className={cn(
-                        'w-80 shrink-0 flex flex-col max-h-full rounded-xl border bg-slate-100/50 dark:bg-slate-900/50 p-3 mr-2',
-                        hasStuck &&
-                          'border-red-200 bg-red-50/30 dark:border-red-900/50 dark:bg-red-950/10',
-                      )}
-                    >
-                      <div className="flex items-center justify-between mb-3 px-1">
-                        <div className="flex items-center gap-2 font-semibold text-sm">
-                          {stage}
-                          <Badge variant="outline" className="px-1.5 font-normal bg-background">
-                            {stageOrders.length}
-                          </Badge>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
-                          onClick={() => toggleStage(stage)}
-                        >
-                          <ChevronRight className="size-4 text-muted-foreground" />
-                        </Button>
-                      </div>
-
-                      <ScrollArea className="flex-1 -mx-3 px-3">
-                        <div className="flex flex-col gap-2 pb-4">
+                        <div className="flex-1 w-full p-0.5 md:p-1 overflow-y-auto overflow-x-hidden space-y-1 bg-white dark:bg-slate-950">
                           {stageOrders.map((order) => (
-                            <KanbanCard
+                            <CompactKanbanCard
                               key={order.id}
                               order={order}
                               onDragStart={handleDragStart}
                               onClick={() => setSelectedOrder(order)}
                             />
                           ))}
-                          {stageOrders.length === 0 && (
-                            <div className="text-center text-sm text-muted-foreground py-8 border-2 border-dashed rounded-lg">
-                              Nenhuma OP
-                            </div>
-                          )}
                         </div>
-                      </ScrollArea>
-                    </div>
-                  )
-                })}
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
+        )}
       </div>
 
       <Dialog open={stuckModalOpen} onOpenChange={setStuckModalOpen}>
@@ -333,7 +277,11 @@ export default function PcpKanban() {
                     </div>
                     <div className="text-sm">
                       <span className="font-medium text-foreground">Produto:</span>{' '}
-                      {o.expand?.product_id?.name || 'S/Produto'}
+                      {o.op_type === 'Assistência'
+                        ? o.manual_product_name
+                        : o.op_type === 'Especial'
+                          ? 'Produto Especial'
+                          : o.expand?.product_id?.name || 'S/Produto'}
                       <span className="ml-4 font-medium text-foreground">Qtd:</span> {o.quantity}
                     </div>
                     <div className="text-sm font-medium text-red-600 dark:text-red-400 mt-2">
@@ -361,44 +309,72 @@ export default function PcpKanban() {
       </Dialog>
 
       <Dialog open={!!selectedOrder} onOpenChange={(v) => !v && setSelectedOrder(null)}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-[700px] h-[80vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Detalhes da OP: {selectedOrder?.order_number}</DialogTitle>
           </DialogHeader>
           {selectedOrder && (
-            <div className="space-y-4 pt-4">
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="text-muted-foreground block text-xs">Cliente</span>
-                  <span className="font-medium">
-                    {selectedOrder.expand?.client_id?.name || selectedOrder.client_name}
-                  </span>
+            <Tabs defaultValue="detalhes" className="flex-1 flex flex-col overflow-hidden">
+              <TabsList className="grid w-full grid-cols-2 shrink-0">
+                <TabsTrigger value="detalhes">Detalhes</TabsTrigger>
+                <TabsTrigger value="historico">Log / Histórico</TabsTrigger>
+              </TabsList>
+              <TabsContent value="detalhes" className="flex-1 overflow-y-auto pt-4 space-y-4">
+                <div className="grid grid-cols-2 gap-4 text-sm bg-slate-50 dark:bg-slate-900 p-4 rounded-lg border">
+                  <div>
+                    <span className="text-muted-foreground block text-xs">Tipo de OP</span>
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        'mt-1 text-white border-transparent',
+                        selectedOrder.op_type === 'Assistência' && 'bg-fuchsia-500',
+                        selectedOrder.op_type === 'Especial' &&
+                          'bg-slate-900 dark:bg-slate-100 dark:text-slate-900',
+                        selectedOrder.op_type === 'Linha' && 'bg-blue-500',
+                      )}
+                    >
+                      {selectedOrder.op_type}
+                    </Badge>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block text-xs">Cliente</span>
+                    <span className="font-medium">
+                      {selectedOrder.expand?.client_id?.name || selectedOrder.client_name}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block text-xs">Produto</span>
+                    <span className="font-medium">
+                      {selectedOrder.op_type === 'Assistência'
+                        ? selectedOrder.manual_product_name
+                        : selectedOrder.op_type === 'Especial'
+                          ? 'Produto Especial'
+                          : selectedOrder.expand?.product_id?.name || 'S/Produto'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block text-xs">Quantidade</span>
+                    <span className="font-medium">{selectedOrder.quantity}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block text-xs">Status Atual</span>
+                    <Badge
+                      variant={selectedOrder.status === 'Parado' ? 'destructive' : 'default'}
+                      className="mt-1"
+                    >
+                      {selectedOrder.status}
+                    </Badge>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block text-xs">Processo Atual</span>
+                    <span className="font-medium">{selectedOrder.stage}</span>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-muted-foreground block text-xs">Produto</span>
-                  <span className="font-medium">
-                    {selectedOrder.expand?.product_id?.name || 'S/Produto'}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground block text-xs">Quantidade</span>
-                  <span className="font-medium">{selectedOrder.quantity}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground block text-xs">Status Atual</span>
-                  <Badge
-                    variant={selectedOrder.status === 'Parado' ? 'destructive' : 'default'}
-                    className="mt-1"
-                  >
-                    {selectedOrder.status}
-                  </Badge>
-                </div>
-                <div>
-                  <span className="text-muted-foreground block text-xs">Processo Atual</span>
-                  <span className="font-medium">{selectedOrder.stage}</span>
-                </div>
-              </div>
-            </div>
+              </TabsContent>
+              <TabsContent value="historico" className="flex-1 overflow-y-auto pt-4">
+                <OrderLogsList orderId={selectedOrder.id} />
+              </TabsContent>
+            </Tabs>
           )}
         </DialogContent>
       </Dialog>
@@ -406,17 +382,15 @@ export default function PcpKanban() {
   )
 }
 
-function KanbanCard({
-  order,
-  onDragStart,
-  onClick,
-}: {
-  order: any
-  onDragStart: any
-  onClick: any
-}) {
+function KanbanCard({ order, onDragStart, onClick }: any) {
   const [time, setTime] = useState('')
   const isStuck = order.status === 'Parado'
+  const borderClass =
+    order.op_type === 'Assistência'
+      ? 'border-l-fuchsia-500'
+      : order.op_type === 'Especial'
+        ? 'border-l-slate-900 dark:border-l-slate-100'
+        : 'border-l-blue-500'
 
   useEffect(() => {
     const update = () => {
@@ -440,9 +414,7 @@ function KanbanCard({
       onClick={onClick}
       className={cn(
         'cursor-grab active:cursor-grabbing hover:shadow-md transition-all border-l-4 group',
-        isStuck
-          ? 'border-l-red-500 bg-red-50/50 dark:bg-red-950/10'
-          : 'border-l-slate-300 dark:border-l-slate-700',
+        isStuck ? 'border-l-red-500 bg-red-50/50 dark:bg-red-950/10' : borderClass,
       )}
     >
       <CardContent className="p-3 flex flex-col gap-1.5">
@@ -458,9 +430,19 @@ function KanbanCard({
         </div>
         <div
           className="text-xs font-medium text-foreground line-clamp-1"
-          title={order.expand?.product_id?.name || 'S/Produto'}
+          title={
+            order.op_type === 'Assistência'
+              ? order.manual_product_name
+              : order.op_type === 'Especial'
+                ? 'Produto Especial'
+                : order.expand?.product_id?.name || 'S/Produto'
+          }
         >
-          {order.expand?.product_id?.name || 'S/Produto'}
+          {order.op_type === 'Assistência'
+            ? order.manual_product_name
+            : order.op_type === 'Especial'
+              ? 'Produto Especial'
+              : order.expand?.product_id?.name || 'S/Produto'}
         </div>
         <div className="flex items-center justify-between mt-2 pt-2 border-t">
           <Badge variant="outline" className="text-[10px] h-5 px-1.5 bg-background">
@@ -475,5 +457,99 @@ function KanbanCard({
         </div>
       </CardContent>
     </Card>
+  )
+}
+
+function CompactKanbanCard({ order, onDragStart, onClick }: any) {
+  const isStuck = order.status === 'Parado'
+  const isAssist = order.op_type === 'Assistência'
+  const isEspecial = order.op_type === 'Especial'
+
+  const bgClass = isStuck
+    ? 'bg-red-500 text-white animate-pulse'
+    : isAssist
+      ? 'bg-fuchsia-500 text-white'
+      : isEspecial
+        ? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900'
+        : 'bg-blue-500 text-white'
+
+  const prodName =
+    order.op_type === 'Assistência'
+      ? order.manual_product_name
+      : order.op_type === 'Especial'
+        ? 'Produto Especial'
+        : order.expand?.product_id?.name || 'S/Produto'
+
+  const titleText = `${order.order_number}\n${order.op_type}\n${prodName}\nQtd: ${order.quantity}`
+
+  return (
+    <div
+      draggable
+      onDragStart={(e) => onDragStart(e, order.id)}
+      onClick={onClick}
+      title={titleText}
+      className={cn(
+        'text-[8px] md:text-[9px] font-bold p-0.5 md:p-1 rounded-sm w-full text-center cursor-grab active:cursor-grabbing truncate transition-all hover:opacity-80 shadow-sm border border-black/10 dark:border-white/10',
+        bgClass,
+      )}
+    >
+      <span className="block truncate">{order.order_number}</span>
+    </div>
+  )
+}
+
+function OrderLogsList({ orderId }: { orderId: string }) {
+  const [logs, setLogs] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const fetchLogs = async () => {
+    try {
+      const res = await pb.collection('pcp_order_logs').getFullList({
+        filter: `order_id="${orderId}"`,
+        sort: '-created',
+        expand: 'user_id',
+      })
+      setLogs(res)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchLogs()
+  }, [orderId])
+
+  if (loading) {
+    return <div className="text-center py-8 text-muted-foreground">Carregando logs...</div>
+  }
+
+  if (logs.length === 0) {
+    return <div className="text-center py-8 text-muted-foreground">Nenhum log encontrado.</div>
+  }
+
+  return (
+    <div className="space-y-4 pr-4">
+      {logs.map((log) => (
+        <div key={log.id} className="text-sm border-b pb-3 last:border-0">
+          <div className="flex items-center justify-between mb-1">
+            <span className="font-semibold">{log.expand?.user_id?.name || 'Sistema'}</span>
+            <span className="text-xs text-muted-foreground">
+              {new Date(log.created).toLocaleString()}
+            </span>
+          </div>
+          <div className="text-foreground">
+            {log.action}{' '}
+            {log.stage && (
+              <span className="font-medium text-slate-600 dark:text-slate-400">({log.stage})</span>
+            )}
+          </div>
+          {log.details && (
+            <div className="text-xs text-muted-foreground mt-1 bg-slate-50 dark:bg-slate-900 p-2 rounded">
+              {log.details}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
   )
 }

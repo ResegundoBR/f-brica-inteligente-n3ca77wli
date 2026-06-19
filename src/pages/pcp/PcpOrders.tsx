@@ -40,6 +40,7 @@ import {
 import { format, parseISO } from 'date-fns'
 import { Plus, Paperclip } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import { cn } from '@/lib/utils'
 
 export default function PcpOrders() {
   const [orders, setOrders] = useState<PcpOrder[]>([])
@@ -51,11 +52,12 @@ export default function PcpOrders() {
   const { toast } = useToast()
 
   const [orderNumber, setOrderNumber] = useState('')
+  const [opType, setOpType] = useState('Linha')
   const [clientId, setClientId] = useState('')
   const [quantity, setQuantity] = useState<number | string>(1)
   const [deliveryDate, setDeliveryDate] = useState('')
-  const [isSpecial, setIsSpecial] = useState(false)
   const [productId, setProductId] = useState('')
+  const [manualProduct, setManualProduct] = useState('')
   const [annex, setAnnex] = useState<File | null>(null)
 
   const loadData = async () => {
@@ -111,8 +113,9 @@ export default function PcpOrders() {
       formData.append('quantity', quantity.toString())
 
       formData.append('delivery_date', new Date(deliveryDate).toISOString())
-      formData.append('is_special', isSpecial ? 'true' : 'false')
-      if (!isSpecial && productId) formData.append('product_id', productId)
+      formData.append('op_type', opType)
+      if (opType === 'Linha' && productId) formData.append('product_id', productId)
+      if (opType === 'Assistência') formData.append('manual_product_name', manualProduct)
       if (annex) formData.append('annex', annex)
       formData.append('status', 'Fila')
       formData.append('stage', 'Corte')
@@ -126,8 +129,9 @@ export default function PcpOrders() {
       setClientId('')
       setQuantity(1)
       setDeliveryDate('')
-      setIsSpecial(false)
+      setOpType('Linha')
       setProductId('')
+      setManualProduct('')
       setAnnex(null)
     } catch (err: any) {
       toast({ title: 'Erro', description: err.message, variant: 'destructive' })
@@ -190,6 +194,19 @@ export default function PcpOrders() {
                 />
               </div>
               <div className="space-y-2">
+                <Label>Tipo de OP</Label>
+                <Select required value={opType} onValueChange={setOpType}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione o tipo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Linha">Linha</SelectItem>
+                    <SelectItem value="Especial">Especial</SelectItem>
+                    <SelectItem value="Assistência">Assistência</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label>Cliente</Label>
                   <Button
@@ -216,16 +233,19 @@ export default function PcpOrders() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex items-center space-x-2 my-4">
-                <Checkbox
-                  id="special"
-                  checked={isSpecial}
-                  onCheckedChange={(c) => setIsSpecial(c as boolean)}
-                />
-                <Label htmlFor="special">Item Especial (Sob Medida)</Label>
-              </div>
-              {!isSpecial && (
-                <div className="space-y-2">
+              {opType === 'Assistência' && (
+                <div className="space-y-2 my-4">
+                  <Label>Produto (Manual)</Label>
+                  <Input
+                    required
+                    value={manualProduct}
+                    onChange={(e) => setManualProduct(e.target.value)}
+                    placeholder="Nome do produto ou peça..."
+                  />
+                </div>
+              )}
+              {opType === 'Linha' && (
+                <div className="space-y-2 my-4">
                   <Label>Produto</Label>
                   <Select required value={productId} onValueChange={setProductId}>
                     <SelectTrigger>
@@ -302,11 +322,27 @@ export default function PcpOrders() {
                   <TableCell className="font-medium">{op.order_number}</TableCell>
                   <TableCell>{op.expand?.client_id?.name || op.client_name}</TableCell>
                   <TableCell>
-                    {op.is_special ? (
-                      <Badge variant="secondary">Especial</Badge>
-                    ) : (
-                      op.expand?.product_id?.name
-                    )}
+                    <div className="flex flex-col items-start gap-1">
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          'text-[10px] px-1.5 h-4 border-transparent text-white',
+                          op.op_type === 'Assistência' && 'bg-fuchsia-500 hover:bg-fuchsia-600',
+                          op.op_type === 'Especial' &&
+                            'bg-slate-900 dark:bg-slate-100 dark:text-slate-900',
+                          op.op_type === 'Linha' && 'bg-blue-500 hover:bg-blue-600',
+                        )}
+                      >
+                        {op.op_type}
+                      </Badge>
+                      <span className="text-sm">
+                        {op.op_type === 'Assistência'
+                          ? op.manual_product_name
+                          : op.op_type === 'Especial'
+                            ? 'Produto Especial'
+                            : op.expand?.product_id?.name || '-'}
+                      </span>
+                    </div>
                   </TableCell>
                   <TableCell>{op.quantity}</TableCell>
                   <TableCell>{format(parseISO(op.delivery_date), 'dd/MM/yyyy')}</TableCell>

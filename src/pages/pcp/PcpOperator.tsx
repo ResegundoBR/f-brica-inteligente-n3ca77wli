@@ -183,8 +183,25 @@ function OperatorCard({
         </div>
       </CardHeader>
       <CardContent className="pb-4">
-        <div className="text-xl mb-4 font-semibold">
-          {op.is_special ? 'Produto Especial (Ver Anexo)' : op.expand?.product_id?.name}
+        <div className="text-xl mb-4 font-semibold flex flex-col gap-2 items-start">
+          <Badge
+            variant="outline"
+            className={cn(
+              'border-transparent text-white',
+              op.op_type === 'Assistência' && 'bg-fuchsia-500',
+              op.op_type === 'Especial' && 'bg-slate-900 dark:bg-slate-100 dark:text-slate-900',
+              op.op_type === 'Linha' && 'bg-blue-500',
+            )}
+          >
+            {op.op_type}
+          </Badge>
+          <span>
+            {op.op_type === 'Assistência'
+              ? op.manual_product_name
+              : op.op_type === 'Especial'
+                ? 'Produto Especial (Ver Anexo)'
+                : op.expand?.product_id?.name || 'S/Produto'}
+          </span>
         </div>
         {isLocked && (
           <div className="bg-red-100 text-red-900 p-3 rounded-lg font-bold flex flex-col mb-4 text-lg">

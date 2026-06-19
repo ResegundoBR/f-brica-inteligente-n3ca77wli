@@ -24,9 +24,9 @@ import {
 } from '@/components/ui/sidebar'
 
 const navItems = [
-  { title: 'Dashboard', url: '/', icon: LayoutDashboard, group: 'Principal' },
-  { title: 'Catálogo Técnico', url: '/catalogo', icon: BookOpen, group: 'Principal' },
-  { title: 'Evolução Aprendizado', url: '/aprendizado', icon: GraduationCap, group: 'Principal' },
+  { title: 'Dashboard', url: '/', icon: LayoutDashboard, group: 'Engenharia' },
+  { title: 'Catálogo Técnico', url: '/catalogo', icon: BookOpen, group: 'Engenharia' },
+  { title: 'Evolução Aprendizado', url: '/aprendizado', icon: GraduationCap, group: 'Engenharia' },
   { title: 'Usuários', url: '/admin/usuarios', icon: Users, group: 'Administração' },
   { title: 'Funções', url: '/admin/funcoes', icon: Shield, group: 'Administração' },
   { title: 'Status dos Produtos', url: '/admin/status', icon: Settings, group: 'Administração' },
@@ -90,7 +90,7 @@ export function AppSidebar() {
         </span>
       </SidebarHeader>
       <SidebarContent>
-        {['Principal', 'Administração'].map((group) => (
+        {['Engenharia', 'Administração'].map((group) => (
           <SidebarGroup key={group}>
             <SidebarGroupLabel>{group}</SidebarGroupLabel>
             <SidebarGroupContent>

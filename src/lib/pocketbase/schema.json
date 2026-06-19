@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-19T17:46:23.143Z",
+  "generatedAt": "2026-06-19T18:10:45.961Z",
   "collections": [
     {
       "name": "users",
@@ -942,12 +942,59 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "client_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "clients"
+        },
+        {
+          "name": "quantity",
+          "type": "number",
+          "required": true,
+          "system": false
         }
       ],
       "indexes": [
         "CREATE INDEX idx_pcp_orders_status ON pcp_orders (status)",
         "CREATE INDEX idx_pcp_orders_stage ON pcp_orders (stage)"
       ]
+    },
+    {
+      "name": "clients",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "name",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": ["CREATE UNIQUE INDEX idx_clients_name ON clients (name COLLATE NOCASE)"]
     }
   ]
 }

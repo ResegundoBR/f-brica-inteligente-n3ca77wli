@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import pb from '@/lib/pocketbase/client'
-import { PcpOrder, Product } from '@/types'
+import { PcpOrder, Product, Client } from '@/types'
 import { useRealtime } from '@/hooks/use-realtime'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -37,11 +37,13 @@ import { useToast } from '@/hooks/use-toast'
 export default function PcpOrders() {
   const [orders, setOrders] = useState<PcpOrder[]>([])
   const [products, setProducts] = useState<Product[]>([])
+  const [clients, setClients] = useState<Client[]>([])
   const [isOpen, setIsOpen] = useState(false)
   const { toast } = useToast()
 
   const [orderNumber, setOrderNumber] = useState('')
-  const [clientName, setClientName] = useState('')
+  const [clientId, setClientId] = useState('')
+  const [quantity, setQuantity] = useState<number | string>(1)
   const [deliveryDate, setDeliveryDate] = useState('')
   const [isSpecial, setIsSpecial] = useState(false)
   const [productId, setProductId] = useState('')
@@ -49,14 +51,17 @@ export default function PcpOrders() {
 
   const loadData = async () => {
     try {
-      const [ops, prods] = await Promise.all([
+      const [ops, prods, clis] = await Promise.all([
         pb
           .collection('pcp_orders')
-          .getFullList<PcpOrder>({ sort: '-created', expand: 'product_id' }),
-        pb.collection('products').getFullList<Product>({ sort: 'name' }),
+          .getFullList<PcpOrder>({ sort: '-created', expand: 'product_id,client_id' }),
+        pb.collection('products').getFullList<Product>({ sort: 'name', expand: 'status' }),
+        pb.collection('clients').getFullList<Client>({ sort: 'name' }),
       ])
       setOrders(ops)
-      setProducts(prods)
+      // Filter out explicitly inactive products
+      setProducts(prods.filter((p) => !p.expand?.status || p.expand.status.active))
+      setClients(clis)
     } catch {
       /* intentionally ignored */
     }
@@ -75,7 +80,14 @@ export default function PcpOrders() {
     try {
       const formData = new FormData()
       formData.append('order_number', orderNumber)
-      formData.append('client_name', clientName)
+
+      const selectedClient = clients.find((c) => c.id === clientId)
+      if (selectedClient) {
+        formData.append('client_name', selectedClient.name)
+      }
+      formData.append('client_id', clientId)
+      formData.append('quantity', quantity.toString())
+
       formData.append('delivery_date', new Date(deliveryDate).toISOString())
       formData.append('is_special', isSpecial ? 'true' : 'false')
       if (!isSpecial && productId) formData.append('product_id', productId)
@@ -89,7 +101,8 @@ export default function PcpOrders() {
       setIsOpen(false)
 
       setOrderNumber('')
-      setClientName('')
+      setClientId('')
+      setQuantity(1)
       setDeliveryDate('')
       setIsSpecial(false)
       setProductId('')
@@ -130,21 +143,19 @@ export default function PcpOrders() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Nome do Cliente</Label>
-                <Input
-                  required
-                  value={clientName}
-                  onChange={(e) => setClientName(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Data de Entrega</Label>
-                <Input
-                  type="date"
-                  required
-                  value={deliveryDate}
-                  onChange={(e) => setDeliveryDate(e.target.value)}
-                />
+                <Label>Cliente</Label>
+                <Select required value={clientId} onValueChange={setClientId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione um cliente" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {clients.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="flex items-center space-x-2 my-4">
                 <Checkbox
@@ -172,6 +183,25 @@ export default function PcpOrders() {
                 </div>
               )}
               <div className="space-y-2">
+                <Label>Quantidade</Label>
+                <Input
+                  type="number"
+                  required
+                  min={1}
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value === '' ? '' : Number(e.target.value))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Data de Entrega</Label>
+                <Input
+                  type="date"
+                  required
+                  value={deliveryDate}
+                  onChange={(e) => setDeliveryDate(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
                 <Label>Anexo (PDF/Imagem)</Label>
                 <Input
                   type="file"
@@ -194,6 +224,7 @@ export default function PcpOrders() {
               <TableHead>Número</TableHead>
               <TableHead>Cliente</TableHead>
               <TableHead>Produto</TableHead>
+              <TableHead>Qtd</TableHead>
               <TableHead>Data de Entrega</TableHead>
               <TableHead>Status / Etapa</TableHead>
               <TableHead>Anexo</TableHead>
@@ -202,7 +233,7 @@ export default function PcpOrders() {
           <TableBody>
             {orders.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center">
+                <TableCell colSpan={7} className="text-center">
                   Nenhuma OP encontrada.
                 </TableCell>
               </TableRow>
@@ -210,7 +241,7 @@ export default function PcpOrders() {
               orders.map((op) => (
                 <TableRow key={op.id}>
                   <TableCell className="font-medium">{op.order_number}</TableCell>
-                  <TableCell>{op.client_name}</TableCell>
+                  <TableCell>{op.expand?.client_id?.name || op.client_name}</TableCell>
                   <TableCell>
                     {op.is_special ? (
                       <Badge variant="secondary">Especial</Badge>
@@ -218,6 +249,7 @@ export default function PcpOrders() {
                       op.expand?.product_id?.name
                     )}
                   </TableCell>
+                  <TableCell>{op.quantity}</TableCell>
                   <TableCell>{format(parseISO(op.delivery_date), 'dd/MM/yyyy')}</TableCell>
                   <TableCell>
                     <div className="flex flex-col gap-1">

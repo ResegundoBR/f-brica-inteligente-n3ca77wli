@@ -185,10 +185,19 @@ export interface Log {
   expand?: { user_id?: User; product_id?: Product }
 }
 
+export interface Client {
+  id: string
+  name: string
+  created: string
+  updated: string
+}
+
 export interface PcpOrder {
   id: string
   order_number: string
   client_name: string
+  client_id?: string
+  quantity: number
   product_id?: string
   is_special: boolean
   status: 'Fila' | 'Em Andamento' | 'Revisão' | 'Concluído'
@@ -204,5 +213,6 @@ export interface PcpOrder {
   expand?: {
     product_id?: Product
     operator_id?: User
+    client_id?: Client
   }
 }

@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { LayoutGrid, ListTree, AlertCircle, Minimize2 } from 'lucide-react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -208,7 +210,15 @@ export default function PcpKanban() {
               >
                 <div className="flex items-center justify-between pb-1 shrink-0">
                   <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-semibold">{col}</h3>
+                    <h3
+                      className={cn(
+                        'text-sm font-semibold flex items-center gap-1',
+                        hasBottleneck && 'text-red-600',
+                      )}
+                    >
+                      {col}
+                      {hasBottleneck && <AlertCircle className="size-3.5" />}
+                    </h3>
                     <Badge
                       variant={hasBottleneck ? 'destructive' : 'secondary'}
                       className="h-5 px-1.5 text-[10px]"
@@ -277,6 +287,31 @@ function KanbanCard({
   onClick: () => void
 }) {
   const isStuck = order.bottleneck_reason && order.bottleneck_reason !== 'Nenhum'
+
+  const [time, setTime] = useState('')
+
+  useEffect(() => {
+    const update = () => {
+      if (!order.updated) return
+      const diff = new Date().getTime() - new Date(order.updated).getTime()
+      if (diff < 0) {
+        setTime('0m')
+        return
+      }
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+      const hours = Math.floor((diff / (1000 * 60 * 60)) % 24)
+      const minutes = Math.floor((diff / 1000 / 60) % 60)
+
+      if (days > 0) setTime(`${days}d ${hours}h`)
+      else if (hours > 0) setTime(`${hours}h ${minutes}m`)
+      else setTime(`${minutes}m`)
+    }
+
+    update()
+    const interval = setInterval(update, 60000)
+    return () => clearInterval(interval)
+  }, [order.updated])
+
   return (
     <Card
       draggable
@@ -297,11 +332,19 @@ function KanbanCard({
         <div className="text-xs text-muted-foreground line-clamp-1">
           {order.expand?.client_id?.name || order.client_name}
         </div>
+        <div className="text-xs font-medium text-foreground line-clamp-1">
+          {order.expand?.product_id?.name || 'S/Produto'}
+        </div>
         <div className="flex items-center justify-between mt-1">
           <Badge variant="outline" className="text-[10px] h-4 px-1">
-            {order.expand?.product_id?.code || 'S/Produto'}
+            Qtd: {order.quantity}
           </Badge>
-          <div className="text-[10px] text-muted-foreground">{order.stage}</div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-medium text-slate-500 bg-slate-200/50 dark:bg-slate-800 rounded px-1.5">
+              ⏱ {time}
+            </span>
+            <div className="text-[10px] text-muted-foreground">{order.stage}</div>
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -336,8 +379,11 @@ function StuckOrdersModal({ open, onOpenChange, lockedOrders, onClickOrder }: an
                   <div className="text-sm text-red-500 font-medium mt-1">
                     Motivo: {o.bottleneck_reason}
                   </div>
+                  {o.bottleneck_details && (
+                    <div className="text-xs text-red-400 mt-1 italic">{o.bottleneck_details}</div>
+                  )}
                 </div>
-                <Badge variant="outline" className="w-fit">
+                <Badge variant="outline" className="w-fit shrink-0">
                   {o.stage}
                 </Badge>
               </div>
@@ -351,6 +397,11 @@ function StuckOrdersModal({ open, onOpenChange, lockedOrders, onClickOrder }: an
 
 function OrderDetailModal({ order, onClose }: { order: any; onClose: () => void }) {
   const [logs, setLogs] = useState<any[]>([])
+  const [localDetails, setLocalDetails] = useState(order.bottleneck_details || '')
+
+  useEffect(() => {
+    setLocalDetails(order.bottleneck_details || '')
+  }, [order.bottleneck_details])
 
   const loadLogs = async () => {
     try {
@@ -370,7 +421,19 @@ function OrderDetailModal({ order, onClose }: { order: any; onClose: () => void 
 
   const handleBottleneckChange = async (val: string) => {
     try {
-      await pb.collection('pcp_orders').update(order.id, { bottleneck_reason: val })
+      await pb.collection('pcp_orders').update(order.id, {
+        bottleneck_reason: val,
+        status: val === 'Nenhum' ? 'Em Andamento' : 'Parado',
+      })
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const handleDetailsSave = async () => {
+    if (localDetails === order.bottleneck_details) return
+    try {
+      await pb.collection('pcp_orders').update(order.id, { bottleneck_details: localDetails })
     } catch (err) {
       console.error(err)
     }
@@ -450,6 +513,19 @@ function OrderDetailModal({ order, onClose }: { order: any; onClose: () => void 
                       <SelectItem value="Sobrecarga">Sobrecarga</SelectItem>
                     </SelectContent>
                   </Select>
+
+                  {order.bottleneck_reason && order.bottleneck_reason !== 'Nenhum' && (
+                    <div className="mt-4 space-y-2">
+                      <Label>Detalhes do Gargalo</Label>
+                      <Textarea
+                        placeholder="Adicione observações sobre a parada..."
+                        value={localDetails}
+                        onChange={(e) => setLocalDetails(e.target.value)}
+                        onBlur={handleDetailsSave}
+                        className="resize-none"
+                      />
+                    </div>
+                  )}
                 </div>
               </TabsContent>
 

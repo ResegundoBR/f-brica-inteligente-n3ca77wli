@@ -17,7 +17,8 @@ onRecordAfterUpdateSuccess((e) => {
   const stageChanged = orig.getString('stage') !== rec.getString('stage')
   const statusChanged = orig.getString('status') !== rec.getString('status')
   const bottleneckChanged =
-    orig.getString('bottleneck_reason') !== rec.getString('bottleneck_reason')
+    orig.getString('bottleneck_reason') !== rec.getString('bottleneck_reason') ||
+    orig.getString('bottleneck_details') !== rec.getString('bottleneck_details')
 
   if (!stageChanged && !statusChanged && !bottleneckChanged) {
     return e.next()
@@ -32,9 +33,10 @@ onRecordAfterUpdateSuccess((e) => {
     log.set('stage', rec.getString('stage'))
 
     const newB = rec.getString('bottleneck_reason')
+    const newDetails = rec.getString('bottleneck_details')
     if (newB && newB !== 'Nenhum') {
       log.set('action', 'Parada')
-      log.set('details', 'Motivo: ' + newB)
+      log.set('details', 'Motivo: ' + newB + (newDetails ? ' - ' + newDetails : ''))
     } else {
       log.set('action', 'Retomada')
       log.set('details', 'Gargalo resolvido')

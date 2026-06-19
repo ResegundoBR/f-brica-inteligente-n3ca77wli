@@ -5,29 +5,58 @@ import { useRealtime } from '@/hooks/use-realtime'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog'
 import { differenceInDays, parseISO } from 'date-fns'
 import { AlertTriangle, Clock, Paperclip, ChevronLeft, LayoutGrid, ListTree } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const STATUS_COLUMNS = ['Fila', 'Em Andamento', 'Parado', 'Concluído'] as const
 const PROCESS_COLUMNS = [
+  'Separação no estoque fisico',
+  'Levantamento de faltas (Comprado fora)',
+  'Levantamento de faltas (Fabricado internamente)',
+  'Cotação',
+  'Compra',
+  'Retirada',
+  'Aguardar chegar',
+  'Entrega',
   'Corte',
+  'Acabamento corte',
   'Dobra',
   'Calandra',
   'Solda',
+  'Acabamento de solda',
+  'Furação',
+  'Rosca',
+  'Bases de concreto',
+  'Preparação (wash primer, primer e lixamento)',
+  'Pintura',
+  'Verniz',
+  'Retoques',
   'Montagem',
-  'Acabamento',
-  'Expedição',
+  'Testes (Montagem)',
+  'Controle de qualidade',
+  'Testes (Expedição)',
+  'Fotos',
+  'Embalagem',
 ] as const
 
 const KanbanCard = ({
   op,
   viewMode,
   onDragStart,
+  onClick,
 }: {
   op: PcpOrder
   viewMode: 'status' | 'process'
   onDragStart: (e: React.DragEvent, id: string) => void
+  onClick?: () => void
 }) => {
   const daysToDelivery = differenceInDays(parseISO(op.delivery_date), new Date())
   const isSlaAlert = daysToDelivery <= 2 && op.status !== 'Concluído'
@@ -37,6 +66,7 @@ const KanbanCard = ({
     <Card
       draggable
       onDragStart={(e) => onDragStart(e, op.id)}
+      onClick={onClick}
       className={cn(
         'cursor-grab active:cursor-grabbing border-l-4 shadow-sm transition-shadow hover:shadow-md',
         op.is_special ? 'border-l-indigo-500' : 'border-l-transparent',
@@ -110,6 +140,7 @@ export default function PcpKanban() {
   const [orders, setOrders] = useState<PcpOrder[]>([])
   const [viewMode, setViewMode] = useState<'status' | 'process'>('status')
   const [collapsedCols, setCollapsedCols] = useState<string[]>([])
+  const [selectedOrder, setSelectedOrder] = useState<PcpOrder | null>(null)
 
   const loadOrders = async () => {
     try {
@@ -273,6 +304,7 @@ export default function PcpKanban() {
                       op={op}
                       viewMode={viewMode}
                       onDragStart={handleDragStart}
+                      onClick={() => setSelectedOrder(op)}
                     />
                   ))}
                 </div>
@@ -281,6 +313,87 @@ export default function PcpKanban() {
           })}
         </div>
       </div>
+
+      <Dialog open={!!selectedOrder} onOpenChange={(open) => !open && setSelectedOrder(null)}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>Detalhes da Ordem {selectedOrder?.order_number}</DialogTitle>
+            <DialogDescription>Informações completas da ordem de produção</DialogDescription>
+          </DialogHeader>
+          {selectedOrder && (
+            <div className="grid gap-4 py-4 text-sm">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <span className="font-semibold text-muted-foreground">Cliente:</span>
+                  <p>{selectedOrder.client_name}</p>
+                </div>
+                <div>
+                  <span className="font-semibold text-muted-foreground">Produto:</span>
+                  <p>
+                    {selectedOrder.is_special
+                      ? 'Sob Medida'
+                      : selectedOrder.expand?.product_id?.name || 'N/A'}
+                  </p>
+                </div>
+                <div>
+                  <span className="font-semibold text-muted-foreground">Quantidade:</span>
+                  <p>{selectedOrder.quantity}</p>
+                </div>
+                <div>
+                  <span className="font-semibold text-muted-foreground">Status atual:</span>
+                  <p>
+                    <Badge variant="outline">{selectedOrder.status}</Badge>
+                  </p>
+                </div>
+                <div>
+                  <span className="font-semibold text-muted-foreground">Estágio atual:</span>
+                  <p>
+                    <Badge>{selectedOrder.stage}</Badge>
+                  </p>
+                </div>
+                <div>
+                  <span className="font-semibold text-muted-foreground">Motivo Parada:</span>
+                  <p>
+                    {selectedOrder.bottleneck_reason !== 'Nenhum'
+                      ? selectedOrder.bottleneck_reason
+                      : '-'}
+                  </p>
+                </div>
+                <div>
+                  <span className="font-semibold text-muted-foreground">Data de Entrega:</span>
+                  <p>
+                    {selectedOrder.delivery_date
+                      ? new Date(selectedOrder.delivery_date).toLocaleDateString('pt-BR', {
+                          timeZone: 'UTC',
+                        })
+                      : '-'}
+                  </p>
+                </div>
+                <div>
+                  <span className="font-semibold text-muted-foreground">Iniciado em:</span>
+                  <p>
+                    {selectedOrder.started_at
+                      ? new Date(selectedOrder.started_at).toLocaleDateString('pt-BR', {
+                          timeZone: 'UTC',
+                        })
+                      : '-'}
+                  </p>
+                </div>
+                <div>
+                  <span className="font-semibold text-muted-foreground">Concluído em:</span>
+                  <p>
+                    {selectedOrder.finished_at
+                      ? new Date(selectedOrder.finished_at).toLocaleDateString('pt-BR', {
+                          timeZone: 'UTC',
+                        })
+                      : '-'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

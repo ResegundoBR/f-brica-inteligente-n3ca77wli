@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-19T18:33:49.287Z",
+  "generatedAt": "2026-06-19T18:49:53.703Z",
   "collections": [
     {
       "name": "users",
@@ -890,13 +890,33 @@
           "required": true,
           "system": false,
           "selectValues": [
+            "Separação no estoque fisico",
+            "Levantamento de faltas (Comprado fora)",
+            "Levantamento de faltas (Fabricado internamente)",
+            "Cotação",
+            "Compra",
+            "Retirada",
+            "Aguardar chegar",
+            "Entrega",
             "Corte",
+            "Acabamento corte",
             "Dobra",
             "Calandra",
             "Solda",
+            "Acabamento de solda",
+            "Furação",
+            "Rosca",
+            "Bases de concreto",
+            "Preparação (wash primer, primer e lixamento)",
+            "Pintura",
+            "Verniz",
+            "Retoques",
             "Montagem",
-            "Acabamento",
-            "Expedição"
+            "Testes (Montagem)",
+            "Controle de qualidade",
+            "Testes (Expedição)",
+            "Fotos",
+            "Embalagem"
           ]
         },
         {

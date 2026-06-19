@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-19T19:24:55.013Z",
+  "generatedAt": "2026-06-19T19:28:40.124Z",
   "collections": [
     {
       "name": "users",
@@ -982,6 +982,12 @@
           "name": "quantity",
           "type": "number",
           "required": true,
+          "system": false
+        },
+        {
+          "name": "bottleneck_details",
+          "type": "text",
+          "required": false,
           "system": false
         }
       ],

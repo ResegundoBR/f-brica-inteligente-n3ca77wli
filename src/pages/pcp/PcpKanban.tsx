@@ -201,16 +201,22 @@ export default function PcpKanban() {
         const q = searchQuery.toLowerCase()
         const clientName = (o.expand?.client_id?.name || o.client_name || '').toLowerCase()
         const productName = (
-          o.op_type === 'Assistência' ? o.manual_product_name : o.expand?.product_id?.name || ''
+          o.op_type === 'Assistência'
+            ? o.manual_product_name || ''
+            : o.expand?.product_id?.name || ''
         ).toLowerCase()
         const date = o.delivery_date ? format(parseISO(o.delivery_date), 'dd/MM/yyyy') : ''
         const orderNum = (o.order_number || '').toLowerCase()
+        const opNum = (o.op_number || '').toLowerCase()
+        const obsSector = (o.observation_sector || '').toLowerCase()
 
         return (
           clientName.includes(q) ||
           productName.includes(q) ||
           date.includes(q) ||
-          orderNum.includes(q)
+          orderNum.includes(q) ||
+          opNum.includes(q) ||
+          obsSector.includes(q)
         )
       }),
     [orders, searchQuery, opTypeFilter, clientFilter, deadlineFilter],

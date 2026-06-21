@@ -87,11 +87,27 @@ export default function PcpCommercial() {
   useRealtime('pcp_orders', loadData)
   useRealtime('pcp_order_observations', loadData)
 
-  const filteredOrders = orders.filter(
-    (op) =>
-      op.client_name.toLowerCase().includes(search.toLowerCase()) ||
-      op.order_number.toLowerCase().includes(search.toLowerCase()),
-  )
+  const filteredOrders = orders.filter((op) => {
+    if (!search) return true
+    const q = search.toLowerCase()
+    const clientName = (op.expand?.client_id?.name || op.client_name || '').toLowerCase()
+    const productName = (
+      op.op_type === 'Assistência'
+        ? op.manual_product_name || ''
+        : op.expand?.product_id?.name || ''
+    ).toLowerCase()
+    const orderNum = (op.order_number || '').toLowerCase()
+    const opNum = (op.op_number || '').toLowerCase()
+    const obsSector = (op.observation_sector || '').toLowerCase()
+
+    return (
+      clientName.includes(q) ||
+      productName.includes(q) ||
+      orderNum.includes(q) ||
+      opNum.includes(q) ||
+      obsSector.includes(q)
+    )
+  })
 
   const groupedOrders = useMemo(() => {
     const filteredByCustom = filteredOrders.filter((op) => {

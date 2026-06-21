@@ -100,12 +100,25 @@ export default function PcpOrders() {
   const filteredOrders = useMemo(() => {
     if (!search) return orders
     const q = search.toLowerCase()
-    return orders.filter(
-      (op) =>
-        op.client_name.toLowerCase().includes(q) ||
-        op.order_number.toLowerCase().includes(q) ||
-        (op.expand?.product_id?.name || '').toLowerCase().includes(q),
-    )
+    return orders.filter((op) => {
+      const clientName = (op.expand?.client_id?.name || op.client_name || '').toLowerCase()
+      const productName = (
+        op.op_type === 'Assistência'
+          ? op.manual_product_name || ''
+          : op.expand?.product_id?.name || ''
+      ).toLowerCase()
+      const orderNum = (op.order_number || '').toLowerCase()
+      const opNum = (op.op_number || '').toLowerCase()
+      const obsSector = (op.observation_sector || '').toLowerCase()
+
+      return (
+        clientName.includes(q) ||
+        productName.includes(q) ||
+        orderNum.includes(q) ||
+        opNum.includes(q) ||
+        obsSector.includes(q)
+      )
+    })
   }, [orders, search])
 
   const groupedOrders = useMemo(() => {

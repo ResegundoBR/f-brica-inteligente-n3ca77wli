@@ -44,6 +44,11 @@ export default function AdminRoles() {
     access_catalog: false,
     access_learning: false,
     access_users: false,
+    access_suprimentos: false,
+    access_ordens_producao: false,
+    access_visao_comercial: false,
+    access_painel_controle: false,
+    access_produto_processos: false,
   })
 
   const loadRoles = async () => {
@@ -74,6 +79,11 @@ export default function AdminRoles() {
       access_catalog: !!role.access_catalog,
       access_learning: !!role.access_learning,
       access_users: !!role.access_users,
+      access_suprimentos: !!role.access_suprimentos,
+      access_ordens_producao: !!role.access_ordens_producao,
+      access_visao_comercial: !!role.access_visao_comercial,
+      access_painel_controle: !!role.access_painel_controle,
+      access_produto_processos: !!role.access_produto_processos,
     })
     setOpen(true)
   }
@@ -104,6 +114,11 @@ export default function AdminRoles() {
       access_catalog: false,
       access_learning: false,
       access_users: false,
+      access_suprimentos: false,
+      access_ordens_producao: false,
+      access_visao_comercial: false,
+      access_painel_controle: false,
+      access_produto_processos: false,
     })
   }
 
@@ -181,6 +196,64 @@ export default function AdminRoles() {
                     />
                     <Label htmlFor="acc_usr" className="font-normal text-sm">
                       Gestão de Usuários
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <Checkbox
+                      id="acc_sup"
+                      checked={formData.access_suprimentos}
+                      onCheckedChange={(c) => setFormData({ ...formData, access_suprimentos: !!c })}
+                    />
+                    <Label htmlFor="acc_sup" className="font-normal text-sm">
+                      Suprimentos
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <Checkbox
+                      id="acc_ord"
+                      checked={formData.access_ordens_producao}
+                      onCheckedChange={(c) =>
+                        setFormData({ ...formData, access_ordens_producao: !!c })
+                      }
+                    />
+                    <Label htmlFor="acc_ord" className="font-normal text-sm">
+                      Ordens de Produção
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <Checkbox
+                      id="acc_vis"
+                      checked={formData.access_visao_comercial}
+                      onCheckedChange={(c) =>
+                        setFormData({ ...formData, access_visao_comercial: !!c })
+                      }
+                    />
+                    <Label htmlFor="acc_vis" className="font-normal text-sm">
+                      Visão Comercial
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <Checkbox
+                      id="acc_pan"
+                      checked={formData.access_painel_controle}
+                      onCheckedChange={(c) =>
+                        setFormData({ ...formData, access_painel_controle: !!c })
+                      }
+                    />
+                    <Label htmlFor="acc_pan" className="font-normal text-sm">
+                      Painel de Controle
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <Checkbox
+                      id="acc_prod"
+                      checked={formData.access_produto_processos}
+                      onCheckedChange={(c) =>
+                        setFormData({ ...formData, access_produto_processos: !!c })
+                      }
+                    />
+                    <Label htmlFor="acc_prod" className="font-normal text-sm">
+                      Produto / Processos
                     </Label>
                   </div>
                 </div>

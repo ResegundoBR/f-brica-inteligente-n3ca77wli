@@ -18,6 +18,7 @@ import {
   LogOut,
   PanelLeftClose,
   PanelLeft,
+  Package,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -47,6 +48,7 @@ const navItems = [
     icon: GraduationCap,
     group: 'Produto/Processos',
   },
+  { title: 'Suprimentos', url: '/pcp/materiais', icon: Package, group: 'Produto/Processos' },
   { title: 'Dashboard PCP', url: '/pcp/dashboard', icon: LayoutDashboard, group: 'PCP' },
   { title: 'Painel de Controle', url: '/pcp/kanban', icon: Kanban, group: 'PCP' },
   { title: 'Ordens de Produção', url: '/pcp/ordens', icon: FileText, group: 'PCP' },
@@ -96,25 +98,30 @@ export function AppSidebar() {
 
     switch (itemTitle) {
       case 'Dashboard':
-        return !!role.access_dashboard
+        return !!role.access_dashboard || !!role.access_produto_processos
       case 'Catálogo Técnico':
-        return !!role.access_catalog
+        return !!role.access_catalog || !!role.access_produto_processos
       case 'Evolução Aprendizado':
-        return !!role.access_learning
+        return !!role.access_learning || !!role.access_produto_processos
       case 'Usuários':
       case 'Funções':
       case 'Status dos Produtos':
       case 'Log de Atividades':
         return !!role.access_users
       case 'Dashboard PCP':
-      case 'Painel de Controle':
-      case 'Ordens de Produção':
       case 'Clientes':
+      case 'Relatório de Ocorrências':
         return !!role.access_pcp
+      case 'Painel de Controle':
+        return !!role.access_painel_controle || !!role.access_pcp
+      case 'Ordens de Produção':
+        return !!role.access_ordens_producao || !!role.access_pcp
+      case 'Suprimentos':
+        return !!role.access_suprimentos || !!role.access_pcp || !!role.access_produto_processos
       case 'Portal do Operador':
         return !!role.access_operator || !!role.access_pcp
       case 'Visão Comercial':
-        return !!role.access_commercial || !!role.access_pcp
+        return !!role.access_visao_comercial || !!role.access_commercial || !!role.access_pcp
       default:
         return true
     }

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-21T21:28:47.448Z",
+  "generatedAt": "2026-06-21T21:43:54.076Z",
   "collections": [
     {
       "name": "users",
@@ -363,6 +363,36 @@
         },
         {
           "name": "access_commercial",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "access_suprimentos",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "access_ordens_producao",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "access_visao_comercial",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "access_painel_controle",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "access_produto_processos",
           "type": "bool",
           "required": false,
           "system": false

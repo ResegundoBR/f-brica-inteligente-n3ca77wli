@@ -1,0 +1,30 @@
+migrate(
+  (app) => {
+    const roles = app.findCollectionByNameOrId('roles')
+    if (!roles.fields.getByName('access_suprimentos'))
+      roles.fields.add(new BoolField({ name: 'access_suprimentos' }))
+    if (!roles.fields.getByName('access_ordens_producao'))
+      roles.fields.add(new BoolField({ name: 'access_ordens_producao' }))
+    if (!roles.fields.getByName('access_visao_comercial'))
+      roles.fields.add(new BoolField({ name: 'access_visao_comercial' }))
+    if (!roles.fields.getByName('access_painel_controle'))
+      roles.fields.add(new BoolField({ name: 'access_painel_controle' }))
+    if (!roles.fields.getByName('access_produto_processos'))
+      roles.fields.add(new BoolField({ name: 'access_produto_processos' }))
+    app.save(roles)
+  },
+  (app) => {
+    const roles = app.findCollectionByNameOrId('roles')
+    if (roles.fields.getByName('access_suprimentos'))
+      roles.fields.removeByName('access_suprimentos')
+    if (roles.fields.getByName('access_ordens_producao'))
+      roles.fields.removeByName('access_ordens_producao')
+    if (roles.fields.getByName('access_visao_comercial'))
+      roles.fields.removeByName('access_visao_comercial')
+    if (roles.fields.getByName('access_painel_controle'))
+      roles.fields.removeByName('access_painel_controle')
+    if (roles.fields.getByName('access_produto_processos'))
+      roles.fields.removeByName('access_produto_processos')
+    app.save(roles)
+  },
+)

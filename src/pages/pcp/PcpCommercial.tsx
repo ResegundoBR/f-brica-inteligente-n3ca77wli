@@ -18,6 +18,14 @@ import { Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PcpFilters } from './components/PcpFilters'
 import { filterByDeadline, isOrderOverdue } from '@/lib/pcp-utils'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { useToast } from '@/hooks/use-toast'
 
 const STAGES = [
   'Separação',
@@ -54,6 +62,16 @@ export default function PcpCommercial() {
   const [opTypeFilter, setOpTypeFilter] = useState('all')
   const [clientFilter, setClientFilter] = useState('all')
   const [deadlineFilter, setDeadlineFilter] = useState('all')
+  const { toast } = useToast()
+
+  const updateOrder = async (id: string, field: string, value: string) => {
+    try {
+      await pb.collection('pcp_orders').update(id, { [field]: value })
+      toast({ title: 'OP Atualizada', description: 'Alteração salva com sucesso.' })
+    } catch (err) {
+      toast({ title: 'Erro', description: 'Não foi possível atualizar.', variant: 'destructive' })
+    }
+  }
 
   const loadData = async () => {
     try {
@@ -205,7 +223,7 @@ export default function PcpCommercial() {
         />
       </div>
 
-      <div className="rounded-md border">
+      <div className="rounded-md border bg-card">
         <Table>
           <TableHeader>
             <TableRow>
@@ -303,13 +321,46 @@ export default function PcpCommercial() {
                           </div>
                         </TableCell>
                         <TableCell className="py-1 font-medium">
-                          {op.status === 'Concluído' ? '-' : op.stage}
+                          {op.status === 'Concluído' ? (
+                            <span className="text-muted-foreground">-</span>
+                          ) : (
+                            <Select
+                              value={op.stage}
+                              onValueChange={(val) => updateOrder(op.id, 'stage', val)}
+                            >
+                              <SelectTrigger className="h-7 text-xs border-none shadow-none font-medium px-2 py-0 bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800 w-auto min-w-[120px]">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent className="max-h-60">
+                                {STAGES.map((s) => (
+                                  <SelectItem key={s} value={s}>
+                                    {s}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
                         </TableCell>
                         <TableCell className="py-1">
-                          <Badge variant={statusInfo.variant} className={statusInfo.className}>
-                            {' '}
-                            {statusInfo.label}
-                          </Badge>
+                          <div className="flex flex-col gap-1 items-start">
+                            <Badge variant={statusInfo.variant} className={statusInfo.className}>
+                              {statusInfo.label}
+                            </Badge>
+                            <Select
+                              value={op.status}
+                              onValueChange={(val) => updateOrder(op.id, 'status', val)}
+                            >
+                              <SelectTrigger className="h-6 text-[10px] border-none shadow-none px-1 py-0 bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800 text-muted-foreground w-auto min-w-[100px]">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Fila">Fila</SelectItem>
+                                <SelectItem value="Em Andamento">Em Andamento</SelectItem>
+                                <SelectItem value="Parado">Parado</SelectItem>
+                                <SelectItem value="Concluído">Concluído</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
                         </TableCell>
                       </TableRow>
                     )

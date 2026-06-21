@@ -16,6 +16,13 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { format, parseISO, isBefore, startOfDay, differenceInDays } from 'date-fns'
 import { Paperclip, Clock, Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { formatDeadline, filterByDeadline } from '@/lib/pcp-utils'
 import { PcpOrderForm } from './components/PcpOrderForm'
@@ -157,6 +164,45 @@ export default function PcpOrders() {
     return groups
   }, [orders])
 
+  const updateOrder = async (id: string, field: string, value: string) => {
+    try {
+      await pb.collection('pcp_orders').update(id, { [field]: value })
+      toast({ title: 'OP Atualizada', description: 'Alteração salva com sucesso.' })
+    } catch (err) {
+      toast({ title: 'Erro', description: 'Não foi possível atualizar.', variant: 'destructive' })
+    }
+  }
+
+  const STAGES = [
+    'Separação',
+    'Cotação',
+    'Compra',
+    'Retirada',
+    'Aguardando',
+    'Corte',
+    'Dobra',
+    'Calandra',
+    'Solda',
+    'Acab. Solda',
+    'Furação',
+    'Rosca',
+    'Concreto',
+    'Terceirização',
+    'Preparação',
+    'Pintura',
+    'Verniz',
+    'Retoques',
+    'Montagem',
+    'Qualidade',
+    'Embalagem',
+    'Suprimentos',
+    'Fabricação',
+    'Acabamento',
+    'Expedição',
+    'Separação no estoque fisico',
+    'Projetos',
+  ]
+
   const today = startOfDay(new Date())
   const getOrderColor = (op: PcpOrder) => {
     if (op.status === 'Parado' || (op.bottleneck_reason && op.bottleneck_reason !== 'Nenhum'))
@@ -212,7 +258,7 @@ export default function PcpOrders() {
         </div>
       </div>
 
-      <div className="rounded-md border">
+      <div className="rounded-md border bg-card">
         <Table>
           <TableHeader>
             <TableRow>
@@ -324,10 +370,38 @@ export default function PcpOrders() {
                           )}
                         </div>
                       </TableCell>
-                      <TableCell className="py-1">
+                      <TableCell className="py-1" onClick={(e) => e.stopPropagation()}>
                         <div className="flex flex-col gap-1">
-                          <span className="text-sm font-medium">{op.status}</span>
-                          <span className="text-xs text-muted-foreground">{op.stage}</span>
+                          <Select
+                            value={op.status}
+                            onValueChange={(val) => updateOrder(op.id, 'status', val)}
+                          >
+                            <SelectTrigger className="h-7 text-xs border-none shadow-none font-medium px-2 py-0 bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Fila">Fila</SelectItem>
+                              <SelectItem value="Em Andamento">Em Andamento</SelectItem>
+                              <SelectItem value="Parado">Parado</SelectItem>
+                              <SelectItem value="Concluído">Concluído</SelectItem>
+                            </SelectContent>
+                          </Select>
+
+                          <Select
+                            value={op.stage}
+                            onValueChange={(val) => updateOrder(op.id, 'stage', val)}
+                          >
+                            <SelectTrigger className="h-6 text-xs border-none shadow-none text-muted-foreground px-2 py-0 bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="max-h-60">
+                              {STAGES.map((s) => (
+                                <SelectItem key={s} value={s}>
+                                  {s}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </div>
                       </TableCell>
                       <TableCell className="py-1">

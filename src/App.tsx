@@ -119,13 +119,62 @@ const App = () => (
                   </RoleGuard>
                 }
               />
-              <Route path="/pcp/kanban" element={<PcpKanban />} />
-              <Route path="/pcp/ordens" element={<PcpOrders />} />
-              <Route path="/pcp/clientes" element={<PcpClients />} />
-              <Route path="/pcp/operador" element={<PcpOperator />} />
-              <Route path="/pcp/materiais" element={<PcpMaterials />} />
-              <Route path="/pcp/comercial" element={<PcpCommercial />} />
-              <Route path="/pcp/ocorrencias" element={<PcpOcorrencias />} />
+              <Route
+                path="/pcp/kanban"
+                element={
+                  <RoleGuard module="painel_controle">
+                    <PcpKanban />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/pcp/ordens"
+                element={
+                  <RoleGuard module="ordens_producao">
+                    <PcpOrders />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/pcp/clientes"
+                element={
+                  <RoleGuard module="pcp">
+                    <PcpClients />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/pcp/operador"
+                element={
+                  <RoleGuard module="operator">
+                    <PcpOperator />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/pcp/materiais"
+                element={
+                  <RoleGuard module="suprimentos">
+                    <PcpMaterials />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/pcp/comercial"
+                element={
+                  <RoleGuard module="visao_comercial">
+                    <PcpCommercial />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/pcp/ocorrencias"
+                element={
+                  <RoleGuard module="pcp">
+                    <PcpOcorrencias />
+                  </RoleGuard>
+                }
+              />
               <Route path="/unauthorized" element={<Unauthorized />} />
             </Route>
           </Route>

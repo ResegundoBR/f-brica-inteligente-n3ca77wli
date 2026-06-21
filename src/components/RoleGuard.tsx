@@ -4,7 +4,19 @@ import { useState, useEffect } from 'react'
 import pb from '@/lib/pocketbase/client'
 
 interface RoleGuardProps {
-  module: 'dashboard' | 'catalog' | 'learning' | 'users' | 'pcp'
+  module:
+    | 'dashboard'
+    | 'catalog'
+    | 'learning'
+    | 'users'
+    | 'pcp'
+    | 'suprimentos'
+    | 'ordens_producao'
+    | 'visao_comercial'
+    | 'painel_controle'
+    | 'produto_processos'
+    | 'comercial'
+    | 'operator'
   children: React.ReactNode
 }
 
@@ -58,19 +70,41 @@ export function RoleGuard({ module, children }: RoleGuardProps) {
       let access = false
       switch (module) {
         case 'dashboard':
-          access = !!currentRole.access_dashboard
+          access = !!currentRole.access_dashboard || !!currentRole.access_produto_processos
           break
         case 'catalog':
-          access = !!currentRole.access_catalog
+          access = !!currentRole.access_catalog || !!currentRole.access_produto_processos
           break
         case 'learning':
-          access = !!currentRole.access_learning
+          access = !!currentRole.access_learning || !!currentRole.access_produto_processos
           break
         case 'users':
           access = !!currentRole.access_users
           break
         case 'pcp':
           access = !!currentRole.access_pcp
+          break
+        case 'suprimentos':
+          access = !!currentRole.access_suprimentos || !!currentRole.access_pcp
+          break
+        case 'ordens_producao':
+          access = !!currentRole.access_ordens_producao || !!currentRole.access_pcp
+          break
+        case 'visao_comercial':
+        case 'comercial':
+          access =
+            !!currentRole.access_visao_comercial ||
+            !!currentRole.access_commercial ||
+            !!currentRole.access_pcp
+          break
+        case 'painel_controle':
+          access = !!currentRole.access_painel_controle || !!currentRole.access_pcp
+          break
+        case 'produto_processos':
+          access = !!currentRole.access_produto_processos
+          break
+        case 'operator':
+          access = !!currentRole.access_operator || !!currentRole.access_pcp
           break
       }
 

@@ -15,6 +15,37 @@ export function OutsourcingPanel({ op }: { op: any }) {
   const outsourcingData = Array.isArray(op?.outsourcing_data) ? op.outsourcing_data : []
   const hasOutsourcing = outsourcingData.length > 0
 
+  const stages = [
+    'Separação',
+    'Cotação',
+    'Compra',
+    'Retirada',
+    'Aguardando',
+    'Corte',
+    'Dobra',
+    'Calandra',
+    'Solda',
+    'Acab. Solda',
+    'Furação',
+    'Rosca',
+    'Concreto',
+    'Terceirização',
+    'Preparação',
+    'Pintura',
+    'Verniz',
+    'Retoques',
+    'Montagem',
+    'Qualidade',
+    'Embalagem',
+    'Suprimentos',
+    'Fabricação',
+    'Acabamento',
+    'Expedição',
+  ]
+  const currentStageIndex = stages.indexOf(op?.stage || '')
+  const terceirizacaoIndex = stages.indexOf('Terceirização')
+  const isReceived = currentStageIndex > terceirizacaoIndex
+
   if (!op || (!isTerceirizacao && !hasOutsourcing)) return null
 
   const handleAdd = async () => {
@@ -46,8 +77,15 @@ export function OutsourcingPanel({ op }: { op: any }) {
   }
 
   return (
-    <div className="col-span-2 mt-4 space-y-4 p-4 bg-slate-50 dark:bg-slate-900 border rounded-md">
-      <h4 className="font-semibold text-sm">Serviços Terceirizados</h4>
+    <div className="col-span-2 mt-4 space-y-4 p-4 bg-slate-50 dark:bg-slate-900 border rounded-md relative">
+      <div className="flex items-center justify-between">
+        <h4 className="font-semibold text-sm">Serviços Terceirizados</h4>
+        {isReceived && (
+          <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 rounded-full border border-green-200 dark:border-green-800">
+            Recebido
+          </span>
+        )}
+      </div>
       <div className="space-y-2">
         {outsourcingData.map((item: any, idx: number) => (
           <div

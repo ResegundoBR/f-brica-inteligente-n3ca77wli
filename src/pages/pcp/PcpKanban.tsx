@@ -66,6 +66,38 @@ const MACRO_GROUPS = [
 
 const STATUSES = ['Fila', 'Em Andamento', 'Parado', 'Concluído']
 
+const STAGE_THRESHOLDS: Record<string, number> = {
+  Separação: 24,
+  Cotação: 24,
+  Compra: 48,
+  Retirada: 24,
+  Aguardando: 480,
+  Corte: 24,
+  Dobra: 24,
+  Calandra: 24,
+  Solda: 48,
+  'Acab. Solda': 24,
+  Furação: 24,
+  Rosca: 24,
+  Concreto: 72,
+  Terceirização: 120,
+  Preparação: 24,
+  Pintura: 48,
+  Verniz: 24,
+  Retoques: 24,
+  Montagem: 48,
+  Qualidade: 24,
+  Embalagem: 24,
+}
+
+export function isStageDelayed(order: any) {
+  if (order.status === 'Concluído' || order.status === 'Parado') return false
+  const thresholdHours = STAGE_THRESHOLDS[order.stage]
+  if (!thresholdHours) return false
+  const diffHours = (new Date().getTime() - new Date(order.updated).getTime()) / (1000 * 60 * 60)
+  return diffHours > thresholdHours
+}
+
 export function getOrderColor(order: any) {
   if (
     order.status === 'Parado' ||
@@ -687,6 +719,34 @@ export default function PcpKanban() {
                 <TabsTrigger value="historico">Log / Histórico</TabsTrigger>
               </TabsList>
               <TabsContent value="detalhes" className="flex-1 overflow-y-auto pt-4 space-y-4">
+                {selectedOrder.status === 'Parado' && (
+                  <div className="bg-red-50 dark:bg-red-950/20 p-4 rounded-md border border-red-200 dark:border-red-900">
+                    <h3 className="font-semibold text-red-800 dark:text-red-400 mb-2 flex items-center">
+                      <AlertCircle className="size-4 mr-2" /> Gargalo de Produção
+                    </h3>
+                    <div className="space-y-2">
+                      <div>
+                        <span className="text-sm font-medium text-red-700 dark:text-red-300">
+                          Motivo:{' '}
+                        </span>
+                        <span className="text-sm text-red-600 dark:text-red-200">
+                          {selectedOrder.bottleneck_reason}
+                        </span>
+                      </div>
+                      {selectedOrder.bottleneck_details && (
+                        <div>
+                          <span className="text-sm font-medium text-red-700 dark:text-red-300">
+                            Detalhes:{' '}
+                          </span>
+                          <span className="text-sm text-red-600 dark:text-red-200 whitespace-pre-wrap">
+                            {selectedOrder.bottleneck_details}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-4 text-sm bg-slate-50 dark:bg-slate-900 p-4 rounded-lg border">
                   <div>
                     <span className="text-muted-foreground block text-xs">Tipo de OP</span>
@@ -803,13 +863,16 @@ export default function PcpKanban() {
 function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
   const [time, setTime] = useState('')
   const color = getOrderColor(order)
+  const delayedStage = isStageDelayed(order)
 
   const borderClass =
     color === 'red'
       ? 'border-l-red-500'
       : color === 'purple'
         ? 'border-l-purple-500'
-        : 'border-l-blue-500'
+        : delayedStage
+          ? 'border-l-orange-500 shadow-[inset_2px_0_0_0_rgba(249,115,22,1)] dark:shadow-[inset_2px_0_0_0_rgba(249,115,22,0.5)]'
+          : 'border-l-blue-500'
 
   const cardBgClass =
     color === 'red'
@@ -849,6 +912,12 @@ function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
           <div className="font-semibold text-sm">{order.order_number}</div>
           {color === 'red' && <AlertCircle className="size-4 text-red-500 shrink-0" />}
           {color === 'purple' && <Clock className="size-4 text-purple-500 shrink-0" />}
+          {delayedStage && color !== 'red' && color !== 'purple' && (
+            <Clock
+              className="size-4 text-orange-500 animate-pulse shrink-0"
+              title={`Atraso na etapa: > ${STAGE_THRESHOLDS[order.stage]}h`}
+            />
+          )}
         </div>
         <div
           className="text-xs text-muted-foreground line-clamp-1"
@@ -924,10 +993,20 @@ function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
             </Badge>
           </div>
           <div
-            className="flex items-center gap-1 text-[10px] font-medium text-slate-500 bg-slate-200/50 dark:bg-slate-800 rounded px-1.5 py-0.5 shrink-0"
-            title="Tempo neste estágio"
+            className={cn(
+              'flex items-center gap-1 text-[10px] font-medium rounded px-1.5 py-0.5 shrink-0',
+              delayedStage && color !== 'red'
+                ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-400'
+                : 'bg-slate-200/50 dark:bg-slate-800 text-slate-500',
+            )}
+            title={
+              delayedStage
+                ? `Atraso na etapa: limite de ${STAGE_THRESHOLDS[order.stage]}h excedido`
+                : 'Tempo neste estágio'
+            }
           >
-            <Clock className="size-3" /> {time}
+            <Clock className={cn('size-3', delayedStage && color !== 'red' && 'animate-pulse')} />{' '}
+            {time}
           </div>
         </div>
       </CardContent>
@@ -937,13 +1016,16 @@ function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
 
 function CompactKanbanCard({ order, observations = [], onDragStart, onClick }: any) {
   const color = getOrderColor(order)
+  const delayedStage = isStageDelayed(order)
 
   const bgClass =
     color === 'red'
       ? 'bg-red-500 text-white animate-pulse'
       : color === 'purple'
         ? 'bg-purple-500 text-white'
-        : 'bg-blue-500 text-white'
+        : delayedStage
+          ? 'bg-orange-500 text-white shadow-[0_0_8px_rgba(249,115,22,0.8)] dark:shadow-[0_0_8px_rgba(249,115,22,0.5)]'
+          : 'bg-blue-500 text-white'
 
   const prodName =
     order.op_type === 'Assistência'
@@ -982,12 +1064,17 @@ function CompactKanbanCard({ order, observations = [], onDragStart, onClick }: a
       )}
 
       <div className="flex items-center justify-between w-full gap-1">
-        <span className="block truncate flex-1 text-left">{order.order_number}</span>
+        <span className="block truncate flex-1 text-left flex items-center gap-0.5">
+          {delayedStage && color !== 'red' && <Clock className="size-2 animate-pulse" />}
+          {order.order_number}
+        </span>
         {order.status !== 'Concluído' && (
           <span
             className={cn(
               'text-[6px] px-0.5 rounded-sm whitespace-nowrap shrink-0 leading-tight',
-              isOverdue || color === 'red' ? 'bg-white/30 text-white' : 'bg-white/20 text-white',
+              isOverdue || color === 'red' || delayedStage
+                ? 'bg-white/30 text-white'
+                : 'bg-white/20 text-white',
             )}
           >
             {deadlineText}

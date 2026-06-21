@@ -45,6 +45,34 @@ export function PcpOrderDetails({
         </SheetHeader>
         {op && (
           <div className="mt-6 space-y-6">
+            {op.status === 'Parado' && (
+              <div className="bg-red-50 dark:bg-red-950/20 p-4 rounded-md border border-red-200 dark:border-red-900">
+                <h3 className="font-semibold text-red-800 dark:text-red-400 mb-2 flex items-center">
+                  <AlertCircle className="size-4 mr-2" /> Gargalo de Produção
+                </h3>
+                <div className="space-y-2">
+                  <div>
+                    <span className="text-sm font-medium text-red-700 dark:text-red-300">
+                      Motivo:{' '}
+                    </span>
+                    <span className="text-sm text-red-600 dark:text-red-200">
+                      {op.bottleneck_reason}
+                    </span>
+                  </div>
+                  {op.bottleneck_details && (
+                    <div>
+                      <span className="text-sm font-medium text-red-700 dark:text-red-300">
+                        Detalhes:{' '}
+                      </span>
+                      <span className="text-sm text-red-600 dark:text-red-200 whitespace-pre-wrap">
+                        {op.bottleneck_details}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label className="text-muted-foreground">OP</Label>
@@ -131,34 +159,6 @@ export function PcpOrderDetails({
                 </div>
               )}
             </div>
-
-            {op.status === 'Parado' && (
-              <div className="bg-red-50 dark:bg-red-950/20 p-4 rounded-md border border-red-200 dark:border-red-900">
-                <h3 className="font-semibold text-red-800 dark:text-red-400 mb-2 flex items-center">
-                  <AlertCircle className="size-4 mr-2" /> Gargalo de Produção
-                </h3>
-                <div className="space-y-2">
-                  <div>
-                    <span className="text-sm font-medium text-red-700 dark:text-red-300">
-                      Motivo:{' '}
-                    </span>
-                    <span className="text-sm text-red-600 dark:text-red-200">
-                      {op.bottleneck_reason}
-                    </span>
-                  </div>
-                  {op.bottleneck_details && (
-                    <div>
-                      <span className="text-sm font-medium text-red-700 dark:text-red-300">
-                        Detalhes:{' '}
-                      </span>
-                      <span className="text-sm text-red-600 dark:text-red-200 whitespace-pre-wrap">
-                        {op.bottleneck_details}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
           </div>
         )}
       </SheetContent>

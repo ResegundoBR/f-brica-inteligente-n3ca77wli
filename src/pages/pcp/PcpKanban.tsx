@@ -11,6 +11,7 @@ import { AlertCircle, Layers, Columns, Clock, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { format, parseISO } from 'date-fns'
+import { isSectorActiveForStage } from '@/lib/pcp-utils'
 
 const MACRO_GROUPS = [
   {
@@ -66,6 +67,7 @@ const STATUSES = ['Fila', 'Em Andamento', 'Parado', 'Concluído']
 
 export default function PcpKanban() {
   const [orders, setOrders] = useState<any[]>([])
+  const [observations, setObservations] = useState<Record<string, any[]>>({})
   const [stuckModalOpen, setStuckModalOpen] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
   const [viewMode, setViewMode] = useState<'status' | 'process'>('process')
@@ -79,10 +81,22 @@ export default function PcpKanban() {
     setOrders(res)
   }
 
+  const fetchObservations = async () => {
+    const obs = await pb.collection('pcp_order_observations').getFullList({ sort: 'created' })
+    const obsMap: Record<string, any[]> = {}
+    obs.forEach((o) => {
+      if (!obsMap[o.order_id]) obsMap[o.order_id] = []
+      obsMap[o.order_id].push(o)
+    })
+    setObservations(obsMap)
+  }
+
   useEffect(() => {
     fetchOrders()
+    fetchObservations()
   }, [])
   useRealtime('pcp_orders', fetchOrders)
+  useRealtime('pcp_order_observations', fetchObservations)
 
   const handleDragStart = (e: React.DragEvent, id: string) => {
     e.dataTransfer.setData('orderId', id)
@@ -394,6 +408,37 @@ export default function PcpKanban() {
                   <div>
                     <span className="text-muted-foreground block text-xs">Processo Atual</span>
                     <span className="font-medium">{selectedOrder.stage}</span>
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <span className="text-muted-foreground block text-xs mb-2">Observações</span>
+                  <div className="space-y-3">
+                    {(observations[selectedOrder.id] || []).length > 0 ? (
+                      (observations[selectedOrder.id] || []).map((obs) => {
+                        const highlighted = isSectorActiveForStage(obs.sector, selectedOrder.stage)
+                        return (
+                          <div
+                            key={obs.id}
+                            className={cn(
+                              'p-3 rounded-md text-sm border whitespace-pre-wrap',
+                              highlighted
+                                ? 'bg-yellow-100 border-yellow-400 text-yellow-900 dark:bg-yellow-900/40 dark:border-yellow-600 dark:text-yellow-200 font-medium'
+                                : 'bg-muted text-foreground border-transparent',
+                            )}
+                          >
+                            <span className="font-semibold block mb-1 opacity-80">
+                              {obs.sector}
+                            </span>
+                            {obs.content}
+                          </div>
+                        )
+                      })
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        Nenhuma observação cadastrada.
+                      </p>
+                    )}
                   </div>
                 </div>
               </TabsContent>

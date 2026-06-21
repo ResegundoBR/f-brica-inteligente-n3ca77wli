@@ -199,6 +199,21 @@ export default function PcpOrders() {
                                 ? 'Produto Especial'
                                 : op.expand?.product_id?.name || '-'}
                           </span>
+                          {(observations[op.id] || []).length > 0 && (
+                            <div className="flex flex-col gap-1 mt-1 w-full max-w-sm">
+                              {(observations[op.id] || []).map((obs) => (
+                                <span
+                                  key={obs.id}
+                                  className="text-xs text-muted-foreground whitespace-pre-wrap leading-tight border-l-2 pl-2 border-slate-200 dark:border-slate-800"
+                                >
+                                  <span className="font-medium text-slate-700 dark:text-slate-300">
+                                    {obs.sector}:
+                                  </span>{' '}
+                                  {obs.content}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell>{op.quantity}</TableCell>

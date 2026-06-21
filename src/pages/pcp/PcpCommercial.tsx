@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState, useMemo } from 'react'
 import pb from '@/lib/pocketbase/client'
-import { PcpOrder } from '@/types'
+import { PcpOrder, PcpOrderObservation } from '@/types'
 import { useRealtime } from '@/hooks/use-realtime'
 import { Input } from '@/components/ui/input'
 import {
@@ -21,15 +21,29 @@ const STAGES = ['Corte', 'Montagem', 'Acabamento', 'Expedição']
 
 export default function PcpCommercial() {
   const [orders, setOrders] = useState<PcpOrder[]>([])
+  const [observations, setObservations] = useState<Record<string, PcpOrderObservation[]>>({})
   const [search, setSearch] = useState('')
 
   const loadData = async () => {
     try {
-      const records = await pb.collection('pcp_orders').getFullList<PcpOrder>({
-        sort: 'delivery_date',
-        expand: 'product_id',
-      })
+      const [records, obs] = await Promise.all([
+        pb.collection('pcp_orders').getFullList<PcpOrder>({
+          sort: 'delivery_date',
+          expand: 'product_id,client_id',
+        }),
+        pb.collection('pcp_order_observations').getFullList<PcpOrderObservation>({
+          sort: 'created',
+        }),
+      ])
+
       setOrders(records)
+
+      const obsMap: Record<string, PcpOrderObservation[]> = {}
+      obs.forEach((o) => {
+        if (!obsMap[o.order_id]) obsMap[o.order_id] = []
+        obsMap[o.order_id].push(o)
+      })
+      setObservations(obsMap)
     } catch {
       /* intentionally ignored */
     }
@@ -39,15 +53,37 @@ export default function PcpCommercial() {
     loadData()
   }, [])
 
-  useRealtime('pcp_orders', () => {
-    loadData()
-  })
+  useRealtime('pcp_orders', loadData)
+  useRealtime('pcp_order_observations', loadData)
 
   const filteredOrders = orders.filter(
     (op) =>
       op.client_name.toLowerCase().includes(search.toLowerCase()) ||
       op.order_number.toLowerCase().includes(search.toLowerCase()),
   )
+
+  const groupedOrders = useMemo(() => {
+    const groups: {
+      order_number: string
+      client_name: string
+      op_type: string
+      items: PcpOrder[]
+    }[] = []
+    const map = new Map<string, PcpOrder[]>()
+    filteredOrders.forEach((op) => {
+      if (!map.has(op.order_number)) {
+        map.set(op.order_number, [])
+        groups.push({
+          order_number: op.order_number,
+          client_name: op.expand?.client_id?.name || op.client_name,
+          op_type: op.op_type,
+          items: map.get(op.order_number)!,
+        })
+      }
+      map.get(op.order_number)!.push(op)
+    })
+    return groups
+  }, [filteredOrders])
 
   const getStatusInfo = (op: PcpOrder) => {
     if (op.bottleneck_reason !== 'Nenhum') {
@@ -73,7 +109,8 @@ export default function PcpCommercial() {
 
   const getProgress = (op: PcpOrder) => {
     if (op.status === 'Concluído') return 100
-    const idx = STAGES.indexOf(op.stage)
+    const idx = STAGES.indexOf(op.stage as any)
+    if (idx === -1) return 0
     return (idx / STAGES.length) * 100
   }
 
@@ -100,8 +137,7 @@ export default function PcpCommercial() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Ordem</TableHead>
-              <TableHead>Cliente</TableHead>
+              <TableHead>OP</TableHead>
               <TableHead>Produto</TableHead>
               <TableHead>Previsão</TableHead>
               <TableHead className="w-[200px]">Progresso</TableHead>
@@ -110,62 +146,92 @@ export default function PcpCommercial() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredOrders.length === 0 ? (
+            {groupedOrders.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center h-24">
+                <TableCell colSpan={6} className="text-center h-24">
                   Nenhuma OP encontrada.
                 </TableCell>
               </TableRow>
             ) : (
-              filteredOrders.map((op) => {
-                const statusInfo = getStatusInfo(op)
-                return (
-                  <TableRow key={op.id}>
-                    <TableCell className="font-semibold">{op.order_number}</TableCell>
-                    <TableCell>{op.client_name}</TableCell>
-                    <TableCell>
-                      <div className="flex flex-col items-start gap-1">
+              groupedOrders.map((group) => (
+                <Fragment key={group.order_number}>
+                  <TableRow
+                    className={cn(
+                      'hover:opacity-90 border-y transition-colors',
+                      group.op_type === 'Assistência'
+                        ? 'bg-fuchsia-600 text-white'
+                        : group.op_type === 'Especial'
+                          ? 'bg-slate-900 text-white dark:bg-slate-800'
+                          : 'bg-blue-600 text-white',
+                    )}
+                  >
+                    <TableCell colSpan={6} className="font-semibold text-sm py-3">
+                      <div className="flex items-center gap-4">
+                        <span>Pedido: {group.order_number}</span>
+                        <span className="opacity-50">|</span>
+                        <span>Cliente: {group.client_name}</span>
                         <Badge
                           variant="outline"
-                          className={cn(
-                            'text-[10px] px-1.5 h-4 border-transparent text-white',
-                            op.op_type === 'Assistência' && 'bg-fuchsia-500 hover:bg-fuchsia-600',
-                            op.op_type === 'Especial' &&
-                              'bg-slate-900 dark:bg-slate-100 dark:text-slate-900',
-                            op.op_type === 'Linha' && 'bg-blue-500 hover:bg-blue-600',
-                          )}
+                          className="ml-auto border-white/40 text-white hover:bg-white/20 bg-white/10"
                         >
-                          {op.op_type}
+                          {group.op_type}
                         </Badge>
-                        <span className="text-sm">
-                          {op.op_type === 'Assistência'
-                            ? op.manual_product_name
-                            : op.op_type === 'Especial'
-                              ? 'Produto Especial'
-                              : op.expand?.product_id?.name || '-'}
-                        </span>
                       </div>
-                    </TableCell>
-                    <TableCell>{format(parseISO(op.delivery_date), 'dd/MM/yyyy')}</TableCell>
-                    <TableCell>
-                      <div className="flex flex-col gap-2">
-                        <Progress value={getProgress(op)} className="h-2" />
-                        <span className="text-xs text-muted-foreground text-right">
-                          {Math.round(getProgress(op))}%
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-medium">
-                      {op.status === 'Concluído' ? '-' : op.stage}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={statusInfo.variant} className={statusInfo.className}>
-                        {statusInfo.label}
-                      </Badge>
                     </TableCell>
                   </TableRow>
-                )
-              })
+                  {group.items.map((op) => {
+                    const statusInfo = getStatusInfo(op)
+                    return (
+                      <TableRow key={op.id}>
+                        <TableCell className="pl-6 font-semibold">{op.op_number || '-'}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-col items-start gap-1">
+                            <span className="text-sm">
+                              {op.op_type === 'Assistência'
+                                ? op.manual_product_name
+                                : op.op_type === 'Especial'
+                                  ? 'Produto Especial'
+                                  : op.expand?.product_id?.name || '-'}
+                            </span>
+                            {(observations[op.id] || []).length > 0 && (
+                              <div className="flex flex-col gap-1 mt-1 w-full max-w-sm">
+                                {(observations[op.id] || []).map((obs) => (
+                                  <span
+                                    key={obs.id}
+                                    className="text-[10px] text-muted-foreground whitespace-pre-wrap leading-tight border-l-2 pl-2 border-slate-200 dark:border-slate-800"
+                                  >
+                                    <span className="font-medium text-slate-700 dark:text-slate-300">
+                                      {obs.sector}:
+                                    </span>{' '}
+                                    {obs.content}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>{format(parseISO(op.delivery_date), 'dd/MM/yyyy')}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-col gap-2">
+                            <Progress value={getProgress(op)} className="h-2" />
+                            <span className="text-xs text-muted-foreground text-right">
+                              {Math.round(getProgress(op))}%
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {op.status === 'Concluído' ? '-' : op.stage}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={statusInfo.variant} className={statusInfo.className}>
+                            {statusInfo.label}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </Fragment>
+              ))
             )}
           </TableBody>
         </Table>

@@ -204,9 +204,10 @@ export default function PcpOrders() {
                               {(observations[op.id] || []).map((obs) => (
                                 <span
                                   key={obs.id}
-                                  className="text-xs text-muted-foreground whitespace-pre-wrap leading-tight border-l-2 pl-2 border-slate-200 dark:border-slate-800"
+                                  className="text-[10px] text-muted-foreground whitespace-pre-wrap leading-tight border-l-2 pl-2 border-slate-200 dark:border-slate-800"
                                 >
                                   <span className="font-medium text-slate-700 dark:text-slate-300">
+                                    {' '}
                                     {obs.sector}:
                                   </span>{' '}
                                   {obs.content}

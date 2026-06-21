@@ -27,6 +27,15 @@ export function PcpOrderDetails({
     ? op.status !== 'Concluído' && isBefore(parseISO(op.delivery_date), today)
     : false
 
+  const obsBySector = observations.reduce(
+    (acc, obs) => {
+      if (!acc[obs.sector]) acc[obs.sector] = []
+      acc[obs.sector].push(obs)
+      return acc
+    },
+    {} as Record<string, PcpOrderObservation[]>,
+  )
+
   return (
     <Sheet open={!!op} onOpenChange={(val) => !val && onClose()}>
       <SheetContent className="sm:max-w-md overflow-y-auto">
@@ -79,25 +88,31 @@ export function PcpOrderDetails({
 
               <div className="col-span-2 mt-2">
                 <Label className="text-muted-foreground">Observações</Label>
-                <div className="mt-2 space-y-3">
+                <div className="mt-2 space-y-4">
                   {observations.length > 0 ? (
-                    observations.map((obs) => {
-                      const highlighted = isSectorActiveForStage(obs.sector, op.stage)
-                      return (
-                        <div
-                          key={obs.id}
-                          className={cn(
-                            'p-3 rounded-md text-sm border whitespace-pre-wrap',
-                            highlighted
-                              ? 'bg-yellow-100 border-yellow-400 text-yellow-900 dark:bg-yellow-900/40 dark:border-yellow-600 dark:text-yellow-200 font-medium'
-                              : 'bg-muted text-foreground border-transparent',
-                          )}
-                        >
-                          <span className="font-semibold block mb-1 opacity-80">{obs.sector}</span>
-                          {obs.content}
+                    Object.entries(obsBySector).map(([sector, obsList]) => (
+                      <div key={sector}>
+                        <h4 className="font-semibold text-sm mb-2 opacity-80">{sector}</h4>
+                        <div className="space-y-2">
+                          {obsList.map((obs) => {
+                            const highlighted = isSectorActiveForStage(obs.sector, op.stage)
+                            return (
+                              <div
+                                key={obs.id}
+                                className={cn(
+                                  'p-3 rounded-md text-sm border whitespace-pre-wrap',
+                                  highlighted
+                                    ? 'bg-yellow-100 border-yellow-400 text-yellow-900 dark:bg-yellow-900/40 dark:border-yellow-600 dark:text-yellow-200 font-medium'
+                                    : 'bg-muted text-foreground border-transparent',
+                                )}
+                              >
+                                {obs.content}
+                              </div>
+                            )
+                          })}
                         </div>
-                      )
-                    })
+                      </div>
+                    ))
                   ) : (
                     <p className="text-sm text-muted-foreground">Nenhuma observação cadastrada.</p>
                   )}

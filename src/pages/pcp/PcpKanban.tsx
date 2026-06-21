@@ -217,6 +217,7 @@ export default function PcpKanban() {
                         <KanbanCard
                           key={order.id}
                           order={order}
+                          observations={observations[order.id] || []}
                           onDragStart={handleDragStart}
                           onClick={() => setSelectedOrder(order)}
                         />
@@ -274,6 +275,7 @@ export default function PcpKanban() {
                             <CompactKanbanCard
                               key={order.id}
                               order={order}
+                              observations={observations[order.id] || []}
                               onDragStart={handleDragStart}
                               onClick={() => setSelectedOrder(order)}
                             />
@@ -453,7 +455,7 @@ export default function PcpKanban() {
   )
 }
 
-function KanbanCard({ order, onDragStart, onClick }: any) {
+function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
   const [time, setTime] = useState('')
   const isStuck = order.status === 'Parado'
   const borderClass =
@@ -515,6 +517,22 @@ function KanbanCard({ order, onDragStart, onClick }: any) {
               ? 'Produto Especial'
               : order.expand?.product_id?.name || 'S/Produto'}
         </div>
+        {observations.length > 0 && (
+          <div className="flex flex-col gap-0.5 mt-0.5 w-full">
+            {observations.map((obs: any) => (
+              <span
+                key={obs.id}
+                className="text-[10px] text-muted-foreground whitespace-pre-wrap leading-tight border-l-2 pl-1.5 border-slate-200 dark:border-slate-800 line-clamp-2"
+                title={`${obs.sector}: ${obs.content}`}
+              >
+                <span className="font-medium text-slate-700 dark:text-slate-300">
+                  {obs.sector}:
+                </span>{' '}
+                {obs.content}
+              </span>
+            ))}
+          </div>
+        )}
         <div className="flex items-center justify-between mt-2 pt-2 border-t">
           <Badge variant="outline" className="text-[10px] h-5 px-1.5 bg-background">
             Qtd: {order.quantity}
@@ -531,7 +549,7 @@ function KanbanCard({ order, onDragStart, onClick }: any) {
   )
 }
 
-function CompactKanbanCard({ order, onDragStart, onClick }: any) {
+function CompactKanbanCard({ order, observations = [], onDragStart, onClick }: any) {
   const isStuck = order.status === 'Parado'
   const isAssist = order.op_type === 'Assistência'
   const isEspecial = order.op_type === 'Especial'
@@ -560,11 +578,25 @@ function CompactKanbanCard({ order, onDragStart, onClick }: any) {
       onClick={onClick}
       title={titleText}
       className={cn(
-        'text-[8px] md:text-[9px] font-bold p-0.5 md:p-1 rounded-sm w-full text-center cursor-grab active:cursor-grabbing truncate transition-all hover:opacity-80 shadow-sm border border-black/10 dark:border-white/10',
+        'text-[8px] md:text-[9px] font-bold p-0.5 md:p-1 rounded-sm w-full text-center flex flex-col items-center cursor-grab active:cursor-grabbing transition-all hover:opacity-80 shadow-sm border border-black/10 dark:border-white/10',
         bgClass,
       )}
     >
-      <span className="block truncate">{order.order_number}</span>
+      <span className="block truncate w-full">{order.order_number}</span>
+      <span className="block truncate w-full font-normal opacity-90 text-[7px]">{prodName}</span>
+      {observations.length > 0 && (
+        <div className="flex flex-col items-start text-left w-full gap-0.5 mt-0.5 border-t border-black/10 dark:border-white/10 pt-0.5">
+          {observations.map((obs: any) => (
+            <span
+              key={obs.id}
+              className="block w-full truncate font-normal opacity-80 text-[7px]"
+              title={`${obs.sector}: ${obs.content}`}
+            >
+              {obs.sector[0]}: {obs.content}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

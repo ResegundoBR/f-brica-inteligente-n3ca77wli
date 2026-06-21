@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState, useMemo } from 'react'
 import pb from '@/lib/pocketbase/client'
 import { PcpOrder, Product, Client } from '@/types'
 import { useRealtime } from '@/hooks/use-realtime'
@@ -37,8 +37,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { format, parseISO } from 'date-fns'
-import { Plus, Paperclip } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { format, parseISO, isBefore, startOfDay } from 'date-fns'
+import { Plus, Paperclip, Clock, AlertCircle } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 
@@ -48,6 +49,7 @@ export default function PcpOrders() {
   const [clients, setClients] = useState<Client[]>([])
   const [isOpen, setIsOpen] = useState(false)
   const [isClientModalOpen, setIsClientModalOpen] = useState(false)
+  const [selectedOp, setSelectedOp] = useState<PcpOrder | null>(null)
   const [newClientName, setNewClientName] = useState('')
   const { toast } = useToast()
 
@@ -84,6 +86,25 @@ export default function PcpOrders() {
   useRealtime('pcp_orders', () => {
     loadData()
   })
+
+  const groupedOrders = useMemo(() => {
+    const groups: { order_number: string; items: PcpOrder[] }[] = []
+    const map = new Map<string, PcpOrder[]>()
+    orders.forEach((op) => {
+      if (!map.has(op.order_number)) {
+        map.set(op.order_number, [])
+        groups.push({ order_number: op.order_number, items: map.get(op.order_number)! })
+      }
+      map.get(op.order_number)!.push(op)
+    })
+    return groups
+  }, [orders])
+
+  const today = startOfDay(new Date())
+
+  const isOpDelayed = (op: PcpOrder) => {
+    return op.status !== 'Concluído' && isBefore(parseISO(op.delivery_date), today)
+  }
 
   const handleQuickClientSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -300,7 +321,6 @@ export default function PcpOrders() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Número</TableHead>
               <TableHead>Cliente</TableHead>
               <TableHead>Produto</TableHead>
               <TableHead>Qtd</TableHead>
@@ -310,66 +330,188 @@ export default function PcpOrders() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {orders.length === 0 ? (
+            {groupedOrders.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center">
+                <TableCell colSpan={6} className="text-center">
                   Nenhuma OP encontrada.
                 </TableCell>
               </TableRow>
             ) : (
-              orders.map((op) => (
-                <TableRow key={op.id}>
-                  <TableCell className="font-medium">{op.order_number}</TableCell>
-                  <TableCell>{op.expand?.client_id?.name || op.client_name}</TableCell>
-                  <TableCell>
-                    <div className="flex flex-col items-start gap-1">
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          'text-[10px] px-1.5 h-4 border-transparent text-white',
-                          op.op_type === 'Assistência' && 'bg-fuchsia-500 hover:bg-fuchsia-600',
-                          op.op_type === 'Especial' &&
-                            'bg-slate-900 dark:bg-slate-100 dark:text-slate-900',
-                          op.op_type === 'Linha' && 'bg-blue-500 hover:bg-blue-600',
+              groupedOrders.map((group) => (
+                <Fragment key={group.order_number}>
+                  <TableRow className="bg-muted/50 hover:bg-muted/50">
+                    <TableCell colSpan={6} className="font-semibold text-base py-3">
+                      Pedido / OP: {group.order_number}
+                    </TableCell>
+                  </TableRow>
+                  {group.items.map((op) => (
+                    <TableRow
+                      key={op.id}
+                      className="cursor-pointer hover:bg-muted/30"
+                      onClick={() => setSelectedOp(op)}
+                    >
+                      <TableCell className="pl-6">
+                        {op.expand?.client_id?.name || op.client_name}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col items-start gap-1">
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              'text-[10px] px-1.5 h-4 border-transparent text-white',
+                              op.op_type === 'Assistência' && 'bg-fuchsia-500 hover:bg-fuchsia-600',
+                              op.op_type === 'Especial' &&
+                                'bg-slate-900 dark:bg-slate-100 dark:text-slate-900',
+                              op.op_type === 'Linha' && 'bg-blue-500 hover:bg-blue-600',
+                            )}
+                          >
+                            {op.op_type}
+                          </Badge>
+                          <span className="text-sm">
+                            {op.op_type === 'Assistência'
+                              ? op.manual_product_name
+                              : op.op_type === 'Especial'
+                                ? 'Produto Especial'
+                                : op.expand?.product_id?.name || '-'}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell>{op.quantity}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          {format(parseISO(op.delivery_date), 'dd/MM/yyyy')}
+                          {isOpDelayed(op) && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Clock className="size-4 text-red-500" />
+                              </TooltipTrigger>
+                              <TooltipContent>Entrega atrasada</TooltipContent>
+                            </Tooltip>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col gap-1">
+                          <span className="text-sm font-medium">{op.status}</span>
+                          <span className="text-xs text-muted-foreground">{op.stage}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {op.annex && (
+                          <a
+                            href={pb.files.getURL(op, op.annex)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-blue-500 hover:underline flex items-center"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Paperclip className="mr-1 size-4" /> Ver
+                          </a>
                         )}
-                      >
-                        {op.op_type}
-                      </Badge>
-                      <span className="text-sm">
-                        {op.op_type === 'Assistência'
-                          ? op.manual_product_name
-                          : op.op_type === 'Especial'
-                            ? 'Produto Especial'
-                            : op.expand?.product_id?.name || '-'}
-                      </span>
-                    </div>
-                  </TableCell>
-                  <TableCell>{op.quantity}</TableCell>
-                  <TableCell>{format(parseISO(op.delivery_date), 'dd/MM/yyyy')}</TableCell>
-                  <TableCell>
-                    <div className="flex flex-col gap-1">
-                      <span className="text-sm font-medium">{op.status}</span>
-                      <span className="text-xs text-muted-foreground">{op.stage}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {op.annex && (
-                      <a
-                        href={pb.files.getURL(op, op.annex)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-blue-500 hover:underline flex items-center"
-                      >
-                        <Paperclip className="mr-1 size-4" /> Ver
-                      </a>
-                    )}
-                  </TableCell>
-                </TableRow>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </Fragment>
               ))
             )}
           </TableBody>
         </Table>
       </div>
+
+      <Sheet open={!!selectedOp} onOpenChange={(val) => !val && setSelectedOp(null)}>
+        <SheetContent className="sm:max-w-md overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle>Detalhes da OP</SheetTitle>
+            <SheetDescription>Pedido: {selectedOp?.order_number}</SheetDescription>
+          </SheetHeader>
+          {selectedOp && (
+            <div className="mt-6 space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-muted-foreground">Cliente</Label>
+                  <p className="font-medium text-sm mt-1">
+                    {selectedOp.expand?.client_id?.name || selectedOp.client_name}
+                  </p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Produto</Label>
+                  <p className="font-medium text-sm mt-1">
+                    {selectedOp.op_type === 'Assistência'
+                      ? selectedOp.manual_product_name
+                      : selectedOp.op_type === 'Especial'
+                        ? 'Produto Especial'
+                        : selectedOp.expand?.product_id?.name || '-'}
+                  </p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Quantidade</Label>
+                  <p className="font-medium text-sm mt-1">{selectedOp.quantity}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Data de Entrega</Label>
+                  <p className="font-medium text-sm mt-1 flex items-center gap-2">
+                    {format(parseISO(selectedOp.delivery_date), 'dd/MM/yyyy')}
+                    {isOpDelayed(selectedOp) && (
+                      <span className="text-red-500 text-xs font-bold">(Atrasado)</span>
+                    )}
+                  </p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Status</Label>
+                  <p className="font-medium text-sm mt-1">{selectedOp.status}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Etapa Atual</Label>
+                  <p className="font-medium text-sm mt-1">{selectedOp.stage}</p>
+                </div>
+                {selectedOp.annex && (
+                  <div className="col-span-2">
+                    <Label className="text-muted-foreground">Anexo</Label>
+                    <div>
+                      <a
+                        href={pb.files.getURL(selectedOp, selectedOp.annex)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-blue-500 hover:underline flex items-center mt-1 text-sm font-medium"
+                      >
+                        <Paperclip className="mr-1 size-4" /> Visualizar Documento
+                      </a>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {selectedOp.status === 'Parado' && (
+                <div className="bg-red-50 dark:bg-red-950/20 p-4 rounded-md border border-red-200 dark:border-red-900">
+                  <h3 className="font-semibold text-red-800 dark:text-red-400 mb-2 flex items-center">
+                    <AlertCircle className="size-4 mr-2" /> Gargalo de Produção
+                  </h3>
+                  <div className="space-y-2">
+                    <div>
+                      <span className="text-sm font-medium text-red-700 dark:text-red-300">
+                        Motivo:{' '}
+                      </span>
+                      <span className="text-sm text-red-600 dark:text-red-200">
+                        {selectedOp.bottleneck_reason}
+                      </span>
+                    </div>
+                    {selectedOp.bottleneck_details && (
+                      <div>
+                        <span className="text-sm font-medium text-red-700 dark:text-red-300">
+                          Detalhes:{' '}
+                        </span>
+                        <span className="text-sm text-red-600 dark:text-red-200 whitespace-pre-wrap">
+                          {selectedOp.bottleneck_details}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }

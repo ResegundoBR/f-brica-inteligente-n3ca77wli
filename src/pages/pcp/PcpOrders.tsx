@@ -16,9 +16,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { format, parseISO, isBefore, startOfDay, differenceInDays } from 'date-fns'
 import { Paperclip, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { formatDeadline } from '@/lib/pcp-utils'
+import { formatDeadline, filterByDeadline } from '@/lib/pcp-utils'
 import { PcpOrderForm } from './components/PcpOrderForm'
 import { PcpOrderDetails } from './components/PcpOrderDetails'
+import { PcpFilters } from './components/PcpFilters'
 
 export default function PcpOrders() {
   const [orders, setOrders] = useState<PcpOrder[]>([])

@@ -16,6 +16,8 @@ import { Badge } from '@/components/ui/badge'
 import { format, parseISO, isAfter, startOfDay } from 'date-fns'
 import { Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { PcpFilters } from './components/PcpFilters'
+import { filterByDeadline, isOrderOverdue } from '@/lib/pcp-utils'
 
 const STAGES = [
   'Separação',

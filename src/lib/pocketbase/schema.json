@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-21T14:37:35.200Z",
+  "generatedAt": "2026-06-21T15:00:23.915Z",
   "collections": [
     {
       "name": "users",
@@ -884,27 +884,26 @@
           "required": true,
           "system": false,
           "selectValues": [
-            "Separação no estoque fisico",
+            "Separação",
             "Cotação",
             "Compra",
             "Retirada",
-            "Aguardar chegar",
-            "Entrega",
+            "Aguardando",
             "Corte",
-            "Acabamento corte",
             "Dobra",
             "Calandra",
             "Solda",
-            "Acabamento de solda",
+            "Acab. Solda",
             "Furação",
             "Rosca",
-            "Bases de concreto",
-            "Preparação (wash primer, primer e lixamento)",
+            "Concreto",
+            "Terceirização",
+            "Preparação",
             "Pintura",
             "Verniz",
             "Retoques",
             "Montagem",
-            "Controle de qualidade",
+            "Qualidade",
             "Embalagem",
             "Suprimentos",
             "Fabricação",
@@ -1012,6 +1011,12 @@
         {
           "name": "op_number",
           "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "outsourcing_data",
+          "type": "json",
           "required": false,
           "system": false
         }

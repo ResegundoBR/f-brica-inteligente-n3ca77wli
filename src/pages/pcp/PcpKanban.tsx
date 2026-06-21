@@ -11,49 +11,39 @@ import { AlertCircle, Layers, Columns, Clock, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { format, parseISO, differenceInDays, startOfDay } from 'date-fns'
-import { isSectorActiveForStage } from '@/lib/pcp-utils'
+import { formatDeadline } from '@/lib/pcp-utils'
+import { OutsourcingPanel } from './components/OutsourcingPanel'
 
 const MACRO_GROUPS = [
   {
     name: 'Suprimentos',
     color: 'bg-blue-100/50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300',
     borderColor: 'border-blue-200 dark:border-blue-800',
-    stages: [
-      'Separação no estoque fisico',
-      'Cotação',
-      'Compra',
-      'Retirada',
-      'Aguardar chegar',
-      'Entrega',
-    ],
+    stages: ['Separação', 'Cotação', 'Compra', 'Retirada', 'Aguardando'],
   },
   {
     name: 'Fabricação',
     color: 'bg-orange-100/50 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300',
     borderColor: 'border-orange-200 dark:border-orange-800',
-    stages: [
-      'Corte',
-      'Acabamento corte',
-      'Dobra',
-      'Calandra',
-      'Solda',
-      'Acabamento de solda',
-      'Furação',
-      'Rosca',
-      'Bases de concreto',
-    ],
+    stages: ['Corte', 'Dobra', 'Calandra', 'Solda', 'Acab. Solda', 'Furação', 'Rosca', 'Concreto'],
+  },
+  {
+    name: 'Terceirização',
+    color: 'bg-rose-100/50 dark:bg-rose-900/20 text-rose-800 dark:text-rose-300',
+    borderColor: 'border-rose-200 dark:border-rose-800',
+    stages: ['Terceirização'],
   },
   {
     name: 'Acabamento',
     color: 'bg-purple-100/50 dark:bg-purple-900/20 text-purple-800 dark:text-purple-300',
     borderColor: 'border-purple-200 dark:border-purple-800',
-    stages: ['Preparação (wash primer, primer e lixamento)', 'Pintura', 'Verniz', 'Retoques'],
+    stages: ['Preparação', 'Pintura', 'Verniz', 'Retoques'],
   },
   {
     name: 'Montagem',
     color: 'bg-green-100/50 dark:bg-green-900/20 text-green-800 dark:text-green-300',
     borderColor: 'border-green-200 dark:border-green-800',
-    stages: ['Montagem', 'Controle de qualidade'],
+    stages: ['Montagem', 'Qualidade'],
   },
   {
     name: 'Expedição',
@@ -79,6 +69,10 @@ export default function PcpKanban() {
       sort: '-created',
     })
     setOrders(res)
+    if (selectedOrder) {
+      const updated = res.find((o) => o.id === selectedOrder.id)
+      if (updated) setSelectedOrder(updated)
+    }
   }
 
   const fetchObservations = async () => {
@@ -161,7 +155,7 @@ export default function PcpKanban() {
           </div>
           <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-md">
             <Button
-              variant={viewMode === 'status' ? 'secondary' : 'ghost'}
+              variant={viewMode === 'status' ? 'default' : 'ghost'}
               size="sm"
               onClick={() => setViewMode('status')}
               className="gap-2"
@@ -169,7 +163,7 @@ export default function PcpKanban() {
               <Layers className="size-4" /> Por Status
             </Button>
             <Button
-              variant={viewMode === 'process' ? 'secondary' : 'ghost'}
+              variant={viewMode === 'process' ? 'default' : 'ghost'}
               size="sm"
               onClick={() => setViewMode('process')}
               className="gap-2"
@@ -240,7 +234,7 @@ export default function PcpKanban() {
             {MACRO_GROUPS.map((group) => (
               <div
                 key={group.name}
-                className={cn('flex flex-col border-r last:border-r-0', group.borderColor)}
+                className={cn('flex flex-col border-r last:border-r-0 min-h-0', group.borderColor)}
                 style={{ flexGrow: group.stages.length, flexBasis: 0, minWidth: 0 }}
               >
                 <div
@@ -260,9 +254,9 @@ export default function PcpKanban() {
                         key={stage}
                         onDragOver={(e) => e.preventDefault()}
                         onDrop={(e) => handleDropStage(e, stage)}
-                        className="flex-1 flex flex-col min-w-0"
+                        className="flex-1 flex flex-col min-w-0 min-h-0"
                       >
-                        <div className="h-32 w-full flex flex-col items-center justify-end pb-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+                        <div className="h-28 w-full flex flex-col items-center justify-end pb-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 shrink-0">
                           <div
                             className="rotate-180 text-[10px] leading-tight font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap overflow-hidden"
                             style={{ writingMode: 'vertical-rl' }}
@@ -270,7 +264,7 @@ export default function PcpKanban() {
                             {stage}
                           </div>
                         </div>
-                        <div className="flex-1 w-full p-0.5 md:p-1 overflow-y-auto overflow-x-hidden space-y-1 bg-white dark:bg-slate-950">
+                        <div className="flex-1 w-full p-0.5 md:p-1 overflow-y-auto overflow-x-hidden space-y-1 bg-white dark:bg-slate-950 min-h-0">
                           {stageOrders.map((order) => (
                             <CompactKanbanCard
                               key={order.id}
@@ -414,16 +408,7 @@ export default function PcpKanban() {
                           })(),
                         )}
                       >
-                        {(() => {
-                          if (selectedOrder.status === 'Concluído') return '-'
-                          const daysDiff = differenceInDays(
-                            startOfDay(parseISO(selectedOrder.delivery_date)),
-                            startOfDay(new Date()),
-                          )
-                          if (daysDiff < 0) return `${Math.abs(daysDiff)}d vencido`
-                          if (daysDiff === 0) return 'Vence hoje'
-                          return `Faltam ${daysDiff}d`
-                        })()}
+                        {formatDeadline(selectedOrder.delivery_date, selectedOrder.status)}
                       </span>
                     </span>
                   </div>
@@ -446,17 +431,11 @@ export default function PcpKanban() {
                   <span className="text-muted-foreground block text-xs mb-2">Observações</span>
                   <div className="space-y-3">
                     {(observations[selectedOrder.id] || []).length > 0 ? (
-                      (observations[selectedOrder.id] || []).map((obs) => {
-                        const highlighted = isSectorActiveForStage(obs.sector, selectedOrder.stage)
+                      (observations[selectedOrder.id] || []).map((obs: any) => {
                         return (
                           <div
                             key={obs.id}
-                            className={cn(
-                              'p-3 rounded-md text-sm border whitespace-pre-wrap',
-                              highlighted
-                                ? 'bg-yellow-200 border-yellow-500 text-yellow-950 dark:bg-yellow-900/60 dark:border-yellow-600 dark:text-yellow-100 font-medium'
-                                : 'bg-yellow-50 border-yellow-200 text-yellow-900 dark:bg-yellow-900/20 dark:border-yellow-800/50 dark:text-yellow-200/80',
-                            )}
+                            className="p-3 rounded-md text-sm border whitespace-pre-wrap bg-yellow-200 border-yellow-400 text-yellow-950 shadow-sm"
                           >
                             <span className="font-semibold block mb-1 opacity-80">
                               {obs.sector}
@@ -472,6 +451,8 @@ export default function PcpKanban() {
                     )}
                   </div>
                 </div>
+
+                <OutsourcingPanel op={selectedOrder} />
               </TabsContent>
               <TabsContent value="historico" className="flex-1 overflow-y-auto pt-4">
                 <OrderLogsList orderId={selectedOrder.id} />
@@ -566,39 +547,26 @@ function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
           <div className="flex items-center gap-1.5 flex-1 min-w-0">
             <Badge
               variant="outline"
-              className="text-[10px] h-5 px-1.5 bg-background whitespace-nowrap"
+              className="text-[10px] h-5 px-1.5 bg-background whitespace-nowrap flex gap-1 items-center"
             >
-              Qtd: {order.quantity}
-            </Badge>
-            {order.status !== 'Concluído' && (
+              <span>Qtd: {order.quantity}</span>
+              <span className="opacity-50">|</span>
               <span
                 className={cn(
-                  'text-[9px] font-semibold px-1 py-0.5 rounded truncate',
-                  (() => {
-                    const daysDiff = differenceInDays(
-                      startOfDay(parseISO(order.delivery_date)),
-                      startOfDay(new Date()),
-                    )
-                    if (daysDiff < 0)
-                      return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
-                    return 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-                  })(),
-                )}
-              >
-                {(() => {
-                  const daysDiff = differenceInDays(
+                  differenceInDays(
                     startOfDay(parseISO(order.delivery_date)),
                     startOfDay(new Date()),
-                  )
-                  if (daysDiff < 0) return `${Math.abs(daysDiff)}d vencido`
-                  if (daysDiff === 0) return 'Vence hoje'
-                  return `Faltam ${daysDiff}d`
-                })()}
+                  ) < 0 && order.status !== 'Concluído'
+                    ? 'text-red-500 font-bold'
+                    : '',
+                )}
+              >
+                {formatDeadline(order.delivery_date, order.status)}
               </span>
-            )}
+            </Badge>
           </div>
           <div
-            className="flex items-center gap-1 text-[10px] font-medium text-slate-500 bg-slate-200/50 dark:bg-slate-800 rounded px-1.5 py-0.5"
+            className="flex items-center gap-1 text-[10px] font-medium text-slate-500 bg-slate-200/50 dark:bg-slate-800 rounded px-1.5 py-0.5 shrink-0"
             title="Tempo neste estágio"
           >
             <Clock className="size-3" /> {time}
@@ -634,14 +602,7 @@ function CompactKanbanCard({ order, observations = [], onDragStart, onClick }: a
     startOfDay(new Date()),
   )
   const isOverdue = order.status !== 'Concluído' && daysDiff < 0
-  const deadlineText =
-    order.status === 'Concluído'
-      ? '-'
-      : daysDiff < 0
-        ? `${Math.abs(daysDiff)}d vencido`
-        : daysDiff === 0
-          ? 'Vence hoje'
-          : `Faltam ${daysDiff}d`
+  const deadlineText = formatDeadline(order.delivery_date, order.status)
 
   const titleText = `${order.order_number}\n${order.op_type}\n${prodName}\nQtd: ${order.quantity} | ${deadlineText}`
 

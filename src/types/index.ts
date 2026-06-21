@@ -117,6 +117,7 @@ export interface PcpOrder {
   manual_product_name?: string
   observations?: string
   observation_sector?: string
+  outsourcing_data?: OutsourcingData[]
   created: string
   updated: string
   expand?: any
@@ -218,6 +219,12 @@ export interface Client {
   updated: string
 }
 
+export interface OutsourcingData {
+  supplier: string
+  service: string
+  expected_date: string
+}
+
 export interface PcpOrder {
   id: string
   order_number: string
@@ -228,34 +235,33 @@ export interface PcpOrder {
   is_special: boolean
   status: 'Fila' | 'Em Andamento' | 'Parado' | 'Concluído'
   stage:
-    | 'Separação no estoque fisico'
-    | 'Levantamento de faltas (Comprado fora)'
-    | 'Levantamento de faltas (Fabricado internamente)'
+    | 'Separação'
     | 'Cotação'
     | 'Compra'
     | 'Retirada'
-    | 'Aguardar chegar'
-    | 'Entrega'
+    | 'Aguardando'
     | 'Corte'
-    | 'Acabamento corte'
     | 'Dobra'
     | 'Calandra'
     | 'Solda'
-    | 'Acabamento de solda'
+    | 'Acab. Solda'
     | 'Furação'
     | 'Rosca'
-    | 'Bases de concreto'
-    | 'Preparação (wash primer, primer e lixamento)'
+    | 'Concreto'
+    | 'Terceirização'
+    | 'Preparação'
     | 'Pintura'
     | 'Verniz'
     | 'Retoques'
     | 'Montagem'
-    | 'Testes (Montagem)'
-    | 'Controle de qualidade'
-    | 'Testes (Expedição)'
-    | 'Fotos'
+    | 'Qualidade'
     | 'Embalagem'
+    | 'Suprimentos'
+    | 'Fabricação'
+    | 'Acabamento'
+    | 'Expedição'
   annex?: string
+  outsourcing_data?: OutsourcingData[]
   bottleneck_reason: 'Nenhum' | 'Falta de Material' | 'Dúvida Técnica' | 'Sobrecarga'
   bottleneck_details?: string
   observations?: string

@@ -16,6 +16,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { format, parseISO, isBefore, startOfDay, differenceInDays } from 'date-fns'
 import { Paperclip, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { formatDeadline } from '@/lib/pcp-utils'
 import { PcpOrderForm } from './components/PcpOrderForm'
 import { PcpOrderDetails } from './components/PcpOrderDetails'
 
@@ -244,17 +245,7 @@ export default function PcpOrders() {
                             isOpDelayed(op) ? 'text-red-500' : 'text-slate-600 dark:text-slate-400',
                           )}
                         >
-                          {(() => {
-                            if (op.status === 'Concluído') return '-'
-                            const daysDiff = differenceInDays(
-                              startOfDay(parseISO(op.delivery_date)),
-                              today,
-                            )
-                            if (daysDiff < 0)
-                              return `${Math.abs(daysDiff)} dia${Math.abs(daysDiff) === 1 ? '' : 's'} vencido`
-                            if (daysDiff === 0) return 'Vence hoje'
-                            return `Falta${daysDiff === 1 ? '' : 'm'} ${daysDiff} dia${daysDiff === 1 ? '' : 's'}`
-                          })()}
+                          {formatDeadline(op.delivery_date, op.status)}
                         </span>
                       </TableCell>
                     </TableRow>

@@ -11,7 +11,7 @@ import { format, parseISO, isBefore, startOfDay } from 'date-fns'
 import { Paperclip, AlertCircle } from 'lucide-react'
 import pb from '@/lib/pocketbase/client'
 import { cn } from '@/lib/utils'
-import { isSectorActiveForStage } from '@/lib/pcp-utils'
+import { OutsourcingPanel } from './OutsourcingPanel'
 
 export function PcpOrderDetails({
   op,
@@ -95,16 +95,10 @@ export function PcpOrderDetails({
                         <h4 className="font-semibold text-sm mb-2 opacity-80">{sector}</h4>
                         <div className="space-y-2">
                           {obsList.map((obs) => {
-                            const highlighted = isSectorActiveForStage(obs.sector, op.stage)
                             return (
                               <div
                                 key={obs.id}
-                                className={cn(
-                                  'p-3 rounded-md text-sm border whitespace-pre-wrap',
-                                  highlighted
-                                    ? 'bg-yellow-200 border-yellow-500 text-yellow-950 dark:bg-yellow-900/60 dark:border-yellow-600 dark:text-yellow-100 font-medium'
-                                    : 'bg-yellow-50 border-yellow-200 text-yellow-900 dark:bg-yellow-900/20 dark:border-yellow-800/50 dark:text-yellow-200/80',
-                                )}
+                                className="p-3 rounded-md text-sm border whitespace-pre-wrap bg-yellow-200 border-yellow-400 text-yellow-950 shadow-sm"
                               >
                                 {obs.content}
                               </div>
@@ -118,6 +112,8 @@ export function PcpOrderDetails({
                   )}
                 </div>
               </div>
+
+              <OutsourcingPanel op={op} />
 
               {op.annex && (
                 <div className="col-span-2">

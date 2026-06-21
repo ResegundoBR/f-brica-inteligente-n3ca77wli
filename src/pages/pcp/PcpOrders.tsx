@@ -3,7 +3,90 @@ import pb from '@/lib/pocketbase/client'
 import { PcpOrder, Product, Client } from '@/types'
 import { useRealtime } from '@/hooks/use-realtime'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Input as OriginalInput } from '@/components/ui/input'
+
+const Input = (props: any) => {
+  const isOpInput =
+    props.placeholder?.toLowerCase().includes('op') ||
+    props.placeholder?.toLowerCase().includes('pedido') ||
+    (typeof props.value === 'string' && props.value.includes('///')) ||
+    props.id === 'order-number' ||
+    props.name === 'order_number'
+
+  const shouldInject = isOpInput && props.id !== 'injected-op' && props.id !== 'injected-ped'
+
+  useEffect(() => {
+    if (shouldInject) {
+      const el = document.getElementById('injected-op-container')
+      if (el && el.parentElement) {
+        const label = el.parentElement.querySelector('label')
+        if (
+          label &&
+          (label.textContent?.toLowerCase().includes('op') ||
+            label.textContent?.toLowerCase().includes('pedido') ||
+            label.textContent?.toLowerCase().includes('identificação'))
+        ) {
+          label.style.display = 'none'
+        }
+      }
+    }
+  }, [shouldInject])
+
+  useEffect(() => {
+    if (
+      shouldInject &&
+      props.value &&
+      typeof props.value === 'string' &&
+      !props.value.includes('///')
+    ) {
+      if (typeof window !== 'undefined') {
+        const selectedOp = (window as any).__selectedOp
+        if (selectedOp && selectedOp.order_number === props.value && selectedOp.op_number) {
+          const newVal = `${selectedOp.order_number}///${selectedOp.op_number}`
+          if (props.onChange) {
+            props.onChange({ target: { value: newVal } })
+          }
+        }
+      }
+    }
+  }, [shouldInject, props.value])
+
+  if (shouldInject) {
+    const pedVal = typeof props.value === 'string' ? props.value.split('///')[0] : ''
+    const opVal = typeof props.value === 'string' ? props.value.split('///')[1] || '' : ''
+
+    return (
+      <div id="injected-op-container" className="grid grid-cols-2 gap-4 w-full">
+        <div className="grid gap-2">
+          <label className="text-sm font-medium leading-none">Nº do Pedido</label>
+          <OriginalInput
+            {...props}
+            id="injected-ped"
+            placeholder="Ex: PED-2024-001"
+            onChange={(e) => {
+              const op = (document.getElementById('injected-op') as HTMLInputElement)?.value || ''
+              props.onChange?.({ target: { value: `${e.target.value}///${op}` } })
+            }}
+            value={pedVal}
+          />
+        </div>
+        <div className="grid gap-2">
+          <label className="text-sm font-medium leading-none">Nº da OP</label>
+          <OriginalInput
+            id="injected-op"
+            placeholder="Ex: OP-001"
+            value={opVal}
+            onChange={(e) => {
+              const ped = (document.getElementById('injected-ped') as HTMLInputElement)?.value || ''
+              props.onChange?.({ target: { value: `${ped}///${e.target.value}` } })
+            }}
+          />
+        </div>
+      </div>
+    )
+  }
+  return <OriginalInput {...props} />
+}
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
@@ -51,6 +134,9 @@ export default function PcpOrders() {
   const [isOpen, setIsOpen] = useState(false)
   const [isClientModalOpen, setIsClientModalOpen] = useState(false)
   const [selectedOp, setSelectedOp] = useState<PcpOrder | null>(null)
+  if (typeof window !== 'undefined') {
+    ;(window as any).__selectedOp = selectedOp
+  }
   const [newClientName, setNewClientName] = useState('')
   const { toast } = useToast()
 

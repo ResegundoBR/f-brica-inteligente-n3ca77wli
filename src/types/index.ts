@@ -96,6 +96,32 @@ export interface RevisionHistoryModel {
   expand?: { user_id?: User }
 }
 
+export interface PcpOrder {
+  id: string
+  order_number: string
+  op_number?: string
+  client_name: string
+  product_id?: string
+  status: string
+  stage: string
+  annex?: string
+  bottleneck_reason?: string
+  delivery_date: string
+  started_at?: string
+  finished_at?: string
+  operator_id?: string
+  client_id: string
+  quantity: number | string
+  bottleneck_details?: string
+  op_type: string
+  manual_product_name?: string
+  observations?: string
+  observation_sector?: string
+  created: string
+  updated: string
+  expand?: any
+}
+
 export interface RevisionNoteModel {
   id: string
   revision_point_id: string

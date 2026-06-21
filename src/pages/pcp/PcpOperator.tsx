@@ -617,6 +617,7 @@ export default function PcpOperator() {
             quantity: item.quantity,
             sector: selectedSector,
             status: 'Pendente',
+            requested_by: user?.id,
           })
         }
       }
@@ -650,6 +651,7 @@ export default function PcpOperator() {
         order_id: reqOrderId === 'none' ? '' : reqOrderId,
         sector: selectedSector,
         status: 'Pendente',
+        requested_by: user?.id,
       })
       toast({ title: 'Solicitação enviada com sucesso!' })
       setOpenRequest(false)

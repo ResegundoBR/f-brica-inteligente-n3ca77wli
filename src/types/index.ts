@@ -304,9 +304,13 @@ export interface MaterialShortage {
   observation?: string
   priority?: 'Sem pressa' | 'Próximos dias' | 'Urgente'
   request_type?: 'Ferramentas' | 'Materiais' | 'Produtos' | 'Insumos'
+  requested_by?: string
+  unit_price?: number
+  purchase_date?: string
   created: string
   updated: string
   expand?: {
     order_id?: PcpOrder
+    requested_by?: User
   }
 }

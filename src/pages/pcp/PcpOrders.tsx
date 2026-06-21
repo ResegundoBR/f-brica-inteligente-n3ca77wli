@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { format, parseISO, isBefore, startOfDay } from 'date-fns'
+import { format, parseISO, isBefore, startOfDay, differenceInDays } from 'date-fns'
 import { Paperclip, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PcpOrderForm } from './components/PcpOrderForm'
@@ -115,7 +115,7 @@ export default function PcpOrders() {
 
   const today = startOfDay(new Date())
   const isOpDelayed = (op: PcpOrder) =>
-    op.status !== 'Concluído' && isBefore(parseISO(op.delivery_date), today)
+    op.status !== 'Concluído' && isBefore(startOfDay(parseISO(op.delivery_date)), today)
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -142,7 +142,7 @@ export default function PcpOrders() {
               <TableHead>Qtd</TableHead>
               <TableHead>Data de Entrega</TableHead>
               <TableHead>Status / Etapa</TableHead>
-              <TableHead>Anexo</TableHead>
+              <TableHead>Prazo</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -238,17 +238,24 @@ export default function PcpOrders() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        {op.annex && (
-                          <a
-                            href={pb.files.getURL(op, op.annex)}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-blue-500 hover:underline flex items-center"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <Paperclip className="mr-1 size-4" /> Ver
-                          </a>
-                        )}
+                        <span
+                          className={cn(
+                            'text-sm font-medium whitespace-nowrap',
+                            isOpDelayed(op) ? 'text-red-500' : 'text-slate-600 dark:text-slate-400',
+                          )}
+                        >
+                          {(() => {
+                            if (op.status === 'Concluído') return '-'
+                            const daysDiff = differenceInDays(
+                              startOfDay(parseISO(op.delivery_date)),
+                              today,
+                            )
+                            if (daysDiff < 0)
+                              return `${Math.abs(daysDiff)} dia${Math.abs(daysDiff) === 1 ? '' : 's'} vencido`
+                            if (daysDiff === 0) return 'Vence hoje'
+                            return `Falta${daysDiff === 1 ? '' : 'm'} ${daysDiff} dia${daysDiff === 1 ? '' : 's'}`
+                          })()}
+                        </span>
                       </TableCell>
                     </TableRow>
                   ))}

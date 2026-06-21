@@ -24,7 +24,7 @@ export function PcpOrderDetails({
 }) {
   const today = startOfDay(new Date())
   const isDelayed = op
-    ? op.status !== 'Concluído' && isBefore(parseISO(op.delivery_date), today)
+    ? op.status !== 'Concluído' && isBefore(startOfDay(parseISO(op.delivery_date)), today)
     : false
 
   const obsBySector = observations.reduce(
@@ -102,8 +102,8 @@ export function PcpOrderDetails({
                                 className={cn(
                                   'p-3 rounded-md text-sm border whitespace-pre-wrap',
                                   highlighted
-                                    ? 'bg-yellow-100 border-yellow-400 text-yellow-900 dark:bg-yellow-900/40 dark:border-yellow-600 dark:text-yellow-200 font-medium'
-                                    : 'bg-muted text-foreground border-transparent',
+                                    ? 'bg-yellow-200 border-yellow-500 text-yellow-950 dark:bg-yellow-900/60 dark:border-yellow-600 dark:text-yellow-100 font-medium'
+                                    : 'bg-yellow-50 border-yellow-200 text-yellow-900 dark:bg-yellow-900/20 dark:border-yellow-800/50 dark:text-yellow-200/80',
                                 )}
                               >
                                 {obs.content}

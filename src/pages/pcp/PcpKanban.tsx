@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AlertCircle, Layers, Columns, Clock, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
-import { format, parseISO } from 'date-fns'
+import { format, parseISO, differenceInDays, startOfDay } from 'date-fns'
 import { isSectorActiveForStage } from '@/lib/pcp-utils'
 
 const MACRO_GROUPS = [
@@ -252,7 +252,7 @@ export default function PcpKanban() {
                 >
                   {group.name}
                 </div>
-                <div className="flex flex-1 divide-x divide-slate-100 dark:divide-slate-800">
+                <div className="flex flex-1 min-h-0 divide-x divide-slate-100 dark:divide-slate-800">
                   {group.stages.map((stage) => {
                     const stageOrders = filteredOrders.filter((o) => o.stage === stage)
                     return (
@@ -395,8 +395,37 @@ export default function PcpKanban() {
                     </span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground block text-xs">Quantidade</span>
-                    <span className="font-medium">{selectedOrder.quantity}</span>
+                    <span className="text-muted-foreground block text-xs">Quantidade e Prazo</span>
+                    <span className="font-medium flex items-center gap-2">
+                      {selectedOrder.quantity}
+                      <span
+                        className={cn(
+                          'text-xs font-semibold px-1.5 py-0.5 rounded',
+                          (() => {
+                            if (selectedOrder.status === 'Concluído')
+                              return 'bg-slate-100 text-slate-600'
+                            const daysDiff = differenceInDays(
+                              startOfDay(parseISO(selectedOrder.delivery_date)),
+                              startOfDay(new Date()),
+                            )
+                            if (daysDiff < 0)
+                              return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                            return 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                          })(),
+                        )}
+                      >
+                        {(() => {
+                          if (selectedOrder.status === 'Concluído') return '-'
+                          const daysDiff = differenceInDays(
+                            startOfDay(parseISO(selectedOrder.delivery_date)),
+                            startOfDay(new Date()),
+                          )
+                          if (daysDiff < 0) return `${Math.abs(daysDiff)}d vencido`
+                          if (daysDiff === 0) return 'Vence hoje'
+                          return `Faltam ${daysDiff}d`
+                        })()}
+                      </span>
+                    </span>
                   </div>
                   <div>
                     <span className="text-muted-foreground block text-xs">Status Atual</span>
@@ -425,8 +454,8 @@ export default function PcpKanban() {
                             className={cn(
                               'p-3 rounded-md text-sm border whitespace-pre-wrap',
                               highlighted
-                                ? 'bg-yellow-100 border-yellow-400 text-yellow-900 dark:bg-yellow-900/40 dark:border-yellow-600 dark:text-yellow-200 font-medium'
-                                : 'bg-muted text-foreground border-transparent',
+                                ? 'bg-yellow-200 border-yellow-500 text-yellow-950 dark:bg-yellow-900/60 dark:border-yellow-600 dark:text-yellow-100 font-medium'
+                                : 'bg-yellow-50 border-yellow-200 text-yellow-900 dark:bg-yellow-900/20 dark:border-yellow-800/50 dark:text-yellow-200/80',
                             )}
                           >
                             <span className="font-semibold block mb-1 opacity-80">
@@ -533,10 +562,41 @@ function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
             ))}
           </div>
         )}
-        <div className="flex items-center justify-between mt-2 pt-2 border-t">
-          <Badge variant="outline" className="text-[10px] h-5 px-1.5 bg-background">
-            Qtd: {order.quantity}
-          </Badge>
+        <div className="flex items-center justify-between mt-2 pt-2 border-t gap-2">
+          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+            <Badge
+              variant="outline"
+              className="text-[10px] h-5 px-1.5 bg-background whitespace-nowrap"
+            >
+              Qtd: {order.quantity}
+            </Badge>
+            {order.status !== 'Concluído' && (
+              <span
+                className={cn(
+                  'text-[9px] font-semibold px-1 py-0.5 rounded truncate',
+                  (() => {
+                    const daysDiff = differenceInDays(
+                      startOfDay(parseISO(order.delivery_date)),
+                      startOfDay(new Date()),
+                    )
+                    if (daysDiff < 0)
+                      return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                    return 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                  })(),
+                )}
+              >
+                {(() => {
+                  const daysDiff = differenceInDays(
+                    startOfDay(parseISO(order.delivery_date)),
+                    startOfDay(new Date()),
+                  )
+                  if (daysDiff < 0) return `${Math.abs(daysDiff)}d vencido`
+                  if (daysDiff === 0) return 'Vence hoje'
+                  return `Faltam ${daysDiff}d`
+                })()}
+              </span>
+            )}
+          </div>
           <div
             className="flex items-center gap-1 text-[10px] font-medium text-slate-500 bg-slate-200/50 dark:bg-slate-800 rounded px-1.5 py-0.5"
             title="Tempo neste estágio"
@@ -569,7 +629,21 @@ function CompactKanbanCard({ order, observations = [], onDragStart, onClick }: a
         ? 'Produto Especial'
         : order.expand?.product_id?.name || 'S/Produto'
 
-  const titleText = `${order.order_number}\n${order.op_type}\n${prodName}\nQtd: ${order.quantity}`
+  const daysDiff = differenceInDays(
+    startOfDay(parseISO(order.delivery_date)),
+    startOfDay(new Date()),
+  )
+  const isOverdue = order.status !== 'Concluído' && daysDiff < 0
+  const deadlineText =
+    order.status === 'Concluído'
+      ? '-'
+      : daysDiff < 0
+        ? `${Math.abs(daysDiff)}d vencido`
+        : daysDiff === 0
+          ? 'Vence hoje'
+          : `Faltam ${daysDiff}d`
+
+  const titleText = `${order.order_number}\n${order.op_type}\n${prodName}\nQtd: ${order.quantity} | ${deadlineText}`
 
   return (
     <div
@@ -582,8 +656,22 @@ function CompactKanbanCard({ order, observations = [], onDragStart, onClick }: a
         bgClass,
       )}
     >
-      <span className="block truncate w-full">{order.order_number}</span>
-      <span className="block truncate w-full font-normal opacity-90 text-[7px]">{prodName}</span>
+      <div className="flex items-center justify-between w-full gap-1">
+        <span className="block truncate flex-1 text-left">{order.order_number}</span>
+        {order.status !== 'Concluído' && (
+          <span
+            className={cn(
+              'text-[6px] px-0.5 rounded-sm whitespace-nowrap shrink-0 leading-tight',
+              isOverdue ? 'bg-red-600 text-white' : 'bg-white/20 text-white',
+            )}
+          >
+            {deadlineText}
+          </span>
+        )}
+      </div>
+      <span className="block truncate w-full font-normal opacity-90 text-[7px] text-left">
+        {prodName}
+      </span>
       {observations.length > 0 && (
         <div className="flex flex-col items-start text-left w-full gap-0.5 mt-0.5 border-t border-black/10 dark:border-white/10 pt-0.5">
           {observations.map((obs: any) => (

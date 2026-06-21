@@ -1,66 +1,52 @@
 // @deps
-onRecordAfterUpdateSuccess((e) => {
+onRecordUpdateRequest((e) => {
   const original = e.record.original()
-  const current = e.record
+  const originalStatus = original.getString('status')
+  const originalStage = original.getString('stage')
 
-  if (
-    original.getString('status') !== current.getString('status') ||
-    original.getString('stage') !== current.getString('stage')
-  ) {
+  e.next()
+
+  const currentStatus = e.record.getString('status')
+  const currentStage = e.record.getString('stage')
+
+  if (originalStatus !== currentStatus || originalStage !== currentStage) {
     const log = new Record($app.findCollectionByNameOrId('pcp_order_logs'))
-    log.set('order_id', current.id)
+    log.set('order_id', e.record.id)
 
-    let userId = null
-    try {
-      const auth = e.requestInfo().auth
-      if (auth) userId = auth.id
-    } catch (_) {}
-
-    log.set('user_id', userId)
-    log.set('stage', current.getString('stage'))
+    log.set('user_id', e.auth?.id || null)
+    log.set('stage', currentStage)
 
     let action = ''
     let details = ''
 
-    if (original.getString('status') !== 'Parado' && current.getString('status') === 'Parado') {
+    if (originalStatus !== 'Parado' && currentStatus === 'Parado') {
       action = 'Pausa na Produção (Parado)'
-      const reason = current.getString('bottleneck_reason') || 'Nenhum'
-      const detailStr = current.getString('bottleneck_details') || ''
+      const reason = e.record.getString('bottleneck_reason') || 'Nenhum'
+      const detailStr = e.record.getString('bottleneck_details') || ''
       details = JSON.stringify({ reason, details: detailStr })
-    } else if (
-      original.getString('status') === 'Parado' &&
-      current.getString('status') !== 'Parado'
-    ) {
+    } else if (originalStatus === 'Parado' && currentStatus !== 'Parado') {
       action = 'Retomada da Produção'
-    } else if (original.getString('stage') !== current.getString('stage')) {
-      action = `Avançou para ${current.getString('stage')}`
+    } else if (originalStage !== currentStage) {
+      action = `Avançou para ${currentStage}`
     } else {
-      action = `Status alterado para ${current.getString('status')}`
+      action = `Status alterado para ${currentStatus}`
     }
 
     log.set('action', action)
     log.set('details', details)
-    $app.save(log)
+    $app.saveNoValidate(log)
   }
-
-  e.next()
 }, 'pcp_orders')
 
-onRecordAfterCreateSuccess((e) => {
-  const current = e.record
-  const log = new Record($app.findCollectionByNameOrId('pcp_order_logs'))
-  log.set('order_id', current.id)
-
-  let userId = null
-  try {
-    const auth = e.requestInfo().auth
-    if (auth) userId = auth.id
-  } catch (_) {}
-
-  log.set('user_id', userId)
-  log.set('stage', current.getString('stage'))
-  log.set('action', `OP Criada na etapa ${current.getString('stage')}`)
-  log.set('details', '')
-  $app.save(log)
+onRecordCreateRequest((e) => {
   e.next()
+
+  const log = new Record($app.findCollectionByNameOrId('pcp_order_logs'))
+  log.set('order_id', e.record.id)
+
+  log.set('user_id', e.auth?.id || null)
+  log.set('stage', e.record.getString('stage'))
+  log.set('action', `OP Criada na etapa ${e.record.getString('stage')}`)
+  log.set('details', '')
+  $app.saveNoValidate(log)
 }, 'pcp_orders')

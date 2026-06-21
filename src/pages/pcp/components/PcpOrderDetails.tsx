@@ -8,10 +8,11 @@ import {
 } from '@/components/ui/sheet'
 import { Label } from '@/components/ui/label'
 import { format, parseISO, isBefore, startOfDay, isValid } from 'date-fns'
-import { Paperclip, AlertCircle } from 'lucide-react'
+import { Paperclip, AlertCircle, Clock } from 'lucide-react'
 import pb from '@/lib/pocketbase/client'
 import { cn } from '@/lib/utils'
 import { OutsourcingPanel } from './OutsourcingPanel'
+import { useState, useEffect } from 'react'
 
 export function PcpOrderDetails({
   op,
@@ -22,6 +23,23 @@ export function PcpOrderDetails({
   observations: PcpOrderObservation[]
   onClose: () => void
 }) {
+  const [logs, setLogs] = useState<any[]>([])
+
+  useEffect(() => {
+    if (op) {
+      pb.collection('pcp_order_logs')
+        .getFullList({
+          filter: `order_id="${op.id}"`,
+          sort: '-created',
+          expand: 'user_id',
+        })
+        .then(setLogs)
+        .catch(console.error)
+    } else {
+      setLogs([])
+    }
+  }, [op])
+
   const today = startOfDay(new Date())
   const deliveryDateObj = op?.delivery_date ? parseISO(op.delivery_date) : null
   const isValidDeliveryDate = deliveryDateObj && isValid(deliveryDateObj)
@@ -147,6 +165,38 @@ export function PcpOrderDetails({
                   ) : (
                     <p className="text-sm text-muted-foreground">Nenhuma observação cadastrada.</p>
                   )}
+                </div>
+
+                <div className="mt-8 space-y-4">
+                  <Label className="text-muted-foreground">Histórico de Movimentação</Label>
+                  <div className="space-y-3">
+                    {logs.map((log) => (
+                      <div
+                        key={log.id}
+                        className="text-sm p-3 border rounded-md bg-slate-50 dark:bg-slate-900/50"
+                      >
+                        <div className="flex justify-between items-start mb-1">
+                          <span className="font-semibold">{log.action}</span>
+                          <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">
+                            {log.created && isValid(new Date(log.created))
+                              ? format(new Date(log.created), 'dd/MM/yyyy HH:mm')
+                              : '-'}
+                          </span>
+                        </div>
+                        {log.stage && (
+                          <div className="text-xs text-muted-foreground">Etapa: {log.stage}</div>
+                        )}
+                        {log.expand?.user_id && (
+                          <div className="text-xs text-muted-foreground mt-1">
+                            Por: {log.expand.user_id.name || log.expand.user_id.email}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {logs.length === 0 && (
+                      <p className="text-sm text-muted-foreground">Nenhum histórico registrado.</p>
+                    )}
+                  </div>
                 </div>
               </div>
 

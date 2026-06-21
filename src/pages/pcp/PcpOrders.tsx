@@ -26,6 +26,9 @@ export default function PcpOrders() {
   const [clients, setClients] = useState<Client[]>([])
   const [observations, setObservations] = useState<Record<string, PcpOrderObservation[]>>({})
   const [isOpen, setIsOpen] = useState(false)
+  const [opTypeFilter, setOpTypeFilter] = useState('all')
+  const [clientFilter, setClientFilter] = useState('all')
+  const [deadlineFilter, setDeadlineFilter] = useState('all')
   const [selectedOp, setSelectedOp] = useState<PcpOrder | null>(null)
   const { toast } = useToast()
 
@@ -92,6 +95,13 @@ export default function PcpOrders() {
   useRealtime('pcp_order_observations', () => loadData())
 
   const groupedOrders = useMemo(() => {
+    const filteredByCustom = orders.filter((op) => {
+      if (opTypeFilter !== 'all' && op.op_type !== opTypeFilter) return false
+      if (clientFilter !== 'all' && op.client_id !== clientFilter) return false
+      if (!filterByDeadline(op.delivery_date, deadlineFilter)) return false
+      return true
+    })
+
     const groups: {
       order_number: string
       client_name: string
@@ -99,7 +109,7 @@ export default function PcpOrders() {
       items: PcpOrder[]
     }[] = []
     const map = new Map<string, PcpOrder[]>()
-    orders.forEach((op) => {
+    filteredByCustom.forEach((op) => {
       if (!map.has(op.order_number)) {
         map.set(op.order_number, [])
         groups.push({
@@ -132,18 +142,28 @@ export default function PcpOrders() {
 
   return (
     <div className="flex flex-col gap-4 p-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Ordens de Produção</h1>
           <p className="text-muted-foreground">Gerencie as OPs e integre documentos externos.</p>
         </div>
-        <PcpOrderForm
-          isOpen={isOpen}
-          onOpenChange={setIsOpen}
-          clients={clients}
-          products={products}
-          onSuccess={loadData}
-        />
+        <div className="flex items-center gap-4">
+          <PcpFilters
+            opType={opTypeFilter}
+            setOpType={setOpTypeFilter}
+            client={clientFilter}
+            setClient={setClientFilter}
+            deadline={deadlineFilter}
+            setDeadline={setDeadlineFilter}
+          />
+          <PcpOrderForm
+            isOpen={isOpen}
+            onOpenChange={setIsOpen}
+            clients={clients}
+            products={products}
+            onSuccess={loadData}
+          />
+        </div>
       </div>
 
       <div className="rounded-md border">

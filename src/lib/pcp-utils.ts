@@ -1,6 +1,17 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
-import { differenceInDays, startOfDay, parseISO } from 'date-fns'
+import {
+  differenceInDays,
+  startOfDay,
+  parseISO,
+  isSameDay,
+  addDays,
+  isWithinInterval,
+  isSameWeek,
+  addWeeks,
+  isBefore,
+  isValid,
+} from 'date-fns'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -15,6 +26,45 @@ export function formatDeadline(deliveryDateStr: string | undefined | null, statu
   if (daysDiff < 0) return `${Math.abs(daysDiff)} dia${Math.abs(daysDiff) === 1 ? '' : 's'} vencido`
   if (daysDiff === 0) return 'Vence hoje'
   return `${daysDiff} dia${daysDiff === 1 ? '' : 's'} restante${daysDiff === 1 ? '' : 's'}`
+}
+
+export function isOrderOverdue(
+  deliveryDateStr: string | undefined | null,
+  status: string,
+): boolean {
+  if (status === 'Concluído' || !deliveryDateStr) return false
+  const date = parseISO(deliveryDateStr)
+  if (isNaN(date.getTime())) return false
+  return isBefore(startOfDay(date), startOfDay(new Date()))
+}
+
+export function filterByDeadline(
+  deliveryDateStr: string | null | undefined,
+  filter: string,
+): boolean {
+  if (!filter || filter === 'all') return true
+  if (!deliveryDateStr) return false
+  const date = parseISO(deliveryDateStr)
+  if (!isValid(date)) return false
+
+  const today = startOfDay(new Date())
+
+  switch (filter) {
+    case 'hoje':
+      return isSameDay(date, today)
+    case 'amanha':
+      return isSameDay(date, addDays(today, 1))
+    case 'prox-3d':
+      return isWithinInterval(date, { start: today, end: addDays(today, 3) })
+    case 'esta-semana':
+      return isSameWeek(date, today, { weekStartsOn: 0 })
+    case 'prox-semana':
+      return isSameWeek(date, addWeeks(today, 1), { weekStartsOn: 0 })
+    case 'prox-15d':
+      return isWithinInterval(date, { start: today, end: addDays(today, 15) })
+    default:
+      return true
+  }
 }
 
 const fabricacaoStages = [

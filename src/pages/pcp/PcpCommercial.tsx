@@ -49,6 +49,9 @@ export default function PcpCommercial() {
   const [orders, setOrders] = useState<PcpOrder[]>([])
   const [observations, setObservations] = useState<Record<string, PcpOrderObservation[]>>({})
   const [search, setSearch] = useState('')
+  const [opTypeFilter, setOpTypeFilter] = useState('all')
+  const [clientFilter, setClientFilter] = useState('all')
+  const [deadlineFilter, setDeadlineFilter] = useState('all')
 
   const loadData = async () => {
     try {
@@ -89,6 +92,13 @@ export default function PcpCommercial() {
   )
 
   const groupedOrders = useMemo(() => {
+    const filteredByCustom = filteredOrders.filter((op) => {
+      if (opTypeFilter !== 'all' && op.op_type !== opTypeFilter) return false
+      if (clientFilter !== 'all' && op.client_id !== clientFilter) return false
+      if (!filterByDeadline(op.delivery_date, deadlineFilter)) return false
+      return true
+    })
+
     const groups: {
       order_number: string
       client_name: string
@@ -96,7 +106,7 @@ export default function PcpCommercial() {
       items: PcpOrder[]
     }[] = []
     const map = new Map<string, PcpOrder[]>()
-    filteredOrders.forEach((op) => {
+    filteredByCustom.forEach((op) => {
       if (!map.has(op.order_number)) {
         map.set(op.order_number, [])
         groups.push({
@@ -157,13 +167,23 @@ export default function PcpCommercial() {
         </p>
       </div>
 
-      <div className="relative max-w-sm">
-        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="Buscar por cliente ou OP..."
-          className="pl-8"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+      <div className="flex flex-col md:flex-row md:items-center gap-4">
+        <div className="relative w-full max-w-sm">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por cliente ou OP..."
+            className="pl-8"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <PcpFilters
+          opType={opTypeFilter}
+          setOpType={setOpTypeFilter}
+          client={clientFilter}
+          setClient={setClientFilter}
+          deadline={deadlineFilter}
+          setDeadline={setDeadlineFilter}
         />
       </div>
 
@@ -246,7 +266,12 @@ export default function PcpCommercial() {
                             )}
                           </div>
                         </TableCell>
-                        <TableCell className="py-1">
+                        <TableCell
+                          className={cn(
+                            'py-1',
+                            isOrderOverdue(op.delivery_date, op.status) && 'text-red-600 font-bold',
+                          )}
+                        >
                           {op.delivery_date && !isNaN(parseISO(op.delivery_date).getTime())
                             ? format(parseISO(op.delivery_date), 'dd/MM/yyyy')
                             : '-'}

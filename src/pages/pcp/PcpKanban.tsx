@@ -25,6 +25,8 @@ import { format, parseISO, differenceInDays, startOfDay } from 'date-fns'
 import { formatDeadline, isOrderOverdue, filterByDeadline } from '@/lib/pcp-utils'
 import { OutsourcingPanel } from './components/OutsourcingPanel'
 import { PcpFilters } from './components/PcpFilters'
+import { Link } from 'react-router-dom'
+import { Package } from 'lucide-react'
 
 const MACRO_GROUPS = [
   {
@@ -273,6 +275,15 @@ export default function PcpKanban() {
             deadline={deadlineFilter}
             setDeadline={setDeadlineFilter}
           />
+          <Link to="/pcp/materiais">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2 h-8 text-xs bg-white dark:bg-slate-900 border-dashed"
+            >
+              <Package className="size-3.5" /> Suprimentos
+            </Button>
+          </Link>
           <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-md shadow-inner">
             <Button
               variant={viewMode === 'status' ? 'default' : 'ghost'}

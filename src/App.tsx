@@ -14,6 +14,7 @@ import AdminStatuses from './pages/admin/AdminStatuses'
 import AdminLogs from './pages/admin/AdminLogs'
 import PcpKanban from './pages/pcp/PcpKanban'
 import PcpOrders from './pages/pcp/PcpOrders'
+import PcpMaterials from './pages/pcp/PcpMaterials'
 import PcpClients from './pages/pcp/PcpClients'
 import PcpOperator from './pages/pcp/PcpOperator'
 import PcpCommercial from './pages/pcp/PcpCommercial'
@@ -113,6 +114,7 @@ const App = () => (
               <Route path="/pcp/ordens" element={<PcpOrders />} />
               <Route path="/pcp/clientes" element={<PcpClients />} />
               <Route path="/pcp/operador" element={<PcpOperator />} />
+              <Route path="/pcp/materiais" element={<PcpMaterials />} />
               <Route path="/pcp/comercial" element={<PcpCommercial />} />
               <Route path="/pcp/ocorrencias" element={<PcpOcorrencias />} />
               <Route path="/unauthorized" element={<Unauthorized />} />

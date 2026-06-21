@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-21T19:11:51.851Z",
+  "generatedAt": "2026-06-21T19:37:23.360Z",
   "collections": [
     {
       "name": "users",
@@ -1167,6 +1167,100 @@
         }
       ],
       "indexes": []
+    },
+    {
+      "name": "material_shortages",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "order_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "pcp_orders"
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "code",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "quantity",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "sector",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": [
+            "Pendente",
+            "Liberado_Estoque",
+            "Cotação",
+            "Compra",
+            "Recebido",
+            "Cancelado"
+          ]
+        },
+        {
+          "name": "supplier",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "expected_date",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "observation",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_material_shortages_order ON material_shortages (order_id)",
+        "CREATE INDEX idx_material_shortages_status ON material_shortages (status)"
+      ]
     }
   ]
 }

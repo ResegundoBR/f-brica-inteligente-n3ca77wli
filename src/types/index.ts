@@ -290,3 +290,21 @@ export interface PcpOrderObservation {
     order_id?: PcpOrder
   }
 }
+
+export interface MaterialShortage {
+  id: string
+  order_id: string
+  description: string
+  code: string
+  quantity: number
+  sector: string
+  status: 'Pendente' | 'Liberado_Estoque' | 'Cotação' | 'Compra' | 'Recebido' | 'Cancelado'
+  supplier?: string
+  expected_date?: string
+  observation?: string
+  created: string
+  updated: string
+  expand?: {
+    order_id?: PcpOrder
+  }
+}

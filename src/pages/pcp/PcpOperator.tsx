@@ -15,6 +15,8 @@ import {
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
+import { Trash, Plus } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -219,7 +221,7 @@ function OperatorCard({
   op: PcpOrder
   onStart: () => void
   onFinishConfirm: (nextStage: string | null) => void
-  onBottleneck: (reason: string, details: string) => void
+  onBottleneck: (reason: string, details: string, missingItems?: any[]) => void
 }) {
   const isLocked = op.bottleneck_reason && op.bottleneck_reason !== 'Nenhum'
   const isDelayed = op.delivery_date
@@ -240,17 +242,21 @@ function OperatorCard({
   const [openBottleneck, setOpenBottleneck] = useState(false)
   const [reason, setReason] = useState('')
   const [details, setDetails] = useState('')
+  const [missingItems, setMissingItems] = useState<
+    { description: string; code: string; quantity: number }[]
+  >([])
 
   const handleOpenBottleneckChange = (isOpen: boolean) => {
     setOpenBottleneck(isOpen)
     if (!isOpen) {
       setReason('')
       setDetails('')
+      setMissingItems([])
     }
   }
 
   const handleBottleneckSubmit = () => {
-    onBottleneck(reason, details)
+    onBottleneck(reason, details, missingItems)
     setOpenBottleneck(false)
   }
 
@@ -396,6 +402,76 @@ function OperatorCard({
                   <div className="bg-slate-100 dark:bg-slate-900 p-3 rounded-md text-sm font-medium">
                     Motivo: <span className="text-red-600 dark:text-red-400">{reason}</span>
                   </div>
+
+                  {reason === 'Falta de Material' && (
+                    <div className="space-y-3 border p-3 rounded-md bg-slate-50 dark:bg-slate-900">
+                      <Label className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                        Materiais Faltantes
+                      </Label>
+                      {missingItems.map((item, idx) => (
+                        <div key={idx} className="flex gap-2 items-center">
+                          <Input
+                            placeholder="Código"
+                            value={item.code}
+                            onChange={(e) => {
+                              const newItems = [...missingItems]
+                              newItems[idx].code = e.target.value
+                              setMissingItems(newItems)
+                            }}
+                            className="w-20 sm:w-24 text-xs h-9 bg-white dark:bg-slate-950"
+                          />
+                          <Input
+                            placeholder="Descrição do material"
+                            value={item.description}
+                            onChange={(e) => {
+                              const newItems = [...missingItems]
+                              newItems[idx].description = e.target.value
+                              setMissingItems(newItems)
+                            }}
+                            className="flex-1 text-xs h-9 bg-white dark:bg-slate-950"
+                          />
+                          <Input
+                            type="number"
+                            min="1"
+                            placeholder="Qtd"
+                            value={item.quantity || ''}
+                            onChange={(e) => {
+                              const newItems = [...missingItems]
+                              newItems[idx].quantity = Number(e.target.value)
+                              setMissingItems(newItems)
+                            }}
+                            className="w-16 sm:w-20 text-xs h-9 bg-white dark:bg-slate-950"
+                          />
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-9 w-9 text-red-500 hover:text-red-600 hover:bg-red-50 shrink-0"
+                            onClick={() => {
+                              const newItems = [...missingItems]
+                              newItems.splice(idx, 1)
+                              setMissingItems(newItems)
+                            }}
+                          >
+                            <Trash className="size-4" />
+                          </Button>
+                        </div>
+                      ))}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full text-xs border-dashed bg-white dark:bg-slate-950 hover:bg-slate-100 dark:hover:bg-slate-800"
+                        onClick={() =>
+                          setMissingItems([
+                            ...missingItems,
+                            { code: '', description: '', quantity: 1 },
+                          ])
+                        }
+                      >
+                        <Plus className="size-3 mr-1" /> Adicionar Material Faltante
+                      </Button>
+                    </div>
+                  )}
+
                   <div className="space-y-2">
                     <Label htmlFor="details" className="text-base">
                       Detalhes adicionais (opcional)
@@ -427,7 +503,7 @@ function OperatorCard({
             size="lg"
             variant="outline"
             className="w-full text-lg h-12 mt-2 font-bold border-2"
-            onClick={() => onBottleneck('Nenhum', '')}
+            onClick={() => onBottleneck('Nenhum', '', [])}
           >
             RESOLVER GARGALO
           </Button>
@@ -508,8 +584,27 @@ export default function PcpOperator() {
     }
   }
 
-  const handleBottleneck = async (op: PcpOrder, reason: string, details: string) => {
+  const handleBottleneck = async (
+    op: PcpOrder,
+    reason: string,
+    details: string,
+    missingItems?: any[],
+  ) => {
     try {
+      if (reason === 'Falta de Material' && missingItems && missingItems.length > 0) {
+        for (const item of missingItems) {
+          if (!item.description || !item.quantity) continue
+          await pb.collection('material_shortages').create({
+            order_id: op.id,
+            description: item.description,
+            code: item.code,
+            quantity: item.quantity,
+            sector: selectedSector,
+            status: 'Pendente',
+          })
+        }
+      }
+
       await pb.collection('pcp_orders').update(op.id, {
         status: reason === 'Nenhum' ? (op.started_at ? 'Em Andamento' : 'Fila') : 'Parado',
         bottleneck_reason: reason,
@@ -585,7 +680,9 @@ export default function PcpOperator() {
                   op={op}
                   onStart={() => handleStart(op)}
                   onFinishConfirm={(ns) => handleFinishConfirm(op, ns)}
-                  onBottleneck={(reason, details) => handleBottleneck(op, reason, details)}
+                  onBottleneck={(reason, details, items) =>
+                    handleBottleneck(op, reason, details, items)
+                  }
                 />
               ))
             )}
@@ -613,7 +710,9 @@ export default function PcpOperator() {
                   op={op}
                   onStart={() => handleStart(op)}
                   onFinishConfirm={(ns) => handleFinishConfirm(op, ns)}
-                  onBottleneck={(reason, details) => handleBottleneck(op, reason, details)}
+                  onBottleneck={(reason, details, items) =>
+                    handleBottleneck(op, reason, details, items)
+                  }
                 />
               ))
             )}

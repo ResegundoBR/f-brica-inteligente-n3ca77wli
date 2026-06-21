@@ -118,9 +118,15 @@ export default function PcpOrders() {
   const getOrderColor = (op: PcpOrder) => {
     if (op.status === 'Parado' || (op.bottleneck_reason && op.bottleneck_reason !== 'Nenhum'))
       return 'red'
-    const isDelayed =
-      op.status !== 'Concluído' && isBefore(startOfDay(parseISO(op.delivery_date)), today)
+
+    if (op.status === 'Concluído' || !op.delivery_date) return 'blue'
+
+    const date = parseISO(op.delivery_date)
+    if (isNaN(date.getTime())) return 'blue'
+
+    const isDelayed = isBefore(startOfDay(date), today)
     if (isDelayed) return 'purple'
+
     return 'blue'
   }
 
@@ -172,7 +178,7 @@ export default function PcpOrders() {
                           : 'bg-blue-600 text-white',
                     )}
                   >
-                    <TableCell colSpan={6} className="font-semibold text-sm py-2">
+                    <TableCell colSpan={6} className="font-semibold text-sm py-1">
                       <div className="flex items-center gap-4">
                         <span>Pedido: {group.order_number}</span>
                         <span className="opacity-50">|</span>
@@ -200,8 +206,8 @@ export default function PcpOrders() {
                       )}
                       onClick={() => setSelectedOp(op)}
                     >
-                      <TableCell className="py-2 pl-6 font-medium">{op.op_number || '-'}</TableCell>
-                      <TableCell className="py-2">
+                      <TableCell className="py-1 pl-6 font-medium">{op.op_number || '-'}</TableCell>
+                      <TableCell className="py-1">
                         <div className="flex flex-col items-start gap-1">
                           <span className="text-sm">
                             {op.op_type === 'Assistência'
@@ -228,10 +234,12 @@ export default function PcpOrders() {
                           )}
                         </div>
                       </TableCell>
-                      <TableCell className="py-2">{op.quantity}</TableCell>
-                      <TableCell className="py-2">
+                      <TableCell className="py-1">{op.quantity}</TableCell>
+                      <TableCell className="py-1">
                         <div className="flex items-center gap-2">
-                          {format(parseISO(op.delivery_date), 'dd/MM/yyyy')}
+                          {op.delivery_date && !isNaN(parseISO(op.delivery_date).getTime())
+                            ? format(parseISO(op.delivery_date), 'dd/MM/yyyy')
+                            : '-'}
                           {getOrderColor(op) === 'purple' && (
                             <Tooltip>
                               <TooltipTrigger asChild>
@@ -250,21 +258,19 @@ export default function PcpOrders() {
                           )}
                         </div>
                       </TableCell>
-                      <TableCell className="py-2">
+                      <TableCell className="py-1">
                         <div className="flex flex-col gap-1">
                           <span className="text-sm font-medium">{op.status}</span>
                           <span className="text-xs text-muted-foreground">{op.stage}</span>
                         </div>
                       </TableCell>
-                      <TableCell className="py-2">
+                      <TableCell className="py-1">
                         <span
                           className={cn(
                             'text-sm font-medium whitespace-nowrap',
                             getOrderColor(op) === 'purple'
                               ? 'text-purple-500'
-                              : getOrderColor(op) === 'red'
-                                ? 'text-red-600'
-                                : 'text-slate-600 dark:text-slate-400',
+                              : 'text-slate-600 dark:text-slate-400',
                           )}
                         >
                           {formatDeadline(op.delivery_date, op.status)}

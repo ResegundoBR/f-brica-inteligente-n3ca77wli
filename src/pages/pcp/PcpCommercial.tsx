@@ -17,7 +17,33 @@ import { format, parseISO, isAfter, startOfDay } from 'date-fns'
 import { Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-const STAGES = ['Corte', 'Montagem', 'Acabamento', 'Expedição']
+const STAGES = [
+  'Separação',
+  'Cotação',
+  'Compra',
+  'Retirada',
+  'Aguardando',
+  'Corte',
+  'Dobra',
+  'Calandra',
+  'Solda',
+  'Acab. Solda',
+  'Furação',
+  'Rosca',
+  'Concreto',
+  'Terceirização',
+  'Preparação',
+  'Pintura',
+  'Verniz',
+  'Retoques',
+  'Montagem',
+  'Qualidade',
+  'Embalagem',
+  'Suprimentos',
+  'Fabricação',
+  'Acabamento',
+  'Expedição',
+]
 
 export default function PcpCommercial() {
   const [orders, setOrders] = useState<PcpOrder[]>([])
@@ -86,7 +112,7 @@ export default function PcpCommercial() {
   }, [filteredOrders])
 
   const getStatusInfo = (op: PcpOrder) => {
-    if (op.bottleneck_reason !== 'Nenhum') {
+    if (op.bottleneck_reason && op.bottleneck_reason !== 'Nenhum') {
       return {
         label: 'Travado (Gargalo)',
         variant: 'destructive' as const,
@@ -97,7 +123,15 @@ export default function PcpCommercial() {
       return { label: 'Finalizado', variant: 'default' as const, className: 'bg-green-500' }
     }
 
-    const delivery = startOfDay(parseISO(op.delivery_date))
+    if (!op.delivery_date) {
+      return { label: 'Sem prazo', variant: 'secondary' as const, className: 'bg-slate-500' }
+    }
+    const date = parseISO(op.delivery_date)
+    if (isNaN(date.getTime())) {
+      return { label: 'Sem prazo', variant: 'secondary' as const, className: 'bg-slate-500' }
+    }
+
+    const delivery = startOfDay(date)
     const today = startOfDay(new Date())
 
     if (isAfter(today, delivery)) {
@@ -165,7 +199,7 @@ export default function PcpCommercial() {
                           : 'bg-blue-600 text-white',
                     )}
                   >
-                    <TableCell colSpan={6} className="font-semibold text-sm py-2">
+                    <TableCell colSpan={6} className="font-semibold text-sm py-1">
                       <div className="flex items-center gap-4">
                         <span>Pedido: {group.order_number}</span>
                         <span className="opacity-50">|</span>
@@ -183,10 +217,10 @@ export default function PcpCommercial() {
                     const statusInfo = getStatusInfo(op)
                     return (
                       <TableRow key={op.id}>
-                        <TableCell className="py-2 pl-6 font-semibold">
+                        <TableCell className="py-1 pl-6 font-semibold">
                           {op.op_number || '-'}
                         </TableCell>
-                        <TableCell className="py-2">
+                        <TableCell className="py-1">
                           <div className="flex flex-col items-start gap-1">
                             <span className="text-sm">
                               {op.op_type === 'Assistência'
@@ -212,10 +246,12 @@ export default function PcpCommercial() {
                             )}
                           </div>
                         </TableCell>
-                        <TableCell className="py-2">
-                          {format(parseISO(op.delivery_date), 'dd/MM/yyyy')}
+                        <TableCell className="py-1">
+                          {op.delivery_date && !isNaN(parseISO(op.delivery_date).getTime())
+                            ? format(parseISO(op.delivery_date), 'dd/MM/yyyy')
+                            : '-'}
                         </TableCell>
-                        <TableCell className="py-2">
+                        <TableCell className="py-1">
                           <div className="flex flex-col gap-2">
                             <Progress value={getProgress(op)} className="h-2" />
                             <span className="text-xs text-muted-foreground text-right">
@@ -223,10 +259,10 @@ export default function PcpCommercial() {
                             </span>
                           </div>
                         </TableCell>
-                        <TableCell className="py-2 font-medium">
+                        <TableCell className="py-1 font-medium">
                           {op.status === 'Concluído' ? '-' : op.stage}
                         </TableCell>
-                        <TableCell className="py-2">
+                        <TableCell className="py-1">
                           <Badge variant={statusInfo.variant} className={statusInfo.className}>
                             {' '}
                             {statusInfo.label}

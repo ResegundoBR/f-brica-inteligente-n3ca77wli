@@ -6,9 +6,12 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-export function formatDeadline(deliveryDateStr: string, status: string): string {
+export function formatDeadline(deliveryDateStr: string | undefined | null, status: string): string {
   if (status === 'Concluído') return '-'
-  const daysDiff = differenceInDays(startOfDay(parseISO(deliveryDateStr)), startOfDay(new Date()))
+  if (!deliveryDateStr) return '-'
+  const date = parseISO(deliveryDateStr)
+  if (isNaN(date.getTime())) return '-'
+  const daysDiff = differenceInDays(startOfDay(date), startOfDay(new Date()))
   if (daysDiff < 0) return `${Math.abs(daysDiff)} dia${Math.abs(daysDiff) === 1 ? '' : 's'} vencido`
   if (daysDiff === 0) return 'Vence hoje'
   return `${daysDiff} dia${daysDiff === 1 ? '' : 's'} restante${daysDiff === 1 ? '' : 's'}`

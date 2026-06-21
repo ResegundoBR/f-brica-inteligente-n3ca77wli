@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-21T21:55:22.037Z",
+  "generatedAt": "2026-06-21T22:13:44.099Z",
   "collections": [
     {
       "name": "users",
@@ -1214,7 +1214,7 @@
         {
           "name": "order_id",
           "type": "relation",
-          "required": true,
+          "required": false,
           "system": false,
           "collectionRef": "pcp_orders"
         },
@@ -1287,6 +1287,20 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "priority",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["Sem pressa", "Próximos dias", "Urgente"]
+        },
+        {
+          "name": "request_type",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["Ferramentas", "Materiais", "Produtos", "Insumos"]
         }
       ],
       "indexes": [

@@ -15,8 +15,17 @@ import {
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { MaterialShortage, PcpOrder } from '@/types'
-import { Package, CheckCircle, ShoppingCart, Truck } from 'lucide-react'
+import { Package, CheckCircle, ShoppingCart, Truck, AlertCircle } from 'lucide-react'
 import { format, isBefore, startOfDay } from 'date-fns'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
@@ -124,6 +133,7 @@ export default function PcpMaterials() {
       {
         description: string
         code: string
+        priority: string
         totalQuantity: number
         items: MaterialShortage[]
         status: string
@@ -132,11 +142,12 @@ export default function PcpMaterials() {
       }
     > = {}
     comprasItems.forEach((item) => {
-      const key = `${item.code}-${item.description}`
+      const key = `${item.code}-${item.description}-${item.priority || 'Sem pressa'}`
       if (!groups[key]) {
         groups[key] = {
           description: item.description,
           code: item.code,
+          priority: item.priority || 'Sem pressa',
           totalQuantity: 0,
           items: [],
           status: item.status,
@@ -190,7 +201,14 @@ export default function PcpMaterials() {
               {triagemItems.map((item) => (
                 <Card
                   key={item.id}
-                  className="border-l-4 border-l-yellow-500 bg-white dark:bg-slate-900 flex flex-col shadow-sm"
+                  className={cn(
+                    'border-l-4 flex flex-col shadow-sm bg-white dark:bg-slate-900',
+                    item.priority === 'Urgente'
+                      ? 'border-l-red-500'
+                      : item.priority === 'Próximos dias'
+                        ? 'border-l-yellow-500'
+                        : 'border-l-blue-500',
+                  )}
                 >
                   <div className="p-3 space-y-2 flex-1">
                     <div className="flex justify-between items-start gap-2">
@@ -198,9 +216,19 @@ export default function PcpMaterials() {
                         <h3 className="font-semibold leading-tight text-sm text-slate-800 dark:text-slate-200">
                           {item.description}
                         </h3>
-                        <p className="text-[11px] text-muted-foreground mt-0.5 font-medium">
-                          Cód: {item.code || '-'}
-                        </p>
+                        <div className="flex gap-2 items-center mt-1">
+                          <p className="text-[11px] text-muted-foreground font-medium">
+                            Cód: {item.code || '-'}
+                          </p>
+                          {item.priority && (
+                            <Badge
+                              variant={item.priority === 'Urgente' ? 'destructive' : 'secondary'}
+                              className="text-[9px] px-1 py-0 h-4"
+                            >
+                              {item.priority}
+                            </Badge>
+                          )}
+                        </div>
                       </div>
                       <Badge
                         variant="secondary"
@@ -210,21 +238,27 @@ export default function PcpMaterials() {
                       </Badge>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="grid grid-cols-2 gap-2 text-xs mt-2">
                       <div className="bg-slate-50 dark:bg-slate-800/50 p-1.5 rounded border border-slate-100 dark:border-slate-800">
-                        <span className="text-muted-foreground block text-[10px] uppercase font-bold tracking-wider">
-                          OP
+                        <span className="text-muted-foreground block text-[10px] uppercase font-bold tracking-wider mb-0.5">
+                          Origem
                         </span>
-                        <span className="font-semibold text-blue-600 dark:text-blue-400 truncate block">
-                          {item.expand?.order_id?.order_number || '-'}
-                        </span>
+                        {item.order_id && item.expand?.order_id?.order_number ? (
+                          <span className="font-semibold text-blue-600 dark:text-blue-400 truncate block">
+                            OP: {item.expand.order_id.order_number}
+                          </span>
+                        ) : (
+                          <span className="font-semibold text-indigo-600 dark:text-indigo-400 truncate block flex items-center gap-1">
+                            <AlertCircle className="size-3" /> Req. Geral
+                          </span>
+                        )}
                       </div>
                       <div className="bg-slate-50 dark:bg-slate-800/50 p-1.5 rounded border border-slate-100 dark:border-slate-800">
-                        <span className="text-muted-foreground block text-[10px] uppercase font-bold tracking-wider">
-                          Setor
+                        <span className="text-muted-foreground block text-[10px] uppercase font-bold tracking-wider mb-0.5">
+                          Setor/Tipo
                         </span>
                         <span className="font-medium text-slate-700 dark:text-slate-300 truncate block">
-                          {item.sector}
+                          {item.request_type || item.sector}
                         </span>
                       </div>
                     </div>
@@ -265,10 +299,23 @@ export default function PcpMaterials() {
               Nenhum material pendente de compra.
             </div>
           ) : (
-            <div className="flex flex-col gap-4">
-              {groupedCompras.map((group, idx) => (
-                <GroupedCompraCard key={idx} group={group} onUpdate={handleGroupUpdate} />
-              ))}
+            <div className="bg-white dark:bg-slate-900 rounded-lg border shadow-sm overflow-hidden">
+              <Table>
+                <TableHeader className="bg-slate-50 dark:bg-slate-800/50">
+                  <TableRow>
+                    <TableHead>Item / Descrição</TableHead>
+                    <TableHead>Prioridade</TableHead>
+                    <TableHead className="text-right">Qtd Total</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Previsão</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {groupedCompras.map((group, idx) => (
+                    <GroupRow key={idx} group={group} onUpdate={handleGroupUpdate} />
+                  ))}
+                </TableBody>
+              </Table>
             </div>
           )}
         </TabsContent>
@@ -408,18 +455,26 @@ export default function PcpMaterials() {
                     className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                   >
                     <div>
-                      <div className="font-bold text-base">
-                        {item.description}{' '}
-                        <span className="font-normal text-muted-foreground text-sm ml-1">
-                          ({item.code || '-'})
-                        </span>
+                      <div className="font-bold text-base flex items-center gap-2">
+                        {item.description}
+                        {item.priority && item.priority !== 'Sem pressa' && (
+                          <Badge
+                            variant={item.priority === 'Urgente' ? 'destructive' : 'secondary'}
+                            className="text-[10px] px-1.5 py-0"
+                          >
+                            {item.priority}
+                          </Badge>
+                        )}
                       </div>
                       <div className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                        OP:{' '}
+                        Origem:{' '}
                         <span className="font-medium text-slate-900 dark:text-slate-200">
-                          {item.expand?.order_id?.order_number}
+                          {item.order_id && item.expand?.order_id?.order_number
+                            ? `OP: ${item.expand.order_id.order_number}`
+                            : 'Requisição Geral'}
                         </span>{' '}
-                        | Qtd: {item.quantity} | Fornecedor: {item.supplier || '-'}
+                        | Cód: {item.code || '-'} | Qtd: {item.quantity} | Fornecedor:{' '}
+                        {item.supplier || '-'}
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-1 mt-2 sm:mt-0 shrink-0">
@@ -457,7 +512,71 @@ export default function PcpMaterials() {
   )
 }
 
-function GroupedCompraCard({ group, onUpdate }: { group: any; onUpdate: any }) {
+function GroupRow({ group, onUpdate }: { group: any; onUpdate: any }) {
+  const [open, setOpen] = useState(false)
+  const isCotação = group.status === 'Cotação'
+
+  return (
+    <>
+      <TableRow
+        onClick={() => setOpen(true)}
+        className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 group transition-colors"
+      >
+        <TableCell className="py-2.5">
+          <div className="font-semibold text-slate-900 dark:text-slate-100">
+            {group.description}
+          </div>
+          <div className="text-xs text-slate-500 mt-0.5">{group.code || 'Sem código'}</div>
+        </TableCell>
+        <TableCell className="py-2.5">
+          <Badge
+            variant={
+              group.priority === 'Urgente'
+                ? 'destructive'
+                : group.priority === 'Próximos dias'
+                  ? 'secondary'
+                  : 'outline'
+            }
+            className="text-[10px]"
+          >
+            {group.priority}
+          </Badge>
+        </TableCell>
+        <TableCell className="py-2.5 text-right font-black text-slate-700 dark:text-slate-300">
+          {group.totalQuantity}
+        </TableCell>
+        <TableCell className="py-2.5">
+          <Badge
+            variant="outline"
+            className={cn(
+              'border-transparent text-white',
+              isCotação ? 'bg-orange-500' : 'bg-blue-600',
+            )}
+          >
+            {group.status}
+          </Badge>
+        </TableCell>
+        <TableCell className="py-2.5 text-slate-600 dark:text-slate-400 text-sm">
+          {group.expected_date ? format(new Date(group.expected_date), 'dd/MM/yyyy') : '-'}
+        </TableCell>
+      </TableRow>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-[600px] p-0 overflow-hidden">
+          <GroupedCompraDetails
+            group={group}
+            onUpdate={(g: any, updates: any) => {
+              onUpdate(g, updates)
+              setOpen(false)
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
+function GroupedCompraDetails({ group, onUpdate }: { group: any; onUpdate: any }) {
   const [status, setStatus] = useState(group.status)
   const [supplier, setSupplier] = useState(group.supplier)
   const [expectedDate, setExpectedDate] = useState(
@@ -473,59 +592,60 @@ function GroupedCompraCard({ group, onUpdate }: { group: any; onUpdate: any }) {
   }
 
   return (
-    <Card className="overflow-hidden border bg-white dark:bg-slate-900 shadow-sm">
+    <div className="flex flex-col bg-white dark:bg-slate-900">
       <div className={cn('h-1.5 w-full', status === 'Cotação' ? 'bg-orange-400' : 'bg-blue-500')} />
-      <div className="flex flex-col md:flex-row">
-        {/* 60% Left Side - Main Info */}
-        <div className="p-3 md:p-4 w-full md:w-[55%] space-y-3 flex flex-col justify-between">
-          <div>
-            <div className="flex justify-between items-start gap-4">
-              <div>
-                <h3 className="text-base font-bold text-slate-800 dark:text-slate-200 leading-tight">
-                  {group.description}
-                </h3>
-                <p className="text-xs text-muted-foreground font-medium mt-0.5">
-                  Cód: {group.code || '-'}
-                </p>
-              </div>
-              <div className="bg-slate-100 dark:bg-slate-800/50 px-2 py-1 rounded border border-slate-200 dark:border-slate-700 text-center shrink-0">
-                <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-bold uppercase tracking-wider leading-none mb-0.5">
-                  Total
-                </span>
-                <span className="text-sm font-black text-blue-600 dark:text-blue-400 leading-none">
-                  {group.totalQuantity}
-                </span>
-              </div>
+      <DialogHeader className="px-6 pt-6 pb-2">
+        <DialogTitle className="text-xl font-bold">{group.description}</DialogTitle>
+        <div className="flex gap-2 items-center text-sm text-muted-foreground mt-1">
+          <span>Código: {group.code || '-'}</span>
+          <span>•</span>
+          <Badge
+            variant={group.priority === 'Urgente' ? 'destructive' : 'secondary'}
+            className="text-[10px]"
+          >
+            {group.priority}
+          </Badge>
+        </div>
+      </DialogHeader>
+
+      <div className="px-6 py-4 flex flex-col gap-6">
+        <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-100 dark:border-slate-800 flex justify-between items-center">
+          <div className="space-y-1">
+            <span className="text-xs uppercase font-bold text-slate-500 tracking-wider">
+              Quantidade Total
+            </span>
+            <div className="text-2xl font-black text-blue-600 dark:text-blue-400 leading-none">
+              {group.totalQuantity} <span className="text-sm font-semibold text-slate-500">un</span>
             </div>
           </div>
-
-          <div>
-            <span className="text-[10px] uppercase font-bold text-muted-foreground mb-1 block tracking-wider">
-              OPs Aguardando
+          <div className="text-right space-y-1">
+            <span className="text-xs uppercase font-bold text-slate-500 tracking-wider">
+              Origens
             </span>
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap justify-end gap-1.5 max-w-[200px]">
               {group.items.map((item: any) => (
                 <Badge
                   key={item.id}
                   variant="secondary"
-                  className="px-1.5 py-0.5 text-[11px] bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700"
+                  className="px-1.5 py-0.5 text-[10px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-sm"
                 >
-                  {item.expand?.order_id?.order_number}{' '}
-                  <span className="opacity-60 ml-1 font-normal">({item.quantity}un)</span>
+                  {item.order_id && item.expand?.order_id?.order_number
+                    ? `OP: ${item.expand.order_id.order_number}`
+                    : 'Geral'}
+                  <span className="opacity-60 ml-1">({item.quantity})</span>
                 </Badge>
               ))}
             </div>
           </div>
         </div>
 
-        {/* 40% Right Side - Status/Actions */}
-        <div className="p-3 md:p-4 w-full md:w-[45%] border-t md:border-t-0 md:border-l border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 space-y-3 flex flex-col justify-center">
+        <div className="grid gap-4 bg-slate-50/50 dark:bg-slate-900/50 p-4 rounded-lg border border-slate-100 dark:border-slate-800">
           <div className="space-y-1.5">
-            <Label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+            <Label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
               Fase da Compra
             </Label>
             <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger className="h-8 text-sm font-medium bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 shadow-sm">
+              <SelectTrigger className="h-10 bg-white dark:bg-slate-950">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -533,7 +653,7 @@ function GroupedCompraCard({ group, onUpdate }: { group: any; onUpdate: any }) {
                 <SelectItem value="Compra">Pedido Feito</SelectItem>
                 <SelectItem
                   value="Recebido"
-                  className="text-green-600 font-bold dark:text-green-400 focus:text-green-700 focus:bg-green-50 dark:focus:bg-green-900/30"
+                  className="text-green-600 font-bold focus:text-green-700 focus:bg-green-50 dark:text-green-400"
                 >
                   Marcar como Recebido
                 </SelectItem>
@@ -541,41 +661,45 @@ function GroupedCompraCard({ group, onUpdate }: { group: any; onUpdate: any }) {
             </Select>
           </div>
 
-          <div className="flex gap-2">
-            <div className="space-y-1.5 flex-1">
-              <Label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
                 Fornecedor
               </Label>
               <Input
                 value={supplier}
                 onChange={(e) => setSupplier(e.target.value)}
-                placeholder="Empresa..."
-                className="h-8 text-sm bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 shadow-sm px-2"
+                placeholder="Nome da empresa..."
+                className="h-10 bg-white dark:bg-slate-950"
               />
             </div>
 
-            <div className="space-y-1.5 flex-[0.8]">
-              <Label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
-                Previsão
+            <div className="space-y-1.5">
+              <Label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                Previsão de Entrega
               </Label>
               <Input
                 type="date"
                 value={expectedDate}
                 onChange={(e) => setExpectedDate(e.target.value)}
-                className="h-8 text-xs bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 shadow-sm px-2"
+                className="h-10 bg-white dark:bg-slate-950"
               />
             </div>
           </div>
-
-          <Button
-            className="w-full h-8 text-xs font-bold mt-1 shadow-sm"
-            onClick={handleSave}
-            variant={status === 'Recebido' ? 'default' : 'outline'}
-          >
-            {status === 'Recebido' ? 'Confirmar Recebimento' : 'Salvar Info'}
-          </Button>
         </div>
+
+        <Button
+          className={cn(
+            'w-full h-12 text-sm font-bold shadow-sm',
+            status === 'Recebido'
+              ? 'bg-green-600 hover:bg-green-700 text-white'
+              : 'bg-blue-600 hover:bg-blue-700 text-white',
+          )}
+          onClick={handleSave}
+        >
+          {status === 'Recebido' ? 'Confirmar Recebimento Total' : 'Salvar Informações da Compra'}
+        </Button>
       </div>
-    </Card>
+    </div>
   )
 }

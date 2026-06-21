@@ -293,7 +293,7 @@ export interface PcpOrderObservation {
 
 export interface MaterialShortage {
   id: string
-  order_id: string
+  order_id?: string
   description: string
   code: string
   quantity: number
@@ -302,6 +302,8 @@ export interface MaterialShortage {
   supplier?: string
   expected_date?: string
   observation?: string
+  priority?: 'Sem pressa' | 'Próximos dias' | 'Urgente'
+  request_type?: 'Ferramentas' | 'Materiais' | 'Produtos' | 'Insumos'
   created: string
   updated: string
   expand?: {

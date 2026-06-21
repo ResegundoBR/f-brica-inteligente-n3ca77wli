@@ -111,6 +111,14 @@ const App = () => (
                   </RoleGuard>
                 }
               />
+              <Route
+                path="/pcp/dashboard"
+                element={
+                  <RoleGuard module="pcp">
+                    <PcpDashboard />
+                  </RoleGuard>
+                }
+              />
               <Route path="/pcp/kanban" element={<PcpKanban />} />
               <Route path="/pcp/ordens" element={<PcpOrders />} />
               <Route path="/pcp/clientes" element={<PcpClients />} />

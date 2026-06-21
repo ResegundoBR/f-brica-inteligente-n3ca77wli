@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import pb from '@/lib/pocketbase/client'
 
 interface RoleGuardProps {
-  module: 'dashboard' | 'catalog' | 'learning' | 'users'
+  module: 'dashboard' | 'catalog' | 'learning' | 'users' | 'pcp'
   children: React.ReactNode
 }
 
@@ -68,6 +68,9 @@ export function RoleGuard({ module, children }: RoleGuardProps) {
           break
         case 'users':
           access = !!currentRole.access_users
+          break
+        case 'pcp':
+          access = !!currentRole.access_pcp
           break
       }
 

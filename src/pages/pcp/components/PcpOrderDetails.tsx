@@ -7,7 +7,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Label } from '@/components/ui/label'
-import { format, parseISO, isBefore, startOfDay } from 'date-fns'
+import { format, parseISO, isBefore, startOfDay, isValid } from 'date-fns'
 import { Paperclip, AlertCircle } from 'lucide-react'
 import pb from '@/lib/pocketbase/client'
 import { cn } from '@/lib/utils'
@@ -23,9 +23,13 @@ export function PcpOrderDetails({
   onClose: () => void
 }) {
   const today = startOfDay(new Date())
-  const isDelayed = op
-    ? op.status !== 'Concluído' && isBefore(startOfDay(parseISO(op.delivery_date)), today)
-    : false
+  const deliveryDateObj = op?.delivery_date ? parseISO(op.delivery_date) : null
+  const isValidDeliveryDate = deliveryDateObj && isValid(deliveryDateObj)
+
+  const isDelayed =
+    op && isValidDeliveryDate
+      ? op.status !== 'Concluído' && isBefore(startOfDay(deliveryDateObj), today)
+      : false
 
   const obsBySector = observations.reduce(
     (acc, obs) => {
@@ -101,7 +105,7 @@ export function PcpOrderDetails({
               <div>
                 <Label className="text-muted-foreground">Data de Entrega</Label>
                 <p className="font-medium text-sm mt-1 flex items-center gap-2">
-                  {format(parseISO(op.delivery_date), 'dd/MM/yyyy')}
+                  {isValidDeliveryDate ? format(deliveryDateObj, 'dd/MM/yyyy') : '-'}
                   {isDelayed && <span className="text-red-500 text-xs font-bold">(Atrasado)</span>}
                 </p>
               </div>
@@ -129,7 +133,9 @@ export function PcpOrderDetails({
                                 className="p-3 rounded-md text-sm border whitespace-pre-wrap bg-yellow-200 border-yellow-400 text-yellow-950 shadow-sm flex flex-col gap-1"
                               >
                                 <span className="text-[10px] opacity-70 font-semibold uppercase tracking-wider">
-                                  {format(new Date(obs.created), 'dd/MM/yyyy HH:mm')}
+                                  {obs.created && isValid(new Date(obs.created))
+                                    ? format(new Date(obs.created), 'dd/MM/yyyy HH:mm')
+                                    : '-'}
                                 </span>
                                 <span>{obs.content}</span>
                               </div>

@@ -126,9 +126,12 @@ export function PcpOrderDetails({
                             return (
                               <div
                                 key={obs.id}
-                                className="p-3 rounded-md text-sm border whitespace-pre-wrap bg-yellow-200 border-yellow-400 text-yellow-950 shadow-sm"
+                                className="p-3 rounded-md text-sm border whitespace-pre-wrap bg-yellow-200 border-yellow-400 text-yellow-950 shadow-sm flex flex-col gap-1"
                               >
-                                {obs.content}
+                                <span className="text-[10px] opacity-70 font-semibold uppercase tracking-wider">
+                                  {format(new Date(obs.created), 'dd/MM/yyyy HH:mm')}
+                                </span>
+                                <span>{obs.content}</span>
                               </div>
                             )
                           })}

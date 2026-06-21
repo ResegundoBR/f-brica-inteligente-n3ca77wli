@@ -165,7 +165,7 @@ export default function PcpCommercial() {
                           : 'bg-blue-600 text-white',
                     )}
                   >
-                    <TableCell colSpan={6} className="font-semibold text-sm py-3">
+                    <TableCell colSpan={6} className="font-semibold text-sm py-2">
                       <div className="flex items-center gap-4">
                         <span>Pedido: {group.order_number}</span>
                         <span className="opacity-50">|</span>
@@ -183,8 +183,10 @@ export default function PcpCommercial() {
                     const statusInfo = getStatusInfo(op)
                     return (
                       <TableRow key={op.id}>
-                        <TableCell className="pl-6 font-semibold">{op.op_number || '-'}</TableCell>
-                        <TableCell>
+                        <TableCell className="py-2 pl-6 font-semibold">
+                          {op.op_number || '-'}
+                        </TableCell>
+                        <TableCell className="py-2">
                           <div className="flex flex-col items-start gap-1">
                             <span className="text-sm">
                               {op.op_type === 'Assistência'
@@ -210,8 +212,10 @@ export default function PcpCommercial() {
                             )}
                           </div>
                         </TableCell>
-                        <TableCell>{format(parseISO(op.delivery_date), 'dd/MM/yyyy')}</TableCell>
-                        <TableCell>
+                        <TableCell className="py-2">
+                          {format(parseISO(op.delivery_date), 'dd/MM/yyyy')}
+                        </TableCell>
+                        <TableCell className="py-2">
                           <div className="flex flex-col gap-2">
                             <Progress value={getProgress(op)} className="h-2" />
                             <span className="text-xs text-muted-foreground text-right">
@@ -219,11 +223,12 @@ export default function PcpCommercial() {
                             </span>
                           </div>
                         </TableCell>
-                        <TableCell className="font-medium">
+                        <TableCell className="py-2 font-medium">
                           {op.status === 'Concluído' ? '-' : op.stage}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="py-2">
                           <Badge variant={statusInfo.variant} className={statusInfo.className}>
+                            {' '}
                             {statusInfo.label}
                           </Badge>
                         </TableCell>

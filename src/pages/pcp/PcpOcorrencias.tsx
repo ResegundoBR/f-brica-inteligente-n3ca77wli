@@ -24,12 +24,16 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/
 import { AlertCircle, Filter, Clock } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { PcpOrderDetails } from './components/PcpOrderDetails'
+import { cn } from '@/lib/utils'
 
 export default function PcpOcorrencias() {
   const [logs, setLogs] = useState<any[]>([])
   const [activeOrders, setActiveOrders] = useState<any[]>([])
   const [selectedMonth, setSelectedMonth] = useState('all')
   const [activeTab, setActiveTab] = useState('ativos')
+  const [selectedOp, setSelectedOp] = useState<any | null>(null)
+  const [observations, setObservations] = useState<any[]>([])
 
   const fetchLogs = () => {
     pb.collection('pcp_order_logs')
@@ -97,6 +101,20 @@ export default function PcpOcorrencias() {
 
   useRealtime('pcp_orders', fetchActiveOrders)
   useRealtime('pcp_order_logs', fetchLogs)
+
+  useEffect(() => {
+    if (selectedOp) {
+      pb.collection('pcp_order_observations')
+        .getFullList({
+          filter: `order_id = "${selectedOp.id}"`,
+          sort: 'created',
+        })
+        .then(setObservations)
+        .catch((err) => console.error(err))
+    } else {
+      setObservations([])
+    }
+  }, [selectedOp])
 
   // Histórico processing
   const months = useMemo(() => {
@@ -219,8 +237,12 @@ export default function PcpOcorrencias() {
                       const timeStr = days > 0 ? `${days}d ${hours}h` : `${hours}h`
 
                       return (
-                        <TableRow key={order.id}>
-                          <TableCell className="whitespace-nowrap">
+                        <TableRow
+                          key={order.id}
+                          className="cursor-pointer hover:bg-muted/50 transition-colors"
+                          onClick={() => setSelectedOp(order)}
+                        >
+                          <TableCell className="whitespace-nowrap py-2">
                             <div className="flex flex-col gap-1">
                               <span>
                                 {format(new Date(order.updated), 'dd/MM/yyyy HH:mm', {
@@ -232,8 +254,8 @@ export default function PcpOcorrencias() {
                               </span>
                             </div>
                           </TableCell>
-                          <TableCell className="font-medium">{order.order_number}</TableCell>
-                          <TableCell>
+                          <TableCell className="font-medium py-2">{order.order_number}</TableCell>
+                          <TableCell className="py-2">
                             <div
                               className="line-clamp-2 max-w-[200px]"
                               title={
@@ -252,10 +274,10 @@ export default function PcpOcorrencias() {
                               {order.expand?.client_id?.name || order.client_name}
                             </div>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="py-2">
                             <Badge variant="outline">{order.stage}</Badge>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="py-2">
                             <div className="flex flex-col gap-1">
                               <span className="inline-flex w-fit items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
                                 {order.bottleneck_reason || 'Não Especificado'}
@@ -335,14 +357,21 @@ export default function PcpOcorrencias() {
                         </TableRow>
                       )}
                       {filteredLogs.map((log) => (
-                        <TableRow key={log.id}>
-                          <TableCell className="whitespace-nowrap">
+                        <TableRow
+                          key={log.id}
+                          className={cn(
+                            'transition-colors',
+                            log.expand?.order_id ? 'cursor-pointer hover:bg-muted/50' : '',
+                          )}
+                          onClick={() => log.expand?.order_id && setSelectedOp(log.expand.order_id)}
+                        >
+                          <TableCell className="whitespace-nowrap py-2">
                             {format(new Date(log.created), 'dd/MM/yyyy HH:mm', { locale: ptBR })}
                           </TableCell>
-                          <TableCell className="font-medium">
+                          <TableCell className="font-medium py-2">
                             {log.expand?.order_id?.order_number}
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="py-2">
                             <div
                               className="line-clamp-1 max-w-[150px]"
                               title={log.expand?.order_id?.expand?.product_id?.name}
@@ -350,12 +379,12 @@ export default function PcpOcorrencias() {
                               {log.expand?.order_id?.expand?.product_id?.name || 'S/Produto'}
                             </div>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="py-2">
                             <Badge variant="outline">
                               {log.stage || log.expand?.order_id?.stage}
                             </Badge>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="py-2">
                             <div className="flex flex-col gap-1">
                               <span className="inline-flex w-fit items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
                                 {log.reasonData.reason}
@@ -380,6 +409,12 @@ export default function PcpOcorrencias() {
           </div>
         </TabsContent>
       </Tabs>
+
+      <PcpOrderDetails
+        op={selectedOp}
+        observations={observations}
+        onClose={() => setSelectedOp(null)}
+      />
     </div>
   )
 }

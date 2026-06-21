@@ -172,7 +172,7 @@ export default function PcpOrders() {
                           : 'bg-blue-600 text-white',
                     )}
                   >
-                    <TableCell colSpan={6} className="font-semibold text-sm py-3">
+                    <TableCell colSpan={6} className="font-semibold text-sm py-2">
                       <div className="flex items-center gap-4">
                         <span>Pedido: {group.order_number}</span>
                         <span className="opacity-50">|</span>
@@ -200,8 +200,8 @@ export default function PcpOrders() {
                       )}
                       onClick={() => setSelectedOp(op)}
                     >
-                      <TableCell className="pl-6 font-medium">{op.op_number || '-'}</TableCell>
-                      <TableCell>
+                      <TableCell className="py-2 pl-6 font-medium">{op.op_number || '-'}</TableCell>
+                      <TableCell className="py-2">
                         <div className="flex flex-col items-start gap-1">
                           <span className="text-sm">
                             {op.op_type === 'Assistência'
@@ -228,8 +228,8 @@ export default function PcpOrders() {
                           )}
                         </div>
                       </TableCell>
-                      <TableCell>{op.quantity}</TableCell>
-                      <TableCell>
+                      <TableCell className="py-2">{op.quantity}</TableCell>
+                      <TableCell className="py-2">
                         <div className="flex items-center gap-2">
                           {format(parseISO(op.delivery_date), 'dd/MM/yyyy')}
                           {getOrderColor(op) === 'purple' && (
@@ -250,13 +250,13 @@ export default function PcpOrders() {
                           )}
                         </div>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="py-2">
                         <div className="flex flex-col gap-1">
                           <span className="text-sm font-medium">{op.status}</span>
                           <span className="text-xs text-muted-foreground">{op.stage}</span>
                         </div>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="py-2">
                         <span
                           className={cn(
                             'text-sm font-medium whitespace-nowrap',

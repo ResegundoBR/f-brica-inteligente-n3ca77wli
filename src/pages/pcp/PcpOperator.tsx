@@ -19,6 +19,7 @@ import { Badge } from '@/components/ui/badge'
 import { Play, CheckCircle, AlertTriangle } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
+import { shouldHighlightObservation } from '@/lib/pcp-utils'
 
 const STAGES = [
   'Separação no estoque fisico',
@@ -226,6 +227,23 @@ function OperatorCard({
                 : op.expand?.product_id?.name || 'S/Produto'}
           </span>
         </div>
+
+        {op.observations && (
+          <div
+            className={cn(
+              'p-3 rounded-lg text-sm border mb-4 whitespace-pre-wrap',
+              shouldHighlightObservation(op.stage, op.observation_sector)
+                ? 'bg-yellow-100 border-yellow-400 text-yellow-900 dark:bg-yellow-900/40 dark:border-yellow-600 dark:text-yellow-200 font-semibold shadow-sm'
+                : 'bg-slate-100 border-slate-200 text-slate-700 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300',
+            )}
+          >
+            <div className="text-xs uppercase tracking-wider mb-1 opacity-70 font-bold">
+              Observações {op.observation_sector ? `(${op.observation_sector})` : ''}
+            </div>
+            {op.observations}
+          </div>
+        )}
+
         {isLocked && (
           <div className="bg-red-100 text-red-900 p-3 rounded-lg font-bold flex flex-col mb-4 text-lg">
             <div className="flex items-center">

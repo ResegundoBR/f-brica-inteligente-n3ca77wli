@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-21T13:02:36.098Z",
+  "generatedAt": "2026-06-21T13:17:54.314Z",
   "collections": [
     {
       "name": "users",
@@ -995,6 +995,19 @@
           "type": "text",
           "required": false,
           "system": false
+        },
+        {
+          "name": "observations",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "observation_sector",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["Fabricação", "Acabamento", "Montagem"]
         }
       ],
       "indexes": [

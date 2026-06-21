@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Checkbox } from '@/components/ui/checkbox'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Table,
   TableBody,
@@ -42,6 +42,7 @@ import { format, parseISO, isBefore, startOfDay } from 'date-fns'
 import { Plus, Paperclip, Clock, AlertCircle } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
+import { shouldHighlightObservation } from '@/lib/pcp-utils'
 
 export default function PcpOrders() {
   const [orders, setOrders] = useState<PcpOrder[]>([])
@@ -60,6 +61,8 @@ export default function PcpOrders() {
   const [deliveryDate, setDeliveryDate] = useState('')
   const [productId, setProductId] = useState('')
   const [manualProduct, setManualProduct] = useState('')
+  const [observations, setObservations] = useState('')
+  const [observationSector, setObservationSector] = useState('none')
   const [annex, setAnnex] = useState<File | null>(null)
 
   const loadData = async () => {
@@ -132,12 +135,17 @@ export default function PcpOrders() {
       }
       formData.append('client_id', clientId)
       formData.append('quantity', quantity.toString())
-
       formData.append('delivery_date', new Date(deliveryDate).toISOString())
       formData.append('op_type', opType)
+
       if (opType === 'Linha' && productId) formData.append('product_id', productId)
       if (opType === 'Assistência') formData.append('manual_product_name', manualProduct)
+      if (observations) formData.append('observations', observations)
+      if (observationSector && observationSector !== 'none') {
+        formData.append('observation_sector', observationSector)
+      }
       if (annex) formData.append('annex', annex)
+
       formData.append('status', 'Fila')
       formData.append('stage', 'Separação no estoque fisico')
       formData.append('bottleneck_reason', 'Nenhum')
@@ -153,6 +161,8 @@ export default function PcpOrders() {
       setOpType('Linha')
       setProductId('')
       setManualProduct('')
+      setObservations('')
+      setObservationSector('none')
       setAnnex(null)
     } catch (err: any) {
       toast({ title: 'Erro', description: err.message, variant: 'destructive' })
@@ -206,7 +216,7 @@ export default function PcpOrders() {
             </SheetHeader>
             <form onSubmit={handleSubmit} className="mt-6 space-y-4">
               <div className="space-y-2">
-                <Label>Número da OP</Label>
+                <Label>Nº Pedido / OP</Label>
                 <Input
                   required
                   value={orderNumber}
@@ -282,6 +292,7 @@ export default function PcpOrders() {
                   </Select>
                 </div>
               )}
+
               <div className="space-y-2">
                 <Label>Quantidade</Label>
                 <Input
@@ -301,6 +312,31 @@ export default function PcpOrders() {
                   onChange={(e) => setDeliveryDate(e.target.value)}
                 />
               </div>
+
+              <div className="space-y-2 pt-2">
+                <Label>Setor da Observação (Opcional)</Label>
+                <Select value={observationSector} onValueChange={setObservationSector}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione o setor" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Nenhum</SelectItem>
+                    <SelectItem value="Fabricação">Fabricação</SelectItem>
+                    <SelectItem value="Acabamento">Acabamento</SelectItem>
+                    <SelectItem value="Montagem">Montagem</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Observações</Label>
+                <Textarea
+                  value={observations}
+                  onChange={(e) => setObservations(e.target.value)}
+                  placeholder="Detalhes técnicos importantes..."
+                  className="min-h-[80px]"
+                />
+              </div>
+
               <div className="space-y-2">
                 <Label>Anexo (PDF/Imagem)</Label>
                 <Input
@@ -347,7 +383,11 @@ export default function PcpOrders() {
                   {group.items.map((op) => (
                     <TableRow
                       key={op.id}
-                      className="cursor-pointer hover:bg-muted/30"
+                      className={cn(
+                        'cursor-pointer hover:bg-muted/30 transition-colors',
+                        isOpDelayed(op) &&
+                          'bg-red-50/50 hover:bg-red-100/50 dark:bg-red-950/20 dark:hover:bg-red-900/30',
+                      )}
                       onClick={() => setSelectedOp(op)}
                     >
                       <TableCell className="pl-6">
@@ -464,6 +504,26 @@ export default function PcpOrders() {
                   <Label className="text-muted-foreground">Etapa Atual</Label>
                   <p className="font-medium text-sm mt-1">{selectedOp.stage}</p>
                 </div>
+
+                {selectedOp.observations && (
+                  <div className="col-span-2">
+                    <Label className="text-muted-foreground">
+                      Observações{' '}
+                      {selectedOp.observation_sector ? `(${selectedOp.observation_sector})` : ''}
+                    </Label>
+                    <div
+                      className={cn(
+                        'mt-1 p-3 rounded-md text-sm border whitespace-pre-wrap',
+                        shouldHighlightObservation(selectedOp.stage, selectedOp.observation_sector)
+                          ? 'bg-yellow-100 border-yellow-400 text-yellow-900 dark:bg-yellow-900/40 dark:border-yellow-600 dark:text-yellow-200 font-medium'
+                          : 'bg-muted text-foreground border-transparent',
+                      )}
+                    >
+                      {selectedOp.observations}
+                    </div>
+                  </div>
+                )}
+
                 {selectedOp.annex && (
                   <div className="col-span-2">
                     <Label className="text-muted-foreground">Anexo</Label>

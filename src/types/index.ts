@@ -232,6 +232,8 @@ export interface PcpOrder {
   annex?: string
   bottleneck_reason: 'Nenhum' | 'Falta de Material' | 'Dúvida Técnica' | 'Sobrecarga'
   bottleneck_details?: string
+  observations?: string
+  observation_sector?: 'Fabricação' | 'Acabamento' | 'Montagem' | ''
   delivery_date: string
   started_at?: string
   finished_at?: string

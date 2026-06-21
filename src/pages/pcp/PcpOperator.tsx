@@ -33,7 +33,14 @@ import { shouldHighlightObservation } from '@/lib/pcp-utils'
 import { isBefore, startOfDay, parseISO } from 'date-fns'
 
 const SECTORS = {
-  Suprimentos: ['Separação', 'Cotação', 'Compra', 'Retirada', 'Aguardando'],
+  Suprimentos: [
+    'Separação no estoque fisico',
+    'Separação',
+    'Cotação',
+    'Compra',
+    'Retirada',
+    'Aguardando',
+  ],
   Fabricação: [
     'Corte',
     'Dobra',
@@ -52,6 +59,7 @@ const SECTORS = {
 type SectorName = keyof typeof SECTORS
 
 const ALL_STAGES = [
+  'Separação no estoque fisico',
   'Separação',
   'Cotação',
   'Compra',

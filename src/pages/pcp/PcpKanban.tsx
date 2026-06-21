@@ -33,7 +33,14 @@ const MACRO_GROUPS = [
     name: 'Suprimentos',
     color: 'bg-blue-100/50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300',
     borderColor: 'border-blue-200 dark:border-blue-800',
-    stages: ['Separação', 'Cotação', 'Compra', 'Retirada', 'Aguardando'],
+    stages: [
+      'Separação no estoque fisico',
+      'Separação',
+      'Cotação',
+      'Compra',
+      'Retirada',
+      'Aguardando',
+    ],
   },
   {
     name: 'Fabricação',
@@ -63,13 +70,14 @@ const MACRO_GROUPS = [
     name: 'Expedição',
     color: 'bg-teal-100/50 dark:bg-teal-900/20 text-teal-800 dark:text-teal-300',
     borderColor: 'border-teal-200 dark:border-teal-800',
-    stages: ['Embalagem'],
+    stages: ['Embalagem', 'Expedição'],
   },
 ]
 
 const STATUSES = ['Fila', 'Em Andamento', 'Parado', 'Concluído']
 
 const STAGE_THRESHOLDS: Record<string, number> = {
+  'Separação no estoque fisico': 24,
   Separação: 24,
   Cotação: 24,
   Compra: 48,
@@ -91,6 +99,7 @@ const STAGE_THRESHOLDS: Record<string, number> = {
   Montagem: 48,
   Qualidade: 24,
   Embalagem: 24,
+  Expedição: 24,
 }
 
 export function isStageDelayed(order: any) {

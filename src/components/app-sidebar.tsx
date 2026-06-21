@@ -1,4 +1,4 @@
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
 import {
   LayoutDashboard,
@@ -14,6 +14,9 @@ import {
   TabletSmartphone,
   Eye,
   Activity,
+  LogOut,
+  PanelLeftClose,
+  PanelLeft,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -22,6 +25,7 @@ import {
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarHeader,
+  SidebarFooter,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -46,8 +50,14 @@ const navItems = [
 
 export function AppSidebar() {
   const location = useLocation()
-  const { user } = useAuth()
-  const { setOpenMobile } = useSidebar()
+  const { user, signOut } = useAuth()
+  const navigate = useNavigate()
+  const { setOpenMobile, toggleSidebar, state } = useSidebar()
+
+  const handleLogout = () => {
+    signOut()
+    navigate('/login')
+  }
 
   const role = user?.expand?.role
   const isSuperAdmin =
@@ -88,6 +98,7 @@ export function AppSidebar() {
   return (
     <Sidebar
       variant="inset"
+      collapsible="icon"
       style={
         {
           '--sidebar-background': '222.2 47.4% 11.2%',
@@ -99,11 +110,11 @@ export function AppSidebar() {
       }
       className="border-r-0"
     >
-      <SidebarHeader className="flex flex-row items-center gap-2 p-4 h-16 border-b border-slate-800/50">
-        <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+      <SidebarHeader className="flex flex-row items-center gap-2 p-4 h-16 border-b border-slate-800/50 overflow-hidden">
+        <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shrink-0">
           <Factory className="size-5" />
         </div>
-        <span className="font-bold text-lg">
+        <span className="font-bold text-lg truncate group-data-[collapsible=icon]:hidden">
           <span className="text-green-700">Fábrica</span>{' '}
           <span className="text-orange-600">Inteligente</span>
         </span>
@@ -136,6 +147,29 @@ export function AppSidebar() {
           </SidebarGroup>
         ))}
       </SidebarContent>
+      <SidebarFooter className="border-t border-slate-800/50">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              onClick={toggleSidebar}
+              tooltip={state === 'expanded' ? 'Recolher menu' : 'Expandir menu'}
+            >
+              {state === 'expanded' ? <PanelLeftClose /> : <PanelLeft />}
+              <span>{state === 'expanded' ? 'Recolher menu' : 'Expandir menu'}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              onClick={handleLogout}
+              tooltip="Sair"
+              className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
+            >
+              <LogOut />
+              <span>Sair</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
     </Sidebar>
   )
 }

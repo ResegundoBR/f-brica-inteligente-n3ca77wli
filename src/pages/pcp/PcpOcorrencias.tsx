@@ -38,22 +38,19 @@ export default function PcpOcorrencias() {
   const fetchLogs = () => {
     pb.collection('pcp_order_logs')
       .getFullList({
-        filter: "action = 'Parado' || action = 'Gargalo'",
         expand: 'order_id,order_id.product_id,order_id.client_id,user_id',
         sort: '-created',
       })
       .then((res) => {
         const parsed = res.map((log) => {
-          let reason = 'Desconhecido'
+          let reason = log.action || 'Desconhecido'
           let details = log.details || ''
 
           if (log.details?.includes('Motivo:')) {
             const parts = log.details.split('|')
-            reason = parts[0]?.replace('Motivo:', '')?.trim() || ''
+            reason = parts[0]?.replace('Motivo:', '')?.trim() || reason
             details =
               parts.length > 1 ? parts.slice(1).join('|').replace('Detalhes:', '').trim() : ''
-          } else if (log.expand?.order_id?.bottleneck_reason) {
-            reason = log.expand.order_id.bottleneck_reason
           } else {
             try {
               const data = JSON.parse(log.details)
@@ -342,10 +339,10 @@ export default function PcpOcorrencias() {
                     <TableHeader className="bg-muted/50">
                       <TableRow>
                         <TableHead>Data</TableHead>
-                        <TableHead>OP</TableHead>
-                        <TableHead>Produto</TableHead>
-                        <TableHead>Fase</TableHead>
-                        <TableHead>Motivo</TableHead>
+                        <TableHead>OP / Produto</TableHead>
+                        <TableHead>Usuário</TableHead>
+                        <TableHead>Ação / Fase</TableHead>
+                        <TableHead>Detalhes</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -365,33 +362,41 @@ export default function PcpOcorrencias() {
                           )}
                           onClick={() => log.expand?.order_id && setSelectedOp(log.expand.order_id)}
                         >
-                          <TableCell className="whitespace-nowrap py-2">
+                          <TableCell className="whitespace-nowrap py-2 align-top">
                             {format(new Date(log.created), 'dd/MM/yyyy HH:mm', { locale: ptBR })}
                           </TableCell>
-                          <TableCell className="font-medium py-2">
-                            {log.expand?.order_id?.order_number}
-                          </TableCell>
-                          <TableCell className="py-2">
+                          <TableCell className="py-2 align-top">
+                            <div className="font-medium">
+                              {log.expand?.order_id?.order_number || '-'}
+                            </div>
                             <div
-                              className="line-clamp-1 max-w-[150px]"
+                              className="text-xs text-muted-foreground line-clamp-1 max-w-[150px]"
                               title={log.expand?.order_id?.expand?.product_id?.name}
                             >
                               {log.expand?.order_id?.expand?.product_id?.name || 'S/Produto'}
                             </div>
                           </TableCell>
-                          <TableCell className="py-2">
-                            <Badge variant="outline">
-                              {log.stage || log.expand?.order_id?.stage}
-                            </Badge>
+                          <TableCell className="py-2 align-top">
+                            {log.expand?.user_id?.name || 'Sistema'}
                           </TableCell>
-                          <TableCell className="py-2">
+                          <TableCell className="py-2 align-top">
+                            <div className="flex flex-col gap-1 items-start">
+                              <Badge variant="secondary" className="text-[10px]">
+                                {log.action}
+                              </Badge>
+                              {log.stage && (
+                                <span className="text-xs text-muted-foreground">
+                                  Fase: {log.stage}
+                                </span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="py-2 align-top">
                             <div className="flex flex-col gap-1">
-                              <span className="inline-flex w-fit items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
-                                {log.reasonData.reason}
-                              </span>
+                              <span className="text-sm font-medium">{log.reasonData.reason}</span>
                               {log.reasonData.details && (
                                 <span
-                                  className="text-xs text-muted-foreground line-clamp-1 max-w-[200px]"
+                                  className="text-xs text-muted-foreground line-clamp-2 max-w-[250px]"
                                   title={log.reasonData.details}
                                 >
                                   {log.reasonData.details}

@@ -151,8 +151,8 @@ export default function PcpClients() {
             ) : (
               clients.map((client) => (
                 <TableRow key={client.id}>
-                  <TableCell className="font-medium">{client.name}</TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="font-medium py-2">{client.name}</TableCell>
+                  <TableCell className="text-right py-2">
                     <div className="flex items-center justify-end gap-2">
                       <Button variant="ghost" size="icon" onClick={() => handleEdit(client)}>
                         <Pencil className="size-4" />

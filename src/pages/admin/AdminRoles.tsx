@@ -44,6 +44,7 @@ export default function AdminRoles() {
     access_catalog: false,
     access_learning: false,
     access_users: false,
+    access_operator: false,
     access_suprimentos: false,
     access_ordens_producao: false,
     access_visao_comercial: false,
@@ -79,6 +80,7 @@ export default function AdminRoles() {
       access_catalog: !!role.access_catalog,
       access_learning: !!role.access_learning,
       access_users: !!role.access_users,
+      access_operator: !!role.access_operator,
       access_suprimentos: !!role.access_suprimentos,
       access_ordens_producao: !!role.access_ordens_producao,
       access_visao_comercial: !!role.access_visao_comercial,
@@ -114,6 +116,7 @@ export default function AdminRoles() {
       access_catalog: false,
       access_learning: false,
       access_users: false,
+      access_operator: false,
       access_suprimentos: false,
       access_ordens_producao: false,
       access_visao_comercial: false,
@@ -196,6 +199,16 @@ export default function AdminRoles() {
                     />
                     <Label htmlFor="acc_usr" className="font-normal text-sm">
                       Gestão de Usuários
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <Checkbox
+                      id="acc_ope"
+                      checked={formData.access_operator}
+                      onCheckedChange={(c) => setFormData({ ...formData, access_operator: !!c })}
+                    />
+                    <Label htmlFor="acc_ope" className="font-normal text-sm">
+                      Portal do Operador
                     </Label>
                   </div>
                   <div className="flex items-center space-x-3">

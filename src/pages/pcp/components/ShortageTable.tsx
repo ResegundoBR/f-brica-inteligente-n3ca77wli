@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { MaterialShortage } from '@/types'
-import { CheckCircle, ShoppingCart, AlertCircle } from 'lucide-react'
+import { CheckCircle, ShoppingCart, AlertCircle, TrendingUp, AlertTriangle } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 
@@ -73,18 +73,31 @@ function ShortageDetailsModal({
     }
   }
 
-  const lastPurchase = allShortages
+  const pastPurchases = allShortages
     .filter(
       (s) =>
         s.status === 'Recebido' &&
         s.id !== item.id &&
-        (s.code === item.code || s.description === item.description),
+        (s.code === item.code || s.description === item.description) &&
+        s.unit_price != null &&
+        s.unit_price > 0,
     )
     .sort(
       (a, b) =>
         new Date(b.purchase_date || b.updated).getTime() -
         new Date(a.purchase_date || a.updated).getTime(),
-    )[0]
+    )
+
+  const lastPurchase = pastPurchases[0]
+
+  const last3Purchases = pastPurchases.slice(0, 3)
+  const avgPrice =
+    last3Purchases.length > 0
+      ? last3Purchases.reduce((acc, curr) => acc + (curr.unit_price || 0), 0) /
+        last3Purchases.length
+      : 0
+
+  const isPriceHigher = unitPrice !== '' && avgPrice > 0 && Number(unitPrice) > avgPrice
 
   return (
     <div className="flex flex-col bg-white dark:bg-slate-900">
@@ -224,15 +237,31 @@ function ShortageDetailsModal({
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Preço Unitário (R$)</Label>
-            <Input
-              type="number"
-              step="0.01"
-              value={unitPrice}
-              onChange={(e) => setUnitPrice(e.target.value ? Number(e.target.value) : '')}
-              placeholder="0.00"
-              className="bg-white dark:bg-slate-950"
-            />
+            <div className="flex items-center justify-between">
+              <Label>Preço Unitário (R$)</Label>
+              {isPriceHigher && (
+                <div className="flex items-center text-[10px] text-amber-600 dark:text-amber-500 font-bold bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded">
+                  <TrendingUp className="size-3 mr-1" />
+                  Acima da média (R$ {avgPrice.toFixed(2)})
+                </div>
+              )}
+            </div>
+            <div className="relative">
+              <Input
+                type="number"
+                step="0.01"
+                value={unitPrice}
+                onChange={(e) => setUnitPrice(e.target.value ? Number(e.target.value) : '')}
+                placeholder="0.00"
+                className={cn(
+                  'bg-white dark:bg-slate-950',
+                  isPriceHigher && 'border-amber-400 focus-visible:ring-amber-400',
+                )}
+              />
+              {isPriceHigher && (
+                <AlertTriangle className="size-4 text-amber-500 absolute right-3 top-1/2 -translate-y-1/2" />
+              )}
+            </div>
           </div>
           <div className="space-y-1.5">
             <Label>Data da Compra</Label>
@@ -295,9 +324,11 @@ function ShortageDetailsModal({
 function ShortageRow({
   item,
   allShortages,
+  editableQuantity,
 }: {
   item: MaterialShortage
   allShortages: MaterialShortage[]
+  editableQuantity?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const isUrgent = item.priority === 'Urgente'
@@ -311,8 +342,38 @@ function ShortageRow({
         <TableCell className="font-semibold text-slate-900 dark:text-slate-100">
           {item.description}
         </TableCell>
-        <TableCell className="text-right font-black text-slate-700 dark:text-slate-300">
-          {item.quantity}
+        <TableCell
+          className="text-right"
+          onClick={(e) => {
+            if (editableQuantity) e.stopPropagation()
+          }}
+        >
+          {editableQuantity ? (
+            <Input
+              type="number"
+              min={1}
+              step={0.01}
+              className="w-20 text-right ml-auto h-8 font-black bg-white dark:bg-slate-950"
+              defaultValue={item.quantity}
+              onBlur={async (e) => {
+                const val = Number(e.target.value)
+                if (val > 0 && val !== item.quantity) {
+                  try {
+                    await pb.collection('material_shortages').update(item.id, { quantity: val })
+                  } catch (err) {
+                    /* ignore */
+                  }
+                }
+              }}
+              onKeyDown={async (e) => {
+                if (e.key === 'Enter') {
+                  e.currentTarget.blur()
+                }
+              }}
+            />
+          ) : (
+            <span className="font-black text-slate-700 dark:text-slate-300">{item.quantity}</span>
+          )}
         </TableCell>
         <TableCell className="text-xs text-slate-600 dark:text-slate-400">
           {item.request_type || item.sector}
@@ -373,9 +434,11 @@ function ShortageRow({
 export function ShortageTable({
   items,
   allShortages,
+  editableQuantity,
 }: {
   items: MaterialShortage[]
   allShortages: MaterialShortage[]
+  editableQuantity?: boolean
 }) {
   if (items.length === 0) {
     return (
@@ -400,7 +463,12 @@ export function ShortageTable({
         </TableHeader>
         <TableBody>
           {items.map((item) => (
-            <ShortageRow key={item.id} item={item} allShortages={allShortages} />
+            <ShortageRow
+              key={item.id}
+              item={item}
+              allShortages={allShortages}
+              editableQuantity={editableQuantity}
+            />
           ))}
         </TableBody>
       </Table>

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-21T22:24:01.216Z",
+  "generatedAt": "2026-06-21T22:42:33.444Z",
   "collections": [
     {
       "name": "users",
@@ -1325,7 +1325,9 @@
       "indexes": [
         "CREATE INDEX idx_material_shortages_order ON material_shortages (order_id)",
         "CREATE INDEX idx_material_shortages_status ON material_shortages (status)",
-        "CREATE INDEX `idx_material_shortages_requested_by` ON `material_shortages` (requested_by)"
+        "CREATE INDEX `idx_material_shortages_requested_by` ON `material_shortages` (requested_by)",
+        "CREATE INDEX `idx_material_shortages_code` ON `material_shortages` (code)",
+        "CREATE INDEX `idx_material_shortages_description` ON `material_shortages` (description)"
       ]
     }
   ]

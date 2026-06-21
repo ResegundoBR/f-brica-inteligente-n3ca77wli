@@ -11,8 +11,11 @@ import { format, isBefore, startOfDay } from 'date-fns'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import ShortageTable from './components/ShortageTable'
+import { NewShortageModal } from './components/NewShortageModal'
+import { Plus } from 'lucide-react'
 
 export default function PcpMaterials() {
+  const [modalOpen, setModalOpen] = useState(false)
   const [shortages, setShortages] = useState<MaterialShortage[]>([])
   const [outsourcedOrders, setOutsourcedOrders] = useState<PcpOrder[]>([])
   const { toast } = useToast()
@@ -91,6 +94,17 @@ export default function PcpMaterials() {
         </p>
       </div>
 
+      <div className="flex justify-end -mt-16 mb-4 relative z-10 mr-4">
+        <Button
+          onClick={() => setModalOpen(true)}
+          className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+        >
+          <Plus className="size-4 mr-2" /> Nova Solicitação
+        </Button>
+      </div>
+
+      <NewShortageModal open={modalOpen} onOpenChange={setModalOpen} />
+
       <Tabs defaultValue="triagem" className="w-full">
         <TabsList className="grid w-full max-w-4xl grid-cols-1 sm:grid-cols-4 mb-6 h-auto sm:h-12">
           <TabsTrigger value="triagem" className="text-base py-2">
@@ -112,7 +126,7 @@ export default function PcpMaterials() {
         </TabsContent>
 
         <TabsContent value="compras" className="space-y-4">
-          <ShortageTable items={comprasItems} allShortages={shortages} />
+          <ShortageTable items={comprasItems} allShortages={shortages} editableQuantity />
         </TabsContent>
 
         <TabsContent value="terceirizacao" className="space-y-4">

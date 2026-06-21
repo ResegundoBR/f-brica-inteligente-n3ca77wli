@@ -68,6 +68,7 @@ export function filterByDeadline(
 }
 
 const fabricacaoStages = [
+  'Separação no estoque fisico',
   'Separação',
   'Corte',
   'Dobra',

@@ -12,7 +12,16 @@ interface Store {
 export const useShortageStore = create<Store>((set) => ({
   availableIds: [],
   selectedIds: [],
-  setAvailableIds: (ids) => set({ availableIds: ids }),
+  setAvailableIds: (ids) =>
+    set((state) => {
+      if (
+        state.availableIds.length === ids.length &&
+        state.availableIds.every((id, index) => id === ids[index])
+      ) {
+        return state
+      }
+      return { availableIds: ids }
+    }),
   toggle: (id) =>
     set((state) => ({
       selectedIds: state.selectedIds.includes(id)

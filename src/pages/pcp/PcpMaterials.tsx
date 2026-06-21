@@ -46,7 +46,8 @@ export default function PcpMaterials() {
     }
   }
 
-  const { selectedIds, clear } = useShortageStore()
+  const selectedIds = useShortageStore((state) => state.selectedIds)
+  const clear = useShortageStore((state) => state.clear)
 
   const handleCopyQuotation = () => {
     const selectedItems = shortages.filter((s) => selectedIds.includes(s.id))

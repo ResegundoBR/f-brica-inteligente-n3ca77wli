@@ -364,7 +364,8 @@ function ShortageRow({
 }) {
   const [open, setOpen] = useState(false)
   const isUrgent = item.priority === 'Urgente'
-  const { selectedIds, toggle } = useShortageStore()
+  const selectedIds = useShortageStore((state) => state.selectedIds)
+  const toggle = useShortageStore((state) => state.toggle)
 
   return (
     <>
@@ -480,7 +481,10 @@ export function ShortageTable({
   allShortages: MaterialShortage[]
   editableQuantity?: boolean
 }) {
-  const { selectedIds, availableIds, setAvailableIds, toggleAll } = useShortageStore()
+  const selectedIds = useShortageStore((state) => state.selectedIds)
+  const availableIds = useShortageStore((state) => state.availableIds)
+  const setAvailableIds = useShortageStore((state) => state.setAvailableIds)
+  const toggleAll = useShortageStore((state) => state.toggleAll)
 
   useEffect(() => {
     setAvailableIds(items.map((i) => i.id))

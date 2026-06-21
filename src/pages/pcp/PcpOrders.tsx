@@ -29,60 +29,59 @@ export default function PcpOrders() {
   const { toast } = useToast()
 
   const loadData = async () => {
-    try {
-      const ops = await pb
+    Promise.allSettled([
+      pb
         .collection('pcp_orders')
         .getFullList<PcpOrder>({ sort: '-created', expand: 'product_id,client_id' })
-      setOrders(ops)
-    } catch (e: any) {
-      toast({
-        title: 'Erro',
-        description: 'Não foi possível carregar as ordens de produção.',
-        variant: 'destructive',
-      })
-    }
-
-    try {
-      const prods = await pb
+        .then(setOrders)
+        .catch(() => {
+          toast({
+            title: 'Erro',
+            description: 'Não foi possível carregar as ordens de produção.',
+            variant: 'destructive',
+          })
+        }),
+      pb
         .collection('products')
         .getFullList<Product>({ sort: 'name', expand: 'status' })
-      setProducts(prods)
-    } catch (e: any) {
-      toast({
-        title: 'Erro',
-        description: 'Não foi possível carregar os produtos.',
-        variant: 'destructive',
-      })
-    }
-
-    try {
-      const clis = await pb.collection('clients').getFullList<Client>({ sort: 'name' })
-      setClients(clis)
-    } catch (e: any) {
-      toast({
-        title: 'Erro',
-        description: 'Não foi possível carregar os clientes.',
-        variant: 'destructive',
-      })
-    }
-
-    try {
-      const obs = await pb
+        .then(setProducts)
+        .catch(() => {
+          toast({
+            title: 'Erro',
+            description: 'Não foi possível carregar os produtos.',
+            variant: 'destructive',
+          })
+        }),
+      pb
+        .collection('clients')
+        .getFullList<Client>({ sort: 'name' })
+        .then(setClients)
+        .catch(() => {
+          toast({
+            title: 'Erro',
+            description: 'Não foi possível carregar os clientes.',
+            variant: 'destructive',
+          })
+        }),
+      pb
         .collection('pcp_order_observations')
         .getFullList<PcpOrderObservation>({ sort: 'created' })
-      const obsMap: Record<string, PcpOrderObservation[]> = {}
-      obs.forEach((o) => {
-        if (!obsMap[o.order_id]) obsMap[o.order_id] = []
-        obsMap[o.order_id].push(o)
-      })
-      setObservations(obsMap)
-    } catch (e: any) {
-      toast({
-        title: 'Erro',
-        description: 'Não foi possível carregar as observações.',
-        variant: 'destructive',
-      })
-    }
+        .then((obs) => {
+          const obsMap: Record<string, PcpOrderObservation[]> = {}
+          obs.forEach((o) => {
+            if (!obsMap[o.order_id]) obsMap[o.order_id] = []
+            obsMap[o.order_id].push(o)
+          })
+          setObservations(obsMap)
+        })
+        .catch(() => {
+          toast({
+            title: 'Erro',
+            description: 'Não foi possível carregar as observações.',
+            variant: 'destructive',
+          })
+        }),
+    ])
   }
 
   useEffect(() => {
@@ -158,12 +157,12 @@ export default function PcpOrders() {
                 <Fragment key={group.order_number}>
                   <TableRow
                     className={cn(
-                      'bg-muted/50 hover:bg-muted/50 border-y',
+                      'hover:opacity-90 border-y transition-colors',
                       group.op_type === 'Assistência'
-                        ? 'bg-fuchsia-50/50 text-fuchsia-900 dark:bg-fuchsia-950/20 dark:text-fuchsia-200'
+                        ? 'bg-fuchsia-600 text-white'
                         : group.op_type === 'Especial'
-                          ? 'bg-slate-100 text-slate-900 dark:bg-slate-900/50 dark:text-slate-200'
-                          : 'bg-blue-50/50 text-blue-900 dark:bg-blue-950/20 dark:text-blue-200',
+                          ? 'bg-slate-900 text-white'
+                          : 'bg-blue-600 text-white',
                     )}
                   >
                     <TableCell colSpan={6} className="font-semibold text-sm py-3">
@@ -173,13 +172,7 @@ export default function PcpOrders() {
                         <span>Cliente: {group.client_name}</span>
                         <Badge
                           variant="outline"
-                          className={cn(
-                            'ml-auto border-transparent',
-                            group.op_type === 'Assistência' && 'bg-fuchsia-500 text-white',
-                            group.op_type === 'Especial' &&
-                              'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900',
-                            group.op_type === 'Linha' && 'bg-blue-500 text-white',
-                          )}
+                          className="ml-auto border-white/40 text-white hover:bg-white/20 bg-white/10"
                         >
                           {group.op_type}
                         </Badge>

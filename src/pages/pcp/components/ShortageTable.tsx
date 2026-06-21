@@ -12,14 +12,107 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table as BaseTable,
+  TableBody as BaseTableBody,
+  TableCell as BaseTableCell,
+  TableHead as BaseTableHead,
+  TableHeader as BaseTableHeader,
+  TableRow as BaseTableRow,
 } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Checkbox } from '@/components/ui/checkbox'
+import { useShortageStore } from '@/stores/useShortageStore'
+import { createRoot } from 'react-dom/client'
+import React from 'react'
+
+const Table = (props: any) => <BaseTable {...props} />
+const TableRow = (props: any) => <BaseTableRow {...props} />
+const TableHead = (props: any) => <BaseTableHead {...props} />
+const TableCell = (props: any) => <BaseTableCell {...props} />
+
+const TableHeader = ({ children, ...props }: any) => {
+  const { selectedIds, availableIds, toggleAll } = useShortageStore()
+
+  const modifiedRows = React.Children.map(children, (row: any) => {
+    if (React.isValidElement(row) && row.props && row.props.children) {
+      const newChildren = [
+        <BaseTableHead key="cb" className="w-[40px]">
+          <Checkbox
+            checked={availableIds.length > 0 && selectedIds.length === availableIds.length}
+            onCheckedChange={() => toggleAll()}
+          />
+        </BaseTableHead>,
+        ...React.Children.toArray(row.props.children),
+      ]
+      return React.cloneElement(row, { children: newChildren } as any)
+    }
+    return row
+  })
+
+  return <BaseTableHeader {...props}>{modifiedRows}</BaseTableHeader>
+}
+
+const TableBody = ({ children, ...props }: any) => {
+  const { selectedIds, toggle, setAvailableIds } = useShortageStore()
+
+  const allIds: string[] = []
+
+  const modifiedRows = React.Children.map(children, (row: any) => {
+    if (!React.isValidElement(row)) return row
+
+    const idMatch = row.key ? String(row.key).match(/[a-z0-9]{15}/) : null
+    const id = idMatch ? idMatch[0] : null
+
+    if (id) allIds.push(id)
+
+    if (row.props && row.props.children && id) {
+      const newChildren = [
+        <BaseTableCell key="cb" onClick={(e: any) => e.stopPropagation()}>
+          <Checkbox checked={selectedIds.includes(id)} onCheckedChange={() => toggle(id)} />
+        </BaseTableCell>,
+        ...React.Children.toArray(row.props.children),
+      ]
+      return React.cloneElement(row, { children: newChildren } as any)
+    }
+    return row
+  })
+
+  React.useEffect(() => {
+    setAvailableIds(allIds)
+  }, [allIds.join(',')])
+
+  return <BaseTableBody {...props}>{modifiedRows}</BaseTableBody>
+}
+
+function HistoryPanel({ history }: { history: any[] }) {
+  if (history.length === 0) return null
+  return (
+    <div className="mt-4 border-t pt-4 w-full">
+      <h3 className="text-sm font-semibold mb-2">Histórico de Compras (Últimas 3)</h3>
+      <div className="space-y-2">
+        {history.map((h, i) => (
+          <div
+            key={i}
+            className="flex justify-between items-center bg-muted/50 p-2 rounded-md text-sm"
+          >
+            <div>
+              <p className="font-medium">{h.supplier || 'N/A'}</p>
+              <p className="text-xs text-muted-foreground">
+                {h.purchase_date ? new Date(h.purchase_date).toLocaleDateString('pt-BR') : '-'}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="font-medium">{h.quantity} un</p>
+              <p className="text-xs text-muted-foreground">
+                {h.unit_price ? `R$ ${Number(h.unit_price).toFixed(2)}` : '-'}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 import { MaterialShortage } from '@/types'
 import { CheckCircle, ShoppingCart, AlertCircle, TrendingUp, AlertTriangle } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
@@ -45,6 +138,69 @@ function ShortageDetailsModal({
     item.expected_date ? item.expected_date.substring(0, 10) : '',
   )
   const { toast } = useToast()
+
+  const [history, setHistory] = React.useState<MaterialShortage[]>([])
+
+  React.useEffect(() => {
+    const fetchHistory = async () => {
+      if (!item.code && !item.description) return
+      try {
+        const filter = item.code ? `code = "${item.code}"` : `description ~ "${item.description}"`
+        const res = await pb.collection('material_shortages').getList<MaterialShortage>(1, 3, {
+          filter: `(${filter}) && status = "Recebido" && id != "${item.id}"`,
+          sort: '-purchase_date',
+        })
+        setHistory(res.items)
+      } catch {
+        /* intentionally ignored */
+      }
+    }
+    fetchHistory()
+  }, [item])
+
+  React.useEffect(() => {
+    const t = setTimeout(() => {
+      const labels = Array.from(document.querySelectorAll('label'))
+      labels.forEach((l) => {
+        const text = l.textContent?.toLowerCase() || ''
+        if (
+          text.includes('última') ||
+          text.includes('compra') ||
+          text.includes('histórico') ||
+          text.includes('último')
+        ) {
+          const parent = l.parentElement
+          if (parent && parent.tagName === 'DIV' && text.includes('última')) {
+            parent.style.display = 'none'
+          }
+        }
+      })
+
+      const dialog = document.querySelector('[role="dialog"]') as HTMLElement
+      if (dialog && history.length > 0) {
+        let container = document.getElementById('history-portal-container')
+        if (!container) {
+          container = document.createElement('div')
+          container.id = 'history-portal-container'
+
+          const footer =
+            dialog.querySelector('.flex.justify-end') ||
+            Array.from(dialog.querySelectorAll('button')).pop()?.parentElement
+          if (footer && footer.parentElement) {
+            footer.parentElement.insertBefore(container, footer)
+          } else {
+            dialog.appendChild(container)
+          }
+        }
+
+        if (!(container as any)._reactRoot) {
+          ;(container as any)._reactRoot = createRoot(container)
+        }
+        ;(container as any)._reactRoot.render(<HistoryPanel history={history} />)
+      }
+    }, 150)
+    return () => clearTimeout(t)
+  }, [history])
 
   const handleSave = async () => {
     try {

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import pb from '@/lib/pocketbase/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -12,98 +12,47 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import {
-  Table as BaseTable,
-  TableBody as BaseTableBody,
-  TableCell as BaseTableCell,
-  TableHead as BaseTableHead,
-  TableHeader as BaseTableHeader,
-  TableRow as BaseTableRow,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useShortageStore } from '@/stores/useShortageStore'
-import { createRoot } from 'react-dom/client'
-import React from 'react'
-
-const Table = (props: any) => <BaseTable {...props} />
-const TableRow = (props: any) => <BaseTableRow {...props} />
-const TableHead = (props: any) => <BaseTableHead {...props} />
-const TableCell = (props: any) => <BaseTableCell {...props} />
-
-const TableHeader = ({ children, ...props }: any) => {
-  const { selectedIds, availableIds, toggleAll } = useShortageStore()
-
-  const modifiedRows = React.Children.map(children, (row: any) => {
-    if (React.isValidElement(row) && row.props && row.props.children) {
-      const newChildren = [
-        <BaseTableHead key="cb" className="w-[40px]">
-          <Checkbox
-            checked={availableIds.length > 0 && selectedIds.length === availableIds.length}
-            onCheckedChange={() => toggleAll()}
-          />
-        </BaseTableHead>,
-        ...React.Children.toArray(row.props.children),
-      ]
-      return React.cloneElement(row, { children: newChildren } as any)
-    }
-    return row
-  })
-
-  return <BaseTableHeader {...props}>{modifiedRows}</BaseTableHeader>
-}
-
-const TableBody = ({ children, ...props }: any) => {
-  const { selectedIds, toggle, setAvailableIds } = useShortageStore()
-
-  const allIds: string[] = []
-
-  const modifiedRows = React.Children.map(children, (row: any) => {
-    if (!React.isValidElement(row)) return row
-
-    const idMatch = row.key ? String(row.key).match(/[a-z0-9]{15}/) : null
-    const id = idMatch ? idMatch[0] : null
-
-    if (id) allIds.push(id)
-
-    if (row.props && row.props.children && id) {
-      const newChildren = [
-        <BaseTableCell key="cb" onClick={(e: any) => e.stopPropagation()}>
-          <Checkbox checked={selectedIds.includes(id)} onCheckedChange={() => toggle(id)} />
-        </BaseTableCell>,
-        ...React.Children.toArray(row.props.children),
-      ]
-      return React.cloneElement(row, { children: newChildren } as any)
-    }
-    return row
-  })
-
-  React.useEffect(() => {
-    setAvailableIds(allIds)
-  }, [allIds.join(',')])
-
-  return <BaseTableBody {...props}>{modifiedRows}</BaseTableBody>
-}
+import { MaterialShortage } from '@/types'
+import { CheckCircle, ShoppingCart, AlertCircle, TrendingUp, AlertTriangle } from 'lucide-react'
+import { useToast } from '@/hooks/use-toast'
+import { cn } from '@/lib/utils'
 
 function HistoryPanel({ history }: { history: any[] }) {
   if (history.length === 0) return null
   return (
-    <div className="mt-4 border-t pt-4 w-full">
-      <h3 className="text-sm font-semibold mb-2">Histórico de Compras (Últimas 3)</h3>
+    <div className="mt-6 pt-6 border-t border-slate-100 dark:border-slate-800 w-full">
+      <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+        <ShoppingCart className="size-4" /> Histórico de Compras (Últimas 3)
+      </h3>
       <div className="space-y-2">
         {history.map((h, i) => (
           <div
             key={i}
-            className="flex justify-between items-center bg-muted/50 p-2 rounded-md text-sm"
+            className="flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 p-3 rounded-md text-sm"
           >
             <div>
-              <p className="font-medium">{h.supplier || 'N/A'}</p>
-              <p className="text-xs text-muted-foreground">
-                {h.purchase_date ? new Date(h.purchase_date).toLocaleDateString('pt-BR') : '-'}
+              <p className="font-medium text-slate-900 dark:text-slate-100">
+                {h.supplier || 'N/A'}
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {h.purchase_date
+                  ? new Date(h.purchase_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })
+                  : '-'}
               </p>
             </div>
             <div className="text-right">
-              <p className="font-medium">{h.quantity} un</p>
-              <p className="text-xs text-muted-foreground">
+              <p className="font-medium text-slate-900 dark:text-slate-100">{h.quantity} un</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
                 {h.unit_price ? `R$ ${Number(h.unit_price).toFixed(2)}` : '-'}
               </p>
             </div>
@@ -113,10 +62,6 @@ function HistoryPanel({ history }: { history: any[] }) {
     </div>
   )
 }
-import { MaterialShortage } from '@/types'
-import { CheckCircle, ShoppingCart, AlertCircle, TrendingUp, AlertTriangle } from 'lucide-react'
-import { useToast } from '@/hooks/use-toast'
-import { cn } from '@/lib/utils'
 
 function ShortageDetailsModal({
   item,
@@ -139,9 +84,9 @@ function ShortageDetailsModal({
   )
   const { toast } = useToast()
 
-  const [history, setHistory] = React.useState<MaterialShortage[]>([])
+  const [history, setHistory] = useState<MaterialShortage[]>([])
 
-  React.useEffect(() => {
+  useEffect(() => {
     const fetchHistory = async () => {
       if (!item.code && !item.description) return
       try {
@@ -157,50 +102,6 @@ function ShortageDetailsModal({
     }
     fetchHistory()
   }, [item])
-
-  React.useEffect(() => {
-    const t = setTimeout(() => {
-      const labels = Array.from(document.querySelectorAll('label'))
-      labels.forEach((l) => {
-        const text = l.textContent?.toLowerCase() || ''
-        if (
-          text.includes('última') ||
-          text.includes('compra') ||
-          text.includes('histórico') ||
-          text.includes('último')
-        ) {
-          const parent = l.parentElement
-          if (parent && parent.tagName === 'DIV' && text.includes('última')) {
-            parent.style.display = 'none'
-          }
-        }
-      })
-
-      const dialog = document.querySelector('[role="dialog"]') as HTMLElement
-      if (dialog && history.length > 0) {
-        let container = document.getElementById('history-portal-container')
-        if (!container) {
-          container = document.createElement('div')
-          container.id = 'history-portal-container'
-
-          const footer =
-            dialog.querySelector('.flex.justify-end') ||
-            Array.from(dialog.querySelectorAll('button')).pop()?.parentElement
-          if (footer && footer.parentElement) {
-            footer.parentElement.insertBefore(container, footer)
-          } else {
-            dialog.appendChild(container)
-          }
-        }
-
-        if (!(container as any)._reactRoot) {
-          ;(container as any)._reactRoot = createRoot(container)
-        }
-        ;(container as any)._reactRoot.render(<HistoryPanel history={history} />)
-      }
-    }, 150)
-    return () => clearTimeout(t)
-  }, [history])
 
   const handleSave = async () => {
     try {
@@ -256,11 +157,14 @@ function ShortageDetailsModal({
   const isPriceHigher = unitPrice !== '' && avgPrice > 0 && Number(unitPrice) > avgPrice
 
   return (
-    <div className="flex flex-col bg-white dark:bg-slate-900">
+    <div className="flex flex-col h-full bg-white dark:bg-slate-900 overflow-hidden">
       <div
-        className={cn('h-1.5 w-full', item.priority === 'Urgente' ? 'bg-red-500' : 'bg-blue-500')}
+        className={cn(
+          'shrink-0 h-1.5 w-full',
+          item.priority === 'Urgente' ? 'bg-red-500' : 'bg-blue-500',
+        )}
       />
-      <DialogHeader className="px-6 pt-6 pb-4 border-b border-slate-100 dark:border-slate-800">
+      <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-slate-100 dark:border-slate-800">
         <DialogTitle className="text-xl font-bold flex items-center justify-between">
           <span>{item.description}</span>
           <Badge variant="outline" className="text-sm">
@@ -278,7 +182,7 @@ function ShortageDetailsModal({
         </div>
       </DialogHeader>
 
-      <div className="px-6 py-4 space-y-6">
+      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded border border-slate-100 dark:border-slate-800">
             <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
@@ -320,36 +224,6 @@ function ShortageDetailsModal({
           <div className="text-sm text-slate-700 dark:text-slate-300 bg-yellow-50/50 dark:bg-yellow-900/10 p-3 rounded border border-yellow-100 dark:border-yellow-900/30">
             <span className="font-semibold text-yellow-700 dark:text-yellow-500 mr-2">Obs:</span>
             {item.observation}
-          </div>
-        )}
-
-        {lastPurchase && (
-          <div className="bg-indigo-50/50 dark:bg-indigo-900/10 p-4 rounded-lg border border-indigo-100 dark:border-indigo-900/30">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 mb-2 flex items-center gap-1">
-              <CheckCircle className="size-3" /> Última Compra Deste Item
-            </h4>
-            <div className="flex gap-6 text-sm text-indigo-900 dark:text-indigo-200">
-              <div>
-                <span className="opacity-70">Fornecedor:</span>{' '}
-                <span className="font-semibold ml-1">{lastPurchase.supplier || '-'}</span>
-              </div>
-              <div>
-                <span className="opacity-70">Data:</span>{' '}
-                <span className="font-semibold ml-1">
-                  {lastPurchase.purchase_date
-                    ? new Date(lastPurchase.purchase_date).toLocaleDateString('pt-BR', {
-                        timeZone: 'UTC',
-                      })
-                    : '-'}
-                </span>
-              </div>
-              <div>
-                <span className="opacity-70">Preço Un:</span>{' '}
-                <span className="font-semibold ml-1">
-                  {lastPurchase.unit_price ? `R$ ${lastPurchase.unit_price.toFixed(2)}` : '-'}
-                </span>
-              </div>
-            </div>
           </div>
         )}
 
@@ -441,9 +315,11 @@ function ShortageDetailsModal({
             />
           </div>
         </div>
+
+        <HistoryPanel history={history} />
       </div>
 
-      <div className="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+      <div className="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
         <div className="flex gap-2">
           {item.status === 'Pendente' && (
             <>
@@ -488,12 +364,20 @@ function ShortageRow({
 }) {
   const [open, setOpen] = useState(false)
   const isUrgent = item.priority === 'Urgente'
+  const { selectedIds, toggle } = useShortageStore()
+
   return (
     <>
       <TableRow
         onClick={() => setOpen(true)}
         className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
       >
+        <TableCell onClick={(e) => e.stopPropagation()} className="w-[40px]">
+          <Checkbox
+            checked={selectedIds.includes(item.id)}
+            onCheckedChange={() => toggle(item.id)}
+          />
+        </TableCell>
         <TableCell className="font-medium text-xs text-slate-500">{item.code || '-'}</TableCell>
         <TableCell className="font-semibold text-slate-900 dark:text-slate-100">
           {item.description}
@@ -575,7 +459,7 @@ function ShortageRow({
         </TableCell>
       </TableRow>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto p-0">
+        <DialogContent className="sm:max-w-[700px] h-auto max-h-[90vh] overflow-hidden p-0 flex flex-col">
           <ShortageDetailsModal
             item={item}
             allShortages={allShortages}
@@ -596,6 +480,12 @@ export function ShortageTable({
   allShortages: MaterialShortage[]
   editableQuantity?: boolean
 }) {
+  const { selectedIds, availableIds, setAvailableIds, toggleAll } = useShortageStore()
+
+  useEffect(() => {
+    setAvailableIds(items.map((i) => i.id))
+  }, [items, setAvailableIds])
+
   if (items.length === 0) {
     return (
       <div className="p-8 text-center border-2 border-dashed rounded-xl border-slate-200 dark:border-slate-800 text-slate-400 font-medium">
@@ -608,6 +498,12 @@ export function ShortageTable({
       <Table>
         <TableHeader className="bg-slate-50 dark:bg-slate-800/50">
           <TableRow>
+            <TableHead className="w-[40px]">
+              <Checkbox
+                checked={availableIds.length > 0 && selectedIds.length === availableIds.length}
+                onCheckedChange={() => toggleAll()}
+              />
+            </TableHead>
             <TableHead className="w-[100px]">Código</TableHead>
             <TableHead>Descrição</TableHead>
             <TableHead className="text-right w-[80px]">Qtd</TableHead>

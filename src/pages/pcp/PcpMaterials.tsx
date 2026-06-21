@@ -13,7 +13,6 @@ import { cn } from '@/lib/utils'
 import ShortageTable from './components/ShortageTable'
 import { NewShortageModal } from './components/NewShortageModal'
 import { Plus, Copy } from 'lucide-react'
-import { createRoot } from 'react-dom/client'
 import { useShortageStore } from '@/stores/useShortageStore'
 
 export default function PcpMaterials() {
@@ -53,55 +52,18 @@ export default function PcpMaterials() {
     const selectedItems = shortages.filter((s) => selectedIds.includes(s.id))
     if (selectedItems.length === 0) return
 
-    let text =
-      'Solicitação de Cotação\n\nGostaria de solicitar orçamento para os seguintes itens:\n'
+    let text = ''
     selectedItems.forEach((item) => {
-      text += `* ${item.quantity} un - ${item.description} (${item.code || 'S/N'})\n`
+      text += `${item.quantity}x ${item.description}\n`
     })
-    text += '\nAguardo retorno, obrigado!'
 
-    navigator.clipboard.writeText(text)
+    navigator.clipboard.writeText(text.trim())
     toast({
       title: 'Copiado!',
       description: 'Lista de cotação copiada para a área de transferência.',
     })
     clear()
   }
-
-  useEffect(() => {
-    let container = document.getElementById('floating-action-bar')
-    if (!container) {
-      container = document.createElement('div')
-      container.id = 'floating-action-bar'
-      document.body.appendChild(container)
-    }
-
-    if (!(container as any)._reactRoot) {
-      ;(container as any)._reactRoot = createRoot(container)
-    }
-
-    const root = (container as any)._reactRoot
-    if (selectedIds.length === 0) {
-      root.render(null)
-    } else {
-      root.render(
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-fade-in-up">
-          <div className="bg-primary text-primary-foreground shadow-lg rounded-full px-6 py-3 flex items-center gap-4">
-            <span className="font-medium">{selectedIds.length} item(s) selecionado(s)</span>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={handleCopyQuotation}
-              className="rounded-full text-foreground font-semibold hover:bg-secondary/90"
-            >
-              <Copy className="w-4 h-4 mr-2" />
-              Copiar para Cotação
-            </Button>
-          </div>
-        </div>,
-      )
-    }
-  }, [selectedIds, shortages])
 
   useEffect(() => {
     fetchShortages()
@@ -315,6 +277,23 @@ export default function PcpMaterials() {
           <ShortageTable items={historicoItems} allShortages={shortages} />
         </TabsContent>
       </Tabs>
+
+      {selectedIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-fade-in-up">
+          <div className="bg-primary text-primary-foreground shadow-lg rounded-full px-6 py-3 flex items-center gap-4">
+            <span className="font-medium">{selectedIds.length} item(s) selecionado(s)</span>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={handleCopyQuotation}
+              className="rounded-full text-foreground font-semibold hover:bg-secondary/90"
+            >
+              <Copy className="w-4 h-4 mr-2" />
+              Copiar Cotação
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

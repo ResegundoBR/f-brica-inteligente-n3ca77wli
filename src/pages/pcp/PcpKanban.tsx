@@ -22,8 +22,9 @@ import {
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { format, parseISO, differenceInDays, startOfDay } from 'date-fns'
-import { formatDeadline } from '@/lib/pcp-utils'
+import { formatDeadline, isOrderOverdue, filterByDeadline } from '@/lib/pcp-utils'
 import { OutsourcingPanel } from './components/OutsourcingPanel'
+import { PcpFilters } from './components/PcpFilters'
 
 const MACRO_GROUPS = [
   {
@@ -123,6 +124,9 @@ export default function PcpKanban() {
   const [listSelectedOp, setListSelectedOp] = useState<any>(null)
   const [viewMode, setViewMode] = useState<'status' | 'process' | 'list'>('process')
   const [searchQuery, setSearchQuery] = useState('')
+  const [opTypeFilter, setOpTypeFilter] = useState('all')
+  const [clientFilter, setClientFilter] = useState('all')
+  const [deadlineFilter, setDeadlineFilter] = useState('all')
   const [sectorModalOpen, setSectorModalOpen] = useState(false)
   const [selectedSectorMacro, setSelectedSectorMacro] = useState<any>(null)
   const [selectedOpLogs, setSelectedOpLogs] = useState<any[]>([])
@@ -189,6 +193,10 @@ export default function PcpKanban() {
   const filteredOrders = useMemo(
     () =>
       orders.filter((o) => {
+        if (opTypeFilter !== 'all' && o.op_type !== opTypeFilter) return false
+        if (clientFilter !== 'all' && o.client_id !== clientFilter) return false
+        if (!filterByDeadline(o.delivery_date, deadlineFilter)) return false
+
         if (!searchQuery) return true
         const q = searchQuery.toLowerCase()
         const clientName = (o.expand?.client_id?.name || o.client_name || '').toLowerCase()
@@ -205,7 +213,7 @@ export default function PcpKanban() {
           orderNum.includes(q)
         )
       }),
-    [orders, searchQuery],
+    [orders, searchQuery, opTypeFilter, clientFilter, deadlineFilter],
   )
 
   const groupedFilteredOrders = useMemo(() => {
@@ -251,6 +259,14 @@ export default function PcpKanban() {
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
+          <PcpFilters
+            opType={opTypeFilter}
+            setOpType={setOpTypeFilter}
+            client={clientFilter}
+            setClient={setClientFilter}
+            deadline={deadlineFilter}
+            setDeadline={setDeadlineFilter}
+          />
           <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-md shadow-inner">
             <Button
               variant={viewMode === 'status' ? 'default' : 'ghost'}
@@ -788,14 +804,14 @@ export default function PcpKanban() {
                           'text-xs font-semibold px-1.5 py-0.5 rounded',
                           (() => {
                             if (selectedOrder.status === 'Concluído')
-                              return 'bg-slate-100 text-slate-600'
-                            const daysDiff = differenceInDays(
-                              startOfDay(parseISO(selectedOrder.delivery_date)),
-                              startOfDay(new Date()),
+                              return 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                            const overdue = isOrderOverdue(
+                              selectedOrder.delivery_date,
+                              selectedOrder.status,
                             )
-                            if (daysDiff < 0)
+                            if (overdue)
                               return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
-                            return 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                            return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
                           })(),
                         )}
                       >
@@ -864,6 +880,7 @@ function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
   const [time, setTime] = useState('')
   const color = getOrderColor(order)
   const delayedStage = isStageDelayed(order)
+  const overdue = isOrderOverdue(order.delivery_date, order.status)
 
   const borderClass =
     color === 'red'
@@ -981,11 +998,8 @@ function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
               <span className="opacity-50">|</span>
               <span
                 className={cn(
-                  color === 'purple'
-                    ? 'text-purple-500 font-bold'
-                    : color === 'red'
-                      ? 'text-red-500 font-bold'
-                      : '',
+                  'font-bold',
+                  overdue ? 'text-red-500 dark:text-red-400' : 'text-foreground',
                 )}
               >
                 {formatDeadline(order.delivery_date, order.status)}
@@ -1017,11 +1031,12 @@ function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
 function CompactKanbanCard({ order, observations = [], onDragStart, onClick }: any) {
   const color = getOrderColor(order)
   const delayedStage = isStageDelayed(order)
+  const isOverdue = isOrderOverdue(order.delivery_date, order.status)
 
   const bgClass =
     color === 'red'
       ? 'bg-red-500 text-white animate-pulse'
-      : color === 'purple'
+      : isOverdue
         ? 'bg-purple-500 text-white'
         : delayedStage
           ? 'bg-orange-500 text-white shadow-[0_0_8px_rgba(249,115,22,0.8)] dark:shadow-[0_0_8px_rgba(249,115,22,0.5)]'
@@ -1033,8 +1048,6 @@ function CompactKanbanCard({ order, observations = [], onDragStart, onClick }: a
       : order.op_type === 'Especial'
         ? 'Produto Especial'
         : order.expand?.product_id?.name || 'S/Produto'
-
-  const isOverdue = color === 'purple'
   const deadlineText = formatDeadline(order.delivery_date, order.status)
 
   const titleText = `${order.order_number}\n${order.op_type}\n${prodName}\nQtd: ${order.quantity} | ${deadlineText}`

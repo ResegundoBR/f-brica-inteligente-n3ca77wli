@@ -14,7 +14,8 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { format, parseISO, isBefore, startOfDay, differenceInDays } from 'date-fns'
-import { Paperclip, Clock } from 'lucide-react'
+import { Paperclip, Clock, Search } from 'lucide-react'
+import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { formatDeadline, filterByDeadline } from '@/lib/pcp-utils'
 import { PcpOrderForm } from './components/PcpOrderForm'
@@ -31,6 +32,7 @@ export default function PcpOrders() {
   const [clientFilter, setClientFilter] = useState('all')
   const [deadlineFilter, setDeadlineFilter] = useState('all')
   const [selectedOp, setSelectedOp] = useState<PcpOrder | null>(null)
+  const [search, setSearch] = useState('')
   const { toast } = useToast()
 
   const loadData = async () => {
@@ -95,8 +97,19 @@ export default function PcpOrders() {
   useRealtime('pcp_orders', () => loadData())
   useRealtime('pcp_order_observations', () => loadData())
 
+  const filteredOrders = useMemo(() => {
+    if (!search) return orders
+    const q = search.toLowerCase()
+    return orders.filter(
+      (op) =>
+        op.client_name.toLowerCase().includes(q) ||
+        op.order_number.toLowerCase().includes(q) ||
+        (op.expand?.product_id?.name || '').toLowerCase().includes(q),
+    )
+  }, [orders, search])
+
   const groupedOrders = useMemo(() => {
-    const filteredByCustom = orders.filter((op) => {
+    const filteredByCustom = filteredOrders.filter((op) => {
       if (opTypeFilter !== 'all' && op.op_type !== opTypeFilter) return false
       if (clientFilter !== 'all' && op.client_id !== clientFilter) return false
       if (!filterByDeadline(op.delivery_date, deadlineFilter)) return false
@@ -148,7 +161,16 @@ export default function PcpOrders() {
           <h1 className="text-3xl font-bold tracking-tight">Ordens de Produção</h1>
           <p className="text-muted-foreground">Gerencie as OPs e integre documentos externos.</p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-col md:flex-row md:items-center gap-4">
+          <div className="relative w-full max-w-sm">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por cliente ou OP..."
+              className="pl-8"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
           <PcpFilters
             opType={opTypeFilter}
             setOpType={setOpTypeFilter}

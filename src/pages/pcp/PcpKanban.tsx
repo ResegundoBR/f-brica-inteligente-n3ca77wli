@@ -7,7 +7,18 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { AlertCircle, Layers, Columns, Clock, Search, List } from 'lucide-react'
+import {
+  AlertCircle,
+  Layers,
+  Columns,
+  Clock,
+  Search,
+  List,
+  CheckCircle2,
+  XCircle,
+  CircleDot,
+  Circle,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { format, parseISO, differenceInDays, startOfDay } from 'date-fns'
@@ -80,6 +91,9 @@ export default function PcpKanban() {
   const [listSelectedOp, setListSelectedOp] = useState<any>(null)
   const [viewMode, setViewMode] = useState<'status' | 'process' | 'list'>('process')
   const [searchQuery, setSearchQuery] = useState('')
+  const [sectorModalOpen, setSectorModalOpen] = useState(false)
+  const [selectedSectorMacro, setSelectedSectorMacro] = useState<any>(null)
+  const [selectedOpLogs, setSelectedOpLogs] = useState<any[]>([])
 
   const fetchOrders = async () => {
     const res = await pb.collection('pcp_orders').getFullList({
@@ -475,14 +489,28 @@ export default function PcpKanban() {
                           MACRO_GROUPS.findIndex((m) => m.stages.includes(listSelectedOp.stage)) > i
                         return (
                           <div key={macro.name} className="flex items-center gap-2 md:gap-4">
-                            <div
+                            <button
+                              onClick={async () => {
+                                setSelectedSectorMacro(macro)
+                                setSelectedOpLogs([])
+                                setSectorModalOpen(true)
+                                try {
+                                  const logs = await pb.collection('pcp_order_logs').getFullList({
+                                    filter: `order_id="${listSelectedOp.id}"`,
+                                    sort: 'created',
+                                  })
+                                  setSelectedOpLogs(logs)
+                                } catch (e) {
+                                  setSelectedOpLogs([])
+                                }
+                              }}
                               className={cn(
-                                'flex flex-col items-center p-2 md:p-3 rounded-lg border-2 w-24 md:w-32 text-center transition-colors',
+                                'flex flex-col items-center p-2 md:p-3 rounded-lg border-2 w-24 md:w-32 text-center transition-all hover:ring-2 ring-primary/20',
                                 isActiveMacro
                                   ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 shadow-sm'
                                   : isPastMacro
-                                    ? 'border-green-500 bg-green-50 dark:bg-green-900/20 opacity-70'
-                                    : 'border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-800/50 opacity-50',
+                                    ? 'border-green-500 bg-green-50 dark:bg-green-900/20 opacity-70 hover:opacity-100'
+                                    : 'border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-800/50 opacity-50 hover:opacity-100 cursor-pointer',
                               )}
                             >
                               <span className="font-bold text-[10px] md:text-sm mb-1">
@@ -493,7 +521,7 @@ export default function PcpKanban() {
                                   {listSelectedOp.stage}
                                 </Badge>
                               )}
-                            </div>
+                            </button>
                             {i < MACRO_GROUPS.length - 1 && (
                               <div className="text-slate-300 dark:text-slate-700 font-bold">→</div>
                             )}
@@ -579,6 +607,71 @@ export default function PcpKanban() {
               )}
             </div>
           </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={sectorModalOpen} onOpenChange={setSectorModalOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Progresso do Setor: {selectedSectorMacro?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            {selectedSectorMacro && listSelectedOp && (
+              <div className="flex flex-col gap-3">
+                {(() => {
+                  const allStages = MACRO_GROUPS.flatMap((m) => m.stages)
+                  const currentStageIdx = allStages.indexOf(listSelectedOp.stage)
+
+                  return selectedSectorMacro.stages.map((stage: string) => {
+                    const stageIdx = allStages.indexOf(stage)
+                    const logExists = selectedOpLogs.some((l) => l.stage === stage)
+                    const isCurrent =
+                      stage === listSelectedOp.stage && listSelectedOp.status !== 'Concluído'
+                    const isPast =
+                      stageIdx < currentStageIdx || listSelectedOp.status === 'Concluído'
+
+                    let statusIcon = (
+                      <Circle className="size-5 text-slate-300 dark:text-slate-600" />
+                    )
+                    let statusLabel = 'Pendente'
+                    let textClass = 'text-slate-500 dark:text-slate-400'
+
+                    if (isCurrent) {
+                      statusIcon = <CircleDot className="size-5 text-blue-500 fill-blue-500/20" />
+                      statusLabel = 'Em Execução'
+                      textClass = 'text-blue-700 dark:text-blue-400 font-semibold'
+                    } else if (logExists) {
+                      statusIcon = <CheckCircle2 className="size-5 text-green-500" />
+                      statusLabel = 'Concluído'
+                      textClass = 'text-green-700 dark:text-green-400'
+                    } else if (isPast && !logExists) {
+                      statusIcon = <XCircle className="size-5 text-red-500" />
+                      statusLabel = 'Pulado'
+                      textClass = 'text-red-700 dark:text-red-400'
+                    }
+
+                    return (
+                      <div
+                        key={stage}
+                        className="flex items-center justify-between p-3 border rounded-lg bg-slate-50/50 dark:bg-slate-900/50"
+                      >
+                        <div className="flex items-center gap-3">
+                          {statusIcon}
+                          <span className={cn('font-medium', textClass)}>{stage}</span>
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className={cn('font-normal', textClass, 'border-current/20')}
+                        >
+                          {statusLabel}
+                        </Badge>
+                      </div>
+                    )
+                  })
+                })()}
+              </div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 

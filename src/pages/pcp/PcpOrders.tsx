@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState, useMemo } from 'react'
 import pb from '@/lib/pocketbase/client'
 import { PcpOrder, Product, Client, PcpOrderObservation } from '@/types'
 import { useRealtime } from '@/hooks/use-realtime'
+import { useToast } from '@/hooks/use-toast'
 import {
   Table,
   TableBody,
@@ -25,31 +26,62 @@ export default function PcpOrders() {
   const [observations, setObservations] = useState<Record<string, PcpOrderObservation[]>>({})
   const [isOpen, setIsOpen] = useState(false)
   const [selectedOp, setSelectedOp] = useState<PcpOrder | null>(null)
+  const { toast } = useToast()
 
   const loadData = async () => {
     try {
-      const [ops, prods, clis, obs] = await Promise.all([
-        pb
-          .collection('pcp_orders')
-          .getFullList<PcpOrder>({ sort: '-created', expand: 'product_id,client_id' }),
-        pb.collection('products').getFullList<Product>({ sort: 'name', expand: 'status' }),
-        pb.collection('clients').getFullList<Client>({ sort: 'name' }),
-        pb
-          .collection('pcp_order_observations')
-          .getFullList<PcpOrderObservation>({ sort: 'created' }),
-      ])
+      const ops = await pb
+        .collection('pcp_orders')
+        .getFullList<PcpOrder>({ sort: '-created', expand: 'product_id,client_id' })
       setOrders(ops)
-      setProducts(prods)
-      setClients(clis)
+    } catch (e: any) {
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível carregar as ordens de produção.',
+        variant: 'destructive',
+      })
+    }
 
+    try {
+      const prods = await pb
+        .collection('products')
+        .getFullList<Product>({ sort: 'name', expand: 'status' })
+      setProducts(prods)
+    } catch (e: any) {
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível carregar os produtos.',
+        variant: 'destructive',
+      })
+    }
+
+    try {
+      const clis = await pb.collection('clients').getFullList<Client>({ sort: 'name' })
+      setClients(clis)
+    } catch (e: any) {
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível carregar os clientes.',
+        variant: 'destructive',
+      })
+    }
+
+    try {
+      const obs = await pb
+        .collection('pcp_order_observations')
+        .getFullList<PcpOrderObservation>({ sort: 'created' })
       const obsMap: Record<string, PcpOrderObservation[]> = {}
       obs.forEach((o) => {
         if (!obsMap[o.order_id]) obsMap[o.order_id] = []
         obsMap[o.order_id].push(o)
       })
       setObservations(obsMap)
-    } catch {
-      /* intentionally ignored */
+    } catch (e: any) {
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível carregar as observações.',
+        variant: 'destructive',
+      })
     }
   }
 

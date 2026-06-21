@@ -190,45 +190,69 @@ export default function PcpMaterials() {
               {triagemItems.map((item) => (
                 <Card
                   key={item.id}
-                  className="border-l-4 border-l-yellow-500 bg-white dark:bg-slate-900"
+                  className="border-l-4 border-l-yellow-500 bg-white dark:bg-slate-900 flex flex-col shadow-sm"
                 >
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-lg">{item.description}</CardTitle>
-                    <div className="text-sm text-muted-foreground font-medium">
-                      Código: {item.code || '-'}
+                  <div className="p-3 space-y-2 flex-1">
+                    <div className="flex justify-between items-start gap-2">
+                      <div>
+                        <h3 className="font-semibold leading-tight text-sm text-slate-800 dark:text-slate-200">
+                          {item.description}
+                        </h3>
+                        <p className="text-[11px] text-muted-foreground mt-0.5 font-medium">
+                          Cód: {item.code || '-'}
+                        </p>
+                      </div>
+                      <Badge
+                        variant="secondary"
+                        className="font-bold text-xs bg-slate-100 dark:bg-slate-800"
+                      >
+                        {item.quantity} un
+                      </Badge>
                     </div>
-                  </CardHeader>
-                  <CardContent className="pb-3 text-sm space-y-2">
-                    <div className="flex justify-between items-center bg-slate-100 dark:bg-slate-800/50 p-2 rounded">
-                      <span className="text-muted-foreground">Qtd Solicitada</span>
-                      <span className="font-bold text-lg">{item.quantity}</span>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="bg-slate-50 dark:bg-slate-800/50 p-1.5 rounded border border-slate-100 dark:border-slate-800">
+                        <span className="text-muted-foreground block text-[10px] uppercase font-bold tracking-wider">
+                          OP
+                        </span>
+                        <span className="font-semibold text-blue-600 dark:text-blue-400 truncate block">
+                          {item.expand?.order_id?.order_number || '-'}
+                        </span>
+                      </div>
+                      <div className="bg-slate-50 dark:bg-slate-800/50 p-1.5 rounded border border-slate-100 dark:border-slate-800">
+                        <span className="text-muted-foreground block text-[10px] uppercase font-bold tracking-wider">
+                          Setor
+                        </span>
+                        <span className="font-medium text-slate-700 dark:text-slate-300 truncate block">
+                          {item.sector}
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-muted-foreground">OP Associada</span>
-                      <span className="font-semibold text-blue-600 dark:text-blue-400">
-                        {item.expand?.order_id?.order_number}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-muted-foreground">Setor de Origem</span>
-                      <span>{item.sector}</span>
-                    </div>
-                  </CardContent>
-                  <CardFooter className="flex gap-2 pt-2">
+
+                    {item.observation && (
+                      <div className="text-[11px] text-slate-600 dark:text-slate-400 bg-yellow-50/50 dark:bg-yellow-900/10 p-1.5 rounded border border-yellow-100 dark:border-yellow-900/30">
+                        <span className="font-semibold text-yellow-700 dark:text-yellow-500">
+                          Obs:
+                        </span>{' '}
+                        {item.observation}
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-2 border-t border-slate-100 dark:border-slate-800 flex gap-2 bg-slate-50/50 dark:bg-slate-900/50">
                     <Button
                       variant="outline"
-                      className="flex-1 text-xs px-2"
+                      className="flex-1 h-8 text-[11px] px-2 bg-white dark:bg-slate-950"
                       onClick={() => handleUpdateStatus(item.id, 'Liberado_Estoque')}
                     >
-                      <CheckCircle className="size-3.5 mr-1 text-green-600" /> No Estoque
+                      <CheckCircle className="size-3 mr-1.5 text-green-600" /> No Estoque
                     </Button>
                     <Button
-                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs px-2"
+                      className="flex-1 bg-blue-600 hover:bg-blue-700 h-8 text-white text-[11px] px-2 shadow-sm"
                       onClick={() => handleUpdateStatus(item.id, 'Cotação')}
                     >
-                      <ShoppingCart className="size-3.5 mr-1" /> Comprar
+                      <ShoppingCart className="size-3 mr-1.5" /> Comprar
                     </Button>
-                  </CardFooter>
+                  </div>
                 </Card>
               ))}
             </div>
@@ -449,58 +473,67 @@ function GroupedCompraCard({ group, onUpdate }: { group: any; onUpdate: any }) {
   }
 
   return (
-    <Card className="overflow-hidden border-2 bg-white dark:bg-slate-900">
-      <div className={cn('h-2 w-full', status === 'Cotação' ? 'bg-orange-400' : 'bg-blue-500')} />
-      <div className="p-4 md:p-6 flex flex-col md:flex-row gap-6">
-        <div className="flex-1 space-y-4">
+    <Card className="overflow-hidden border bg-white dark:bg-slate-900 shadow-sm">
+      <div className={cn('h-1.5 w-full', status === 'Cotação' ? 'bg-orange-400' : 'bg-blue-500')} />
+      <div className="flex flex-col md:flex-row">
+        {/* 60% Left Side - Main Info */}
+        <div className="p-3 md:p-4 w-full md:w-[55%] space-y-3 flex flex-col justify-between">
           <div>
-            <h3 className="text-xl font-bold">{group.description}</h3>
-            <p className="text-sm text-muted-foreground font-medium mt-1">
-              Código: {group.code || '-'}
-            </p>
+            <div className="flex justify-between items-start gap-4">
+              <div>
+                <h3 className="text-base font-bold text-slate-800 dark:text-slate-200 leading-tight">
+                  {group.description}
+                </h3>
+                <p className="text-xs text-muted-foreground font-medium mt-0.5">
+                  Cód: {group.code || '-'}
+                </p>
+              </div>
+              <div className="bg-slate-100 dark:bg-slate-800/50 px-2 py-1 rounded border border-slate-200 dark:border-slate-700 text-center shrink-0">
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-bold uppercase tracking-wider leading-none mb-0.5">
+                  Total
+                </span>
+                <span className="text-sm font-black text-blue-600 dark:text-blue-400 leading-none">
+                  {group.totalQuantity}
+                </span>
+              </div>
+            </div>
           </div>
 
-          <div className="bg-slate-100 dark:bg-slate-800/50 p-4 rounded-lg flex items-center justify-between border">
-            <span className="text-slate-600 dark:text-slate-300 font-semibold">
-              Qtd Total Consolidada
-            </span>
-            <span className="text-2xl font-black text-blue-600 dark:text-blue-400">
-              {group.totalQuantity}
-            </span>
-          </div>
-
           <div>
-            <span className="text-xs uppercase font-bold text-muted-foreground mb-2 block tracking-wider">
-              OPs Aguardando este material
+            <span className="text-[10px] uppercase font-bold text-muted-foreground mb-1 block tracking-wider">
+              OPs Aguardando
             </span>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-1.5">
               {group.items.map((item: any) => (
                 <Badge
                   key={item.id}
                   variant="secondary"
-                  className="px-2.5 py-1 text-sm bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700"
+                  className="px-1.5 py-0.5 text-[11px] bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700"
                 >
                   {item.expand?.order_id?.order_number}{' '}
-                  <span className="opacity-50 ml-1 font-normal">(Qtd {item.quantity})</span>
+                  <span className="opacity-60 ml-1 font-normal">({item.quantity}un)</span>
                 </Badge>
               ))}
             </div>
           </div>
         </div>
 
-        <div className="flex-1 border-t md:border-t-0 md:border-l pt-4 md:pt-0 md:pl-6 space-y-4 flex flex-col justify-center">
-          <div className="space-y-2">
-            <Label>Fase da Compra</Label>
+        {/* 40% Right Side - Status/Actions */}
+        <div className="p-3 md:p-4 w-full md:w-[45%] border-t md:border-t-0 md:border-l border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 space-y-3 flex flex-col justify-center">
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+              Fase da Compra
+            </Label>
             <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger className="h-12 text-base font-medium">
+              <SelectTrigger className="h-8 text-sm font-medium bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 shadow-sm">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="Cotação">Em Cotação</SelectItem>
-                <SelectItem value="Compra">Pedido Feito (Aguardando)</SelectItem>
+                <SelectItem value="Compra">Pedido Feito</SelectItem>
                 <SelectItem
                   value="Recebido"
-                  className="text-green-600 font-bold dark:text-green-400"
+                  className="text-green-600 font-bold dark:text-green-400 focus:text-green-700 focus:bg-green-50 dark:focus:bg-green-900/30"
                 >
                   Marcar como Recebido
                 </SelectItem>
@@ -508,32 +541,38 @@ function GroupedCompraCard({ group, onUpdate }: { group: any; onUpdate: any }) {
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <Label>Fornecedor (Opcional)</Label>
-            <Input
-              value={supplier}
-              onChange={(e) => setSupplier(e.target.value)}
-              placeholder="Nome da empresa"
-              className="h-10"
-            />
-          </div>
+          <div className="flex gap-2">
+            <div className="space-y-1.5 flex-1">
+              <Label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                Fornecedor
+              </Label>
+              <Input
+                value={supplier}
+                onChange={(e) => setSupplier(e.target.value)}
+                placeholder="Empresa..."
+                className="h-8 text-sm bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 shadow-sm px-2"
+              />
+            </div>
 
-          <div className="space-y-2">
-            <Label>Previsão de Entrega (Opcional)</Label>
-            <Input
-              type="date"
-              value={expectedDate}
-              onChange={(e) => setExpectedDate(e.target.value)}
-              className="h-10"
-            />
+            <div className="space-y-1.5 flex-[0.8]">
+              <Label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                Previsão
+              </Label>
+              <Input
+                type="date"
+                value={expectedDate}
+                onChange={(e) => setExpectedDate(e.target.value)}
+                className="h-8 text-xs bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 shadow-sm px-2"
+              />
+            </div>
           </div>
 
           <Button
-            className="w-full mt-2 h-12 text-base font-bold"
+            className="w-full h-8 text-xs font-bold mt-1 shadow-sm"
             onClick={handleSave}
             variant={status === 'Recebido' ? 'default' : 'outline'}
           >
-            {status === 'Recebido' ? 'Confirmar Recebimento Geral' : 'Salvar Informações'}
+            {status === 'Recebido' ? 'Confirmar Recebimento' : 'Salvar Info'}
           </Button>
         </div>
       </div>

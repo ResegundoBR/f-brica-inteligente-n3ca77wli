@@ -16,7 +16,41 @@ export interface PcpFiltersProps {
   setClient: (v: string) => void
   deadline: string
   setDeadline: (v: string) => void
+  status: string
+  setStatus: (v: string) => void
+  stage: string
+  setStage: (v: string) => void
 }
+
+const STAGES = [
+  'Separação',
+  'Cotação',
+  'Compra',
+  'Retirada',
+  'Aguardando',
+  'Corte',
+  'Dobra',
+  'Calandra',
+  'Solda',
+  'Acab. Solda',
+  'Furação',
+  'Rosca',
+  'Concreto',
+  'Terceirização',
+  'Preparação',
+  'Pintura',
+  'Verniz',
+  'Retoques',
+  'Montagem',
+  'Qualidade',
+  'Embalagem',
+  'Suprimentos',
+  'Fabricação',
+  'Acabamento',
+  'Expedição',
+  'Separação no estoque fisico',
+  'Projetos',
+]
 
 export function PcpFilters({
   opType,
@@ -25,6 +59,10 @@ export function PcpFilters({
   setClient,
   deadline,
   setDeadline,
+  status,
+  setStatus,
+  stage,
+  setStage,
 }: PcpFiltersProps) {
   const [clients, setClients] = useState<Client[]>([])
 
@@ -60,8 +98,35 @@ export function PcpFilters({
         </SelectContent>
       </Select>
 
+      <Select value={status} onValueChange={setStatus}>
+        <SelectTrigger className="w-[160px] bg-background">
+          <SelectValue placeholder="Status" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Qualquer Status</SelectItem>
+          <SelectItem value="Fila">Fila</SelectItem>
+          <SelectItem value="Em Andamento">Em Andamento</SelectItem>
+          <SelectItem value="Parado">Parado</SelectItem>
+          <SelectItem value="Concluído">Concluído</SelectItem>
+        </SelectContent>
+      </Select>
+
+      <Select value={stage} onValueChange={setStage}>
+        <SelectTrigger className="w-[160px] bg-background">
+          <SelectValue placeholder="Estágio" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Qualquer Estágio</SelectItem>
+          {STAGES.map((s) => (
+            <SelectItem key={s} value={s}>
+              {s}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
       <Select value={deadline} onValueChange={setDeadline}>
-        <SelectTrigger className="w-[180px] bg-background">
+        <SelectTrigger className="w-[160px] bg-background">
           <SelectValue placeholder="Prazo" />
         </SelectTrigger>
         <SelectContent>

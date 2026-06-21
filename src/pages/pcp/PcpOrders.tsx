@@ -31,6 +31,8 @@ export default function PcpOrders() {
   const [opTypeFilter, setOpTypeFilter] = useState('all')
   const [clientFilter, setClientFilter] = useState('all')
   const [deadlineFilter, setDeadlineFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [stageFilter, setStageFilter] = useState('all')
   const [selectedOp, setSelectedOp] = useState<PcpOrder | null>(null)
   const [search, setSearch] = useState('')
   const { toast } = useToast()
@@ -107,6 +109,7 @@ export default function PcpOrders() {
           ? op.manual_product_name || ''
           : op.expand?.product_id?.name || ''
       ).toLowerCase()
+      const productCode = (op.expand?.product_id?.code || '').toLowerCase()
       const orderNum = (op.order_number || '').toLowerCase()
       const opNum = (op.op_number || '').toLowerCase()
       const obsSector = (op.observation_sector || '').toLowerCase()
@@ -114,6 +117,7 @@ export default function PcpOrders() {
       return (
         clientName.includes(q) ||
         productName.includes(q) ||
+        productCode.includes(q) ||
         orderNum.includes(q) ||
         opNum.includes(q) ||
         obsSector.includes(q)
@@ -125,6 +129,8 @@ export default function PcpOrders() {
     const filteredByCustom = filteredOrders.filter((op) => {
       if (opTypeFilter !== 'all' && op.op_type !== opTypeFilter) return false
       if (clientFilter !== 'all' && op.client_id !== clientFilter) return false
+      if (statusFilter !== 'all' && op.status !== statusFilter) return false
+      if (stageFilter !== 'all' && op.stage !== stageFilter) return false
       if (!filterByDeadline(op.delivery_date, deadlineFilter)) return false
       return true
     })
@@ -191,6 +197,10 @@ export default function PcpOrders() {
             setClient={setClientFilter}
             deadline={deadlineFilter}
             setDeadline={setDeadlineFilter}
+            status={statusFilter}
+            setStatus={setStatusFilter}
+            stage={stageFilter}
+            setStage={setStageFilter}
           />
           <PcpOrderForm
             isOpen={isOpen}

@@ -272,3 +272,15 @@ export interface PcpOrder {
     client_id?: Client
   }
 }
+
+export interface PcpOrderObservation {
+  id: string
+  order_id: string
+  sector: 'Fabricação' | 'Acabamento' | 'Montagem'
+  content: string
+  created: string
+  updated: string
+  expand?: {
+    order_id?: PcpOrder
+  }
+}

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-21T13:36:13.840Z",
+  "generatedAt": "2026-06-21T13:54:15.867Z",
   "collections": [
     {
       "name": "users",
@@ -1114,6 +1114,40 @@
         }
       ],
       "indexes": ["CREATE INDEX idx_pcp_order_logs_order ON pcp_order_logs (order_id)"]
+    },
+    {
+      "name": "pcp_order_observations",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "order_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "pcp_orders"
+        },
+        {
+          "name": "sector",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["Fabricação", "Acabamento", "Montagem"]
+        },
+        {
+          "name": "content",
+          "type": "text",
+          "required": true,
+          "system": false
+        }
+      ],
+      "indexes": []
     }
   ]
 }

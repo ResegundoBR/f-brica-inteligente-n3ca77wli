@@ -36,6 +36,7 @@ const navItems = [
   { title: 'Dashboard', url: '/', icon: LayoutDashboard, group: 'Engenharia' },
   { title: 'Catálogo Técnico', url: '/catalogo', icon: BookOpen, group: 'Engenharia' },
   { title: 'Evolução Aprendizado', url: '/aprendizado', icon: GraduationCap, group: 'Engenharia' },
+  { title: 'Dashboard PCP', url: '/pcp/dashboard', icon: LayoutDashboard, group: 'PCP' },
   { title: 'Painel de Controle', url: '/pcp/kanban', icon: Kanban, group: 'PCP' },
   { title: 'Ordens de Produção', url: '/pcp/ordens', icon: FileText, group: 'PCP' },
   { title: 'Clientes', url: '/pcp/clientes', icon: Users, group: 'PCP' },
@@ -82,6 +83,7 @@ export function AppSidebar() {
       case 'Status dos Produtos':
       case 'Log de Atividades':
         return !!role.access_users
+      case 'Dashboard PCP':
       case 'Painel de Controle':
       case 'Ordens de Produção':
       case 'Clientes':

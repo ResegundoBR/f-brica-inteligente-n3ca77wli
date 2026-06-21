@@ -265,7 +265,7 @@ export interface PcpOrder {
   bottleneck_reason: 'Nenhum' | 'Falta de Material' | 'Dúvida Técnica' | 'Sobrecarga'
   bottleneck_details?: string
   observations?: string
-  observation_sector?: 'Fabricação' | 'Acabamento' | 'Montagem' | ''
+  observation_sector?: 'Fabricação' | 'Acabamento' | 'Montagem' | 'Projetos' | ''
   delivery_date: string
   started_at?: string
   finished_at?: string
@@ -282,7 +282,7 @@ export interface PcpOrder {
 export interface PcpOrderObservation {
   id: string
   order_id: string
-  sector: 'Fabricação' | 'Acabamento' | 'Montagem'
+  sector: 'Fabricação' | 'Acabamento' | 'Montagem' | 'Projetos'
   content: string
   created: string
   updated: string

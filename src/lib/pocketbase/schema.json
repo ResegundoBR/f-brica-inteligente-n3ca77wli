@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-21T20:09:17.653Z",
+  "generatedAt": "2026-06-21T20:23:17.851Z",
   "collections": [
     {
       "name": "users",
@@ -909,7 +909,8 @@
             "Fabricação",
             "Acabamento",
             "Expedição",
-            "Separação no estoque fisico"
+            "Separação no estoque fisico",
+            "Projetos"
           ]
         },
         {
@@ -1007,7 +1008,7 @@
           "type": "select",
           "required": false,
           "system": false,
-          "selectValues": ["Fabricação", "Acabamento", "Montagem"]
+          "selectValues": ["Fabricação", "Acabamento", "Montagem", "Projetos"]
         },
         {
           "name": "op_number",
@@ -1144,7 +1145,7 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": ["Fabricação", "Acabamento", "Montagem"]
+          "selectValues": ["Fabricação", "Acabamento", "Montagem", "Projetos"]
         },
         {
           "name": "content",

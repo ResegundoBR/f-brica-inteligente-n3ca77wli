@@ -67,6 +67,8 @@ export function filterByDeadline(
   }
 }
 
+const engenhariaStages = ['Projetos']
+
 const fabricacaoStages = [
   'Separação no estoque fisico',
   'Separação',
@@ -94,6 +96,9 @@ export function shouldHighlightObservation(op: any, currentStage: string): boole
     return true
   }
 
+  if (op.observation_sector === 'Projetos' && engenhariaStages.includes(currentStage)) {
+    return true
+  }
   if (op.observation_sector === 'Fabricação' && fabricacaoStages.includes(currentStage)) {
     return true
   }
@@ -114,6 +119,9 @@ export function isSectorActiveForStage(sector: string, currentStage: string): bo
     return true
   }
 
+  if (sector === 'Projetos' && engenhariaStages.includes(currentStage)) {
+    return true
+  }
   if (sector === 'Fabricação' && fabricacaoStages.includes(currentStage)) {
     return true
   }

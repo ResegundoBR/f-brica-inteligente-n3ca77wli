@@ -30,6 +30,12 @@ import { Package } from 'lucide-react'
 
 const MACRO_GROUPS = [
   {
+    name: 'Engenharia/Projetos',
+    color: 'bg-indigo-100/50 dark:bg-indigo-900/20 text-indigo-800 dark:text-indigo-300',
+    borderColor: 'border-indigo-200 dark:border-indigo-800',
+    stages: ['Projetos'],
+  },
+  {
     name: 'Suprimentos',
     color: 'bg-blue-100/50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300',
     borderColor: 'border-blue-200 dark:border-blue-800',
@@ -77,6 +83,7 @@ const MACRO_GROUPS = [
 const STATUSES = ['Fila', 'Em Andamento', 'Parado', 'Concluído']
 
 const STAGE_THRESHOLDS: Record<string, number> = {
+  Projetos: 72,
   'Separação no estoque fisico': 24,
   Separação: 24,
   Cotação: 24,

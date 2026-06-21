@@ -115,11 +115,17 @@ export default function PcpOrders() {
   }, [orders])
 
   const today = startOfDay(new Date())
-  const isOpDelayed = (op: PcpOrder) =>
-    op.status !== 'Concluído' && isBefore(startOfDay(parseISO(op.delivery_date)), today)
+  const getOrderColor = (op: PcpOrder) => {
+    if (op.status === 'Parado' || (op.bottleneck_reason && op.bottleneck_reason !== 'Nenhum'))
+      return 'red'
+    const isDelayed =
+      op.status !== 'Concluído' && isBefore(startOfDay(parseISO(op.delivery_date)), today)
+    if (isDelayed) return 'purple'
+    return 'blue'
+  }
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="flex flex-col gap-4 p-4">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Ordens de Produção</h1>
@@ -185,8 +191,12 @@ export default function PcpOrders() {
                       key={op.id}
                       className={cn(
                         'cursor-pointer hover:bg-muted/30 transition-colors',
-                        isOpDelayed(op) &&
+                        getOrderColor(op) === 'red' &&
                           'bg-red-50/50 hover:bg-red-100/50 dark:bg-red-950/20 dark:hover:bg-red-900/30',
+                        getOrderColor(op) === 'purple' &&
+                          'bg-purple-50/50 hover:bg-purple-100/50 dark:bg-purple-950/20 dark:hover:bg-purple-900/30',
+                        getOrderColor(op) === 'blue' &&
+                          'bg-blue-50/50 hover:bg-blue-100/50 dark:bg-blue-950/20 dark:hover:bg-blue-900/30',
                       )}
                       onClick={() => setSelectedOp(op)}
                     >
@@ -222,12 +232,20 @@ export default function PcpOrders() {
                       <TableCell>
                         <div className="flex items-center gap-2">
                           {format(parseISO(op.delivery_date), 'dd/MM/yyyy')}
-                          {isOpDelayed(op) && (
+                          {getOrderColor(op) === 'purple' && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Clock className="size-4 text-purple-500" />
+                              </TooltipTrigger>
+                              <TooltipContent>Entrega atrasada</TooltipContent>
+                            </Tooltip>
+                          )}
+                          {getOrderColor(op) === 'red' && (
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <Clock className="size-4 text-red-500" />
                               </TooltipTrigger>
-                              <TooltipContent>Entrega atrasada</TooltipContent>
+                              <TooltipContent>Ordem Parada / Gargalo</TooltipContent>
                             </Tooltip>
                           )}
                         </div>
@@ -242,7 +260,11 @@ export default function PcpOrders() {
                         <span
                           className={cn(
                             'text-sm font-medium whitespace-nowrap',
-                            isOpDelayed(op) ? 'text-red-500' : 'text-slate-600 dark:text-slate-400',
+                            getOrderColor(op) === 'purple'
+                              ? 'text-purple-500'
+                              : getOrderColor(op) === 'red'
+                                ? 'text-red-600'
+                                : 'text-slate-600 dark:text-slate-400',
                           )}
                         >
                           {formatDeadline(op.delivery_date, op.status)}

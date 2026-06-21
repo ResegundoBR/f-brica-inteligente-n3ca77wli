@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { Card, CardContent } from '@/components/ui/card'
@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { AlertCircle, Layers, Columns, Clock, Search } from 'lucide-react'
+import { AlertCircle, Layers, Columns, Clock, Search, List } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { format, parseISO, differenceInDays, startOfDay } from 'date-fns'
@@ -55,12 +55,30 @@ const MACRO_GROUPS = [
 
 const STATUSES = ['Fila', 'Em Andamento', 'Parado', 'Concluído']
 
+export function getOrderColor(order: any) {
+  if (
+    order.status === 'Parado' ||
+    (order.bottleneck_reason && order.bottleneck_reason !== 'Nenhum')
+  ) {
+    return 'red'
+  }
+  const daysDiff = differenceInDays(
+    startOfDay(parseISO(order.delivery_date)),
+    startOfDay(new Date()),
+  )
+  if (order.status !== 'Concluído' && daysDiff < 0) {
+    return 'purple'
+  }
+  return 'blue'
+}
+
 export default function PcpKanban() {
   const [orders, setOrders] = useState<any[]>([])
   const [observations, setObservations] = useState<Record<string, any[]>>({})
   const [stuckModalOpen, setStuckModalOpen] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
-  const [viewMode, setViewMode] = useState<'status' | 'process'>('process')
+  const [listSelectedOp, setListSelectedOp] = useState<any>(null)
+  const [viewMode, setViewMode] = useState<'status' | 'process' | 'list'>('process')
   const [searchQuery, setSearchQuery] = useState('')
 
   const fetchOrders = async () => {
@@ -72,6 +90,10 @@ export default function PcpKanban() {
     if (selectedOrder) {
       const updated = res.find((o) => o.id === selectedOrder.id)
       if (updated) setSelectedOrder(updated)
+    }
+    if (listSelectedOp) {
+      const updated = res.find((o) => o.id === listSelectedOp.id)
+      if (updated) setListSelectedOp(updated)
     }
   }
 
@@ -118,29 +140,59 @@ export default function PcpKanban() {
     }
   }
 
-  const filteredOrders = orders.filter((o) => {
-    if (!searchQuery) return true
-    const q = searchQuery.toLowerCase()
-    const clientName = (o.expand?.client_id?.name || o.client_name || '').toLowerCase()
-    const productName = (
-      o.op_type === 'Assistência' ? o.manual_product_name : o.expand?.product_id?.name || ''
-    ).toLowerCase()
-    const date = o.delivery_date ? format(parseISO(o.delivery_date), 'dd/MM/yyyy') : ''
-    const orderNum = (o.order_number || '').toLowerCase()
+  const filteredOrders = useMemo(
+    () =>
+      orders.filter((o) => {
+        if (!searchQuery) return true
+        const q = searchQuery.toLowerCase()
+        const clientName = (o.expand?.client_id?.name || o.client_name || '').toLowerCase()
+        const productName = (
+          o.op_type === 'Assistência' ? o.manual_product_name : o.expand?.product_id?.name || ''
+        ).toLowerCase()
+        const date = o.delivery_date ? format(parseISO(o.delivery_date), 'dd/MM/yyyy') : ''
+        const orderNum = (o.order_number || '').toLowerCase()
 
-    return (
-      clientName.includes(q) || productName.includes(q) || date.includes(q) || orderNum.includes(q)
-    )
-  })
+        return (
+          clientName.includes(q) ||
+          productName.includes(q) ||
+          date.includes(q) ||
+          orderNum.includes(q)
+        )
+      }),
+    [orders, searchQuery],
+  )
+
+  const groupedFilteredOrders = useMemo(() => {
+    const groups: {
+      order_number: string
+      client_name: string
+      items: any[]
+    }[] = []
+    const map = new Map<string, any[]>()
+    filteredOrders.forEach((op) => {
+      if (!map.has(op.order_number)) {
+        map.set(op.order_number, [])
+        groups.push({
+          order_number: op.order_number,
+          client_name: op.expand?.client_id?.name || op.client_name,
+          items: map.get(op.order_number)!,
+        })
+      }
+      map.get(op.order_number)!.push(op)
+    })
+    return groups
+  }, [filteredOrders])
 
   const stuckOrders = filteredOrders.filter((o) => o.status === 'Parado')
 
   return (
-    <div className="flex flex-col h-[calc(100vh-2rem)] p-4 md:p-6 overflow-hidden bg-slate-50/50 dark:bg-background">
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-4 shrink-0 gap-4">
+    <div className="flex flex-col h-[calc(100vh-1rem)] p-3 md:p-4 overflow-hidden bg-slate-50/50 dark:bg-background">
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-3 shrink-0 gap-3">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Painel de Controle</h1>
-          <p className="text-muted-foreground mt-1">Gerencie as OPs por processo ou status.</p>
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Painel de Controle</h1>
+          <p className="text-sm md:text-base text-muted-foreground mt-1">
+            Gerencie as OPs e visualize o fluxo.
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative">
@@ -148,32 +200,57 @@ export default function PcpKanban() {
             <Input
               type="search"
               placeholder="Buscar OPs..."
-              className="pl-8 w-[200px] md:w-[300px] h-9"
+              className="pl-8 w-[200px] md:w-[250px] h-9"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-          <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-md">
+          <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-md shadow-inner">
             <Button
               variant={viewMode === 'status' ? 'default' : 'ghost'}
               size="sm"
               onClick={() => setViewMode('status')}
-              className="gap-2"
+              className={cn(
+                'gap-2 text-xs h-8',
+                viewMode === 'status' &&
+                  'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm',
+              )}
             >
-              <Layers className="size-4" /> Por Status
+              <Layers className="size-3.5" /> Por Status
             </Button>
             <Button
               variant={viewMode === 'process' ? 'default' : 'ghost'}
               size="sm"
               onClick={() => setViewMode('process')}
-              className="gap-2"
+              className={cn(
+                'gap-2 text-xs h-8',
+                viewMode === 'process' &&
+                  'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm',
+              )}
             >
-              <Columns className="size-4" /> Por Processo
+              <Columns className="size-3.5" /> Por Processo
+            </Button>
+            <Button
+              variant={viewMode === 'list' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('list')}
+              className={cn(
+                'gap-2 text-xs h-8',
+                viewMode === 'list' &&
+                  'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm',
+              )}
+            >
+              <List className="size-3.5" /> Lista Lateral
             </Button>
           </div>
           {stuckOrders.length > 0 && (
-            <Button variant="destructive" className="gap-2" onClick={() => setStuckModalOpen(true)}>
-              <AlertCircle className="size-4" />
+            <Button
+              variant="destructive"
+              size="sm"
+              className="gap-2 h-8 text-xs"
+              onClick={() => setStuckModalOpen(true)}
+            >
+              <AlertCircle className="size-3.5" />
               Travadas ({stuckOrders.length})
             </Button>
           )}
@@ -258,7 +335,7 @@ export default function PcpKanban() {
                       >
                         <div className="h-28 w-full flex flex-col items-center justify-end pb-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 shrink-0">
                           <div
-                            className="rotate-180 text-[10px] leading-tight font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap overflow-hidden"
+                            className="rotate-180 text-xs md:text-sm leading-tight font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap overflow-hidden"
                             style={{ writingMode: 'vertical-rl' }}
                           >
                             {stage}
@@ -281,6 +358,167 @@ export default function PcpKanban() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {viewMode === 'list' && (
+          <div className="flex w-full h-full border rounded-xl overflow-hidden bg-white dark:bg-slate-950 shadow-sm">
+            <div className="w-1/3 md:w-1/4 border-r flex flex-col bg-slate-50/50 dark:bg-slate-900/20">
+              <div className="p-3 border-b font-semibold bg-slate-100 dark:bg-slate-800 shrink-0">
+                Pedidos e OPs
+              </div>
+              <ScrollArea className="flex-1">
+                <div className="p-2 space-y-2">
+                  {groupedFilteredOrders.length === 0 ? (
+                    <div className="text-center p-4 text-xs text-muted-foreground">
+                      Nenhuma OP encontrada
+                    </div>
+                  ) : (
+                    groupedFilteredOrders.map((group) => (
+                      <div
+                        key={group.order_number}
+                        className="border rounded-md bg-white dark:bg-slate-950 shadow-sm overflow-hidden"
+                      >
+                        <div className="p-2 bg-slate-100/50 dark:bg-slate-800/50 border-b text-sm font-semibold flex flex-col md:flex-row md:items-center justify-between gap-1">
+                          <span>{group.order_number}</span>
+                          <span className="text-muted-foreground font-normal text-xs truncate max-w-[120px]">
+                            {group.client_name}
+                          </span>
+                        </div>
+                        <div className="p-1 space-y-1">
+                          {group.items.map((op) => {
+                            const color = getOrderColor(op)
+                            const indicatorClass =
+                              color === 'red'
+                                ? 'bg-red-500'
+                                : color === 'purple'
+                                  ? 'bg-purple-500'
+                                  : 'bg-blue-500'
+                            return (
+                              <button
+                                key={op.id}
+                                onClick={() => setListSelectedOp(op)}
+                                className={cn(
+                                  'w-full text-left px-2 py-1.5 text-xs rounded hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 transition-colors',
+                                  listSelectedOp?.id === op.id &&
+                                    'bg-slate-100 dark:bg-slate-800 ring-1 ring-slate-300 dark:ring-slate-600 font-medium',
+                                )}
+                              >
+                                <div
+                                  className={cn(
+                                    'w-2 h-2 rounded-full shrink-0',
+                                    indicatorClass,
+                                    color === 'red' && 'animate-pulse',
+                                  )}
+                                />
+                                <div className="flex-1 truncate">
+                                  {op.op_type === 'Assistência'
+                                    ? op.manual_product_name
+                                    : op.op_type === 'Especial'
+                                      ? 'Produto Especial'
+                                      : op.expand?.product_id?.name || 'S/Produto'}
+                                </div>
+                                <Badge
+                                  variant="outline"
+                                  className="text-[9px] px-1 h-4 shrink-0 bg-background"
+                                >
+                                  {op.stage}
+                                </Badge>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </ScrollArea>
+            </div>
+            <div className="flex-1 flex flex-col p-4 md:p-6 overflow-y-auto">
+              {listSelectedOp ? (
+                <div className="max-w-4xl mx-auto w-full space-y-6">
+                  <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                    <div>
+                      <h2 className="text-xl md:text-2xl font-bold">
+                        {listSelectedOp.order_number} -{' '}
+                        {listSelectedOp.op_type === 'Assistência'
+                          ? listSelectedOp.manual_product_name
+                          : listSelectedOp.op_type === 'Especial'
+                            ? 'Produto Especial'
+                            : listSelectedOp.expand?.product_id?.name || 'S/Produto'}
+                      </h2>
+                      <p className="text-muted-foreground mt-1">
+                        {listSelectedOp.expand?.client_id?.name || listSelectedOp.client_name} |
+                        Qtd: {listSelectedOp.quantity}
+                      </p>
+                    </div>
+                    <Badge
+                      variant={getOrderColor(listSelectedOp) === 'red' ? 'destructive' : 'default'}
+                      className={cn(
+                        getOrderColor(listSelectedOp) === 'purple' &&
+                          'bg-purple-500 hover:bg-purple-600',
+                        'text-sm px-3 py-1',
+                      )}
+                    >
+                      {listSelectedOp.status}
+                    </Badge>
+                  </div>
+
+                  <div className="bg-slate-50 dark:bg-slate-900 rounded-xl p-4 md:p-6 border shadow-sm">
+                    <h3 className="text-lg font-semibold mb-6 flex items-center gap-2">
+                      <Columns className="size-5" /> Fluxo de Processo
+                    </h3>
+                    <div className="flex flex-wrap gap-2 md:gap-4 items-center justify-center">
+                      {MACRO_GROUPS.map((macro, i) => {
+                        const isActiveMacro = macro.stages.includes(listSelectedOp.stage)
+                        const isPastMacro =
+                          MACRO_GROUPS.findIndex((m) => m.stages.includes(listSelectedOp.stage)) > i
+                        return (
+                          <div key={macro.name} className="flex items-center gap-2 md:gap-4">
+                            <div
+                              className={cn(
+                                'flex flex-col items-center p-2 md:p-3 rounded-lg border-2 w-24 md:w-32 text-center transition-colors',
+                                isActiveMacro
+                                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 shadow-sm'
+                                  : isPastMacro
+                                    ? 'border-green-500 bg-green-50 dark:bg-green-900/20 opacity-70'
+                                    : 'border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-800/50 opacity-50',
+                              )}
+                            >
+                              <span className="font-bold text-[10px] md:text-sm mb-1">
+                                {macro.name}
+                              </span>
+                              {isActiveMacro && (
+                                <Badge className="text-[9px] md:text-[10px] bg-blue-500 animate-pulse">
+                                  {listSelectedOp.stage}
+                                </Badge>
+                              )}
+                            </div>
+                            {i < MACRO_GROUPS.length - 1 && (
+                              <div className="text-slate-300 dark:text-slate-700 font-bold">→</div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                    <div className="mt-8">
+                      <Button
+                        onClick={() => setSelectedOrder(listSelectedOp)}
+                        variant="outline"
+                        className="w-full"
+                      >
+                        Ver Detalhes Completos da OP
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
+                  <List className="size-12 opacity-20 mb-4" />
+                  <p>Selecione uma OP na lista lateral para ver os detalhes</p>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -415,8 +653,12 @@ export default function PcpKanban() {
                   <div>
                     <span className="text-muted-foreground block text-xs">Status Atual</span>
                     <Badge
-                      variant={selectedOrder.status === 'Parado' ? 'destructive' : 'default'}
-                      className="mt-1"
+                      variant={getOrderColor(selectedOrder) === 'red' ? 'destructive' : 'default'}
+                      className={cn(
+                        'mt-1',
+                        getOrderColor(selectedOrder) === 'purple' &&
+                          'bg-purple-500 hover:bg-purple-600',
+                      )}
                     >
                       {selectedOrder.status}
                     </Badge>
@@ -467,13 +709,21 @@ export default function PcpKanban() {
 
 function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
   const [time, setTime] = useState('')
-  const isStuck = order.status === 'Parado'
+  const color = getOrderColor(order)
+
   const borderClass =
-    order.op_type === 'Assistência'
-      ? 'border-l-fuchsia-500'
-      : order.op_type === 'Especial'
-        ? 'border-l-slate-900 dark:border-l-slate-100'
+    color === 'red'
+      ? 'border-l-red-500'
+      : color === 'purple'
+        ? 'border-l-purple-500'
         : 'border-l-blue-500'
+
+  const cardBgClass =
+    color === 'red'
+      ? 'bg-red-50/50 dark:bg-red-950/10'
+      : color === 'purple'
+        ? 'bg-purple-50/50 dark:bg-purple-950/10'
+        : 'bg-card'
 
   useEffect(() => {
     const update = () => {
@@ -497,13 +747,15 @@ function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
       onClick={onClick}
       className={cn(
         'cursor-grab active:cursor-grabbing hover:shadow-md transition-all border-l-4 group',
-        isStuck ? 'border-l-red-500 bg-red-50/50 dark:bg-red-950/10' : borderClass,
+        borderClass,
+        cardBgClass,
       )}
     >
       <CardContent className="p-3 flex flex-col gap-1.5">
         <div className="flex items-start justify-between">
           <div className="font-semibold text-sm">{order.order_number}</div>
-          {isStuck && <AlertCircle className="size-4 text-red-500 shrink-0" />}
+          {color === 'red' && <AlertCircle className="size-4 text-red-500 shrink-0" />}
+          {color === 'purple' && <Clock className="size-4 text-purple-500 shrink-0" />}
         </div>
         <div
           className="text-xs text-muted-foreground line-clamp-1"
@@ -512,7 +764,7 @@ function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
           {order.expand?.client_id?.name || order.client_name}
         </div>
         <div
-          className="text-xs font-medium text-foreground line-clamp-1"
+          className="text-xs font-medium text-foreground line-clamp-1 flex items-center gap-1.5"
           title={
             order.op_type === 'Assistência'
               ? order.manual_product_name
@@ -521,11 +773,25 @@ function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
                 : order.expand?.product_id?.name || 'S/Produto'
           }
         >
-          {order.op_type === 'Assistência'
-            ? order.manual_product_name
-            : order.op_type === 'Especial'
-              ? 'Produto Especial'
-              : order.expand?.product_id?.name || 'S/Produto'}
+          {order.op_type === 'Assistência' && (
+            <span
+              className="w-1.5 h-1.5 rounded-full bg-fuchsia-500 shrink-0"
+              title="Assistência"
+            />
+          )}
+          {order.op_type === 'Especial' && (
+            <span
+              className="w-1.5 h-1.5 rounded-full bg-slate-900 dark:bg-slate-100 shrink-0"
+              title="Especial"
+            />
+          )}
+          <span className="truncate">
+            {order.op_type === 'Assistência'
+              ? order.manual_product_name
+              : order.op_type === 'Especial'
+                ? 'Produto Especial'
+                : order.expand?.product_id?.name || 'S/Produto'}
+          </span>
         </div>
         {observations.length > 0 && (
           <div className="flex flex-col gap-0.5 mt-0.5 w-full">
@@ -553,12 +819,11 @@ function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
               <span className="opacity-50">|</span>
               <span
                 className={cn(
-                  differenceInDays(
-                    startOfDay(parseISO(order.delivery_date)),
-                    startOfDay(new Date()),
-                  ) < 0 && order.status !== 'Concluído'
-                    ? 'text-red-500 font-bold'
-                    : '',
+                  color === 'purple'
+                    ? 'text-purple-500 font-bold'
+                    : color === 'red'
+                      ? 'text-red-500 font-bold'
+                      : '',
                 )}
               >
                 {formatDeadline(order.delivery_date, order.status)}
@@ -578,16 +843,13 @@ function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
 }
 
 function CompactKanbanCard({ order, observations = [], onDragStart, onClick }: any) {
-  const isStuck = order.status === 'Parado'
-  const isAssist = order.op_type === 'Assistência'
-  const isEspecial = order.op_type === 'Especial'
+  const color = getOrderColor(order)
 
-  const bgClass = isStuck
-    ? 'bg-red-500 text-white animate-pulse'
-    : isAssist
-      ? 'bg-fuchsia-500 text-white'
-      : isEspecial
-        ? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900'
+  const bgClass =
+    color === 'red'
+      ? 'bg-red-500 text-white animate-pulse'
+      : color === 'purple'
+        ? 'bg-purple-500 text-white'
         : 'bg-blue-500 text-white'
 
   const prodName =
@@ -597,11 +859,7 @@ function CompactKanbanCard({ order, observations = [], onDragStart, onClick }: a
         ? 'Produto Especial'
         : order.expand?.product_id?.name || 'S/Produto'
 
-  const daysDiff = differenceInDays(
-    startOfDay(parseISO(order.delivery_date)),
-    startOfDay(new Date()),
-  )
-  const isOverdue = order.status !== 'Concluído' && daysDiff < 0
+  const isOverdue = color === 'purple'
   const deadlineText = formatDeadline(order.delivery_date, order.status)
 
   const titleText = `${order.order_number}\n${order.op_type}\n${prodName}\nQtd: ${order.quantity} | ${deadlineText}`
@@ -613,32 +871,45 @@ function CompactKanbanCard({ order, observations = [], onDragStart, onClick }: a
       onClick={onClick}
       title={titleText}
       className={cn(
-        'text-[8px] md:text-[9px] font-bold p-0.5 md:p-1 rounded-sm w-full text-center flex flex-col items-center cursor-grab active:cursor-grabbing transition-all hover:opacity-80 shadow-sm border border-black/10 dark:border-white/10',
+        'text-[8px] md:text-[9px] font-bold p-0.5 md:p-1 rounded-sm w-full text-center flex flex-col items-center cursor-grab active:cursor-grabbing transition-all hover:opacity-80 shadow-sm border border-black/10 dark:border-white/10 relative',
         bgClass,
       )}
     >
+      {order.op_type === 'Assistência' && (
+        <span
+          className="absolute -top-1 -left-1 w-2 h-2 rounded-full bg-fuchsia-400 border border-white"
+          title="Assistência"
+        />
+      )}
+      {order.op_type === 'Especial' && (
+        <span
+          className="absolute -top-1 -left-1 w-2 h-2 rounded-full bg-slate-900 border border-white"
+          title="Especial"
+        />
+      )}
+
       <div className="flex items-center justify-between w-full gap-1">
         <span className="block truncate flex-1 text-left">{order.order_number}</span>
         {order.status !== 'Concluído' && (
           <span
             className={cn(
               'text-[6px] px-0.5 rounded-sm whitespace-nowrap shrink-0 leading-tight',
-              isOverdue ? 'bg-red-600 text-white' : 'bg-white/20 text-white',
+              isOverdue || color === 'red' ? 'bg-white/30 text-white' : 'bg-white/20 text-white',
             )}
           >
             {deadlineText}
           </span>
         )}
       </div>
-      <span className="block truncate w-full font-normal opacity-90 text-[7px] text-left">
+      <span className="block truncate w-full font-normal opacity-90 text-[7px] text-left mt-0.5">
         {prodName}
       </span>
       {observations.length > 0 && (
-        <div className="flex flex-col items-start text-left w-full gap-0.5 mt-0.5 border-t border-black/10 dark:border-white/10 pt-0.5">
+        <div className="flex flex-col items-start text-left w-full gap-0.5 mt-0.5 border-t border-white/20 pt-0.5">
           {observations.map((obs: any) => (
             <span
               key={obs.id}
-              className="block w-full truncate font-normal opacity-80 text-[7px]"
+              className="block w-full truncate font-normal opacity-90 text-[7px]"
               title={`${obs.sector}: ${obs.content}`}
             >
               {obs.sector[0]}: {obs.content}

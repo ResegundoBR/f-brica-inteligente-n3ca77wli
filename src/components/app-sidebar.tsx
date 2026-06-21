@@ -1,4 +1,5 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/use-auth'
 import {
   LayoutDashboard,
@@ -23,7 +24,6 @@ import {
   SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarFooter,
   SidebarMenu,
@@ -31,11 +31,22 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from '@/components/ui/sidebar'
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion'
 
 const navItems = [
-  { title: 'Dashboard', url: '/', icon: LayoutDashboard, group: 'Engenharia' },
-  { title: 'Catálogo Técnico', url: '/catalogo', icon: BookOpen, group: 'Engenharia' },
-  { title: 'Evolução Aprendizado', url: '/aprendizado', icon: GraduationCap, group: 'Engenharia' },
+  { title: 'Dashboard', url: '/', icon: LayoutDashboard, group: 'Produto/Processos' },
+  { title: 'Catálogo Técnico', url: '/catalogo', icon: BookOpen, group: 'Produto/Processos' },
+  {
+    title: 'Evolução Aprendizado',
+    url: '/aprendizado',
+    icon: GraduationCap,
+    group: 'Produto/Processos',
+  },
   { title: 'Dashboard PCP', url: '/pcp/dashboard', icon: LayoutDashboard, group: 'PCP' },
   { title: 'Painel de Controle', url: '/pcp/kanban', icon: Kanban, group: 'PCP' },
   { title: 'Ordens de Produção', url: '/pcp/ordens', icon: FileText, group: 'PCP' },
@@ -54,6 +65,18 @@ export function AppSidebar() {
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
   const { setOpenMobile, toggleSidebar, state } = useSidebar()
+
+  const exactMatch = navItems.find((item) => location.pathname === item.url)
+  const activeItem =
+    exactMatch ||
+    navItems.find((item) => item.url !== '/' && location.pathname.startsWith(item.url))
+  const [activeGroup, setActiveGroup] = useState<string>(activeItem?.group || 'Produto/Processos')
+
+  useEffect(() => {
+    if (activeItem) {
+      setActiveGroup(activeItem.group)
+    }
+  }, [location.pathname, activeItem])
 
   const handleLogout = () => {
     signOut()
@@ -122,32 +145,49 @@ export function AppSidebar() {
         </span>
       </SidebarHeader>
       <SidebarContent>
-        {['Engenharia', 'PCP', 'Administração'].map((group) => (
-          <SidebarGroup key={group}>
-            <SidebarGroupLabel>{group}</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {navItems
-                  .filter((i) => i.group === group && hasAccess(i.title))
-                  .map((item) => {
-                    const isActive =
-                      location.pathname === item.url ||
-                      (item.url !== '/' && location.pathname.startsWith(item.url))
-                    return (
-                      <SidebarMenuItem key={item.title}>
-                        <SidebarMenuButton asChild isActive={isActive} tooltip={item.title}>
-                          <Link to={item.url} onClick={() => setOpenMobile(false)}>
-                            <item.icon />
-                            <span>{item.title}</span>
-                          </Link>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    )
-                  })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        ))}
+        <Accordion
+          type="single"
+          value={activeGroup}
+          onValueChange={setActiveGroup}
+          collapsible
+          className="w-full space-y-2 p-2"
+        >
+          {['Produto/Processos', 'PCP', 'Administração'].map((group) => {
+            const groupItems = navItems.filter((i) => i.group === group && hasAccess(i.title))
+            if (groupItems.length === 0) return null
+
+            return (
+              <AccordionItem value={group} key={group} className="border-none">
+                <SidebarGroup className="p-0">
+                  <AccordionTrigger className="px-3 hover:no-underline flex h-8 shrink-0 items-center rounded-md text-xs font-semibold text-sidebar-foreground/70 uppercase tracking-wider transition-[margin,opacity,colors] ease-linear group-data-[collapsible=icon]:-mt-8 group-data-[collapsible=icon]:opacity-0 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 data-[state=open]:text-sidebar-foreground">
+                    {group}
+                  </AccordionTrigger>
+                  <AccordionContent className="pb-0">
+                    <SidebarGroupContent className="pt-1">
+                      <SidebarMenu>
+                        {groupItems.map((item) => {
+                          const isActive =
+                            location.pathname === item.url ||
+                            (item.url !== '/' && location.pathname.startsWith(item.url))
+                          return (
+                            <SidebarMenuItem key={item.title}>
+                              <SidebarMenuButton asChild isActive={isActive} tooltip={item.title}>
+                                <Link to={item.url} onClick={() => setOpenMobile(false)}>
+                                  <item.icon />
+                                  <span>{item.title}</span>
+                                </Link>
+                              </SidebarMenuButton>
+                            </SidebarMenuItem>
+                          )
+                        })}
+                      </SidebarMenu>
+                    </SidebarGroupContent>
+                  </AccordionContent>
+                </SidebarGroup>
+              </AccordionItem>
+            )
+          })}
+        </Accordion>
       </SidebarContent>
       <SidebarFooter className="border-t border-slate-800/50">
         <SidebarMenu>

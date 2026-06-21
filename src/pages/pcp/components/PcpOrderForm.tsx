@@ -95,7 +95,7 @@ export function PcpOrderForm({
       if (annex) formData.append('annex', annex)
 
       formData.append('status', 'Fila')
-      formData.append('stage', 'Separação no estoque fisico')
+      formData.append('stage', opType === 'Especial' ? 'Projetos' : 'Separação no estoque fisico')
       formData.append('bottleneck_reason', 'Nenhum')
 
       const record = await pb.collection('pcp_orders').create(formData)

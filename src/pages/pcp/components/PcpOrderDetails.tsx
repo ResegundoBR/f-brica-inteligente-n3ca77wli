@@ -12,6 +12,7 @@ import { Paperclip, AlertCircle, Clock } from 'lucide-react'
 import pb from '@/lib/pocketbase/client'
 import { cn } from '@/lib/utils'
 import { OutsourcingPanel } from './OutsourcingPanel'
+import { Switch } from '@/components/ui/switch'
 import { useState, useEffect } from 'react'
 
 export function PcpOrderDetails({
@@ -134,6 +135,32 @@ export function PcpOrderDetails({
               <div>
                 <Label className="text-muted-foreground">Etapa Atual</Label>
                 <p className="font-medium text-sm mt-1">{op.stage}</p>
+              </div>
+
+              <div className="col-span-2 mt-2 flex items-center justify-between p-3 border rounded-md bg-red-50/50 dark:bg-red-950/20">
+                <div>
+                  <Label className="text-red-600 dark:text-red-400 font-bold">Urgência</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Sinaliza esta OP como emergência no painel de operadores
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={cn(
+                      'text-xs font-bold',
+                      op.manual_priority === 1 ? 'text-red-600' : 'text-slate-400',
+                    )}
+                  >
+                    {op.manual_priority === 1 ? 'EMERGÊNCIA' : 'NORMAL'}
+                  </span>
+                  <Switch
+                    checked={op.manual_priority === 1}
+                    onCheckedChange={async (checked) => {
+                      const newVal = checked ? 1 : 0
+                      await pb.collection('pcp_orders').update(op.id, { manual_priority: newVal })
+                    }}
+                  />
+                </div>
               </div>
 
               <div className="col-span-2 mt-2">

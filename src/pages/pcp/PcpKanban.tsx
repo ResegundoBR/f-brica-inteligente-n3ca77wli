@@ -27,6 +27,7 @@ import { OutsourcingPanel } from './components/OutsourcingPanel'
 import { PcpFilters } from './components/PcpFilters'
 import { Link } from 'react-router-dom'
 import { Package } from 'lucide-react'
+import { Switch } from '@/components/ui/switch'
 
 const MACRO_GROUPS = [
   {
@@ -861,6 +862,37 @@ export default function PcpKanban() {
                     <span className="text-muted-foreground block text-xs">Processo Atual</span>
                     <span className="font-medium">{selectedOrder.stage}</span>
                   </div>
+                  <div className="col-span-2 mt-2 flex items-center justify-between p-3 border rounded-md bg-red-50/50 dark:bg-red-950/20">
+                    <div>
+                      <span className="block text-red-600 dark:text-red-400 font-bold text-sm">
+                        Urgência
+                      </span>
+                      <p className="text-xs text-muted-foreground">
+                        Sinaliza esta OP como emergência no painel de operadores
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={cn(
+                          'text-xs font-bold',
+                          selectedOrder.manual_priority === 1 ? 'text-red-600' : 'text-slate-400',
+                        )}
+                      >
+                        {selectedOrder.manual_priority === 1 ? 'EMERGÊNCIA' : 'NORMAL'}
+                      </span>
+                      <Switch
+                        checked={selectedOrder.manual_priority === 1}
+                        onCheckedChange={async (checked) => {
+                          const newVal = checked ? 1 : 0
+                          const updated = { ...selectedOrder, manual_priority: newVal }
+                          setSelectedOrder(updated)
+                          await pb
+                            .collection('pcp_orders')
+                            .update(selectedOrder.id, { manual_priority: newVal })
+                        }}
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <div className="mt-4">
@@ -906,9 +938,11 @@ function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
   const color = getOrderColor(order)
   const delayedStage = isStageDelayed(order)
   const overdue = isOrderOverdue(order.delivery_date, order.status)
+  const isEmergency = order.manual_priority === 1
 
-  const borderClass =
-    color === 'red'
+  const borderClass = isEmergency
+    ? 'border-l-red-600 border-l-4 animate-pulse shadow-[0_0_10px_rgba(220,38,38,0.3)]'
+    : color === 'red'
       ? 'border-l-red-500'
       : color === 'purple'
         ? 'border-l-purple-500'
@@ -916,8 +950,9 @@ function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
           ? 'border-l-orange-500 shadow-[inset_2px_0_0_0_rgba(249,115,22,1)] dark:shadow-[inset_2px_0_0_0_rgba(249,115,22,0.5)]'
           : 'border-l-blue-500'
 
-  const cardBgClass =
-    color === 'red'
+  const cardBgClass = isEmergency
+    ? 'bg-red-50/80 dark:bg-red-950/20 ring-1 ring-red-500/50'
+    : color === 'red'
       ? 'bg-red-50/50 dark:bg-red-950/10'
       : color === 'purple'
         ? 'bg-purple-50/50 dark:bg-purple-950/10'
@@ -951,8 +986,17 @@ function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
     >
       <CardContent className="p-3 flex flex-col gap-1.5">
         <div className="flex items-start justify-between">
-          <div className="font-semibold text-sm">{order.order_number}</div>
-          {color === 'red' && <AlertCircle className="size-4 text-red-500 shrink-0" />}
+          <div className="font-semibold text-sm flex flex-col gap-1">
+            {order.order_number}
+            {isEmergency && (
+              <Badge variant="destructive" className="text-[9px] px-1.5 py-0 h-4 bg-red-600">
+                🚨 EMERGÊNCIA
+              </Badge>
+            )}
+          </div>
+          {color === 'red' && !isEmergency && (
+            <AlertCircle className="size-4 text-red-500 shrink-0" />
+          )}
           {color === 'purple' && <Clock className="size-4 text-purple-500 shrink-0" />}
           {delayedStage && color !== 'red' && color !== 'purple' && (
             <Clock
@@ -1057,9 +1101,11 @@ function CompactKanbanCard({ order, observations = [], onDragStart, onClick }: a
   const color = getOrderColor(order)
   const delayedStage = isStageDelayed(order)
   const isOverdue = isOrderOverdue(order.delivery_date, order.status)
+  const isEmergency = order.manual_priority === 1
 
-  const bgClass =
-    color === 'red'
+  const bgClass = isEmergency
+    ? 'bg-red-600 text-white animate-pulse ring-2 ring-red-500 ring-offset-1 ring-offset-background'
+    : color === 'red'
       ? 'bg-red-500 text-white animate-pulse'
       : isOverdue
         ? 'bg-purple-500 text-white'
@@ -1103,7 +1149,14 @@ function CompactKanbanCard({ order, observations = [], onDragStart, onClick }: a
 
       <div className="flex items-center justify-between w-full gap-1">
         <span className="block truncate flex-1 text-left flex items-center gap-0.5">
-          {delayedStage && color !== 'red' && <Clock className="size-2 animate-pulse" />}
+          {delayedStage && color !== 'red' && !isEmergency && (
+            <Clock className="size-2 animate-pulse" />
+          )}
+          {isEmergency && (
+            <span title="Emergência" className="text-[10px]">
+              🚨
+            </span>
+          )}
           {order.order_number}
         </span>
         {order.status !== 'Concluído' && (

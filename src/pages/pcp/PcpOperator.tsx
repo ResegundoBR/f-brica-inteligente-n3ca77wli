@@ -131,8 +131,7 @@ function FinishDialog({
   onConfirm: (nextStage: string | null) => void
 }) {
   const [open, setOpen] = useState(false)
-  const defaultNext =
-    op.op_type === 'Linha' ? getNextStageForOp(op.stage, op, allProcesses) : getNextStage(op.stage)
+  const defaultNext = getNextStageForOp(op.stage, op, allProcesses)
   const [selectedStage, setSelectedStage] = useState<string>(defaultNext || 'CONCLUIDO')
 
   useEffect(() => {
@@ -273,11 +272,15 @@ function OperatorCard({
   const isDelayed = op.delivery_date
     ? isBefore(parseISO(op.delivery_date), startOfDay(new Date()))
     : false
+  const isEmergency = op.manual_priority === 1
 
   let headerClass = 'bg-blue-500'
   let borderClass = 'border-blue-200 dark:border-blue-900 shadow-md shadow-blue-500/5'
 
-  if (isLocked) {
+  if (isEmergency) {
+    headerClass = 'bg-red-600 animate-pulse'
+    borderClass = 'border-red-600 shadow-lg shadow-red-500/30 ring-2 ring-red-500/50'
+  } else if (isLocked) {
     headerClass = 'bg-red-600'
     borderClass = 'border-red-500 shadow-lg shadow-red-500/10'
   } else if (isDelayed) {
@@ -347,7 +350,14 @@ function OperatorCard({
             >
               {op.stage}
             </Badge>
-            {op.manual_priority && op.manual_priority < 999 ? (
+            {isEmergency ? (
+              <Badge
+                variant="destructive"
+                className="mt-1 text-xs px-2 py-0.5 bg-red-600 text-white font-black tracking-widest uppercase animate-pulse shadow-md"
+              >
+                🚨 EMERGÊNCIA
+              </Badge>
+            ) : op.manual_priority && op.manual_priority < 999 ? (
               <Badge
                 variant="destructive"
                 className="mt-1 text-[10px] px-1.5 py-0 bg-red-600 text-white font-black tracking-widest uppercase"

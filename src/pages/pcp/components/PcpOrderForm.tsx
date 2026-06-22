@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import pb from '@/lib/pocketbase/client'
-import { Client, Product } from '@/types'
+import { Client, Product, ProductProcessModel } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -19,6 +19,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from '@/components/ui/dialog'
 import {
   Select,
@@ -55,11 +56,28 @@ export function PcpOrderForm({
   const [deliveryDate, setDeliveryDate] = useState('')
   const [productId, setProductId] = useState('')
   const [manualProduct, setManualProduct] = useState('')
+  const [manualPriority, setManualPriority] = useState('')
   const [annex, setAnnex] = useState<File | null>(null)
 
   const [formObservations, setFormObservations] = useState<{ sector: string; content: string }[]>(
     [],
   )
+
+  const [processes, setProcesses] = useState<ProductProcessModel[]>([])
+  const [showEstimatesModal, setShowEstimatesModal] = useState(false)
+  const [missingEstimates, setMissingEstimates] = useState<ProductProcessModel[]>([])
+  const [estimatesForm, setEstimatesForm] = useState<Record<string, number>>({})
+
+  useEffect(() => {
+    if (productId && opType === 'Linha') {
+      pb.collection('product_processes')
+        .getFullList<ProductProcessModel>({ filter: `product_id="${productId}"` })
+        .then((res) => setProcesses(res))
+        .catch(() => setProcesses([]))
+    } else {
+      setProcesses([])
+    }
+  }, [productId, opType])
 
   const handleQuickClientSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -75,8 +93,7 @@ export function PcpOrderForm({
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const executeCreateOrder = async () => {
     try {
       const formData = new FormData()
       formData.append('order_number', orderNumber)
@@ -89,6 +106,7 @@ export function PcpOrderForm({
       formData.append('quantity', quantity.toString())
       formData.append('delivery_date', new Date(deliveryDate).toISOString())
       formData.append('op_type', opType)
+      formData.append('manual_priority', manualPriority ? manualPriority : '999')
 
       if (opType === 'Linha' && productId) formData.append('product_id', productId)
       if (opType === 'Assistência') formData.append('manual_product_name', manualProduct)
@@ -121,6 +139,7 @@ export function PcpOrderForm({
       setOpType('Linha')
       setProductId('')
       setManualProduct('')
+      setManualPriority('')
       setAnnex(null)
       setFormObservations([])
       onSuccess()
@@ -129,8 +148,92 @@ export function PcpOrderForm({
     }
   }
 
+  const checkAndSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    if (opType === 'Linha' && productId) {
+      const missing = processes.filter((p) => !p.estimated_hours || p.estimated_hours <= 0)
+      if (missing.length > 0) {
+        setMissingEstimates(missing)
+        const initForm: Record<string, number> = {}
+        missing.forEach((p) => (initForm[p.id] = 0))
+        setEstimatesForm(initForm)
+        setShowEstimatesModal(true)
+        return
+      }
+    }
+
+    await executeCreateOrder()
+  }
+
+  const saveEstimates = async () => {
+    const hasZeros = Object.values(estimatesForm).some((v) => v <= 0)
+    if (hasZeros) {
+      toast({
+        title: 'Aviso',
+        description: 'Todos os tempos devem ser maiores que zero.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    try {
+      for (const p of missingEstimates) {
+        await pb
+          .collection('product_processes')
+          .update(p.id, { estimated_hours: estimatesForm[p.id] })
+      }
+      setShowEstimatesModal(false)
+      toast({ title: 'Sucesso', description: 'Tempos salvos. Criando OP...' })
+      await executeCreateOrder()
+    } catch (e: any) {
+      toast({ title: 'Erro', description: e.message, variant: 'destructive' })
+    }
+  }
+
   return (
     <>
+      <Dialog open={showEstimatesModal} onOpenChange={setShowEstimatesModal}>
+        <DialogContent className="sm:max-w-[450px]">
+          <DialogHeader>
+            <DialogTitle>Configuração de Tempos (On-Demand)</DialogTitle>
+            <DialogDescription>
+              Este produto possui etapas sem tempo estimado. Defina os tempos (em horas) para
+              continuar.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 py-4 max-h-[60vh] overflow-y-auto pr-2">
+            {missingEstimates.map((p) => (
+              <div key={p.id} className="space-y-2">
+                <Label className="font-bold text-slate-700 dark:text-slate-300">{p.name}</Label>
+                <div className="flex gap-2 items-center">
+                  <Input
+                    type="number"
+                    min={0.1}
+                    step={0.1}
+                    required
+                    value={estimatesForm[p.id] || ''}
+                    onChange={(e) =>
+                      setEstimatesForm({ ...estimatesForm, [p.id]: Number(e.target.value) })
+                    }
+                    placeholder="Ex: 2.5"
+                  />
+                  <span className="text-sm text-muted-foreground font-medium">horas</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEstimatesModal(false)}>
+              Cancelar
+            </Button>
+            <Button className="bg-blue-600 hover:bg-blue-700 text-white" onClick={saveEstimates}>
+              Salvar e Criar OP
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={isClientModalOpen} onOpenChange={setIsClientModalOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
@@ -169,7 +272,7 @@ export function PcpOrderForm({
               Preencha os dados ou anexe o documento do sistema externo.
             </SheetDescription>
           </SheetHeader>
-          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+          <form onSubmit={checkAndSubmit} className="mt-6 space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Nº do Pedido</Label>
@@ -277,6 +380,18 @@ export function PcpOrderForm({
                   onChange={(e) => setDeliveryDate(e.target.value)}
                 />
               </div>
+            </div>
+
+            <div className="space-y-2 pt-2">
+              <Label>Prioridade Manual (1 = Alta)</Label>
+              <Input
+                type="number"
+                min={1}
+                max={999}
+                value={manualPriority}
+                onChange={(e) => setManualPriority(e.target.value)}
+                placeholder="Opcional. Padrão: 999"
+              />
             </div>
 
             <div className="space-y-4 pt-2 border-t mt-4">

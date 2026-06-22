@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import pb from '@/lib/pocketbase/client'
-import { PcpOrder } from '@/types'
+import { PcpOrder, ProductProcessModel } from '@/types'
 import { useRealtime } from '@/hooks/use-realtime'
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -222,11 +222,13 @@ function FinishDialog({
 
 function OperatorCard({
   op,
+  process,
   onStart,
   onFinishConfirm,
   onBottleneck,
 }: {
   op: PcpOrder
+  process?: ProductProcessModel
   onStart: () => void
   onFinishConfirm: (nextStage: string | null) => void
   onBottleneck: (reason: string, details: string, missingItems?: any[]) => void
@@ -245,6 +247,21 @@ function OperatorCard({
   } else if (isDelayed) {
     headerClass = 'bg-purple-600'
     borderClass = 'border-purple-500 shadow-lg shadow-purple-500/10'
+  }
+
+  const estHours = process?.estimated_hours || 0
+  let elapsedHours = 0
+  if (op.status === 'Em Andamento' && op.started_at) {
+    elapsedHours = (Date.now() - new Date(op.started_at).getTime()) / (1000 * 60 * 60)
+  }
+  const remainingHours = estHours - elapsedHours
+  const isRed = estHours > 0 && elapsedHours > estHours
+
+  const formatTime = (hours: number) => {
+    const h = Math.floor(Math.abs(hours))
+    const m = Math.floor((Math.abs(hours) - h) * 60)
+    if (h > 0) return `${h}h ${m}m`
+    return `${m}m`
   }
 
   const [openBottleneck, setOpenBottleneck] = useState(false)
@@ -294,10 +311,18 @@ function OperatorCard({
             >
               {op.stage}
             </Badge>
+            {op.manual_priority && op.manual_priority < 999 ? (
+              <Badge
+                variant="destructive"
+                className="mt-1 text-[10px] px-1.5 py-0 bg-red-600 text-white font-black tracking-widest uppercase"
+              >
+                PRIORIDADE {op.manual_priority}
+              </Badge>
+            ) : null}
             {op.delivery_date && (
               <span
                 className={cn(
-                  'text-xs font-bold uppercase tracking-wider',
+                  'text-xs font-bold uppercase tracking-wider mt-1',
                   isDelayed
                     ? 'text-purple-600 dark:text-purple-400'
                     : 'text-slate-500 dark:text-slate-400',
@@ -312,17 +337,19 @@ function OperatorCard({
       </CardHeader>
       <CardContent className="pb-4">
         <div className="text-xl mb-4 font-semibold flex flex-col gap-2 items-start">
-          <Badge
-            variant="outline"
-            className={cn(
-              'border-transparent text-white',
-              op.op_type === 'Assistência' && 'bg-fuchsia-500',
-              op.op_type === 'Especial' && 'bg-slate-900 dark:bg-slate-100 dark:text-slate-900',
-              op.op_type === 'Linha' && 'bg-blue-500',
-            )}
-          >
-            {op.op_type}
-          </Badge>
+          <div className="flex gap-2 items-center flex-wrap">
+            <Badge
+              variant="outline"
+              className={cn(
+                'border-transparent text-white',
+                op.op_type === 'Assistência' && 'bg-fuchsia-500',
+                op.op_type === 'Especial' && 'bg-slate-900 dark:bg-slate-100 dark:text-slate-900',
+                op.op_type === 'Linha' && 'bg-blue-500',
+              )}
+            >
+              {op.op_type}
+            </Badge>
+          </div>
           <span>
             {op.op_type === 'Assistência'
               ? op.manual_product_name
@@ -330,6 +357,30 @@ function OperatorCard({
                 ? 'Produto Especial (Ver Anexo)'
                 : op.expand?.product_id?.name || 'S/Produto'}
           </span>
+
+          {estHours > 0 && (
+            <div
+              className={cn(
+                'flex items-center gap-2 mt-1 font-bold px-2.5 py-1.5 rounded-md text-sm border shadow-sm w-fit',
+                isRed
+                  ? 'bg-red-50 border-red-200 text-red-700 dark:bg-red-900/30 dark:border-red-800 dark:text-red-400'
+                  : 'bg-green-50 border-green-200 text-green-700 dark:bg-green-900/30 dark:border-green-800 dark:text-green-400',
+              )}
+            >
+              <div
+                className={cn(
+                  'size-2.5 rounded-full shadow-inner shrink-0',
+                  isRed ? 'bg-red-500 animate-pulse' : 'bg-green-500',
+                )}
+              ></div>
+              {isRed
+                ? `Atrasado ${formatTime(elapsedHours - estHours)}`
+                : `Restam ${formatTime(remainingHours)}`}
+              <span className="font-normal opacity-75 ml-1 hidden sm:inline">
+                (Est: {estHours}h)
+              </span>
+            </div>
+          )}
         </div>
 
         {op.observations && (
@@ -523,6 +574,7 @@ function OperatorCard({
 
 export default function PcpOperator() {
   const [orders, setOrders] = useState<PcpOrder[]>([])
+  const [processes, setProcesses] = useState<ProductProcessModel[]>([])
   const [selectedSector, setSelectedSector] = useState<SectorName>('Suprimentos')
   const { user } = useAuth()
   const { toast } = useToast()
@@ -542,6 +594,21 @@ export default function PcpOperator() {
         sort: 'delivery_date',
         expand: 'product_id',
       })
+
+      const productIds = Array.from(new Set(records.map((o) => o.product_id).filter(Boolean)))
+      let procs: ProductProcessModel[] = []
+      if (productIds.length > 0) {
+        for (let i = 0; i < productIds.length; i += 50) {
+          const chunk = productIds.slice(i, i + 50)
+          const filter = chunk.map((id) => `product_id="${id}"`).join(' || ')
+          const res = await pb
+            .collection('product_processes')
+            .getFullList<ProductProcessModel>({ filter })
+          procs = [...procs, ...res]
+        }
+      }
+
+      setProcesses(procs)
       setOrders(records)
     } catch {
       /* intentionally ignored */
@@ -553,6 +620,9 @@ export default function PcpOperator() {
   }, [])
 
   useRealtime('pcp_orders', () => {
+    loadData()
+  })
+  useRealtime('product_processes', () => {
     loadData()
   })
 
@@ -590,6 +660,7 @@ export default function PcpOperator() {
         await pb.collection('pcp_orders').update(op.id, {
           status: 'Fila',
           stage: nextStage,
+          started_at: '',
           bottleneck_reason: 'Nenhum',
           bottleneck_details: '',
         })
@@ -666,6 +737,36 @@ export default function PcpOperator() {
     }
   }
 
+  const getElapsedHours = (op: PcpOrder) => {
+    if (op.status === 'Em Andamento' && op.started_at) {
+      return (Date.now() - new Date(op.started_at).getTime()) / (1000 * 60 * 60)
+    }
+    return 0
+  }
+
+  const getRemainingHours = (op: PcpOrder) => {
+    const proc = processes.find((p) => p.product_id === op.product_id && p.name === op.stage)
+    if (!proc || !proc.estimated_hours) return Infinity
+    const elapsed = getElapsedHours(op)
+    return proc.estimated_hours - elapsed
+  }
+
+  const sortOrders = (orderList: PcpOrder[]) => {
+    return [...orderList].sort((a, b) => {
+      const pA = a.manual_priority || 999
+      const pB = b.manual_priority || 999
+      if (pA !== pB) return pA - pB
+
+      const remA = getRemainingHours(a)
+      const remB = getRemainingHours(b)
+      if (remA !== remB) return remA - remB
+
+      const dateA = a.delivery_date ? new Date(a.delivery_date).getTime() : Infinity
+      const dateB = b.delivery_date ? new Date(b.delivery_date).getTime() : Infinity
+      return dateA - dateB
+    })
+  }
+
   const sectorOrders = orders.filter((o) =>
     (SECTORS[selectedSector] as readonly string[]).includes(o.stage),
   )
@@ -676,6 +777,9 @@ export default function PcpOperator() {
   const execucaoOrders = sectorOrders.filter(
     (o) => o.status === 'Em Andamento' || (o.status === 'Parado' && o.started_at),
   )
+
+  const sortedFila = sortOrders(filaOrders)
+  const sortedExecucao = sortOrders(execucaoOrders)
 
   return (
     <div className="flex flex-col gap-6 p-4 md:p-8 bg-slate-50 min-h-[calc(100vh-4rem)] dark:bg-slate-950">
@@ -818,19 +922,22 @@ export default function PcpOperator() {
               Fila para Iniciar
             </h2>
             <Badge variant="secondary" className="text-lg px-3">
-              {filaOrders.length}
+              {sortedFila.length}
             </Badge>
           </div>
           <div className="flex flex-col gap-4">
-            {filaOrders.length === 0 ? (
+            {sortedFila.length === 0 ? (
               <div className="p-8 text-center border-2 border-dashed rounded-xl border-slate-200 dark:border-slate-800 text-slate-400 font-medium">
                 Nenhuma OP na fila deste setor.
               </div>
             ) : (
-              filaOrders.map((op) => (
+              sortedFila.map((op) => (
                 <OperatorCard
                   key={op.id}
                   op={op}
+                  process={processes.find(
+                    (p) => p.product_id === op.product_id && p.name === op.stage,
+                  )}
                   onStart={() => handleStart(op)}
                   onFinishConfirm={(ns) => handleFinishConfirm(op, ns)}
                   onBottleneck={(reason, details, items) =>
@@ -848,19 +955,22 @@ export default function PcpOperator() {
               Em Execução
             </h2>
             <Badge variant="default" className="text-lg px-3 bg-blue-600 hover:bg-blue-600">
-              {execucaoOrders.length}
+              {sortedExecucao.length}
             </Badge>
           </div>
           <div className="flex flex-col gap-4">
-            {execucaoOrders.length === 0 ? (
+            {sortedExecucao.length === 0 ? (
               <div className="p-8 text-center border-2 border-dashed rounded-xl border-slate-200 dark:border-slate-800 text-slate-400 font-medium">
                 Nenhuma OP em execução no momento.
               </div>
             ) : (
-              execucaoOrders.map((op) => (
+              sortedExecucao.map((op) => (
                 <OperatorCard
                   key={op.id}
                   op={op}
+                  process={processes.find(
+                    (p) => p.product_id === op.product_id && p.name === op.stage,
+                  )}
                   onStart={() => handleStart(op)}
                   onFinishConfirm={(ns) => handleFinishConfirm(op, ns)}
                   onBottleneck={(reason, details, items) =>

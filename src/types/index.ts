@@ -141,6 +141,8 @@ export interface ProductProcessModel {
   image?: string | string[]
   order: number
   color?: string
+  estimated_hours?: number
+  is_required?: boolean
   created: string
   updated: string
 }
@@ -267,6 +269,7 @@ export interface PcpOrder {
   observations?: string
   observation_sector?: 'Fabricação' | 'Acabamento' | 'Montagem' | 'Projetos' | ''
   delivery_date: string
+  manual_priority?: number
   started_at?: string
   finished_at?: string
   operator_id?: string

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-22T14:37:33.852Z",
+  "generatedAt": "2026-06-22T15:09:53.662Z",
   "collections": [
     {
       "name": "users",
@@ -632,6 +632,18 @@
           "type": "text",
           "required": false,
           "system": false
+        },
+        {
+          "name": "estimated_hours",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "is_required",
+          "type": "bool",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": []
@@ -1048,6 +1060,12 @@
         {
           "name": "outsourcing_data",
           "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "manual_priority",
+          "type": "number",
           "required": false,
           "system": false
         }

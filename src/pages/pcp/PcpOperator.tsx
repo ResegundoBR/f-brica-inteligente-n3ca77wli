@@ -90,15 +90,35 @@ function getNextStage(current: string) {
   return ALL_STAGES[idx + 1]
 }
 
+function getNextStageForOp(current: string, op: PcpOrder, processes: ProductProcessModel[]) {
+  if (!op.product_id) return getNextStage(current)
+  const opProcesses = processes.filter((p) => p.product_id === op.product_id)
+
+  const currentIdx = ALL_STAGES.indexOf(current)
+  if (currentIdx === -1 || currentIdx === ALL_STAGES.length - 1) return null
+
+  for (let i = currentIdx + 1; i < ALL_STAGES.length; i++) {
+    const stage = ALL_STAGES[i]
+    const proc = opProcesses.find((p) => p.name === stage)
+    if (proc && proc.estimated_hours && proc.estimated_hours > 0) {
+      return stage
+    }
+  }
+  return null
+}
+
 function FinishDialog({
   op,
+  allProcesses,
   onConfirm,
 }: {
   op: PcpOrder
+  allProcesses: ProductProcessModel[]
   onConfirm: (nextStage: string | null) => void
 }) {
   const [open, setOpen] = useState(false)
-  const defaultNext = getNextStage(op.stage)
+  const defaultNext =
+    op.op_type === 'Linha' ? getNextStageForOp(op.stage, op, allProcesses) : getNextStage(op.stage)
   const [selectedStage, setSelectedStage] = useState<string>(defaultNext || 'CONCLUIDO')
 
   useEffect(() => {
@@ -223,12 +243,14 @@ function FinishDialog({
 function OperatorCard({
   op,
   process,
+  allProcesses,
   onStart,
   onFinishConfirm,
   onBottleneck,
 }: {
   op: PcpOrder
   process?: ProductProcessModel
+  allProcesses: ProductProcessModel[]
   onStart: () => void
   onFinishConfirm: (nextStage: string | null) => void
   onBottleneck: (reason: string, details: string, missingItems?: any[]) => void
@@ -424,7 +446,9 @@ function OperatorCard({
           </Button>
         )}
 
-        {inExecucao && !isLocked && <FinishDialog op={op} onConfirm={onFinishConfirm} />}
+        {inExecucao && !isLocked && (
+          <FinishDialog op={op} allProcesses={allProcesses} onConfirm={onFinishConfirm} />
+        )}
 
         <Dialog open={openBottleneck} onOpenChange={handleOpenBottleneckChange}>
           <DialogTrigger asChild>
@@ -627,6 +651,18 @@ export default function PcpOperator() {
   })
 
   const handleStart = async (op: PcpOrder) => {
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === op.id
+          ? {
+              ...o,
+              status: 'Em Andamento',
+              started_at: new Date().toISOString(),
+              operator_id: user?.id,
+            }
+          : o,
+      ),
+    )
     try {
       await pb.collection('pcp_orders').update(op.id, {
         status: 'Em Andamento',
@@ -636,10 +672,41 @@ export default function PcpOperator() {
       toast({ title: 'OP Iniciada', description: `Você começou a trabalhar na ${op.order_number}` })
     } catch (err: any) {
       toast({ title: 'Erro', description: err.message, variant: 'destructive' })
+      loadData()
     }
   }
 
   const handleFinishConfirm = async (op: PcpOrder, nextStage: string | null) => {
+    if (!nextStage) {
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === op.id
+            ? {
+                ...o,
+                status: 'Concluído',
+                finished_at: new Date().toISOString(),
+                bottleneck_reason: 'Nenhum',
+                bottleneck_details: '',
+              }
+            : o,
+        ),
+      )
+    } else {
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === op.id
+            ? {
+                ...o,
+                status: 'Fila',
+                stage: nextStage,
+                started_at: '',
+                bottleneck_reason: 'Nenhum',
+                bottleneck_details: '',
+              }
+            : o,
+        ),
+      )
+    }
     try {
       if (!nextStage) {
         await pb.collection('pcp_orders').update(op.id, {
@@ -668,6 +735,7 @@ export default function PcpOperator() {
       toast({ title: 'Etapa Concluída', description: `A OP avançou com sucesso.` })
     } catch (err: any) {
       toast({ title: 'Erro', description: err.message, variant: 'destructive' })
+      loadData()
     }
   }
 
@@ -677,6 +745,14 @@ export default function PcpOperator() {
     details: string,
     missingItems?: any[],
   ) => {
+    const newStatus = reason === 'Nenhum' ? (op.started_at ? 'Em Andamento' : 'Fila') : 'Parado'
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === op.id
+          ? { ...o, status: newStatus, bottleneck_reason: reason, bottleneck_details: details }
+          : o,
+      ),
+    )
     try {
       if (reason === 'Falta de Material' && missingItems && missingItems.length > 0) {
         for (const item of missingItems) {
@@ -704,6 +780,7 @@ export default function PcpOperator() {
       })
     } catch (err: any) {
       toast({ title: 'Erro', description: err.message, variant: 'destructive' })
+      loadData()
     }
   }
 
@@ -938,6 +1015,7 @@ export default function PcpOperator() {
                   process={processes.find(
                     (p) => p.product_id === op.product_id && p.name === op.stage,
                   )}
+                  allProcesses={processes}
                   onStart={() => handleStart(op)}
                   onFinishConfirm={(ns) => handleFinishConfirm(op, ns)}
                   onBottleneck={(reason, details, items) =>
@@ -971,6 +1049,7 @@ export default function PcpOperator() {
                   process={processes.find(
                     (p) => p.product_id === op.product_id && p.name === op.stage,
                   )}
+                  allProcesses={processes}
                   onStart={() => handleStart(op)}
                   onFinishConfirm={(ns) => handleFinishConfirm(op, ns)}
                   onBottleneck={(reason, details, items) =>

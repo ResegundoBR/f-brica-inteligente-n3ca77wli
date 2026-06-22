@@ -31,6 +31,32 @@ import {
 import { Plus, X } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 
+const ALL_STAGES = [
+  'Separação no estoque fisico',
+  'Separação',
+  'Cotação',
+  'Compra',
+  'Retirada',
+  'Aguardando',
+  'Corte',
+  'Dobra',
+  'Calandra',
+  'Solda',
+  'Acab. Solda',
+  'Furação',
+  'Rosca',
+  'Concreto',
+  'Terceirização',
+  'Preparação',
+  'Pintura',
+  'Verniz',
+  'Retoques',
+  'Montagem',
+  'Qualidade',
+  'Embalagem',
+  'Expedição',
+]
+
 export function PcpOrderForm({
   isOpen,
   onOpenChange,
@@ -65,8 +91,19 @@ export function PcpOrderForm({
 
   const [processes, setProcesses] = useState<ProductProcessModel[]>([])
   const [showEstimatesModal, setShowEstimatesModal] = useState(false)
-  const [missingEstimates, setMissingEstimates] = useState<ProductProcessModel[]>([])
-  const [estimatesForm, setEstimatesForm] = useState<Record<string, number>>({})
+  const [estimatesForm, setEstimatesForm] = useState<Record<string, number | string>>({})
+  const [globalProcessNames, setGlobalProcessNames] = useState<string[]>(ALL_STAGES)
+
+  useEffect(() => {
+    pb.collection('product_processes')
+      .getFullList<{ name: string; order: number }>({ fields: 'name,order', sort: 'order' })
+      .then((res) => {
+        const unique = new Set<string>(ALL_STAGES)
+        res.forEach((r) => unique.add(r.name))
+        setGlobalProcessNames(Array.from(unique))
+      })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (productId && opType === 'Linha') {
@@ -93,7 +130,7 @@ export function PcpOrderForm({
     }
   }
 
-  const executeCreateOrder = async () => {
+  const executeCreateOrder = async (estimates?: Record<string, number | string>) => {
     try {
       const formData = new FormData()
       formData.append('order_number', orderNumber)
@@ -113,8 +150,22 @@ export function PcpOrderForm({
       if (annex) formData.append('annex', annex)
 
       formData.append('status', 'Fila')
-      formData.append('stage', opType === 'Especial' ? 'Projetos' : 'Separação no estoque fisico')
       formData.append('bottleneck_reason', 'Nenhum')
+
+      let initialStage = opType === 'Especial' ? 'Projetos' : 'Separação no estoque fisico'
+
+      if (opType === 'Linha' && productId && estimates) {
+        for (const stage of globalProcessNames) {
+          const val = estimates[stage]
+          const hrs = typeof val === 'number' ? val : parseFloat(val as string)
+          if (hrs > 0) {
+            initialStage = stage
+            break
+          }
+        }
+      }
+
+      formData.append('stage', initialStage)
 
       const record = await pb.collection('pcp_orders').create(formData)
 
@@ -152,40 +203,48 @@ export function PcpOrderForm({
     e.preventDefault()
 
     if (opType === 'Linha' && productId) {
-      const missing = processes.filter((p) => !p.estimated_hours || p.estimated_hours <= 0)
-      if (missing.length > 0) {
-        setMissingEstimates(missing)
-        const initForm: Record<string, number> = {}
-        missing.forEach((p) => (initForm[p.id] = 0))
-        setEstimatesForm(initForm)
-        setShowEstimatesModal(true)
-        return
-      }
+      const initForm: Record<string, number | string> = {}
+      globalProcessNames.forEach((name) => {
+        const existing = processes.find((p) => p.name === name)
+        initForm[name] = existing?.estimated_hours || ''
+      })
+      setEstimatesForm(initForm)
+      setShowEstimatesModal(true)
+      return
     }
 
     await executeCreateOrder()
   }
 
   const saveEstimates = async () => {
-    const hasZeros = Object.values(estimatesForm).some((v) => v <= 0)
-    if (hasZeros) {
-      toast({
-        title: 'Aviso',
-        description: 'Todos os tempos devem ser maiores que zero.',
-        variant: 'destructive',
-      })
-      return
-    }
-
     try {
-      for (const p of missingEstimates) {
-        await pb
-          .collection('product_processes')
-          .update(p.id, { estimated_hours: estimatesForm[p.id] })
+      const existingMap = new Map(processes.map((p) => [p.name, p]))
+      let currentOrder = 1
+
+      for (const name of globalProcessNames) {
+        const val = estimatesForm[name]
+        const num = typeof val === 'number' ? val : parseFloat(val as string)
+        const hrs = isNaN(num) ? 0 : num
+
+        const existing = existingMap.get(name)
+        if (existing) {
+          if (existing.estimated_hours !== hrs) {
+            await pb.collection('product_processes').update(existing.id, { estimated_hours: hrs })
+          }
+        } else if (hrs > 0) {
+          await pb.collection('product_processes').create({
+            product_id: productId,
+            name: name,
+            estimated_hours: hrs,
+            order: currentOrder,
+          })
+        }
+        currentOrder++
       }
+
       setShowEstimatesModal(false)
-      toast({ title: 'Sucesso', description: 'Tempos salvos. Criando OP...' })
-      await executeCreateOrder()
+      toast({ title: 'Sucesso', description: 'Roteiro salvo. Criando OP...' })
+      await executeCreateOrder(estimatesForm)
     } catch (e: any) {
       toast({ title: 'Erro', description: e.message, variant: 'destructive' })
     }
@@ -194,34 +253,44 @@ export function PcpOrderForm({
   return (
     <>
       <Dialog open={showEstimatesModal} onOpenChange={setShowEstimatesModal}>
-        <DialogContent className="sm:max-w-[450px]">
+        <DialogContent className="sm:max-w-[550px]">
           <DialogHeader>
-            <DialogTitle>Configuração de Tempos (On-Demand)</DialogTitle>
+            <DialogTitle>Configuração de Roteiro e Tempos</DialogTitle>
             <DialogDescription>
-              Este produto possui etapas sem tempo estimado. Defina os tempos (em horas) para
-              continuar.
+              Defina o tempo estimado para cada etapa. Deixe em branco ou 0 para pular a etapa.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col gap-4 py-4 max-h-[60vh] overflow-y-auto pr-2">
-            {missingEstimates.map((p) => (
-              <div key={p.id} className="space-y-2">
-                <Label className="font-bold text-slate-700 dark:text-slate-300">{p.name}</Label>
-                <div className="flex gap-2 items-center">
-                  <Input
-                    type="number"
-                    min={0.1}
-                    step={0.1}
-                    required
-                    value={estimatesForm[p.id] || ''}
-                    onChange={(e) =>
-                      setEstimatesForm({ ...estimatesForm, [p.id]: Number(e.target.value) })
-                    }
-                    placeholder="Ex: 2.5"
-                  />
-                  <span className="text-sm text-muted-foreground font-medium">horas</span>
+          <div className="flex flex-col gap-3 py-4 max-h-[60vh] overflow-y-auto pr-2">
+            {globalProcessNames.map((name) => {
+              const val = estimatesForm[name]
+              const isActive = val && Number(val) > 0
+              return (
+                <div key={name} className="flex items-center justify-between gap-4">
+                  <Label
+                    className="font-bold text-slate-700 dark:text-slate-300 w-1/2 truncate"
+                    title={name}
+                  >
+                    {name}
+                  </Label>
+                  <div className="flex gap-2 items-center w-1/2">
+                    <Input
+                      type="number"
+                      min={0}
+                      step={0.1}
+                      value={val === undefined ? '' : val}
+                      onChange={(e) =>
+                        setEstimatesForm({ ...estimatesForm, [name]: e.target.value })
+                      }
+                      placeholder="0 (Pular)"
+                      className={
+                        isActive ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : ''
+                      }
+                    />
+                    <span className="text-sm text-muted-foreground font-medium w-12">horas</span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowEstimatesModal(false)}>

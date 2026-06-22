@@ -70,7 +70,6 @@ export function filterByDeadline(
 const engenhariaStages = ['Projetos']
 
 const fabricacaoStages = [
-  'Separação no estoque fisico',
   'Separação',
   'Corte',
   'Dobra',

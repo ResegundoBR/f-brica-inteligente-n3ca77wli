@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-22T13:08:39.141Z",
+  "generatedAt": "2026-06-22T14:37:33.852Z",
   "collections": [
     {
       "name": "users",
@@ -939,7 +939,6 @@
             "Fabricação",
             "Acabamento",
             "Expedição",
-            "Separação no estoque fisico",
             "Projetos"
           ]
         },

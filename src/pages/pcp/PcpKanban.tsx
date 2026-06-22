@@ -39,14 +39,7 @@ const MACRO_GROUPS = [
     name: 'Suprimentos',
     color: 'bg-blue-100/50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300',
     borderColor: 'border-blue-200 dark:border-blue-800',
-    stages: [
-      'Separação no estoque fisico',
-      'Separação',
-      'Cotação',
-      'Compra',
-      'Retirada',
-      'Aguardando',
-    ],
+    stages: ['Separação', 'Cotação', 'Compra', 'Retirada', 'Aguardando'],
   },
   {
     name: 'Fabricação',
@@ -70,13 +63,13 @@ const MACRO_GROUPS = [
     name: 'Montagem',
     color: 'bg-green-100/50 dark:bg-green-900/20 text-green-800 dark:text-green-300',
     borderColor: 'border-green-200 dark:border-green-800',
-    stages: ['Montagem', 'Qualidade'],
+    stages: ['Montagem'],
   },
   {
     name: 'Expedição',
     color: 'bg-teal-100/50 dark:bg-teal-900/20 text-teal-800 dark:text-teal-300',
     borderColor: 'border-teal-200 dark:border-teal-800',
-    stages: ['Embalagem', 'Expedição'],
+    stages: ['Qualidade', 'Embalagem', 'Expedição'],
   },
 ]
 
@@ -84,7 +77,6 @@ const STATUSES = ['Fila', 'Em Andamento', 'Parado', 'Concluído']
 
 const STAGE_THRESHOLDS: Record<string, number> = {
   Projetos: 72,
-  'Separação no estoque fisico': 24,
   Separação: 24,
   Cotação: 24,
   Compra: 48,

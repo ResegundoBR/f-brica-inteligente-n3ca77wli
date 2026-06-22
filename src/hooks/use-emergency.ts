@@ -1,138 +1,115 @@
-import { useEffect, useRef } from 'react'
-import pb from '@/lib/pocketbase/client'
-import { PcpOrder } from '@/types'
-import { useRealtime } from './use-realtime'
+import { useEffect } from 'react'
 
 export function useEmergencyStyles() {
-  const prioritiesRef = useRef<Record<string, number>>({})
-
-  const applyStyles = () => {
-    const cards = document.querySelectorAll('.bg-card')
-    cards.forEach((card) => {
-      // Ignore elements with too much text to prevent matching giant dashboard panels instead of OP cards
-      if ((card.textContent || '').length > 1500) return
-
-      let matchedOpNum: string | null = null
-      const text = card.textContent || ''
-
-      Object.keys(prioritiesRef.current).forEach((opNum) => {
-        let found = false
-        if (/[a-zA-Z]/.test(opNum)) {
-          found = new RegExp(`\\b${opNum}\\b`, 'i').test(text)
-        } else {
-          // Look for OP prefixes or the exact number if it appears distinct
-          if (new RegExp(`(?:OP|#|Ordem|Pedido)\\s*[-]?\\s*${opNum}\\b`, 'i').test(text)) {
-            found = true
-          } else if (new RegExp(`\\b${opNum}\\b`).test(text)) {
-            found = true
-          }
-        }
-        if (found) matchedOpNum = opNum
-      })
-
-      if (!matchedOpNum) return
-
-      const isEmergency = prioritiesRef.current[matchedOpNum] === 1
-
-      if (isEmergency) {
-        card.classList.add('emergency-card')
-        if (!card.querySelector('.emergency-badge')) {
-          const badge = document.createElement('span')
-          badge.className =
-            'emergency-badge absolute -top-3 -right-3 flex items-center px-2 py-1 bg-red-600 text-white text-[10px] font-bold rounded-full shadow-lg animate-pulse z-[60] pointer-events-none'
-          badge.textContent = '🚨 EMERGÊNCIA'
-          card.appendChild(badge)
-          card.classList.add('relative')
-          card.setAttribute('style', (card.getAttribute('style') || '') + '; order: -1 !important;')
-        }
-      } else {
-        card.classList.remove('emergency-card')
-        const badge = card.querySelector('.emergency-badge')
-        if (badge) badge.remove()
-        const style = card.getAttribute('style')
-        if (style) {
-          card.setAttribute('style', style.replace(/;\s*order:\s*-1\s*!important;/g, ''))
-        }
-      }
-
-      if (!card.querySelector('.emergency-toggle')) {
-        const btn = document.createElement('button')
-        btn.className = `emergency-toggle absolute bottom-2 right-2 w-8 h-8 rounded-full transition-all z-50 text-lg hover:scale-110 flex items-center justify-center bg-background/80 backdrop-blur-sm border shadow-sm`
-        btn.title = isEmergency ? 'Remover Emergência' : 'Marcar como Emergência'
-        btn.innerHTML = isEmergency ? '🚨' : '⚠️'
-        if (!isEmergency) {
-          btn.classList.add('opacity-0', 'group-hover:opacity-100', 'grayscale')
-        }
-        btn.onclick = async (e) => {
-          e.preventDefault()
-          e.stopPropagation()
-          try {
-            const records = await pb
-              .collection('pcp_orders')
-              .getList<PcpOrder>(1, 1, { filter: `order_number = '${matchedOpNum}'` })
-            if (records.items[0]) {
-              const op = records.items[0]
-              const newPriority = op.manual_priority === 1 ? 0 : 1
-              await pb.collection('pcp_orders').update(op.id, { manual_priority: newPriority })
-            }
-          } catch (err) {
-            console.error('Failed to toggle emergency', err)
-          }
-        }
-        card.appendChild(btn)
-        card.classList.add('group')
-        card.classList.add('relative')
-      } else {
-        const btn = card.querySelector('.emergency-toggle') as HTMLButtonElement
-        btn.innerHTML = isEmergency ? '🚨' : '⚠️'
-        btn.title = isEmergency ? 'Remover Emergência' : 'Marcar como Emergência'
-        if (isEmergency) {
-          btn.classList.remove('opacity-0', 'group-hover:opacity-100', 'grayscale')
-        } else {
-          btn.classList.add('opacity-0', 'group-hover:opacity-100', 'grayscale')
-        }
-      }
-    })
-  }
-
   useEffect(() => {
-    const fetchPriorities = async () => {
-      try {
-        const records = await pb.collection('pcp_orders').getFullList<PcpOrder>({
-          fields: 'id,order_number,manual_priority',
-        })
-        const newPriorities: Record<string, number> = {}
-        records.forEach((r) => {
-          newPriorities[r.order_number] = r.manual_priority || 0
-        })
-        prioritiesRef.current = newPriorities
-        applyStyles()
-      } catch {
-        /* intentionally ignored */
+    const style = document.createElement('style')
+    style.innerHTML = `
+      /* Neon Orange Alert Box for Blocked/Locked items */
+      .alert-neon-orange {
+        background-color: #ff5e00 !important;
+        color: #ffffff !important;
+        border: 1px solid #e05300 !important;
+        box-shadow: 0 4px 15px rgba(255, 94, 0, 0.25) !important;
       }
-    }
+      .alert-neon-orange * {
+        color: #ffffff !important;
+      }
+      .alert-neon-orange svg {
+        color: #ffffff !important;
+        fill: currentColor;
+      }
+      
+      /* Emergency Border Animation for both PcpKanban and PcpOperator */
+      .is-emergency-card,
+      [class*="border-emergency"] {
+        animation: pulse-border-red 2s cubic-bezier(0.4, 0, 0.6, 1) infinite !important;
+      }
 
-    fetchPriorities()
+      /* Kanban emergency styles (triggered by getOrderColor returning 'emergency') */
+      [class*="border-emergency"] {
+        border-color: #ef4444 !important;
+        box-shadow: 0 0 12px rgba(239, 68, 68, 0.5) !important;
+      }
+      [class*="bg-emergency"] {
+        background-color: rgba(254, 226, 226, 0.6) !important;
+      }
+      .dark [class*="bg-emergency"] {
+        background-color: rgba(69, 10, 10, 0.4) !important;
+      }
+      [class*="text-emergency"] {
+        color: #ef4444 !important;
+      }
+
+      /* Kanban neon-orange styles (triggered by getOrderColor returning 'neon-orange') */
+      [class*="border-neon-orange"] {
+        border-color: #ff5e00 !important;
+        box-shadow: 0 0 8px rgba(255, 94, 0, 0.3) !important;
+      }
+      [class*="bg-neon-orange"] {
+        background-color: #ff5e00 !important;
+      }
+      [class*="text-neon-orange"] {
+        color: #ff5e00 !important;
+      }
+
+      @keyframes pulse-border-red {
+        0%, 100% {
+          box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4), 0 0 12px rgba(239, 68, 68, 0.5);
+        }
+        50% {
+          box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.0), 0 0 12px rgba(239, 68, 68, 0.1);
+        }
+      }
+    `
+    document.head.appendChild(style)
 
     const observer = new MutationObserver(() => {
-      requestAnimationFrame(() => applyStyles())
+      // 1. Style "Travado:" / "Gargalo:" alerts dynamically
+      const alertBoxes = document.querySelectorAll(
+        '[role="alert"], .bg-red-50, .bg-destructive\\/10, .border-destructive\\/50, .bg-red-100',
+      )
+      for (let i = 0; i < alertBoxes.length; i++) {
+        const box = alertBoxes[i]
+        if (
+          box.textContent &&
+          (box.textContent.includes('Travado:') || box.textContent.includes('Gargalo:'))
+        ) {
+          if (!box.classList.contains('alert-neon-orange')) {
+            box.classList.add('alert-neon-orange')
+            const icons = box.querySelectorAll('svg')
+            icons.forEach((icon: any) => {
+              icon.classList.remove(
+                'text-red-600',
+                'text-destructive',
+                'text-red-500',
+                'text-red-800',
+              )
+            })
+          }
+        }
+      }
+
+      // 2. Reorder cards to put Emergency items on top in Flex/Grid containers
+      const emergencyCards = document.querySelectorAll(
+        '.is-emergency-card, [class*="border-emergency"]',
+      )
+      emergencyCards.forEach((card: any) => {
+        const parent = card.parentElement
+        if (
+          parent &&
+          (window.getComputedStyle(parent).display === 'grid' ||
+            window.getComputedStyle(parent).display === 'flex')
+        ) {
+          if (card.style.order !== '-1') card.style.order = '-1'
+        }
+      })
     })
-    observer.observe(document.body, { childList: true, subtree: true })
+
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true })
 
     return () => {
+      document.head.removeChild(style)
       observer.disconnect()
     }
   }, [])
-
-  useRealtime('pcp_orders', (e) => {
-    if (e.action === 'update' || e.action === 'create') {
-      const op = e.record as unknown as PcpOrder
-      prioritiesRef.current[op.order_number] = op.manual_priority || 0
-      applyStyles()
-    } else if (e.action === 'delete') {
-      const op = e.record as unknown as PcpOrder
-      delete prioritiesRef.current[op.order_number]
-      applyStyles()
-    }
-  })
 }

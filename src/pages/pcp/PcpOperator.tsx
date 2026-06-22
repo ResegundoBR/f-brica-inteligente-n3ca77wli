@@ -276,16 +276,21 @@ function OperatorCard({
 
   let headerClass = 'bg-blue-500'
   let borderClass = 'border-blue-200 dark:border-blue-900 shadow-md shadow-blue-500/5'
+  let bgClass = 'bg-white dark:bg-slate-900'
 
   if (isEmergency) {
     headerClass = 'bg-red-600 animate-pulse'
-    borderClass = 'border-red-600 shadow-lg shadow-red-500/30 ring-2 ring-red-500/50'
+    borderClass =
+      'is-emergency-card border-red-600 shadow-lg shadow-red-500/30 ring-2 ring-red-500/50'
+    bgClass = 'bg-red-50/50 dark:bg-red-950/20'
   } else if (isLocked) {
-    headerClass = 'bg-red-600'
-    borderClass = 'border-red-500 shadow-lg shadow-red-500/10'
+    headerClass = 'bg-[#ff5e00]'
+    borderClass = 'border-[#ff5e00] shadow-[0_0_10px_rgba(255,94,0,0.2)]'
+    bgClass = 'bg-white dark:bg-slate-900'
   } else if (isDelayed) {
     headerClass = 'bg-purple-600'
     borderClass = 'border-purple-500 shadow-lg shadow-purple-500/10'
+    bgClass = 'bg-white dark:bg-slate-900'
   }
 
   const estHours = process?.estimated_hours || 0
@@ -328,12 +333,7 @@ function OperatorCard({
   const inExecucao = op.status === 'Em Andamento' || (op.status === 'Parado' && op.started_at)
 
   return (
-    <Card
-      className={cn(
-        'overflow-hidden border-2 transition-all bg-white dark:bg-slate-900',
-        borderClass,
-      )}
-    >
+    <Card className={cn('overflow-hidden border-2 transition-all', bgClass, borderClass)}>
       <div className={cn('h-3 w-full', headerClass)} />
       <CardHeader className="pb-3">
         <div className="flex justify-between items-start gap-2">

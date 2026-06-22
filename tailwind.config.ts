@@ -13,6 +13,11 @@ export default {
     './src/**/*.{ts,tsx}',
   ],
   prefix: '',
+  safelist: [
+    { pattern: /bg-(red|orange|blue|purple|emergency|neon-orange)-(50|100|200|500|600)/ },
+    { pattern: /border-(red|orange|blue|purple|emergency|neon-orange)-(500|600)/ },
+    { pattern: /text-(red|orange|blue|purple|emergency|neon-orange)-(500|600|800|900)/ },
+  ],
   theme: {
     container: {
       center: true,
@@ -80,6 +85,24 @@ export default {
           3: 'hsl(var(--chart-3))',
           4: 'hsl(var(--chart-4))',
           5: 'hsl(var(--chart-5))',
+        },
+        emergency: {
+          50: '#fef2f2',
+          100: '#fee2e2',
+          200: '#fecaca',
+          500: '#ef4444',
+          600: '#dc2626',
+          800: '#991b1b',
+          900: '#7f1d1d',
+        },
+        'neon-orange': {
+          50: '#fff3eb',
+          100: '#ffe4cc',
+          200: '#ffc899',
+          500: '#ff5e00',
+          600: '#cc4b00',
+          800: '#802f00',
+          900: '#662600',
         },
       },
       borderRadius: {

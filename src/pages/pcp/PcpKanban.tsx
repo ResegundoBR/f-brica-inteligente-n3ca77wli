@@ -111,11 +111,14 @@ export function isStageDelayed(order: any) {
 }
 
 export function getOrderColor(order: any) {
+  if (order.manual_priority === 1) {
+    return 'emergency'
+  }
   if (
     order.status === 'Parado' ||
     (order.bottleneck_reason && order.bottleneck_reason !== 'Nenhum')
   ) {
-    return 'red'
+    return 'neon-orange'
   }
   const daysDiff = differenceInDays(
     startOfDay(parseISO(order.delivery_date)),
@@ -145,7 +148,7 @@ export default function PcpKanban() {
   const fetchOrders = async () => {
     const res = await pb.collection('pcp_orders').getFullList({
       expand: 'product_id,client_id,operator_id',
-      sort: '-created',
+      sort: '-manual_priority,-created',
     })
     setOrders(res)
     if (selectedOrder) {

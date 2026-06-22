@@ -27,6 +27,12 @@ import { AuthGuard } from './components/AuthGuard'
 import { StatusNotifier } from './components/StatusNotifier'
 import { RoleGuard } from './components/RoleGuard'
 import Unauthorized from './pages/Unauthorized'
+import { useEmergencyStyles } from './hooks/use-emergency'
+
+function GlobalHooks() {
+  useEmergencyStyles()
+  return null
+}
 
 const App = () => (
   <AuthProvider>
@@ -42,6 +48,7 @@ const App = () => (
             <Route
               element={
                 <>
+                  <GlobalHooks />
                   <StatusNotifier />
                   <Layout />
                 </>

@@ -95,6 +95,20 @@ export function PcpOrderForm({
   const [globalProcessNames, setGlobalProcessNames] = useState<string[]>(ALL_STAGES)
 
   useEffect(() => {
+    // Suppress previous logic and fetch exclusively active processes
+    pb.collection('product_processes')
+      .getFullList<{ name: string; order: number }>({ fields: 'name,order', sort: 'order' })
+      .then((res) => {
+        const uniqueNames = Array.from(new Set(res.map((r) => r.name))).filter(Boolean)
+        if (uniqueNames.length > 0) {
+          setGlobalProcessNames(uniqueNames)
+        }
+      })
+      .catch(console.error)
+  }, [])
+
+  useEffect(() => {
+    return // Disable the original effect completely
     pb.collection('product_processes')
       .getFullList<{ name: string; order: number }>({ fields: 'name,order', sort: 'order' })
       .then((res) => {

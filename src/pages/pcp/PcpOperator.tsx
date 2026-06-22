@@ -91,13 +91,27 @@ function getNextStage(current: string) {
 }
 
 function getNextStageForOp(current: string, op: PcpOrder, processes: ProductProcessModel[]) {
-  if (!op.product_id) return getNextStage(current)
-  const opProcesses = processes.filter((p) => p.product_id === op.product_id)
-
   const currentIdx = ALL_STAGES.indexOf(current)
   if (currentIdx === -1 || currentIdx === ALL_STAGES.length - 1) return null
 
+  const manualEstimates = op.outsourcing_data?.estimates || {}
+  const opProcesses = op.product_id
+    ? processes.filter((p) => p.product_id === op.product_id)
+    : ALL_STAGES.map(
+        (name) =>
+          ({
+            name,
+            estimated_hours:
+              manualEstimates[name] !== undefined && manualEstimates[name] !== ''
+                ? Number(manualEstimates[name]) || 0
+                : 0,
+          }) as any,
+      )
+
   for (let i = currentIdx + 1; i < ALL_STAGES.length; i++) {
+    const _stageName = ALL_STAGES[i]
+    const _p = opProcesses.find((proc) => proc.name === _stageName)
+    if (!_p || !_p.estimated_hours || _p.estimated_hours <= 0) continue
     const stage = ALL_STAGES[i]
     const proc = opProcesses.find((p) => p.name === stage)
     if (proc && proc.estimated_hours && proc.estimated_hours > 0) {

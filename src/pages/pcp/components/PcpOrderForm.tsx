@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useForm, Controller } from 'react-hook-form'
+import { useForm, Controller, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import pb from '@/lib/pocketbase/client'
@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogDescription,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -23,11 +24,12 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { useToast } from '@/components/ui/use-toast'
 import { format } from 'date-fns'
-import { Plus } from 'lucide-react'
+import { Plus, Trash } from 'lucide-react'
 
 const schema = z
   .object({
-    order_number: z.string().min(1, 'Número da OP é obrigatório'),
+    order_number: z.string().min(1, 'Número do Pedido é obrigatório'),
+    op_number: z.string().optional(),
     client_id: z.string().min(1, 'Cliente é obrigatório'),
     op_type: z.enum(['Linha', 'Especial', 'Assistência']),
     product_id: z.string().optional(),
@@ -36,6 +38,14 @@ const schema = z
     delivery_date: z.string().min(1, 'Data de entrega é obrigatória'),
     manual_priority: z.number().default(0),
     estimates: z.record(z.string(), z.union([z.number(), z.nan()])).optional(),
+    observations: z
+      .array(
+        z.object({
+          sector: z.enum(['Fabricação', 'Acabamento', 'Montagem', 'Projetos']),
+          content: z.string().min(1, 'Observação não pode ser vazia'),
+        }),
+      )
+      .default([]),
   })
   .refine(
     (data) => {
@@ -54,22 +64,36 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
   const [newClientOpen, setNewClientOpen] = useState(false)
   const [newClientName, setNewClientName] = useState('')
   const [newClientType, setNewClientType] = useState('B2B')
+  const [missingTimeProduct, setMissingTimeProduct] = useState<any>(null)
+  const [checkingProcesses, setCheckingProcesses] = useState(false)
   const { toast } = useToast()
 
   const form = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),
     defaultValues: {
       order_number: '',
+      op_number: '',
       client_id: '',
       op_type: 'Linha',
       quantity: 1,
       delivery_date: format(new Date(), 'yyyy-MM-dd'),
       manual_priority: 0,
       estimates: {},
+      observations: [],
     },
   })
 
+  const {
+    fields: obsFields,
+    append: appendObs,
+    remove: removeObs,
+  } = useFieldArray({
+    control: form.control,
+    name: 'observations',
+  })
+
   const opType = form.watch('op_type')
+  const productId = form.watch('product_id')
 
   useEffect(() => {
     const loadClients = () =>
@@ -78,12 +102,14 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
     if (open) {
       form.reset({
         order_number: '',
+        op_number: '',
         client_id: '',
         op_type: 'Linha',
         quantity: 1,
         delivery_date: format(new Date(), 'yyyy-MM-dd'),
         manual_priority: 0,
         estimates: {},
+        observations: [],
       })
       loadClients()
       pb.collection('products').getFullList({ sort: 'name' }).then(setProducts)
@@ -101,6 +127,38 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
     }
   }, [open, form])
 
+  useEffect(() => {
+    if (opType === 'Linha' && productId) {
+      let isMounted = true
+      const checkProcesses = async () => {
+        setCheckingProcesses(true)
+        try {
+          const result = await pb
+            .collection('product_processes')
+            .getList(1, 1, { filter: `product_id="${productId}"` })
+          if (isMounted) {
+            if (result.totalItems === 0) {
+              const product = products.find((p) => p.id === productId)
+              if (product) setMissingTimeProduct(product)
+            } else {
+              setMissingTimeProduct(null)
+            }
+          }
+        } catch (err) {
+          console.error(err)
+        } finally {
+          if (isMounted) setCheckingProcesses(false)
+        }
+      }
+      checkProcesses()
+      return () => {
+        isMounted = false
+      }
+    } else {
+      setMissingTimeProduct(null)
+    }
+  }, [opType, productId, products])
+
   const handleCreateClient = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newClientName) return
@@ -110,7 +168,7 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
         name: newClientName,
         type: newClientType,
       })
-      await loadClients()
+      await pb.collection('clients').getFullList({ sort: 'name' }).then(setClients)
       form.setValue('client_id', record.id)
       setNewClientOpen(false)
       setNewClientName('')
@@ -124,12 +182,14 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
   }
 
   const onSubmit = async (data: z.infer<typeof schema>) => {
+    if (checkingProcesses || missingTimeProduct) return
     setLoading(true)
     try {
       const client = clients.find((c) => c.id === data.client_id)
 
       const payload: any = {
         order_number: data.order_number,
+        op_number: data.op_number || '',
         client_id: data.client_id,
         client_name: client?.name || '',
         op_type: data.op_type,
@@ -148,7 +208,6 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
           payload.manual_product_name = data.manual_product_name
         }
 
-        // Clean estimates: remove NaNs resulting from empty inputs
         const validEstimates: Record<string, number> = {}
         if (data.estimates) {
           for (const [key, val] of Object.entries(data.estimates)) {
@@ -157,13 +216,23 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
             }
           }
         }
-
         payload.outsourcing_data = {
           estimates: validEstimates,
         }
       }
 
-      await pb.collection('pcp_orders').create(payload)
+      const record = await pb.collection('pcp_orders').create(payload)
+
+      if (data.observations && data.observations.length > 0) {
+        for (const obs of data.observations) {
+          await pb.collection('pcp_order_observations').create({
+            order_id: record.id,
+            sector: obs.sector,
+            content: obs.content,
+          })
+        }
+      }
+
       toast({ title: 'OP criada com sucesso!' })
       onSuccess?.()
       onOpenChange(false)
@@ -184,12 +253,20 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 py-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
+                <Label>Número do Pedido</Label>
+                <Input {...form.register('order_number')} placeholder="Ex: PED-1234" />
+              </div>
+              <div className="space-y-2">
                 <Label>Número da OP</Label>
-                <Input {...form.register('order_number')} placeholder="Ex: OP-1234" />
+                <Input {...form.register('op_number')} placeholder="Ex: OP-1234-01" />
               </div>
               <div className="space-y-2">
                 <Label>Data de Entrega</Label>
                 <Input type="date" {...form.register('delivery_date')} />
+              </div>
+              <div className="space-y-2">
+                <Label>Quantidade</Label>
+                <Input type="number" min="1" {...form.register('quantity')} />
               </div>
               <div className="space-y-2 col-span-2">
                 <div className="flex items-center justify-between">
@@ -242,13 +319,9 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
                   )}
                 />
               </div>
-              <div className="space-y-2">
-                <Label>Quantidade</Label>
-                <Input type="number" min="1" {...form.register('quantity')} />
-              </div>
 
               {opType === 'Linha' && (
-                <div className="space-y-2 col-span-2">
+                <div className="space-y-2">
                   <Label>Produto</Label>
                   <Controller
                     control={form.control}
@@ -272,11 +345,11 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
               )}
 
               {opType === 'Assistência' && (
-                <div className="space-y-2 col-span-2">
+                <div className="space-y-2">
                   <Label>Nome do Produto (Assistência)</Label>
                   <Input
                     {...form.register('manual_product_name')}
-                    placeholder="Descrição do produto para assistência"
+                    placeholder="Descrição do produto"
                   />
                 </div>
               )}
@@ -301,6 +374,72 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
                   />
                 )}
               />
+            </div>
+
+            <div className="mt-6 border-t pt-4">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="font-bold">Observações (Por Setor)</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Adicione observações específicas para os setores.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => appendObs({ sector: 'Fabricação', content: '' })}
+                >
+                  <Plus className="size-4 mr-2" /> Nova Observação
+                </Button>
+              </div>
+
+              {obsFields.length === 0 && (
+                <div className="text-sm text-center text-muted-foreground py-4 bg-muted/20 rounded-md">
+                  Nenhuma observação adicionada.
+                </div>
+              )}
+
+              <div className="space-y-3">
+                {obsFields.map((field, index) => (
+                  <div key={field.id} className="flex gap-2 items-start">
+                    <div className="w-1/3 min-w-[140px]">
+                      <Controller
+                        control={form.control}
+                        name={`observations.${index}.sector`}
+                        render={({ field: selectField }) => (
+                          <Select value={selectField.value} onValueChange={selectField.onChange}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Setor" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Fabricação">Fabricação</SelectItem>
+                              <SelectItem value="Acabamento">Acabamento</SelectItem>
+                              <SelectItem value="Montagem">Montagem</SelectItem>
+                              <SelectItem value="Projetos">Projetos</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <Input
+                        {...form.register(`observations.${index}.content`)}
+                        placeholder="Descreva a observação..."
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeObs(index)}
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    >
+                      <Trash className="size-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
             </div>
 
             {opType !== 'Linha' && (
@@ -333,7 +472,7 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 Cancelar
               </Button>
-              <Button type="submit" disabled={loading}>
+              <Button type="submit" disabled={loading || checkingProcesses || !!missingTimeProduct}>
                 {loading ? 'Salvando...' : 'Criar OP'}
               </Button>
             </DialogFooter>
@@ -379,6 +518,108 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
           </form>
         </DialogContent>
       </Dialog>
+
+      <ProductProcessesModal
+        product={missingTimeProduct}
+        globalProcesses={processes}
+        open={!!missingTimeProduct}
+        onCancel={() => {
+          setMissingTimeProduct(null)
+          form.setValue('product_id', '')
+        }}
+        onSaved={() => {
+          setMissingTimeProduct(null)
+        }}
+      />
     </>
+  )
+}
+
+function ProductProcessesModal({ product, globalProcesses, open, onCancel, onSaved }: any) {
+  const [loading, setLoading] = useState(false)
+  const { toast } = useToast()
+  const [times, setTimes] = useState<Record<string, number>>({})
+
+  useEffect(() => {
+    if (open) setTimes({})
+  }, [open])
+
+  const handleSave = async () => {
+    setLoading(true)
+    try {
+      let orderCount = 0
+      for (const process of globalProcesses) {
+        const hours = times[process.id]
+        if (hours !== undefined && hours > 0) {
+          await pb.collection('product_processes').create({
+            product_id: product.id,
+            name: process.name,
+            description: process.description || '',
+            order: ++orderCount,
+            color: process.color || '',
+            estimated_hours: hours,
+            is_required: true,
+          })
+        }
+      }
+      toast({ title: 'Tempos salvos com sucesso!' })
+      onSaved()
+    } catch (err: any) {
+      toast({ title: 'Erro ao salvar tempos', description: err.message, variant: 'destructive' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(val) => {
+        if (!val) onCancel()
+      }}
+    >
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Tempos de Produção Ausentes</DialogTitle>
+          <DialogDescription>
+            O produto <strong>{product?.name}</strong> não possui processos ou tempos de produção
+            cadastrados. Por favor, defina os processos e tempos estimados para continuar.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            {globalProcesses.map((proc: any) => (
+              <div key={proc.id} className="space-y-1">
+                <Label className="text-xs truncate" title={proc.name}>
+                  {proc.name}
+                </Label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  placeholder="Horas (ex: 2.5)"
+                  value={times[proc.id] === undefined ? '' : times[proc.id]}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    setTimes((prev) => ({
+                      ...prev,
+                      [proc.id]: val === '' ? undefined : parseFloat(val),
+                    }))
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onCancel} disabled={loading}>
+            Cancelar
+          </Button>
+          <Button onClick={handleSave} disabled={loading}>
+            {loading ? 'Salvando...' : 'Salvar Tempos'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

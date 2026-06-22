@@ -30,6 +30,8 @@ export default function PcpClients() {
   const [isOpen, setIsOpen] = useState(false)
   const [editClient, setEditClient] = useState<Client | null>(null)
   const [name, setName] = useState('')
+  const [type, setType] = useState('B2B')
+  const [typeFilter, setTypeFilter] = useState('all')
   const { toast } = useToast()
 
   const loadClients = async () => {
@@ -54,12 +56,14 @@ export default function PcpClients() {
     if (!open) {
       setEditClient(null)
       setName('')
+      setType('B2B')
     }
   }
 
   const handleEdit = (client: Client) => {
     setEditClient(client)
     setName(client.name)
+    setType(client.type || 'B2B')
     setIsOpen(true)
   }
 
@@ -77,10 +81,10 @@ export default function PcpClients() {
     e.preventDefault()
     try {
       if (editClient) {
-        await pb.collection('clients').update(editClient.id, { name })
+        await pb.collection('clients').update(editClient.id, { name, type })
         toast({ title: 'Sucesso', description: 'Cliente atualizado com sucesso.' })
       } else {
-        await pb.collection('clients').create({ name })
+        await pb.collection('clients').create({ name, type })
         toast({ title: 'Sucesso', description: 'Cliente criado com sucesso.' })
       }
       handleOpenChange(false)
@@ -103,34 +107,58 @@ export default function PcpClients() {
             Gerencie a lista de clientes para ordens de produção.
           </p>
         </div>
-        <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 size-4" /> Novo Cliente
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{editClient ? 'Editar Cliente' : 'Criar Cliente'}</DialogTitle>
-              <DialogDescription>Preencha os dados do cliente abaixo.</DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4 mt-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Nome do Cliente</Label>
-                <Input
-                  id="name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                  placeholder="Ex: Indústria XYZ"
-                />
-              </div>
-              <Button type="submit" className="w-full">
-                {editClient ? 'Salvar Alterações' : 'Criar Cliente'}
+        <div className="flex items-center gap-3">
+          <Select value={typeFilter} onValueChange={setTypeFilter}>
+            <SelectTrigger className="w-[140px] bg-background">
+              <SelectValue placeholder="Tipo" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos</SelectItem>
+              <SelectItem value="B2B">B2B</SelectItem>
+              <SelectItem value="B2C">B2C</SelectItem>
+            </SelectContent>
+          </Select>
+          <Dialog open={isOpen} onOpenChange={handleOpenChange}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="mr-2 size-4" /> Novo Cliente
               </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{editClient ? 'Editar Cliente' : 'Criar Cliente'}</DialogTitle>
+                <DialogDescription>Preencha os dados do cliente abaixo.</DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleSubmit} className="space-y-4 mt-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name">Nome do Cliente</Label>
+                  <Input
+                    id="name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    required
+                    placeholder="Ex: Indústria XYZ"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="type">Tipo de Cliente</Label>
+                  <Select value={type} onValueChange={setType}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o tipo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="B2B">B2B</SelectItem>
+                      <SelectItem value="B2C">B2C</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button type="submit" className="w-full">
+                  {editClient ? 'Salvar Alterações' : 'Criar Cliente'}
+                </Button>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <div className="rounded-md border">
@@ -138,32 +166,42 @@ export default function PcpClients() {
           <TableHeader>
             <TableRow>
               <TableHead>Nome</TableHead>
+              <TableHead>Tipo</TableHead>
               <TableHead className="w-[100px] text-right">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {clients.length === 0 ? (
+            {clients.filter((c) => typeFilter === 'all' || c.type === typeFilter).length === 0 ? (
               <TableRow>
-                <TableCell colSpan={2} className="text-center text-muted-foreground">
+                <TableCell colSpan={3} className="text-center text-muted-foreground">
                   Nenhum cliente encontrado.
                 </TableCell>
               </TableRow>
             ) : (
-              clients.map((client) => (
-                <TableRow key={client.id}>
-                  <TableCell className="font-medium py-2">{client.name}</TableCell>
-                  <TableCell className="text-right py-2">
-                    <div className="flex items-center justify-end gap-2">
-                      <Button variant="ghost" size="icon" onClick={() => handleEdit(client)}>
-                        <Pencil className="size-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(client.id)}>
-                        <Trash2 className="size-4 text-red-500" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
+              clients
+                .filter((c) => typeFilter === 'all' || c.type === typeFilter)
+                .map((client) => (
+                  <TableRow key={client.id}>
+                    <TableCell className="font-medium py-2">{client.name}</TableCell>
+                    <TableCell className="py-2">
+                      {client.type && (
+                        <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                          {client.type}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right py-2">
+                      <div className="flex items-center justify-end gap-2">
+                        <Button variant="ghost" size="icon" onClick={() => handleEdit(client)}>
+                          <Pencil className="size-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleDelete(client.id)}>
+                          <Trash2 className="size-4 text-red-500" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
             )}
           </TableBody>
         </Table>

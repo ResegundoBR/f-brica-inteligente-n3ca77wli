@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-22T16:21:41.566Z",
+  "generatedAt": "2026-06-22T17:22:47.998Z",
   "collections": [
     {
       "name": "users",
@@ -1105,6 +1105,13 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "type",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["B2B", "B2C"]
         }
       ],
       "indexes": ["CREATE UNIQUE INDEX idx_clients_name ON clients (name COLLATE NOCASE)"]

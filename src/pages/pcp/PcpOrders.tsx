@@ -37,6 +37,7 @@ export default function PcpOrders() {
   const [isOpen, setIsOpen] = useState(false)
   const [opTypeFilter, setOpTypeFilter] = useState('all')
   const [clientFilter, setClientFilter] = useState('all')
+  const [clientTypeFilter, setClientTypeFilter] = useState('all')
   const [deadlineFilter, setDeadlineFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [stageFilter, setStageFilter] = useState('all')
@@ -136,6 +137,8 @@ export default function PcpOrders() {
     const filteredByCustom = filteredOrders.filter((op) => {
       if (opTypeFilter !== 'all' && op.op_type !== opTypeFilter) return false
       if (clientFilter !== 'all' && op.client_id !== clientFilter) return false
+      if (clientTypeFilter !== 'all' && op.expand?.client_id?.type !== clientTypeFilter)
+        return false
       if (statusFilter !== 'all' && op.status !== statusFilter) return false
       if (stageFilter !== 'all' && op.stage !== stageFilter) return false
       if (!filterByDeadline(op.delivery_date, deadlineFilter)) return false
@@ -162,7 +165,15 @@ export default function PcpOrders() {
       map.get(op.order_number)!.push(op)
     })
     return groups
-  }, [filteredOrders, opTypeFilter, clientFilter, statusFilter, stageFilter, deadlineFilter])
+  }, [
+    filteredOrders,
+    opTypeFilter,
+    clientFilter,
+    clientTypeFilter,
+    statusFilter,
+    stageFilter,
+    deadlineFilter,
+  ])
 
   const updateOrder = async (id: string, field: string, value: string) => {
     try {
@@ -206,7 +217,7 @@ export default function PcpOrders() {
   const today = startOfDay(new Date())
   const getOrderColor = (op: PcpOrder) => {
     if (op.status === 'Parado' || (op.bottleneck_reason && op.bottleneck_reason !== 'Nenhum'))
-      return 'red'
+      return 'neon-orange'
 
     if (op.status === 'Concluído' || !op.delivery_date) return 'blue'
 
@@ -241,6 +252,8 @@ export default function PcpOrders() {
             setOpType={setOpTypeFilter}
             client={clientFilter}
             setClient={setClientFilter}
+            clientType={clientTypeFilter}
+            setClientType={setClientTypeFilter}
             deadline={deadlineFilter}
             setDeadline={setDeadlineFilter}
             status={statusFilter}
@@ -248,13 +261,8 @@ export default function PcpOrders() {
             stage={stageFilter}
             setStage={setStageFilter}
           />
-          <PcpOrderForm
-            isOpen={isOpen}
-            onOpenChange={setIsOpen}
-            clients={clients}
-            products={products}
-            onSuccess={loadData}
-          />
+          <Button onClick={() => setIsOpen(true)}>Nova OP</Button>
+          <PcpOrderForm open={isOpen} onOpenChange={setIsOpen} onSuccess={loadData} />
         </div>
       </div>
 
@@ -309,8 +317,8 @@ export default function PcpOrders() {
                       key={op.id}
                       className={cn(
                         'cursor-pointer hover:bg-muted/30 transition-colors',
-                        getOrderColor(op) === 'red' &&
-                          'bg-red-50/50 hover:bg-red-100/50 dark:bg-red-950/20 dark:hover:bg-red-900/30',
+                        getOrderColor(op) === 'neon-orange' &&
+                          'bg-orange-50/50 hover:bg-orange-100/50 dark:bg-orange-950/20 dark:hover:bg-orange-900/30',
                         getOrderColor(op) === 'purple' &&
                           'bg-purple-50/50 hover:bg-purple-100/50 dark:bg-purple-950/20 dark:hover:bg-purple-900/30',
                         getOrderColor(op) === 'blue' &&
@@ -360,10 +368,10 @@ export default function PcpOrders() {
                               <TooltipContent>Entrega atrasada</TooltipContent>
                             </Tooltip>
                           )}
-                          {getOrderColor(op) === 'red' && (
+                          {getOrderColor(op) === 'neon-orange' && (
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <Clock className="size-4 text-red-500" />
+                                <Clock className="size-4 text-orange-500" />
                               </TooltipTrigger>
                               <TooltipContent>Ordem Parada / Gargalo</TooltipContent>
                             </Tooltip>

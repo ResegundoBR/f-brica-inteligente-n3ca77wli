@@ -23,6 +23,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { useToast } from '@/components/ui/use-toast'
 import { format } from 'date-fns'
+import { Plus } from 'lucide-react'
 
 const schema = z
   .object({
@@ -50,6 +51,9 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
   const [products, setProducts] = useState<any[]>([])
   const [processes, setProcesses] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
+  const [newClientOpen, setNewClientOpen] = useState(false)
+  const [newClientName, setNewClientName] = useState('')
+  const [newClientType, setNewClientType] = useState('B2B')
   const { toast } = useToast()
 
   const form = useForm<z.infer<typeof schema>>({
@@ -68,6 +72,8 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
   const opType = form.watch('op_type')
 
   useEffect(() => {
+  const loadClients = () => pb.collection('clients').getFullList({ sort: 'name' }).then(setClients)
+
     if (open) {
       form.reset({
         order_number: '',
@@ -78,7 +84,7 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
         manual_priority: 0,
         estimates: {},
       })
-      pb.collection('clients').getFullList({ sort: 'name' }).then(setClients)
+      loadClients()
       pb.collection('products').getFullList({ sort: 'name' }).then(setProducts)
 
       pb.collection('product_processes')
@@ -93,6 +99,28 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
         })
     }
   }, [open, form])
+
+  const handleCreateClient = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newClientName) return
+    setLoading(true)
+    try {
+      const record = await pb.collection('clients').create({
+        name: newClientName,
+        type: newClientType
+      })
+      await loadClients()
+      form.setValue('client_id', record.id)
+      setNewClientOpen(false)
+      setNewClientName('')
+      setNewClientType('B2B')
+      toast({ title: 'Cliente criado com sucesso!' })
+    } catch (err: any) {
+      toast({ title: 'Erro ao criar cliente', description: err.message, variant: 'destructive' })
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const onSubmit = async (data: z.infer<typeof schema>) => {
     setLoading(true)
@@ -162,7 +190,18 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
               <Input type="date" {...form.register('delivery_date')} />
             </div>
             <div className="space-y-2 col-span-2">
-              <Label>Cliente</Label>
+              <div className="flex items-center justify-between">
+                <Label>Cliente</Label>
+                <Button 
+                  type="button" 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-6 px-2 text-xs" 
+                  onClick={() => setNewClientOpen(true)}
+                >
+                  <Plus className="size-3 mr-1" /> Novo Cliente
+                </Button>
+              </div>
               <Controller
                 control={form.control}
                 name="client_id"
@@ -174,7 +213,7 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
                     <SelectContent>
                       {clients.map((c) => (
                         <SelectItem key={c.id} value={c.id}>
-                          {c.name}
+                          {c.name} {c.type ? `(${c.type})` : ''}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -299,5 +338,41 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
         </form>
       </DialogContent>
     </Dialog>
+
+    <Dialog open={newClientOpen} onOpenChange={setNewClientOpen}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Novo Cliente</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleCreateClient} className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label>Nome do Cliente</Label>
+            <Input 
+              value={newClientName} 
+              onChange={(e) => setNewClientName(e.target.value)} 
+              placeholder="Ex: Indústria XYZ" 
+              required 
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Tipo de Cliente</Label>
+            <Select value={newClientType} onValueChange={setNewClientType}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione o tipo" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="B2B">B2B</SelectItem>
+                <SelectItem value="B2C">B2C</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setNewClientOpen(false)}>Cancelar</Button>
+            <Button type="submit" disabled={loading}>{loading ? 'Salvando...' : 'Criar Cliente'}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+    </>
   )
 }

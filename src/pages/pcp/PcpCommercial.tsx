@@ -61,6 +61,7 @@ export default function PcpCommercial() {
   const [search, setSearch] = useState('')
   const [opTypeFilter, setOpTypeFilter] = useState('all')
   const [clientFilter, setClientFilter] = useState('all')
+  const [clientTypeFilter, setClientTypeFilter] = useState('all')
   const [deadlineFilter, setDeadlineFilter] = useState('all')
   const { toast } = useToast()
 
@@ -131,6 +132,8 @@ export default function PcpCommercial() {
     const filteredByCustom = filteredOrders.filter((op) => {
       if (opTypeFilter !== 'all' && op.op_type !== opTypeFilter) return false
       if (clientFilter !== 'all' && op.client_id !== clientFilter) return false
+      if (clientTypeFilter !== 'all' && op.expand?.client_id?.type !== clientTypeFilter)
+        return false
       if (!filterByDeadline(op.delivery_date, deadlineFilter)) return false
       return true
     })
@@ -155,14 +158,14 @@ export default function PcpCommercial() {
       map.get(op.order_number)!.push(op)
     })
     return groups
-  }, [filteredOrders])
+  }, [filteredOrders, opTypeFilter, clientFilter, clientTypeFilter, deadlineFilter])
 
   const getStatusInfo = (op: PcpOrder) => {
-    if (op.bottleneck_reason && op.bottleneck_reason !== 'Nenhum') {
+    if (op.status === 'Parado' || (op.bottleneck_reason && op.bottleneck_reason !== 'Nenhum')) {
       return {
         label: 'Travado (Gargalo)',
-        variant: 'destructive' as const,
-        className: 'bg-red-500',
+        variant: 'default' as const,
+        className: 'bg-orange-500 hover:bg-orange-600 text-white border-transparent',
       }
     }
     if (op.status === 'Concluído') {
@@ -218,6 +221,8 @@ export default function PcpCommercial() {
           setOpType={setOpTypeFilter}
           client={clientFilter}
           setClient={setClientFilter}
+          clientType={clientTypeFilter}
+          setClientType={setClientTypeFilter}
           deadline={deadlineFilter}
           setDeadline={setDeadlineFilter}
         />

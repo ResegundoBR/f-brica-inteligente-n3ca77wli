@@ -14,12 +14,14 @@ export interface PcpFiltersProps {
   setOpType: (v: string) => void
   client: string
   setClient: (v: string) => void
+  clientType?: string
+  setClientType?: (v: string) => void
   deadline: string
   setDeadline: (v: string) => void
-  status: string
-  setStatus: (v: string) => void
-  stage: string
-  setStage: (v: string) => void
+  status?: string
+  setStatus?: (v: string) => void
+  stage?: string
+  setStage?: (v: string) => void
 }
 
 const STAGES = [
@@ -57,6 +59,8 @@ export function PcpFilters({
   setOpType,
   client,
   setClient,
+  clientType,
+  setClientType,
   deadline,
   setDeadline,
   status,
@@ -92,38 +96,55 @@ export function PcpFilters({
           <SelectItem value="all">Todos os Clientes</SelectItem>
           {clients.map((c) => (
             <SelectItem key={c.id} value={c.id}>
-              {c.name}
+              {c.name} {c.type ? `(${c.type})` : ''}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
 
-      <Select value={status} onValueChange={setStatus}>
-        <SelectTrigger className="w-[160px] bg-background">
-          <SelectValue placeholder="Status" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">Qualquer Status</SelectItem>
-          <SelectItem value="Fila">Fila</SelectItem>
-          <SelectItem value="Em Andamento">Em Andamento</SelectItem>
-          <SelectItem value="Parado">Parado</SelectItem>
-          <SelectItem value="Concluído">Concluído</SelectItem>
-        </SelectContent>
-      </Select>
+      {clientType !== undefined && setClientType && (
+        <Select value={clientType} onValueChange={setClientType}>
+          <SelectTrigger className="w-[140px] bg-background">
+            <SelectValue placeholder="Tipo Cliente" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos os Tipos</SelectItem>
+            <SelectItem value="B2B">B2B</SelectItem>
+            <SelectItem value="B2C">B2C</SelectItem>
+          </SelectContent>
+        </Select>
+      )}
 
-      <Select value={stage} onValueChange={setStage}>
-        <SelectTrigger className="w-[160px] bg-background">
-          <SelectValue placeholder="Estágio" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">Qualquer Estágio</SelectItem>
-          {STAGES.map((s) => (
-            <SelectItem key={s} value={s}>
-              {s}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      {status !== undefined && setStatus && (
+        <Select value={status} onValueChange={setStatus}>
+          <SelectTrigger className="w-[160px] bg-background">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Qualquer Status</SelectItem>
+            <SelectItem value="Fila">Fila</SelectItem>
+            <SelectItem value="Em Andamento">Em Andamento</SelectItem>
+            <SelectItem value="Parado">Parado</SelectItem>
+            <SelectItem value="Concluído">Concluído</SelectItem>
+          </SelectContent>
+        </Select>
+      )}
+
+      {stage !== undefined && setStage && (
+        <Select value={stage} onValueChange={setStage}>
+          <SelectTrigger className="w-[160px] bg-background">
+            <SelectValue placeholder="Estágio" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Qualquer Estágio</SelectItem>
+            {STAGES.map((s) => (
+              <SelectItem key={s} value={s}>
+                {s}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
 
       <Select value={deadline} onValueChange={setDeadline}>
         <SelectTrigger className="w-[160px] bg-background">

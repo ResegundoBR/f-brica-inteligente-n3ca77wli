@@ -72,7 +72,8 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
   const opType = form.watch('op_type')
 
   useEffect(() => {
-  const loadClients = () => pb.collection('clients').getFullList({ sort: 'name' }).then(setClients)
+    const loadClients = () =>
+      pb.collection('clients').getFullList({ sort: 'name' }).then(setClients)
 
     if (open) {
       form.reset({
@@ -107,7 +108,7 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
     try {
       const record = await pb.collection('clients').create({
         name: newClientName,
-        type: newClientType
+        type: newClientType,
       })
       await loadClients()
       form.setValue('client_id', record.id)
@@ -174,92 +175,47 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Nova Ordem de Produção</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 py-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Número da OP</Label>
-              <Input {...form.register('order_number')} placeholder="Ex: OP-1234" />
-            </div>
-            <div className="space-y-2">
-              <Label>Data de Entrega</Label>
-              <Input type="date" {...form.register('delivery_date')} />
-            </div>
-            <div className="space-y-2 col-span-2">
-              <div className="flex items-center justify-between">
-                <Label>Cliente</Label>
-                <Button 
-                  type="button" 
-                  variant="ghost" 
-                  size="sm" 
-                  className="h-6 px-2 text-xs" 
-                  onClick={() => setNewClientOpen(true)}
-                >
-                  <Plus className="size-3 mr-1" /> Novo Cliente
-                </Button>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Nova Ordem de Produção</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Número da OP</Label>
+                <Input {...form.register('order_number')} placeholder="Ex: OP-1234" />
               </div>
-              <Controller
-                control={form.control}
-                name="client_id"
-                render={({ field }) => (
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione um cliente" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {clients.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>
-                          {c.name} {c.type ? `(${c.type})` : ''}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Tipo de OP</Label>
-              <Controller
-                control={form.control}
-                name="op_type"
-                render={({ field }) => (
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Linha">Linha</SelectItem>
-                      <SelectItem value="Especial">Especial</SelectItem>
-                      <SelectItem value="Assistência">Assistência</SelectItem>
-                    </SelectContent>
-                  </Select>
-                )}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Quantidade</Label>
-              <Input type="number" min="1" {...form.register('quantity')} />
-            </div>
-
-            {opType === 'Linha' && (
+              <div className="space-y-2">
+                <Label>Data de Entrega</Label>
+                <Input type="date" {...form.register('delivery_date')} />
+              </div>
               <div className="space-y-2 col-span-2">
-                <Label>Produto</Label>
+                <div className="flex items-center justify-between">
+                  <Label>Cliente</Label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => setNewClientOpen(true)}
+                  >
+                    <Plus className="size-3 mr-1" /> Novo Cliente
+                  </Button>
+                </div>
                 <Controller
                   control={form.control}
-                  name="product_id"
+                  name="client_id"
                   render={({ field }) => (
-                    <Select value={field.value || ''} onValueChange={field.onChange}>
+                    <Select value={field.value} onValueChange={field.onChange}>
                       <SelectTrigger>
-                        <SelectValue placeholder="Selecione um produto" />
+                        <SelectValue placeholder="Selecione um cliente" />
                       </SelectTrigger>
                       <SelectContent>
-                        {products.map((p) => (
-                          <SelectItem key={p.id} value={p.id}>
-                            {p.name}
+                        {clients.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.name} {c.type ? `(${c.type})` : ''}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -267,112 +223,162 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
                   )}
                 />
               </div>
-            )}
-
-            {opType === 'Assistência' && (
-              <div className="space-y-2 col-span-2">
-                <Label>Nome do Produto (Assistência)</Label>
-                <Input
-                  {...form.register('manual_product_name')}
-                  placeholder="Descrição do produto para assistência"
+              <div className="space-y-2">
+                <Label>Tipo de OP</Label>
+                <Controller
+                  control={form.control}
+                  name="op_type"
+                  render={({ field }) => (
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Linha">Linha</SelectItem>
+                        <SelectItem value="Especial">Especial</SelectItem>
+                        <SelectItem value="Assistência">Assistência</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
                 />
               </div>
-            )}
-          </div>
+              <div className="space-y-2">
+                <Label>Quantidade</Label>
+                <Input type="number" min="1" {...form.register('quantity')} />
+              </div>
 
-          <div className="flex items-center justify-between p-4 border rounded-lg bg-red-50/50 dark:bg-red-950/20">
-            <div className="space-y-0.5">
-              <Label className="text-red-600 dark:text-red-400 font-bold">
-                Marcar como Emergência
-              </Label>
-              <p className="text-sm text-muted-foreground">
-                Esta OP terá prioridade máxima no painel do operador.
-              </p>
-            </div>
-            <Controller
-              control={form.control}
-              name="manual_priority"
-              render={({ field }) => (
-                <Switch
-                  checked={field.value === 1}
-                  onCheckedChange={(c) => field.onChange(c ? 1 : 0)}
-                />
+              {opType === 'Linha' && (
+                <div className="space-y-2 col-span-2">
+                  <Label>Produto</Label>
+                  <Controller
+                    control={form.control}
+                    name="product_id"
+                    render={({ field }) => (
+                      <Select value={field.value || ''} onValueChange={field.onChange}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione um produto" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {products.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>
+                              {p.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                </div>
               )}
-            />
-          </div>
 
-          {opType !== 'Linha' && (
-            <div className="mt-6 border-t pt-4">
-              <h3 className="font-bold mb-2">Registro de Tempos Simplificado</h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                Informe o tempo estimado (em horas) para as etapas desta OP. Deixe em branco ou zero
-                para pular a etapa.
-              </p>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {processes.map((proc) => (
-                  <div key={proc.id} className="flex flex-col gap-1">
-                    <Label className="text-xs truncate" title={proc.name}>
-                      {proc.name}
-                    </Label>
-                    <Input
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      placeholder="0"
-                      {...form.register(`estimates.${proc.name}`, { valueAsNumber: true })}
-                    />
-                  </div>
-                ))}
-              </div>
+              {opType === 'Assistência' && (
+                <div className="space-y-2 col-span-2">
+                  <Label>Nome do Produto (Assistência)</Label>
+                  <Input
+                    {...form.register('manual_product_name')}
+                    placeholder="Descrição do produto para assistência"
+                  />
+                </div>
+              )}
             </div>
-          )}
 
-          <DialogFooter className="mt-6">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancelar
-            </Button>
-            <Button type="submit" disabled={loading}>
-              {loading ? 'Salvando...' : 'Criar OP'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+            <div className="flex items-center justify-between p-4 border rounded-lg bg-red-50/50 dark:bg-red-950/20">
+              <div className="space-y-0.5">
+                <Label className="text-red-600 dark:text-red-400 font-bold">
+                  Marcar como Emergência
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  Esta OP terá prioridade máxima no painel do operador.
+                </p>
+              </div>
+              <Controller
+                control={form.control}
+                name="manual_priority"
+                render={({ field }) => (
+                  <Switch
+                    checked={field.value === 1}
+                    onCheckedChange={(c) => field.onChange(c ? 1 : 0)}
+                  />
+                )}
+              />
+            </div>
 
-    <Dialog open={newClientOpen} onOpenChange={setNewClientOpen}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Novo Cliente</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleCreateClient} className="space-y-4 py-4">
-          <div className="space-y-2">
-            <Label>Nome do Cliente</Label>
-            <Input 
-              value={newClientName} 
-              onChange={(e) => setNewClientName(e.target.value)} 
-              placeholder="Ex: Indústria XYZ" 
-              required 
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>Tipo de Cliente</Label>
-            <Select value={newClientType} onValueChange={setNewClientType}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione o tipo" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="B2B">B2B</SelectItem>
-                <SelectItem value="B2C">B2C</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setNewClientOpen(false)}>Cancelar</Button>
-            <Button type="submit" disabled={loading}>{loading ? 'Salvando...' : 'Criar Cliente'}</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+            {opType !== 'Linha' && (
+              <div className="mt-6 border-t pt-4">
+                <h3 className="font-bold mb-2">Registro de Tempos Simplificado</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Informe o tempo estimado (em horas) para as etapas desta OP. Deixe em branco ou
+                  zero para pular a etapa.
+                </p>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  {processes.map((proc) => (
+                    <div key={proc.id} className="flex flex-col gap-1">
+                      <Label className="text-xs truncate" title={proc.name}>
+                        {proc.name}
+                      </Label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        placeholder="0"
+                        {...form.register(`estimates.${proc.name}`, { valueAsNumber: true })}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <DialogFooter className="mt-6">
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={loading}>
+                {loading ? 'Salvando...' : 'Criar OP'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={newClientOpen} onOpenChange={setNewClientOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Novo Cliente</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleCreateClient} className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Nome do Cliente</Label>
+              <Input
+                value={newClientName}
+                onChange={(e) => setNewClientName(e.target.value)}
+                placeholder="Ex: Indústria XYZ"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Tipo de Cliente</Label>
+              <Select value={newClientType} onValueChange={setNewClientType}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o tipo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="B2B">B2B</SelectItem>
+                  <SelectItem value="B2C">B2C</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setNewClientOpen(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={loading}>
+                {loading ? 'Salvando...' : 'Criar Cliente'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

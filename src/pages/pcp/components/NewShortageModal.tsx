@@ -397,13 +397,15 @@ export function NewShortageModal({
                       <tr key={h.id} className="bg-white dark:bg-slate-950">
                         <td className="px-3 py-2">
                           {h.purchase_date
-                            ? new Date(h.purchase_date).toLocaleDateString()
-                            : new Date(h.created).toLocaleDateString()}
+                            ? new Date(h.purchase_date).toLocaleDateString('pt-BR', {
+                                timeZone: 'UTC',
+                              })
+                            : new Date(h.created).toLocaleDateString('pt-BR')}
                         </td>
                         <td className="px-3 py-2 text-slate-600 dark:text-slate-400">
                           {h.supplier || '-'}
                         </td>
-                        <td className="px-3 py-2 text-right">{h.quantity}</td>
+                        <td className="px-3 py-2 text-right">{h.quantity || 0}</td>
                         <td className="px-3 py-2 text-right">
                           {h.unit_price?.toLocaleString('pt-BR', {
                             style: 'currency',

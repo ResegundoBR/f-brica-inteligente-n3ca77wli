@@ -47,11 +47,13 @@ function HistoryPanel({ history }: { history: any[] }) {
               <p className="text-xs text-muted-foreground mt-0.5">
                 {h.purchase_date
                   ? new Date(h.purchase_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })
-                  : '-'}
+                  : h.created
+                    ? new Date(h.created).toLocaleDateString('pt-BR')
+                    : '-'}
               </p>
             </div>
             <div className="text-right">
-              <p className="font-medium text-slate-900 dark:text-slate-100">{h.quantity} un</p>
+              <p className="font-medium text-slate-900 dark:text-slate-100">{h.quantity || 0} un</p>
               <p className="text-xs text-muted-foreground mt-0.5">
                 {h.unit_price ? `R$ ${Number(h.unit_price).toFixed(2)}` : '-'}
               </p>

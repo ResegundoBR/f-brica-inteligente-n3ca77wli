@@ -162,7 +162,7 @@ export default function PcpOrders() {
       map.get(op.order_number)!.push(op)
     })
     return groups
-  }, [orders])
+  }, [filteredOrders, opTypeFilter, clientFilter, statusFilter, stageFilter, deadlineFilter])
 
   const updateOrder = async (id: string, field: string, value: string) => {
     try {

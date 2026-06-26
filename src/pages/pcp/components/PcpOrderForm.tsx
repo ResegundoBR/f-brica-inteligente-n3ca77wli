@@ -166,20 +166,31 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
           .collection('product_processes')
           .getFullList({ filter: `product_id="${data.product_id}"` })
 
-        if (productProcesses.length === 0) {
-          processesToFill = processes
-          isUpdate = false
-        } else {
-          const hasNoDaysAtAll = productProcesses.every((p) => !p.estimated_days)
-          const hasNoHoursAtAll = productProcesses.every((p) => !p.estimated_hours)
-          const hasProcessWithNoTime = productProcesses.some(
-            (p) => !p.estimated_hours && !p.estimated_days,
-          )
+        const hasValidProcesses = productProcesses.some(
+          (p) =>
+            p.estimated_hours && p.estimated_hours > 0 && p.estimated_days && p.estimated_days > 0,
+        )
 
-          if (hasNoDaysAtAll || hasNoHoursAtAll || hasProcessWithNoTime) {
-            processesToFill = productProcesses
-            isUpdate = true
-          }
+        if (!hasValidProcesses) {
+          const masterStages = [
+            'Projetos',
+            'Fabricação',
+            'Acabamento',
+            'Montagem',
+            'Qualidade',
+            'Expedição',
+          ]
+
+          processesToFill = masterStages.map((stageName) => {
+            const existing = productProcesses.find((p) => p.name === stageName)
+            return {
+              id: existing ? existing.id : `new_${stageName}`,
+              name: stageName,
+              isNew: !existing,
+              estimated_hours: existing?.estimated_hours || 0,
+              estimated_days: existing?.estimated_days || 0,
+            }
+          })
         }
       } catch (err) {
         console.error(err)
@@ -193,7 +204,6 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
       setMissingTimeProduct({
         product,
         processesToDefine: processesToFill,
-        isUpdate,
         pendingFormData: data,
       })
       return
@@ -578,37 +588,41 @@ function ProductProcessesModal({ missingData, open, onCancel, onSaved }: any) {
   const handleSave = async () => {
     setLoading(true)
     try {
-      if (missingData.isUpdate) {
-        for (const process of missingData.processesToDefine) {
-          const data = times[process.id] || {}
-          if (data.hours !== undefined || data.days !== undefined) {
-            await pb.collection('product_processes').update(process.id, {
-              estimated_hours: data.hours !== undefined ? data.hours : process.estimated_hours || 0,
-              estimated_days: data.days !== undefined ? data.days : process.estimated_days || 0,
-            })
-          }
-        }
-      } else {
-        let orderCount = 0
-        for (const process of missingData.processesToDefine) {
-          const data = times[process.id] || {}
-          if (
-            (data.hours !== undefined && data.hours > 0) ||
-            (data.days !== undefined && data.days > 0)
-          ) {
+      let maxOrder = 0
+      if (missingData.product) {
+        const existing = await pb
+          .collection('product_processes')
+          .getFullList({ filter: `product_id="${missingData.product.id}"` })
+        maxOrder = existing.length > 0 ? Math.max(...existing.map((p) => p.order)) : 0
+      }
+
+      for (const process of missingData.processesToDefine) {
+        const data = times[process.id] || {}
+        const h = data.hours !== undefined ? data.hours : process.estimated_hours || 0
+        const d = data.days !== undefined ? data.days : process.estimated_days || 0
+
+        if (h > 0 || d > 0) {
+          if (process.isNew) {
+            maxOrder++
             await pb.collection('product_processes').create({
               product_id: missingData.product.id,
               name: process.name,
-              description: process.description || '',
-              order: ++orderCount,
-              color: process.color || '',
-              estimated_hours: data.hours || 0,
-              estimated_days: data.days || 0,
+              description: '',
+              order: maxOrder,
+              color: '',
+              estimated_hours: h,
+              estimated_days: d,
               is_required: true,
+            })
+          } else {
+            await pb.collection('product_processes').update(process.id, {
+              estimated_hours: h,
+              estimated_days: d,
             })
           }
         }
       }
+
       toast({ title: 'Tempos salvos com sucesso!' })
       onSaved()
     } catch (err: any) {
@@ -667,7 +681,7 @@ function ProductProcessesModal({ missingData, open, onCancel, onSaved }: any) {
                     <Label className="text-xs text-muted-foreground">Dias</Label>
                     <Input
                       type="number"
-                      step="0.1"
+                      step="1"
                       min="0"
                       placeholder="0"
                       value={times[proc.id]?.days === undefined ? '' : times[proc.id].days}
@@ -677,7 +691,7 @@ function ProductProcessesModal({ missingData, open, onCancel, onSaved }: any) {
                           ...prev,
                           [proc.id]: {
                             ...prev[proc.id],
-                            days: val === '' ? undefined : parseFloat(val),
+                            days: val === '' ? undefined : parseInt(val, 10),
                           },
                         }))
                       }}

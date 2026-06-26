@@ -174,10 +174,30 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
         if (!hasValidProcesses) {
           const masterStages = [
             'Projetos',
-            'Fabricação',
-            'Acabamento',
+            'Separação',
+            'Cotação',
+            'Compra',
+            'Retirada',
+            'Aguardando',
+            'Corte',
+            'Dobra',
+            'Calandra',
+            'Solda',
+            'Acab. Solda',
+            'Furação',
+            'Rosca',
+            'Concreto',
+            'Terceirização',
+            'Preparação',
+            'Pintura',
+            'Verniz',
+            'Retoques',
             'Montagem',
             'Qualidade',
+            'Embalagem',
+            'Suprimentos',
+            'Fabricação',
+            'Acabamento',
             'Expedição',
           ]
 
@@ -620,6 +640,8 @@ function ProductProcessesModal({ missingData, open, onCancel, onSaved }: any) {
               estimated_days: d,
             })
           }
+        } else if (!process.isNew) {
+          await pb.collection('product_processes').delete(process.id)
         }
       }
 

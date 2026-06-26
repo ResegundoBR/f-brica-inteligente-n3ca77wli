@@ -64,7 +64,12 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
   const [newClientOpen, setNewClientOpen] = useState(false)
   const [newClientName, setNewClientName] = useState('')
   const [newClientType, setNewClientType] = useState('B2B')
-  const [missingTimeProduct, setMissingTimeProduct] = useState<any>(null)
+  const [missingTimeProduct, setMissingTimeProduct] = useState<{
+    product: any
+    processesToDefine: any[]
+    isUpdate: boolean
+    pendingFormData: z.infer<typeof schema>
+  } | null>(null)
   const [checkingProcesses, setCheckingProcesses] = useState(false)
   const { toast } = useToast()
 
@@ -93,7 +98,6 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
   })
 
   const opType = form.watch('op_type')
-  const productId = form.watch('product_id')
 
   useEffect(() => {
     const loadClients = () =>
@@ -127,38 +131,6 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
     }
   }, [open, form])
 
-  useEffect(() => {
-    if (opType === 'Linha' && productId) {
-      let isMounted = true
-      const checkProcesses = async () => {
-        setCheckingProcesses(true)
-        try {
-          const result = await pb
-            .collection('product_processes')
-            .getList(1, 1, { filter: `product_id="${productId}"` })
-          if (isMounted) {
-            if (result.totalItems === 0) {
-              const product = products.find((p) => p.id === productId)
-              if (product) setMissingTimeProduct(product)
-            } else {
-              setMissingTimeProduct(null)
-            }
-          }
-        } catch (err) {
-          console.error(err)
-        } finally {
-          if (isMounted) setCheckingProcesses(false)
-        }
-      }
-      checkProcesses()
-      return () => {
-        isMounted = false
-      }
-    } else {
-      setMissingTimeProduct(null)
-    }
-  }, [opType, productId, products])
-
   const handleCreateClient = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newClientName) return
@@ -182,7 +154,55 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
   }
 
   const onSubmit = async (data: z.infer<typeof schema>) => {
-    if (checkingProcesses || missingTimeProduct) return
+    if (checkingProcesses) return
+
+    let processesToFill: any[] = []
+    let isUpdate = false
+
+    if (data.op_type === 'Linha' && data.product_id) {
+      setCheckingProcesses(true)
+      try {
+        const productProcesses = await pb
+          .collection('product_processes')
+          .getFullList({ filter: `product_id="${data.product_id}"` })
+
+        if (productProcesses.length === 0) {
+          processesToFill = processes
+          isUpdate = false
+        } else {
+          const hasNoDaysAtAll = productProcesses.every((p) => !p.estimated_days)
+          const hasNoHoursAtAll = productProcesses.every((p) => !p.estimated_hours)
+          const hasProcessWithNoTime = productProcesses.some(
+            (p) => !p.estimated_hours && !p.estimated_days,
+          )
+
+          if (hasNoDaysAtAll || hasNoHoursAtAll || hasProcessWithNoTime) {
+            processesToFill = productProcesses
+            isUpdate = true
+          }
+        }
+      } catch (err) {
+        console.error(err)
+      } finally {
+        setCheckingProcesses(false)
+      }
+    }
+
+    if (processesToFill.length > 0) {
+      const product = products.find((p) => p.id === data.product_id)
+      setMissingTimeProduct({
+        product,
+        processesToDefine: processesToFill,
+        isUpdate,
+        pendingFormData: data,
+      })
+      return
+    }
+
+    await createOrder(data)
+  }
+
+  const createOrder = async (data: z.infer<typeof schema>) => {
     setLoading(true)
     try {
       const client = clients.find((c) => c.id === data.client_id)
@@ -472,7 +492,7 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 Cancelar
               </Button>
-              <Button type="submit" disabled={loading || checkingProcesses || !!missingTimeProduct}>
+              <Button type="submit" disabled={loading || checkingProcesses}>
                 {loading ? 'Salvando...' : 'Criar OP'}
               </Button>
             </DialogFooter>
@@ -520,46 +540,73 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
       </Dialog>
 
       <ProductProcessesModal
-        product={missingTimeProduct}
-        globalProcesses={processes}
+        missingData={missingTimeProduct}
         open={!!missingTimeProduct}
         onCancel={() => {
           setMissingTimeProduct(null)
-          form.setValue('product_id', '')
         }}
-        onSaved={() => {
+        onSaved={async () => {
+          const data = missingTimeProduct?.pendingFormData
           setMissingTimeProduct(null)
+          if (data) {
+            await createOrder(data)
+          }
         }}
       />
     </>
   )
 }
 
-function ProductProcessesModal({ product, globalProcesses, open, onCancel, onSaved }: any) {
+function ProductProcessesModal({ missingData, open, onCancel, onSaved }: any) {
   const [loading, setLoading] = useState(false)
   const { toast } = useToast()
-  const [times, setTimes] = useState<Record<string, number>>({})
+  const [times, setTimes] = useState<Record<string, { hours?: number; days?: number }>>({})
 
   useEffect(() => {
-    if (open) setTimes({})
-  }, [open])
+    if (open && missingData) {
+      const initial: Record<string, { hours?: number; days?: number }> = {}
+      missingData.processesToDefine.forEach((p: any) => {
+        initial[p.id] = {
+          hours: p.estimated_hours || undefined,
+          days: p.estimated_days || undefined,
+        }
+      })
+      setTimes(initial)
+    }
+  }, [open, missingData])
 
   const handleSave = async () => {
     setLoading(true)
     try {
-      let orderCount = 0
-      for (const process of globalProcesses) {
-        const hours = times[process.id]
-        if (hours !== undefined && hours > 0) {
-          await pb.collection('product_processes').create({
-            product_id: product.id,
-            name: process.name,
-            description: process.description || '',
-            order: ++orderCount,
-            color: process.color || '',
-            estimated_hours: hours,
-            is_required: true,
-          })
+      if (missingData.isUpdate) {
+        for (const process of missingData.processesToDefine) {
+          const data = times[process.id] || {}
+          if (data.hours !== undefined || data.days !== undefined) {
+            await pb.collection('product_processes').update(process.id, {
+              estimated_hours: data.hours !== undefined ? data.hours : process.estimated_hours || 0,
+              estimated_days: data.days !== undefined ? data.days : process.estimated_days || 0,
+            })
+          }
+        }
+      } else {
+        let orderCount = 0
+        for (const process of missingData.processesToDefine) {
+          const data = times[process.id] || {}
+          if (
+            (data.hours !== undefined && data.hours > 0) ||
+            (data.days !== undefined && data.days > 0)
+          ) {
+            await pb.collection('product_processes').create({
+              product_id: missingData.product.id,
+              name: process.name,
+              description: process.description || '',
+              order: ++orderCount,
+              color: process.color || '',
+              estimated_hours: data.hours || 0,
+              estimated_days: data.days || 0,
+              is_required: true,
+            })
+          }
         }
       }
       toast({ title: 'Tempos salvos com sucesso!' })
@@ -571,6 +618,8 @@ function ProductProcessesModal({ product, globalProcesses, open, onCancel, onSav
     }
   }
 
+  if (!missingData) return null
+
   return (
     <Dialog
       open={open}
@@ -578,35 +627,63 @@ function ProductProcessesModal({ product, globalProcesses, open, onCancel, onSav
         if (!val) onCancel()
       }}
     >
-      <DialogContent className="max-w-xl">
+      <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>Tempos de Produção Ausentes</DialogTitle>
           <DialogDescription>
-            O produto <strong>{product?.name}</strong> não possui processos ou tempos de produção
-            cadastrados. Por favor, defina os processos e tempos estimados para continuar.
+            O produto <strong>{missingData.product?.name}</strong> possui processos com estimativas
+            de tempo ausentes. Defina as horas e dias estimados para continuar com a criação da OP.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            {globalProcesses.map((proc: any) => (
-              <div key={proc.id} className="space-y-1">
-                <Label className="text-xs truncate" title={proc.name}>
+        <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto pr-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {missingData.processesToDefine.map((proc: any) => (
+              <div key={proc.id} className="space-y-3 border p-4 rounded-lg bg-card shadow-sm">
+                <Label className="text-sm font-semibold truncate block" title={proc.name}>
                   {proc.name}
                 </Label>
-                <Input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  placeholder="Horas (ex: 2.5)"
-                  value={times[proc.id] === undefined ? '' : times[proc.id]}
-                  onChange={(e) => {
-                    const val = e.target.value
-                    setTimes((prev) => ({
-                      ...prev,
-                      [proc.id]: val === '' ? undefined : parseFloat(val),
-                    }))
-                  }}
-                />
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Horas</Label>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      placeholder="0"
+                      value={times[proc.id]?.hours === undefined ? '' : times[proc.id].hours}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setTimes((prev) => ({
+                          ...prev,
+                          [proc.id]: {
+                            ...prev[proc.id],
+                            hours: val === '' ? undefined : parseFloat(val),
+                          },
+                        }))
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Dias</Label>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      placeholder="0"
+                      value={times[proc.id]?.days === undefined ? '' : times[proc.id].days}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setTimes((prev) => ({
+                          ...prev,
+                          [proc.id]: {
+                            ...prev[proc.id],
+                            days: val === '' ? undefined : parseFloat(val),
+                          },
+                        }))
+                      }}
+                    />
+                  </div>
+                </div>
               </div>
             ))}
           </div>
@@ -616,7 +693,7 @@ function ProductProcessesModal({ product, globalProcesses, open, onCancel, onSav
             Cancelar
           </Button>
           <Button onClick={handleSave} disabled={loading}>
-            {loading ? 'Salvando...' : 'Salvar Tempos'}
+            {loading ? 'Salvando...' : 'Salvar e Criar OP'}
           </Button>
         </DialogFooter>
       </DialogContent>

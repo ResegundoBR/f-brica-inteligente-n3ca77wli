@@ -142,6 +142,7 @@ export interface ProductProcessModel {
   order: number
   color?: string
   estimated_hours?: number
+  estimated_days?: number
   is_required?: boolean
   created: string
   updated: string

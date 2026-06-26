@@ -24,7 +24,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import { formatDeadline, filterByDeadline } from '@/lib/pcp-utils'
+import { formatDeadline, filterByDeadline, isStageDelayed } from '@/lib/pcp-utils'
 import { PcpOrderForm } from './components/PcpOrderForm'
 import { Button } from '@/components/ui/button'
 import { PcpOrderDetails } from './components/PcpOrderDetails'
@@ -147,6 +147,7 @@ export default function PcpOrders() {
     })
 
     const groups: {
+      normalized_key: string
       order_number: string
       client_name: string
       op_type: string
@@ -154,16 +155,18 @@ export default function PcpOrders() {
     }[] = []
     const map = new Map<string, PcpOrder[]>()
     filteredByCustom.forEach((op) => {
-      if (!map.has(op.order_number)) {
-        map.set(op.order_number, [])
+      const normalized = (op.order_number || '').replace(/[.\-\s]/g, '').replace(/^0+/, '') || '0'
+      if (!map.has(normalized)) {
+        map.set(normalized, [])
         groups.push({
+          normalized_key: normalized,
           order_number: op.order_number,
           client_name: op.expand?.client_id?.name || op.client_name,
           op_type: op.op_type,
-          items: map.get(op.order_number)!,
+          items: map.get(normalized)!,
         })
       }
-      map.get(op.order_number)!.push(op)
+      map.get(normalized)!.push(op)
     })
     return groups
   }, [
@@ -228,6 +231,8 @@ export default function PcpOrders() {
     const isDelayed = isBefore(startOfDay(date), today)
     if (isDelayed) return 'purple'
 
+    if (isStageDelayed(op)) return 'yellow'
+
     return 'blue'
   }
 
@@ -288,15 +293,11 @@ export default function PcpOrders() {
               </TableRow>
             ) : (
               groupedOrders.map((group) => (
-                <Fragment key={group.order_number}>
+                <Fragment key={group.normalized_key}>
                   <TableRow
                     className={cn(
                       'hover:opacity-90 border-y transition-colors',
-                      group.op_type === 'Assistência'
-                        ? 'bg-fuchsia-600 text-white'
-                        : group.op_type === 'Especial'
-                          ? 'bg-slate-900 text-white'
-                          : 'bg-blue-600 text-white',
+                      'bg-blue-100/80 text-blue-900 dark:bg-blue-900/40 dark:text-blue-100',
                     )}
                   >
                     <TableCell colSpan={6} className="font-semibold text-sm py-1">
@@ -304,12 +305,6 @@ export default function PcpOrders() {
                         <span>Pedido: {group.order_number}</span>
                         <span className="opacity-50">|</span>
                         <span>Cliente: {group.client_name}</span>
-                        <Badge
-                          variant="outline"
-                          className="ml-auto border-white/40 text-white hover:bg-white/20 bg-white/10"
-                        >
-                          {group.op_type}
-                        </Badge>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -319,7 +314,9 @@ export default function PcpOrders() {
                       className={cn(
                         'cursor-pointer hover:bg-muted/30 transition-colors',
                         getOrderColor(op) === 'neon-orange' &&
-                          'bg-orange-50/50 hover:bg-orange-100/50 dark:bg-orange-950/20 dark:hover:bg-orange-900/30',
+                          'bg-orange-500 text-white hover:bg-orange-600 dark:bg-orange-600 dark:hover:bg-orange-700',
+                        getOrderColor(op) === 'yellow' &&
+                          'bg-yellow-400 text-slate-900 hover:bg-yellow-500 dark:bg-yellow-500 dark:hover:bg-yellow-600',
                         getOrderColor(op) === 'purple' &&
                           'bg-purple-50/50 hover:bg-purple-100/50 dark:bg-purple-950/20 dark:hover:bg-purple-900/30',
                         getOrderColor(op) === 'blue' &&
@@ -342,9 +339,25 @@ export default function PcpOrders() {
                               {(observations[op.id] || []).map((obs) => (
                                 <span
                                   key={obs.id}
-                                  className="text-[10px] text-muted-foreground whitespace-pre-wrap leading-tight border-l-2 pl-2 border-slate-200 dark:border-slate-800"
+                                  className={cn(
+                                    'text-[10px] whitespace-pre-wrap leading-tight border-l-2 pl-2',
+                                    getOrderColor(op) === 'neon-orange'
+                                      ? 'text-orange-50 border-orange-400'
+                                      : getOrderColor(op) === 'yellow'
+                                        ? 'text-slate-800 border-yellow-600'
+                                        : 'text-muted-foreground border-slate-200 dark:border-slate-800',
+                                  )}
                                 >
-                                  <span className="font-medium text-slate-700 dark:text-slate-300">
+                                  <span
+                                    className={cn(
+                                      'font-medium',
+                                      getOrderColor(op) === 'neon-orange'
+                                        ? 'text-white'
+                                        : getOrderColor(op) === 'yellow'
+                                          ? 'text-slate-900'
+                                          : 'text-slate-700 dark:text-slate-300',
+                                    )}
+                                  >
                                     {' '}
                                     {obs.sector}:
                                   </span>{' '}
@@ -385,7 +398,15 @@ export default function PcpOrders() {
                             value={op.status}
                             onValueChange={(val) => updateOrder(op.id, 'status', val)}
                           >
-                            <SelectTrigger className="h-7 text-xs border-none shadow-none font-medium px-2 py-0 bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800">
+                            <SelectTrigger
+                              className={cn(
+                                'h-7 text-xs border-none shadow-none font-medium px-2 py-0 bg-transparent',
+                                getOrderColor(op) === 'neon-orange' ||
+                                  getOrderColor(op) === 'yellow'
+                                  ? 'hover:bg-black/10 focus:ring-0'
+                                  : 'hover:bg-slate-100 dark:hover:bg-slate-800',
+                              )}
+                            >
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -400,7 +421,15 @@ export default function PcpOrders() {
                             value={op.stage}
                             onValueChange={(val) => updateOrder(op.id, 'stage', val)}
                           >
-                            <SelectTrigger className="h-6 text-xs border-none shadow-none text-muted-foreground px-2 py-0 bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800">
+                            <SelectTrigger
+                              className={cn(
+                                'h-6 text-xs border-none shadow-none px-2 py-0 bg-transparent',
+                                getOrderColor(op) === 'neon-orange' ||
+                                  getOrderColor(op) === 'yellow'
+                                  ? 'hover:bg-black/10 focus:ring-0 text-inherit opacity-90'
+                                  : 'text-muted-foreground hover:bg-slate-100 dark:hover:bg-slate-800',
+                              )}
+                            >
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent className="max-h-60">
@@ -419,7 +448,10 @@ export default function PcpOrders() {
                             'text-sm font-medium whitespace-nowrap',
                             getOrderColor(op) === 'purple'
                               ? 'text-purple-500'
-                              : 'text-slate-600 dark:text-slate-400',
+                              : getOrderColor(op) === 'neon-orange' ||
+                                  getOrderColor(op) === 'yellow'
+                                ? 'text-inherit opacity-90'
+                                : 'text-slate-600 dark:text-slate-400',
                           )}
                         >
                           {formatDeadline(op.delivery_date, op.status)}

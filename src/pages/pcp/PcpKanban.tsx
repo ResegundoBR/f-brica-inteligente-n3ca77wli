@@ -22,7 +22,13 @@ import {
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { format, parseISO, differenceInDays, startOfDay } from 'date-fns'
-import { formatDeadline, isOrderOverdue, filterByDeadline } from '@/lib/pcp-utils'
+import {
+  formatDeadline,
+  isOrderOverdue,
+  filterByDeadline,
+  isStageDelayed,
+  STAGE_THRESHOLDS,
+} from '@/lib/pcp-utils'
 import { OutsourcingPanel } from './components/OutsourcingPanel'
 import { PcpFilters } from './components/PcpFilters'
 import { Link } from 'react-router-dom'
@@ -76,40 +82,6 @@ const MACRO_GROUPS = [
 
 const STATUSES = ['Fila', 'Em Andamento', 'Parado', 'Concluído']
 
-const STAGE_THRESHOLDS: Record<string, number> = {
-  Projetos: 72,
-  Separação: 24,
-  Cotação: 24,
-  Compra: 48,
-  Retirada: 24,
-  Aguardando: 480,
-  Corte: 24,
-  Dobra: 24,
-  Calandra: 24,
-  Solda: 48,
-  'Acab. Solda': 24,
-  Furação: 24,
-  Rosca: 24,
-  Concreto: 72,
-  Terceirização: 120,
-  Preparação: 24,
-  Pintura: 48,
-  Verniz: 24,
-  Retoques: 24,
-  Montagem: 48,
-  Qualidade: 24,
-  Embalagem: 24,
-  Expedição: 24,
-}
-
-export function isStageDelayed(order: any) {
-  if (order.status === 'Concluído' || order.status === 'Parado') return false
-  const thresholdHours = STAGE_THRESHOLDS[order.stage]
-  if (!thresholdHours) return false
-  const diffHours = (new Date().getTime() - new Date(order.updated).getTime()) / (1000 * 60 * 60)
-  return diffHours > thresholdHours
-}
-
 export function getOrderColor(order: any) {
   if (order.manual_priority === 1) {
     return 'emergency'
@@ -126,6 +98,9 @@ export function getOrderColor(order: any) {
   )
   if (order.status !== 'Concluído' && daysDiff < 0) {
     return 'purple'
+  }
+  if (isStageDelayed(order)) {
+    return 'yellow'
   }
   return 'blue'
 }
@@ -241,21 +216,24 @@ export default function PcpKanban() {
 
   const groupedFilteredOrders = useMemo(() => {
     const groups: {
+      normalized_key: string
       order_number: string
       client_name: string
       items: any[]
     }[] = []
     const map = new Map<string, any[]>()
     filteredOrders.forEach((op) => {
-      if (!map.has(op.order_number)) {
-        map.set(op.order_number, [])
+      const normalized = (op.order_number || '').replace(/[.\-\s]/g, '').replace(/^0+/, '') || '0'
+      if (!map.has(normalized)) {
+        map.set(normalized, [])
         groups.push({
+          normalized_key: normalized,
           order_number: op.order_number,
           client_name: op.expand?.client_id?.name || op.client_name,
-          items: map.get(op.order_number)!,
+          items: map.get(normalized)!,
         })
       }
-      map.get(op.order_number)!.push(op)
+      map.get(normalized)!.push(op)
     })
     return groups
   }, [filteredOrders])
@@ -472,12 +450,14 @@ export default function PcpKanban() {
                   ) : (
                     groupedFilteredOrders.map((group) => (
                       <div
-                        key={group.order_number}
+                        key={group.normalized_key}
                         className="border rounded-md bg-white dark:bg-slate-950 shadow-sm overflow-hidden"
                       >
-                        <div className="p-2 bg-slate-100/50 dark:bg-slate-800/50 border-b text-sm font-semibold flex flex-col md:flex-row md:items-center justify-between gap-1">
-                          <span>{group.order_number}</span>
-                          <span className="text-muted-foreground font-normal text-xs truncate max-w-[120px]">
+                        <div className="p-2 bg-blue-100/50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-800 text-sm font-semibold flex flex-col md:flex-row md:items-center justify-between gap-1">
+                          <span className="text-blue-900 dark:text-blue-100">
+                            {group.order_number}
+                          </span>
+                          <span className="text-blue-700 dark:text-blue-300 font-normal text-xs truncate max-w-[120px]">
                             {group.client_name}
                           </span>
                         </div>
@@ -487,9 +467,11 @@ export default function PcpKanban() {
                             const indicatorClass =
                               color === 'neon-orange'
                                 ? 'bg-orange-500'
-                                : color === 'purple'
-                                  ? 'bg-purple-500'
-                                  : 'bg-blue-500'
+                                : color === 'yellow'
+                                  ? 'bg-yellow-400'
+                                  : color === 'purple'
+                                    ? 'bg-purple-500'
+                                    : 'bg-blue-500'
                             return (
                               <button
                                 key={op.id}
@@ -864,6 +846,8 @@ export default function PcpKanban() {
                         'mt-1',
                         getOrderColor(selectedOrder) === 'neon-orange' &&
                           'bg-orange-500 hover:bg-orange-600 text-white',
+                        getOrderColor(selectedOrder) === 'yellow' &&
+                          'bg-yellow-400 hover:bg-yellow-500 text-slate-900',
                         getOrderColor(selectedOrder) === 'purple' &&
                           'bg-purple-500 hover:bg-purple-600',
                       )}
@@ -955,21 +939,21 @@ function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
 
   const borderClass = isEmergency
     ? 'border-l-red-600 border-l-4 animate-pulse shadow-[0_0_10px_rgba(220,38,38,0.3)]'
-    : color === 'neon-orange'
-      ? 'border-l-orange-500 shadow-[inset_2px_0_0_0_rgba(249,115,22,0.3)]'
+    : color === 'neon-orange' || color === 'yellow'
+      ? 'border-transparent shadow-md'
       : color === 'purple'
         ? 'border-l-purple-500'
-        : delayedStage
-          ? 'border-l-orange-500 shadow-[inset_2px_0_0_0_rgba(249,115,22,1)] dark:shadow-[inset_2px_0_0_0_rgba(249,115,22,0.5)]'
-          : 'border-l-blue-500'
+        : 'border-l-blue-500'
 
   const cardBgClass = isEmergency
-    ? 'bg-red-50/80 dark:bg-red-950/20 ring-1 ring-red-500/50'
+    ? 'bg-red-50/80 dark:bg-red-950/20 ring-1 ring-red-500/50 text-foreground'
     : color === 'neon-orange'
-      ? 'bg-orange-50/50 dark:bg-orange-950/20'
-      : color === 'purple'
-        ? 'bg-purple-50/50 dark:bg-purple-950/10'
-        : 'bg-card'
+      ? 'bg-orange-500 text-white border-orange-600'
+      : color === 'yellow'
+        ? 'bg-yellow-400 text-slate-900 border-yellow-500 shadow-yellow-400/20'
+        : color === 'purple'
+          ? 'bg-purple-50/50 dark:bg-purple-950/10 text-foreground'
+          : 'bg-card text-foreground'
 
   useEffect(() => {
     const update = () => {
@@ -1019,13 +1003,19 @@ function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
           )}
         </div>
         <div
-          className="text-xs text-muted-foreground line-clamp-1"
+          className={cn(
+            'text-xs line-clamp-1',
+            color === 'neon-orange' || color === 'yellow' ? 'opacity-90' : 'text-muted-foreground',
+          )}
           title={order.expand?.client_id?.name || order.client_name}
         >
           {order.expand?.client_id?.name || order.client_name}
         </div>
         <div
-          className="text-xs font-medium text-foreground line-clamp-1 flex items-center gap-1.5"
+          className={cn(
+            'text-xs font-medium line-clamp-1 flex items-center gap-1.5',
+            color === 'neon-orange' || color === 'yellow' ? '' : 'text-foreground',
+          )}
           title={
             order.op_type === 'Assistência'
               ? order.manual_product_name
@@ -1059,10 +1049,26 @@ function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
             {observations.map((obs: any) => (
               <span
                 key={obs.id}
-                className="text-[10px] text-muted-foreground whitespace-pre-wrap leading-tight border-l-2 pl-1.5 border-slate-200 dark:border-slate-800 line-clamp-2"
+                className={cn(
+                  'text-[10px] whitespace-pre-wrap leading-tight border-l-2 pl-1.5 line-clamp-2',
+                  color === 'neon-orange'
+                    ? 'text-orange-50 border-orange-400'
+                    : color === 'yellow'
+                      ? 'text-slate-800 border-yellow-600'
+                      : 'text-muted-foreground border-slate-200 dark:border-slate-800',
+                )}
                 title={`${obs.sector}: ${obs.content}`}
               >
-                <span className="font-medium text-slate-700 dark:text-slate-300">
+                <span
+                  className={cn(
+                    'font-medium',
+                    color === 'neon-orange'
+                      ? 'text-white'
+                      : color === 'yellow'
+                        ? 'text-slate-900'
+                        : 'text-slate-700 dark:text-slate-300',
+                  )}
+                >
                   {obs.sector}:
                 </span>{' '}
                 {obs.content}
@@ -1074,14 +1080,21 @@ function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
           <div className="flex items-center gap-1.5 flex-1 min-w-0">
             <Badge
               variant="outline"
-              className="text-[10px] h-5 px-1.5 bg-background whitespace-nowrap flex gap-1 items-center"
+              className={cn(
+                'text-[10px] h-5 px-1.5 whitespace-nowrap flex gap-1 items-center border-current/20',
+                color === 'neon-orange' || color === 'yellow'
+                  ? 'bg-transparent text-inherit'
+                  : 'bg-background',
+              )}
             >
               <span>Qtd: {order.quantity}</span>
               <span className="opacity-50">|</span>
               <span
                 className={cn(
                   'font-bold',
-                  overdue ? 'text-red-500 dark:text-red-400' : 'text-foreground',
+                  overdue && color !== 'neon-orange' && color !== 'yellow'
+                    ? 'text-red-500 dark:text-red-400'
+                    : '',
                 )}
               >
                 {formatDeadline(order.delivery_date, order.status)}
@@ -1091,9 +1104,11 @@ function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
           <div
             className={cn(
               'flex items-center gap-1 text-[10px] font-medium rounded px-1.5 py-0.5 shrink-0',
-              delayedStage && color !== 'neon-orange'
-                ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-400'
-                : 'bg-slate-200/50 dark:bg-slate-800 text-slate-500',
+              color === 'yellow'
+                ? 'bg-yellow-500/30 text-slate-900 animate-pulse'
+                : color === 'neon-orange'
+                  ? 'bg-orange-600 text-white'
+                  : 'bg-slate-200/50 dark:bg-slate-800 text-slate-500',
             )}
             title={
               delayedStage
@@ -1101,10 +1116,7 @@ function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
                 : 'Tempo neste estágio'
             }
           >
-            <Clock
-              className={cn('size-3', delayedStage && color !== 'neon-orange' && 'animate-pulse')}
-            />{' '}
-            {time}
+            <Clock className={cn('size-3', color === 'yellow' && 'animate-pulse')} /> {time}
           </div>{' '}
         </div>
       </CardContent>
@@ -1122,10 +1134,10 @@ function CompactKanbanCard({ order, observations = [], onDragStart, onClick }: a
     ? 'bg-red-600 text-white animate-pulse ring-2 ring-red-500 ring-offset-1 ring-offset-background'
     : color === 'neon-orange'
       ? 'bg-orange-500 text-white animate-pulse'
-      : isOverdue
+      : color === 'purple'
         ? 'bg-purple-500 text-white'
-        : delayedStage
-          ? 'bg-orange-500 text-white shadow-[0_0_8px_rgba(249,115,22,0.8)] dark:shadow-[0_0_8px_rgba(249,115,22,0.5)]'
+        : color === 'yellow'
+          ? 'bg-yellow-400 text-slate-900 shadow-[0_0_8px_rgba(250,204,21,0.8)] dark:shadow-[0_0_8px_rgba(250,204,21,0.5)]'
           : 'bg-blue-500 text-white'
 
   const prodName =
@@ -1164,9 +1176,7 @@ function CompactKanbanCard({ order, observations = [], onDragStart, onClick }: a
 
       <div className="flex items-center justify-between w-full gap-1">
         <span className="block truncate flex-1 text-left flex items-center gap-0.5">
-          {delayedStage && color !== 'neon-orange' && !isEmergency && (
-            <Clock className="size-2 animate-pulse" />
-          )}
+          {color === 'yellow' && !isEmergency && <Clock className="size-2 animate-pulse" />}
           {isEmergency && (
             <span title="Emergência" className="text-[10px]">
               🚨
@@ -1178,9 +1188,11 @@ function CompactKanbanCard({ order, observations = [], onDragStart, onClick }: a
           <span
             className={cn(
               'text-[6px] px-0.5 rounded-sm whitespace-nowrap shrink-0 leading-tight',
-              isOverdue || color === 'neon-orange' || delayedStage
-                ? 'bg-white/30 text-white'
-                : 'bg-white/20 text-white',
+              color === 'yellow'
+                ? 'bg-black/20 text-slate-900'
+                : isOverdue || color === 'neon-orange'
+                  ? 'bg-white/30 text-white'
+                  : 'bg-white/20 text-white',
             )}
           >
             {deadlineText}

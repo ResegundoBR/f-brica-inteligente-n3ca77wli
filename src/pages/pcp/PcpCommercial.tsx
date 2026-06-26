@@ -139,6 +139,7 @@ export default function PcpCommercial() {
     })
 
     const groups: {
+      normalized_key: string
       order_number: string
       client_name: string
       op_type: string
@@ -146,16 +147,18 @@ export default function PcpCommercial() {
     }[] = []
     const map = new Map<string, PcpOrder[]>()
     filteredByCustom.forEach((op) => {
-      if (!map.has(op.order_number)) {
-        map.set(op.order_number, [])
+      const normalized = (op.order_number || '').replace(/[.\-\s]/g, '').replace(/^0+/, '') || '0'
+      if (!map.has(normalized)) {
+        map.set(normalized, [])
         groups.push({
+          normalized_key: normalized,
           order_number: op.order_number,
           client_name: op.expand?.client_id?.name || op.client_name,
           op_type: op.op_type,
-          items: map.get(op.order_number)!,
+          items: map.get(normalized)!,
         })
       }
-      map.get(op.order_number)!.push(op)
+      map.get(normalized)!.push(op)
     })
     return groups
   }, [filteredOrders, opTypeFilter, clientFilter, clientTypeFilter, deadlineFilter])
@@ -184,7 +187,7 @@ export default function PcpCommercial() {
     const today = startOfDay(new Date())
 
     if (isAfter(today, delivery)) {
-      return { label: 'Atrasado', variant: 'destructive' as const, className: 'bg-orange-500' }
+      return { label: 'Atrasado', variant: 'destructive' as const, className: 'bg-purple-500' }
     }
 
     return { label: 'No Prazo', variant: 'secondary' as const, className: 'bg-blue-500' }
@@ -249,15 +252,11 @@ export default function PcpCommercial() {
               </TableRow>
             ) : (
               groupedOrders.map((group) => (
-                <Fragment key={group.order_number}>
+                <Fragment key={group.normalized_key}>
                   <TableRow
                     className={cn(
                       'hover:opacity-90 border-y transition-colors',
-                      group.op_type === 'Assistência'
-                        ? 'bg-fuchsia-600 text-white'
-                        : group.op_type === 'Especial'
-                          ? 'bg-slate-900 text-white dark:bg-slate-800'
-                          : 'bg-blue-600 text-white',
+                      'bg-blue-100/80 text-blue-900 dark:bg-blue-900/40 dark:text-blue-100',
                     )}
                   >
                     <TableCell colSpan={6} className="font-semibold text-sm py-1">
@@ -265,12 +264,6 @@ export default function PcpCommercial() {
                         <span>Pedido: {group.order_number}</span>
                         <span className="opacity-50">|</span>
                         <span>Cliente: {group.client_name}</span>
-                        <Badge
-                          variant="outline"
-                          className="ml-auto border-white/40 text-white hover:bg-white/20 bg-white/10"
-                        >
-                          {group.op_type}
-                        </Badge>
                       </div>
                     </TableCell>
                   </TableRow>

@@ -67,6 +67,40 @@ export function filterByDeadline(
   }
 }
 
+export const STAGE_THRESHOLDS: Record<string, number> = {
+  Projetos: 72,
+  Separação: 24,
+  Cotação: 24,
+  Compra: 48,
+  Retirada: 24,
+  Aguardando: 480,
+  Corte: 24,
+  Dobra: 24,
+  Calandra: 24,
+  Solda: 48,
+  'Acab. Solda': 24,
+  Furação: 24,
+  Rosca: 24,
+  Concreto: 72,
+  Terceirização: 120,
+  Preparação: 24,
+  Pintura: 48,
+  Verniz: 24,
+  Retoques: 24,
+  Montagem: 48,
+  Qualidade: 24,
+  Embalagem: 24,
+  Expedição: 24,
+}
+
+export function isStageDelayed(order: any): boolean {
+  if (order.status === 'Concluído' || order.status === 'Parado') return false
+  const thresholdHours = STAGE_THRESHOLDS[order.stage]
+  if (!thresholdHours) return false
+  const diffHours = (new Date().getTime() - new Date(order.updated).getTime()) / (1000 * 60 * 60)
+  return diffHours > thresholdHours
+}
+
 const engenhariaStages = ['Projetos']
 
 const fabricacaoStages = [

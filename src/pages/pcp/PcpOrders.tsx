@@ -236,6 +236,17 @@ export default function PcpOrders() {
     return 'blue'
   }
 
+  const getHeaderColor = (opType: string) => {
+    switch (opType) {
+      case 'Especial':
+        return 'bg-slate-900 text-white'
+      case 'Assistência':
+        return 'bg-fuchsia-600 text-white'
+      default:
+        return 'bg-blue-600 text-white'
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4 p-4">
       <div className="flex items-center justify-between flex-wrap gap-4">
@@ -297,7 +308,7 @@ export default function PcpOrders() {
                   <TableRow
                     className={cn(
                       'hover:opacity-90 border-y transition-colors',
-                      'bg-blue-100/80 text-blue-900 dark:bg-blue-900/40 dark:text-blue-100',
+                      getHeaderColor(group.op_type),
                     )}
                   >
                     <TableCell colSpan={6} className="font-semibold text-sm py-1">
@@ -305,6 +316,9 @@ export default function PcpOrders() {
                         <span>Pedido: {group.order_number}</span>
                         <span className="opacity-50">|</span>
                         <span>Cliente: {group.client_name}</span>
+                        <Badge className="bg-white/20 text-white border-none hover:bg-white/30">
+                          {group.op_type}
+                        </Badge>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -312,15 +326,13 @@ export default function PcpOrders() {
                     <TableRow
                       key={op.id}
                       className={cn(
-                        'cursor-pointer hover:bg-muted/30 transition-colors',
+                        'cursor-pointer transition-colors',
                         getOrderColor(op) === 'neon-orange' &&
                           'bg-orange-500 text-white hover:bg-orange-600 dark:bg-orange-600 dark:hover:bg-orange-700',
                         getOrderColor(op) === 'yellow' &&
                           'bg-yellow-400 text-slate-900 hover:bg-yellow-500 dark:bg-yellow-500 dark:hover:bg-yellow-600',
-                        getOrderColor(op) === 'purple' &&
-                          'bg-purple-50/50 hover:bg-purple-100/50 dark:bg-purple-950/20 dark:hover:bg-purple-900/30',
-                        getOrderColor(op) === 'blue' &&
-                          'bg-blue-50/50 hover:bg-blue-100/50 dark:bg-blue-950/20 dark:hover:bg-blue-900/30',
+                        (getOrderColor(op) === 'purple' || getOrderColor(op) === 'blue') &&
+                          'bg-white dark:bg-slate-900 hover:bg-muted/30',
                       )}
                       onClick={() => setSelectedOp(op)}
                     >

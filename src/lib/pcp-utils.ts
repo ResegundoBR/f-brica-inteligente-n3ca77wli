@@ -167,3 +167,51 @@ export function isSectorActiveForStage(sector: string, currentStage: string): bo
 
   return false
 }
+
+export function formatDelayDuration(hours: number): string {
+  const totalMinutes = Math.floor(hours * 60)
+  const days = Math.floor(totalMinutes / (60 * 24))
+  const remainingHours = Math.floor((totalMinutes % (60 * 24)) / 60)
+  const minutes = totalMinutes % 60
+
+  if (days > 0) {
+    return `${days}d ${remainingHours}h`
+  }
+  return `${remainingHours}h ${minutes}m`
+}
+
+export function getStageDelay(
+  order: any,
+  process?: { estimated_hours?: number; estimated_days?: number },
+): { delayed: boolean; formatted: string } {
+  if (order.status === 'Concluído' || order.status === 'Parado') {
+    return { delayed: false, formatted: '' }
+  }
+
+  if (!order.updated) return { delayed: false, formatted: '' }
+
+  const entryDate = new Date(order.updated)
+  const now = new Date()
+  const elapsedHours = (now.getTime() - entryDate.getTime()) / (1000 * 60 * 60)
+
+  let threshold = 0
+  if (process?.estimated_hours && process.estimated_hours > 0) {
+    threshold = process.estimated_hours
+  } else if (process?.estimated_days && process.estimated_days > 0) {
+    threshold = process.estimated_days * 24
+  } else {
+    threshold = STAGE_THRESHOLDS[order.stage] || 0
+  }
+  if (threshold <= 0) return { delayed: false, formatted: '' }
+
+  if (elapsedHours <= threshold) return { delayed: false, formatted: '' }
+
+  const delayHours = elapsedHours - threshold
+  return { delayed: true, formatted: formatDelayDuration(delayHours) }
+}
+
+export function formatOpIdentifier(order: any): string {
+  const orderNum = order.order_number || ''
+  const opNum = order.op_number || ''
+  return `Pedido ${orderNum} | OP ${opNum}`
+}

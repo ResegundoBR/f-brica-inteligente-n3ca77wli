@@ -3,7 +3,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Badge } from '@/components/ui/badge'
 import { Clock, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { formatDeadline, isOrderOverdue, isStageDelayed, STAGE_THRESHOLDS } from '@/lib/pcp-utils'
+import { formatDeadline, isOrderOverdue, getStageDelay, formatOpIdentifier } from '@/lib/pcp-utils'
 import { format, parseISO } from 'date-fns'
 
 export function KanbanCardHover({
@@ -45,7 +45,7 @@ export function KanbanCardHover({
 
   const clientName = order.expand?.client_id?.name || order.client_name || 'S/Cliente'
   const overdue = isOrderOverdue(order.delivery_date, order.status)
-  const delayedStage = isStageDelayed(order)
+  const stageDelay = getStageDelay(order)
   const isEmergency = order.manual_priority === 1
 
   return (
@@ -67,7 +67,7 @@ export function KanbanCardHover({
       >
         <div className="space-y-2.5">
           <div className="flex items-center justify-between gap-2 border-b pb-2">
-            <span className="font-bold text-sm">{order.order_number}</span>
+            <span className="font-bold text-sm">{formatOpIdentifier(order)}</span>
             <Badge
               variant="outline"
               className={cn(
@@ -160,20 +160,19 @@ export function KanbanCardHover({
             </div>
           )}
 
-          {(delayedStage || isEmergency) && (
+          {(stageDelay.delayed || isEmergency) && (
             <div className="flex flex-wrap gap-1.5 pt-1 border-t">
               {isEmergency && (
                 <Badge variant="destructive" className="text-[10px] bg-red-600">
                   🚨 Emergência
                 </Badge>
               )}
-              {delayedStage && (
+              {stageDelay.delayed && (
                 <Badge
                   variant="outline"
                   className="text-[10px] text-orange-600 border-orange-300 dark:text-orange-400"
                 >
-                  <Clock className="size-2.5 mr-0.5" />
-                  Etapa atrasada ({STAGE_THRESHOLDS[order.stage]}h)
+                  <Clock className="size-2.5 mr-0.5" />⏰ Atrasada há {stageDelay.formatted}
                 </Badge>
               )}
             </div>

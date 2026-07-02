@@ -29,7 +29,7 @@ import { Badge } from '@/components/ui/badge'
 import { Play, CheckCircle, AlertTriangle, FastForward } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
-import { shouldHighlightObservation } from '@/lib/pcp-utils'
+import { shouldHighlightObservation, getStageDelay, formatOpIdentifier } from '@/lib/pcp-utils'
 import { isBefore, startOfDay, parseISO } from 'date-fns'
 
 const SECTORS = {
@@ -273,6 +273,7 @@ function OperatorCard({
     ? isBefore(parseISO(op.delivery_date), startOfDay(new Date()))
     : false
   const isEmergency = op.manual_priority === 1
+  const stageDelay = getStageDelay(op, process)
 
   let headerClass = 'bg-blue-500'
   let borderClass = 'border-blue-200 dark:border-blue-900 shadow-md shadow-blue-500/5'
@@ -338,7 +339,7 @@ function OperatorCard({
       <CardHeader className="pb-3">
         <div className="flex justify-between items-start gap-2">
           <div>
-            <CardTitle className="text-2xl font-black">{op.order_number}</CardTitle>
+            <CardTitle className="text-2xl font-black">{formatOpIdentifier(op)}</CardTitle>
             <p className="text-lg font-medium text-slate-600 dark:text-slate-400 mt-1">
               {op.client_name}
             </p>
@@ -425,6 +426,17 @@ function OperatorCard({
               <span className="font-normal opacity-75 ml-1 hidden sm:inline">
                 (Est: {estHours}h)
               </span>
+            </div>
+          )}
+          {stageDelay.delayed && (
+            <div
+              className={cn(
+                'flex items-center gap-2 mt-1 font-bold px-2.5 py-1.5 rounded-md text-sm border shadow-sm w-fit',
+                'bg-orange-50 border-orange-200 text-orange-700 dark:bg-orange-900/30 dark:border-orange-800 dark:text-orange-400',
+              )}
+            >
+              <div className="size-2.5 rounded-full shadow-inner shrink-0 bg-orange-500 animate-pulse"></div>
+              ⏰ Atrasada há {stageDelay.formatted}
             </div>
           )}
         </div>

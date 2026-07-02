@@ -11,7 +11,6 @@ import {
   AlertCircle,
   Layers,
   Columns,
-  Clock,
   Search,
   List,
   CheckCircle2,
@@ -22,15 +21,10 @@ import {
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { format, parseISO, differenceInDays, startOfDay } from 'date-fns'
-import {
-  formatDeadline,
-  isOrderOverdue,
-  filterByDeadline,
-  isStageDelayed,
-  STAGE_THRESHOLDS,
-} from '@/lib/pcp-utils'
+import { formatDeadline, isOrderOverdue, filterByDeadline, isStageDelayed } from '@/lib/pcp-utils'
 import { OutsourcingPanel } from './components/OutsourcingPanel'
 import { PcpFilters } from './components/PcpFilters'
+import { KanbanCardHover } from './components/KanbanCardHover'
 import { Link } from 'react-router-dom'
 import { Package } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
@@ -931,10 +925,7 @@ export default function PcpKanban() {
 }
 
 function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
-  const [time, setTime] = useState('')
   const color = getOrderColor(order)
-  const delayedStage = isStageDelayed(order)
-  const overdue = isOrderOverdue(order.delivery_date, order.status)
   const isEmergency = order.manual_priority === 1
 
   const borderClass = isEmergency
@@ -955,179 +946,57 @@ function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
           ? 'bg-purple-50/50 dark:bg-purple-950/10 text-foreground'
           : 'bg-card text-foreground'
 
-  useEffect(() => {
-    const update = () => {
-      const diff = new Date().getTime() - new Date(order.updated).getTime()
-      const days = Math.floor(diff / (1000 * 60 * 60 * 24))
-      const hours = Math.floor((diff / (1000 * 60 * 60)) % 24)
-      const minutes = Math.floor((diff / 1000 / 60) % 60)
-      if (days > 0) setTime(`${days}d ${hours}h`)
-      else if (hours > 0) setTime(`${hours}h ${minutes}m`)
-      else setTime(`${minutes}m`)
-    }
-    update()
-    const interval = setInterval(update, 60000)
-    return () => clearInterval(interval)
-  }, [order.updated])
-
   return (
-    <Card
-      draggable
-      onDragStart={(e) => onDragStart(e, order.id)}
-      onClick={onClick}
-      className={cn(
-        'cursor-grab active:cursor-grabbing hover:shadow-md transition-all border-l-4 group',
-        borderClass,
-        cardBgClass,
-      )}
-    >
-      <CardContent className="p-3 flex flex-col gap-1.5">
-        <div className="flex items-start justify-between">
-          <div className="font-semibold text-sm flex flex-col gap-1">
-            {order.order_number}
+    <KanbanCardHover order={order} observations={observations}>
+      <Card
+        draggable
+        onDragStart={(e) => onDragStart(e, order.id)}
+        onClick={onClick}
+        className={cn(
+          'cursor-grab active:cursor-grabbing hover:shadow-md transition-all border-l-4 group',
+          borderClass,
+          cardBgClass,
+        )}
+      >
+        <CardContent className="p-3 flex flex-col gap-1">
+          <div className="flex items-start justify-between">
+            <span className="font-semibold text-sm">{order.order_number}</span>
             {isEmergency && (
-              <Badge variant="destructive" className="text-[9px] px-1.5 py-0 h-4 bg-red-600">
-                🚨 EMERGÊNCIA
-              </Badge>
+              <span className="text-xs" title="Emergência">
+                🚨
+              </span>
             )}
           </div>
-          {color === 'neon-orange' && !isEmergency && (
-            <AlertCircle className="size-4 text-orange-500 shrink-0" />
-          )}
-          {color === 'purple' && <Clock className="size-4 text-purple-500 shrink-0" />}
-          {delayedStage && color !== 'neon-orange' && color !== 'purple' && (
-            <Clock
-              className="size-4 text-orange-500 animate-pulse shrink-0"
-              title={`Atraso na etapa: > ${STAGE_THRESHOLDS[order.stage]}h`}
-            />
-          )}
-        </div>
-        <div
-          className={cn(
-            'text-xs line-clamp-1',
-            color === 'neon-orange' || color === 'yellow' ? 'opacity-90' : 'text-muted-foreground',
-          )}
-          title={order.expand?.client_id?.name || order.client_name}
-        >
-          {order.expand?.client_id?.name || order.client_name}
-        </div>
-        <div
-          className={cn(
-            'text-xs font-medium line-clamp-1 flex items-center gap-1.5',
-            color === 'neon-orange' || color === 'yellow' ? '' : 'text-foreground',
-          )}
-          title={
-            order.op_type === 'Assistência'
-              ? order.manual_product_name
-              : order.op_type === 'Especial'
-                ? 'Produto Especial'
-                : order.expand?.product_id?.name || 'S/Produto'
-          }
-        >
-          {order.op_type === 'Assistência' && (
-            <span
-              className="w-1.5 h-1.5 rounded-full bg-fuchsia-500 shrink-0"
-              title="Assistência"
-            />
-          )}
-          {order.op_type === 'Especial' && (
-            <span
-              className="w-1.5 h-1.5 rounded-full bg-slate-900 dark:bg-slate-100 shrink-0"
-              title="Especial"
-            />
-          )}
-          <span className="truncate">
+          <div
+            className={cn(
+              'text-xs line-clamp-1',
+              color === 'neon-orange' || color === 'yellow'
+                ? 'opacity-90'
+                : 'text-muted-foreground',
+            )}
+          >
+            {order.expand?.client_id?.name || order.client_name}
+          </div>
+          <div
+            className={cn(
+              'text-xs font-medium line-clamp-1',
+              color === 'neon-orange' || color === 'yellow' ? '' : 'text-foreground',
+            )}
+          >
             {order.op_type === 'Assistência'
               ? order.manual_product_name
               : order.op_type === 'Especial'
                 ? 'Produto Especial'
                 : order.expand?.product_id?.name || 'S/Produto'}
-          </span>
-        </div>
-        {observations.length > 0 && (
-          <div className="flex flex-col gap-0.5 mt-0.5 w-full">
-            {observations.map((obs: any) => (
-              <span
-                key={obs.id}
-                className={cn(
-                  'text-[10px] whitespace-pre-wrap leading-tight border-l-2 pl-1.5 line-clamp-2',
-                  color === 'neon-orange'
-                    ? 'text-orange-50 border-orange-400'
-                    : color === 'yellow'
-                      ? 'text-slate-800 border-yellow-600'
-                      : 'text-muted-foreground border-slate-200 dark:border-slate-800',
-                )}
-                title={`${obs.sector}: ${obs.content}`}
-              >
-                <span
-                  className={cn(
-                    'font-medium',
-                    color === 'neon-orange'
-                      ? 'text-white'
-                      : color === 'yellow'
-                        ? 'text-slate-900'
-                        : 'text-slate-700 dark:text-slate-300',
-                  )}
-                >
-                  {obs.sector}:
-                </span>{' '}
-                {obs.content}
-              </span>
-            ))}
           </div>
-        )}
-        <div className="flex items-center justify-between mt-2 pt-2 border-t gap-2">
-          <div className="flex items-center gap-1.5 flex-1 min-w-0">
-            <Badge
-              variant="outline"
-              className={cn(
-                'text-[10px] h-5 px-1.5 whitespace-nowrap flex gap-1 items-center border-current/20',
-                color === 'neon-orange' || color === 'yellow'
-                  ? 'bg-transparent text-inherit'
-                  : 'bg-background',
-              )}
-            >
-              <span>Qtd: {order.quantity}</span>
-              <span className="opacity-50">|</span>
-              <span
-                className={cn(
-                  'font-bold',
-                  overdue && color !== 'neon-orange' && color !== 'yellow'
-                    ? 'text-red-500 dark:text-red-400'
-                    : '',
-                )}
-              >
-                {formatDeadline(order.delivery_date, order.status)}
-              </span>
-            </Badge>
-          </div>
-          <div
-            className={cn(
-              'flex items-center gap-1 text-[10px] font-medium rounded px-1.5 py-0.5 shrink-0',
-              color === 'yellow'
-                ? 'bg-yellow-500/30 text-slate-900 animate-pulse'
-                : color === 'neon-orange'
-                  ? 'bg-orange-600 text-white'
-                  : 'bg-slate-200/50 dark:bg-slate-800 text-slate-500',
-            )}
-            title={
-              delayedStage
-                ? `Atraso na etapa: limite de ${STAGE_THRESHOLDS[order.stage]}h excedido`
-                : 'Tempo neste estágio'
-            }
-          >
-            <Clock className={cn('size-3', color === 'yellow' && 'animate-pulse')} /> {time}
-          </div>{' '}
-        </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </KanbanCardHover>
   )
 }
 
 function CompactKanbanCard({ order, observations = [], onDragStart, onClick }: any) {
   const color = getOrderColor(order)
-  const delayedStage = isStageDelayed(order)
-  const isOverdue = isOrderOverdue(order.delivery_date, order.status)
   const isEmergency = order.manual_priority === 1
 
   const bgClass = isEmergency
@@ -1140,82 +1009,32 @@ function CompactKanbanCard({ order, observations = [], onDragStart, onClick }: a
           ? 'bg-yellow-400 text-slate-900 shadow-[0_0_8px_rgba(250,204,21,0.8)] dark:shadow-[0_0_8px_rgba(250,204,21,0.5)]'
           : 'bg-blue-500 text-white'
 
-  const prodName =
-    order.op_type === 'Assistência'
-      ? order.manual_product_name
-      : order.op_type === 'Especial'
-        ? 'Produto Especial'
-        : order.expand?.product_id?.name || 'S/Produto'
-  const deadlineText = formatDeadline(order.delivery_date, order.status)
-
-  const titleText = `${order.order_number}\n${order.op_type}\n${prodName}\nQtd: ${order.quantity} | ${deadlineText}`
-
   return (
-    <div
-      draggable
-      onDragStart={(e) => onDragStart(e, order.id)}
-      onClick={onClick}
-      title={titleText}
-      className={cn(
-        'text-[8px] md:text-[9px] font-bold p-0.5 md:p-1 rounded-sm w-full text-center flex flex-col items-center cursor-grab active:cursor-grabbing transition-all hover:opacity-80 shadow-sm border border-black/10 dark:border-white/10 relative',
-        bgClass,
-      )}
-    >
-      {order.op_type === 'Assistência' && (
-        <span
-          className="absolute -top-1 -left-1 w-2 h-2 rounded-full bg-fuchsia-400 border border-white"
-          title="Assistência"
-        />
-      )}
-      {order.op_type === 'Especial' && (
-        <span
-          className="absolute -top-1 -left-1 w-2 h-2 rounded-full bg-slate-900 border border-white"
-          title="Especial"
-        />
-      )}
-
-      <div className="flex items-center justify-between w-full gap-1">
-        <span className="block truncate flex-1 text-left flex items-center gap-0.5">
-          {color === 'yellow' && !isEmergency && <Clock className="size-2 animate-pulse" />}
-          {isEmergency && (
-            <span title="Emergência" className="text-[10px]">
-              🚨
-            </span>
-          )}
-          {order.order_number}
-        </span>
-        {order.status !== 'Concluído' && (
-          <span
-            className={cn(
-              'text-[6px] px-0.5 rounded-sm whitespace-nowrap shrink-0 leading-tight',
-              color === 'yellow'
-                ? 'bg-black/20 text-slate-900'
-                : isOverdue || color === 'neon-orange'
-                  ? 'bg-white/30 text-white'
-                  : 'bg-white/20 text-white',
-            )}
-          >
-            {deadlineText}
-          </span>
+    <KanbanCardHover order={order} observations={observations}>
+      <div
+        draggable
+        onDragStart={(e) => onDragStart(e, order.id)}
+        onClick={onClick}
+        className={cn(
+          'text-[8px] md:text-[9px] font-bold p-0.5 md:p-1 rounded-sm w-full text-center flex flex-col items-center cursor-grab active:cursor-grabbing transition-all hover:opacity-80 shadow-sm border border-black/10 dark:border-white/10',
+          bgClass,
         )}
+      >
+        <span className="block truncate w-full">
+          {isEmergency && <span className="text-[10px]">🚨</span>} {order.order_number}
+        </span>
+        <span className="block truncate w-full font-normal opacity-90 text-[7px]">
+          {order.expand?.client_id?.name || order.client_name}
+        </span>
+        <span className="block truncate w-full font-normal opacity-90 text-[7px]">
+          {order.op_type === 'Assistência'
+            ? order.manual_product_name
+            : order.op_type === 'Especial'
+              ? 'Produto Especial'
+              : order.expand?.product_id?.name || 'S/Produto'}
+        </span>
       </div>
-      <span className="block truncate w-full font-normal opacity-90 text-[7px] text-left mt-0.5">
-        {prodName}
-      </span>
-      {observations.length > 0 && (
-        <div className="flex flex-col items-start text-left w-full gap-0.5 mt-0.5 border-t border-white/20 pt-0.5">
-          {observations.map((obs: any) => (
-            <span
-              key={obs.id}
-              className="block w-full truncate font-normal opacity-90 text-[7px]"
-              title={`${obs.sector}: ${obs.content}`}
-            >
-              {obs.sector[0]}: {obs.content}
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
+    </KanbanCardHover>
   )
 }
 

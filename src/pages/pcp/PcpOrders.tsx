@@ -107,6 +107,7 @@ export default function PcpOrders() {
   }, [])
   useRealtime('pcp_orders', () => loadData())
   useRealtime('pcp_order_observations', () => loadData())
+  useRealtime('product_processes', () => loadData())
 
   const filteredOrders = useMemo(() => {
     if (!search) return orders

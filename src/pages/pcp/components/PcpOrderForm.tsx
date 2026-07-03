@@ -3,6 +3,7 @@ import { useForm, Controller, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import pb from '@/lib/pocketbase/client'
+import { useRealtime } from '@/hooks/use-realtime'
 import {
   Dialog,
   DialogContent,
@@ -22,9 +23,19 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command'
 import { useToast } from '@/components/ui/use-toast'
 import { format } from 'date-fns'
-import { Plus, Trash } from 'lucide-react'
+import { Plus, Trash, Check, ChevronsUpDown } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 const schema = z
   .object({
@@ -85,6 +96,57 @@ const KANBAN_STAGES = [
   'Projetos',
 ]
 
+const DEFAULT_FABRICACAO_PROCESSES = [
+  'Corte',
+  'Dobra',
+  'Calandra',
+  'Solda',
+  'Acab. Solda',
+  'Furação',
+  'Rosca',
+  'Concreto',
+]
+
+function getSectorGroups(fabricationProcesses: string[] = DEFAULT_FABRICACAO_PROCESSES) {
+  return [
+    {
+      name: 'Engenharia/Projetos',
+      color: 'bg-indigo-100/50 dark:bg-indigo-900/20 text-indigo-800 dark:text-indigo-300',
+      processes: ['Projetos'],
+    },
+    {
+      name: 'Suprimentos',
+      color: 'bg-blue-100/50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300',
+      processes: ['Separação', 'Cotação', 'Compra', 'Retirada', 'Aguardando'],
+    },
+    {
+      name: 'Fabricação',
+      color: 'bg-orange-100/50 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300',
+      processes: fabricationProcesses,
+    },
+    {
+      name: 'Terceirização',
+      color: 'bg-rose-100/50 dark:bg-rose-900/20 text-rose-800 dark:text-rose-300',
+      processes: ['Terceirização'],
+    },
+    {
+      name: 'Acabamento',
+      color: 'bg-purple-100/50 dark:bg-purple-900/20 text-purple-800 dark:text-purple-300',
+      processes: ['Preparação', 'Pintura', 'Verniz', 'Retoques'],
+    },
+    {
+      name: 'Montagem',
+      color: 'bg-green-100/50 dark:bg-green-900/20 text-green-800 dark:text-green-300',
+      processes: ['Montagem'],
+    },
+    {
+      name: 'Expedição',
+      color: 'bg-teal-100/50 dark:bg-teal-900/20 text-teal-800 dark:text-teal-300',
+      processes: ['Qualidade', 'Embalagem', 'Expedição'],
+    },
+  ]
+}
+
 export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
   const [clients, setClients] = useState<any[]>([])
   const [products, setProducts] = useState<any[]>([])
@@ -93,11 +155,13 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
   const [newClientOpen, setNewClientOpen] = useState(false)
   const [newClientName, setNewClientName] = useState('')
   const [newClientType, setNewClientType] = useState('B2B')
+  const [productOpen, setProductOpen] = useState(false)
   const [missingTimeProduct, setMissingTimeProduct] = useState<{
     product: any
     processesToDefine: any[]
     isUpdate: boolean
     pendingFormData: z.infer<typeof schema>
+    fabricationProcesses: string[]
   } | null>(null)
   const [checkingProcesses, setCheckingProcesses] = useState(false)
   const { toast } = useToast()
@@ -128,6 +192,13 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
 
   const opType = form.watch('op_type')
 
+  const reloadProducts = () => {
+    pb.collection('products')
+      .getFullList({ sort: 'name' })
+      .then(setProducts)
+      .catch(() => {})
+  }
+
   useEffect(() => {
     const loadClients = () =>
       pb.collection('clients').getFullList({ sort: 'name' }).then(setClients)
@@ -145,20 +216,22 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
         observations: [],
       })
       loadClients()
-      pb.collection('products').getFullList({ sort: 'name' }).then(setProducts)
+      reloadProducts()
 
       pb.collection('product_processes')
         .getFullList({ sort: 'name' })
         .then((res) => {
           const unique = Array.from(new Set(res.map((r) => r.name)))
-            .map((name) => {
-              return res.find((r) => r.name === name)
-            })
+            .map((name) => res.find((r) => r.name === name))
             .filter(Boolean)
           setProcesses(unique)
         })
     }
   }, [open, form])
+
+  useRealtime('product_processes', () => {
+    if (open) reloadProducts()
+  })
 
   const handleCreateClient = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -186,7 +259,7 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
     if (checkingProcesses) return
 
     let processesToFill: any[] = []
-    let isUpdate = false
+    let fabricationProcesses: string[] = DEFAULT_FABRICACAO_PROCESSES
 
     if (data.op_type === 'Linha' && data.product_id) {
       setCheckingProcesses(true)
@@ -195,66 +268,49 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
           .collection('product_processes')
           .getFullList({ filter: `product_id="${data.product_id}"` })
 
+        if (productProcesses.length > 0) {
+          fabricationProcesses = productProcesses.map((p) => p.name)
+        }
+
+        const sectorGroups = getSectorGroups(fabricationProcesses)
+        const requiredProcessNames = Array.from(new Set(sectorGroups.flatMap((s) => s.processes)))
+
         const allComplete =
           productProcesses.length > 0 &&
-          productProcesses.every(
-            (p) =>
-              p.estimated_hours &&
-              p.estimated_hours > 0 &&
-              p.estimated_days &&
-              p.estimated_days > 0 &&
-              p.kanban_stage,
-          )
+          requiredProcessNames.every((reqName) => {
+            const proc = productProcesses.find((p) => p.name === reqName)
+            return (
+              proc &&
+              proc.estimated_hours &&
+              proc.estimated_hours > 0 &&
+              proc.estimated_days &&
+              proc.estimated_days > 0 &&
+              proc.kanban_stage
+            )
+          })
 
         if (!allComplete) {
-          if (productProcesses.length === 0) {
-            const masterStages = [
-              'Projetos',
-              'Separação',
-              'Cotação',
-              'Compra',
-              'Retirada',
-              'Aguardando',
-              'Corte',
-              'Dobra',
-              'Calandra',
-              'Solda',
-              'Acab. Solda',
-              'Furação',
-              'Rosca',
-              'Concreto',
-              'Terceirização',
-              'Preparação',
-              'Pintura',
-              'Verniz',
-              'Retoques',
-              'Montagem',
-              'Qualidade',
-              'Embalagem',
-              'Suprimentos',
-              'Fabricação',
-              'Acabamento',
-              'Expedição',
-            ]
-
-            processesToFill = masterStages.map((stageName) => ({
-              id: `new_${stageName}`,
-              name: stageName,
+          processesToFill = requiredProcessNames.map((reqName) => {
+            const existing = productProcesses.find((p) => p.name === reqName)
+            if (existing) {
+              return {
+                id: existing.id,
+                name: existing.name,
+                isNew: false,
+                estimated_hours: existing.estimated_hours || 0,
+                estimated_days: existing.estimated_days || 0,
+                kanban_stage: existing.kanban_stage || '',
+              }
+            }
+            return {
+              id: `new_${reqName}`,
+              name: reqName,
               isNew: true,
               estimated_hours: 0,
               estimated_days: 0,
-              kanban_stage: stageName,
-            }))
-          } else {
-            processesToFill = productProcesses.map((p) => ({
-              id: p.id,
-              name: p.name,
-              isNew: false,
-              estimated_hours: p.estimated_hours || 0,
-              estimated_days: p.estimated_days || 0,
-              kanban_stage: p.kanban_stage || '',
-            }))
-          }
+              kanban_stage: reqName,
+            }
+          })
         }
       } catch (err) {
         console.error(err)
@@ -269,6 +325,7 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
         product,
         processesToDefine: processesToFill,
         pendingFormData: data,
+        fabricationProcesses,
       })
       return
     }
@@ -421,18 +478,53 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
                     control={form.control}
                     name="product_id"
                     render={({ field }) => (
-                      <Select value={field.value || ''} onValueChange={field.onChange}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Selecione um produto" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {products.map((p) => (
-                            <SelectItem key={p.id} value={p.id}>
-                              {p.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <Popover open={productOpen} onOpenChange={setProductOpen}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            role="combobox"
+                            className="w-full justify-between font-normal"
+                          >
+                            {field.value
+                              ? products.find((p) => p.id === field.value)?.name ||
+                                'Selecione um produto'
+                              : 'Selecione um produto'}
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent
+                          className="p-0"
+                          align="start"
+                          style={{ width: 'var(--radix-popover-trigger-width)' }}
+                        >
+                          <Command>
+                            <CommandInput placeholder="Buscar produto por nome..." />
+                            <CommandList>
+                              <CommandEmpty>Nenhum produto encontrado.</CommandEmpty>
+                              <CommandGroup>
+                                {products.map((p) => (
+                                  <CommandItem
+                                    key={p.id}
+                                    value={p.name}
+                                    onSelect={() => {
+                                      field.onChange(p.id)
+                                      setProductOpen(false)
+                                    }}
+                                  >
+                                    <Check
+                                      className={cn(
+                                        'mr-2 h-4 w-4',
+                                        field.value === p.id ? 'opacity-100' : 'opacity-0',
+                                      )}
+                                    />
+                                    {p.name}
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
                     )}
                   />
                 </div>
@@ -638,9 +730,13 @@ function ProductProcessesModal({ missingData, open, onCancel, onSaved }: any) {
     Record<string, { hours?: number; days?: number; kanban_stage?: string }>
   >({})
 
+  const sectorGroups = missingData
+    ? getSectorGroups(missingData.fabricationProcesses || DEFAULT_FABRICACAO_PROCESSES)
+    : getSectorGroups()
+
   useEffect(() => {
     if (open && missingData) {
-      const initial: Record<string, { hours?: number; days?: number }> = {}
+      const initial: Record<string, { hours?: number; days?: number; kanban_stage?: string }> = {}
       missingData.processesToDefine.forEach((p: any) => {
         initial[p.id] = {
           hours: p.estimated_hours || undefined,
@@ -653,6 +749,23 @@ function ProductProcessesModal({ missingData, open, onCancel, onSaved }: any) {
   }, [open, missingData])
 
   const handleSave = async () => {
+    const incomplete = missingData.processesToDefine.some((process: any) => {
+      const data = times[process.id] || {}
+      const h = data.hours !== undefined ? data.hours : process.estimated_hours || 0
+      const d = data.days !== undefined ? data.days : process.estimated_days || 0
+      const ks = data.kanban_stage !== undefined ? data.kanban_stage : process.kanban_stage || ''
+      return !h || h <= 0 || !d || d <= 0 || !ks
+    })
+
+    if (incomplete) {
+      toast({
+        title: 'Campos obrigatórios',
+        description: 'Preencha horas, dias e etapa Kanban para todos os processos.',
+        variant: 'destructive',
+      })
+      return
+    }
+
     setLoading(true)
     try {
       let maxOrder = 0
@@ -721,84 +834,100 @@ function ProductProcessesModal({ missingData, open, onCancel, onSaved }: any) {
             de tempo ausentes. Defina as horas e dias estimados para continuar com a criação da OP.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto pr-2">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {missingData.processesToDefine.map((proc: any) => (
-              <div key={proc.id} className="space-y-3 border p-4 rounded-lg bg-card shadow-sm">
-                <Label className="text-sm font-semibold truncate block" title={proc.name}>
-                  {proc.name}
-                </Label>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Horas</Label>
-                    <Input
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      placeholder="0"
-                      value={times[proc.id]?.hours === undefined ? '' : times[proc.id].hours}
-                      onChange={(e) => {
-                        const val = e.target.value
-                        setTimes((prev) => ({
-                          ...prev,
-                          [proc.id]: {
-                            ...prev[proc.id],
-                            hours: val === '' ? undefined : parseFloat(val),
-                          },
-                        }))
-                      }}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Dias</Label>
-                    <Input
-                      type="number"
-                      step="1"
-                      min="0"
-                      placeholder="0"
-                      value={times[proc.id]?.days === undefined ? '' : times[proc.id].days}
-                      onChange={(e) => {
-                        const val = e.target.value
-                        setTimes((prev) => ({
-                          ...prev,
-                          [proc.id]: {
-                            ...prev[proc.id],
-                            days: val === '' ? undefined : parseInt(val, 10),
-                          },
-                        }))
-                      }}
-                    />
-                  </div>
+        <div className="space-y-6 py-4 max-h-[60vh] overflow-y-auto pr-2">
+          {sectorGroups.map((sector) => {
+            const sectorProcs = missingData.processesToDefine.filter((proc: any) =>
+              sector.processes.includes(proc.name),
+            )
+            if (sectorProcs.length === 0) return null
+            return (
+              <div key={sector.name} className="space-y-3">
+                <div className={cn('text-sm font-bold rounded-md px-3 py-1.5', sector.color)}>
+                  {sector.name}
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Etapa Kanban</Label>
-                  <Select
-                    value={times[proc.id]?.kanban_stage || ''}
-                    onValueChange={(val) => {
-                      setTimes((prev) => ({
-                        ...prev,
-                        [proc.id]: {
-                          ...prev[proc.id],
-                          kanban_stage: val,
-                        },
-                      }))
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {KANBAN_STAGES.map((s) => (
-                        <SelectItem key={s} value={s}>
-                          {s}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {sectorProcs.map((proc: any) => (
+                    <div
+                      key={proc.id}
+                      className="space-y-3 border p-4 rounded-lg bg-card shadow-sm"
+                    >
+                      <Label className="text-sm font-semibold truncate block" title={proc.name}>
+                        {proc.name}
+                      </Label>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-muted-foreground">Horas</Label>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            placeholder="0"
+                            value={times[proc.id]?.hours === undefined ? '' : times[proc.id].hours}
+                            onChange={(e) => {
+                              const val = e.target.value
+                              setTimes((prev) => ({
+                                ...prev,
+                                [proc.id]: {
+                                  ...prev[proc.id],
+                                  hours: val === '' ? undefined : parseFloat(val),
+                                },
+                              }))
+                            }}
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-muted-foreground">Dias</Label>
+                          <Input
+                            type="number"
+                            step="1"
+                            min="0"
+                            placeholder="0"
+                            value={times[proc.id]?.days === undefined ? '' : times[proc.id].days}
+                            onChange={(e) => {
+                              const val = e.target.value
+                              setTimes((prev) => ({
+                                ...prev,
+                                [proc.id]: {
+                                  ...prev[proc.id],
+                                  days: val === '' ? undefined : parseInt(val, 10),
+                                },
+                              }))
+                            }}
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-muted-foreground">Etapa Kanban</Label>
+                        <Select
+                          value={times[proc.id]?.kanban_stage || ''}
+                          onValueChange={(val) => {
+                            setTimes((prev) => ({
+                              ...prev,
+                              [proc.id]: {
+                                ...prev[proc.id],
+                                kanban_stage: val,
+                              },
+                            }))
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {KANBAN_STAGES.map((s) => (
+                              <SelectItem key={s} value={s}>
+                                {s}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-            ))}
-          </div>
+            )
+          })}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onCancel} disabled={loading}>

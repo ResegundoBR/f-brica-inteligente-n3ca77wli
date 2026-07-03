@@ -15,6 +15,13 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 const defaultProcessTypes = [
   'Corte',
@@ -33,9 +40,51 @@ interface PendingProcess {
   order: number
   description: string
   color?: string
+  kanban_stage?: string
   imageFiles?: File[]
   imagePreviews?: string[]
 }
+
+const KANBAN_STAGES = [
+  'Separação',
+  'Cotação',
+  'Compra',
+  'Retirada',
+  'Aguardando',
+  'Corte',
+  'Dobra',
+  'Calandra',
+  'Solda',
+  'Acab. Solda',
+  'Furação',
+  'Rosca',
+  'Concreto',
+  'Terceirização',
+  'Preparação',
+  'Pintura',
+  'Verniz',
+  'Retoques',
+  'Montagem',
+  'Qualidade',
+  'Embalagem',
+  'Suprimentos',
+  'Fabricação',
+  'Acabamento',
+  'Expedição',
+  'Projetos',
+]
+
+const defaultKanbanStageMap: Record<string, string> = {
+  corte: 'Corte',
+  desbaste: 'Corte',
+  dobra: 'Dobra',
+  calandra: 'Calandra',
+  solda: 'Solda',
+  'acabamento solda': 'Acab. Solda',
+  furo: 'Furação',
+  rosca: 'Rosca',
+}
+const getKanbanStageForName = (name: string) => defaultKanbanStageMap[name.toLowerCase()] || ''
 
 const defaultColors: Record<string, string> = {
   corte: '#22c55e',
@@ -139,6 +188,7 @@ export function TabProcesses({
         order: newOrder,
         description: '',
         color: getColorForName(name),
+        kanban_stage: getKanbanStageForName(name),
       }
       setPendingProcesses([...pendingProcesses, newProc])
       toast({ title: 'Processo adicionado' })
@@ -198,6 +248,23 @@ export function TabProcesses({
       setProcesses((prev) => prev.map((p) => (p.id === id ? updated : p)))
     } catch (err) {
       toast({ title: 'Erro ao salvar descrição', variant: 'destructive' })
+    }
+  }
+
+  const updateProcessKanbanStage = async (id: string, stage: string) => {
+    if (isNew && setPendingProcesses) {
+      setPendingProcesses(
+        pendingProcesses.map((p) => (p.id === id ? { ...p, kanban_stage: stage } : p)),
+      )
+      return
+    }
+    try {
+      const updated = await pb
+        .collection('product_processes')
+        .update<ProductProcessModel>(id, { kanban_stage: stage })
+      setProcesses((prev) => prev.map((p) => (p.id === id ? updated : p)))
+    } catch (err) {
+      toast({ title: 'Erro ao atualizar etapa Kanban', variant: 'destructive' })
     }
   }
 
@@ -463,6 +530,27 @@ export function TabProcesses({
                         <Trash className="h-4 w-4" />
                       </Button>
                     </div>
+                  </div>
+
+                  <div className="px-3 py-1.5 border-t bg-muted/10 flex items-center gap-2">
+                    <Label className="text-xs text-muted-foreground whitespace-nowrap">
+                      Etapa Kanban:
+                    </Label>
+                    <Select
+                      value={(proc as any).kanban_stage || ''}
+                      onValueChange={(v) => updateProcessKanbanStage(proc.id, v)}
+                    >
+                      <SelectTrigger className="h-7 text-xs w-auto min-w-[120px]">
+                        <SelectValue placeholder="Selecione..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {KANBAN_STAGES.map((s) => (
+                          <SelectItem key={s} value={s}>
+                            {s}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   {images.length > 0 && (

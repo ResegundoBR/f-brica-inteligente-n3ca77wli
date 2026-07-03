@@ -56,6 +56,35 @@ const schema = z
     { message: 'Preencha o produto corretamente', path: ['product_id'] },
   )
 
+const KANBAN_STAGES = [
+  'Separação',
+  'Cotação',
+  'Compra',
+  'Retirada',
+  'Aguardando',
+  'Corte',
+  'Dobra',
+  'Calandra',
+  'Solda',
+  'Acab. Solda',
+  'Furação',
+  'Rosca',
+  'Concreto',
+  'Terceirização',
+  'Preparação',
+  'Pintura',
+  'Verniz',
+  'Retoques',
+  'Montagem',
+  'Qualidade',
+  'Embalagem',
+  'Suprimentos',
+  'Fabricação',
+  'Acabamento',
+  'Expedição',
+  'Projetos',
+]
+
 export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
   const [clients, setClients] = useState<any[]>([])
   const [products, setProducts] = useState<any[]>([])
@@ -166,51 +195,66 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
           .collection('product_processes')
           .getFullList({ filter: `product_id="${data.product_id}"` })
 
-        const hasValidProcesses = productProcesses.some(
-          (p) =>
-            p.estimated_hours && p.estimated_hours > 0 && p.estimated_days && p.estimated_days > 0,
-        )
+        const allComplete =
+          productProcesses.length > 0 &&
+          productProcesses.every(
+            (p) =>
+              p.estimated_hours &&
+              p.estimated_hours > 0 &&
+              p.estimated_days &&
+              p.estimated_days > 0 &&
+              p.kanban_stage,
+          )
 
-        if (!hasValidProcesses) {
-          const masterStages = [
-            'Projetos',
-            'Separação',
-            'Cotação',
-            'Compra',
-            'Retirada',
-            'Aguardando',
-            'Corte',
-            'Dobra',
-            'Calandra',
-            'Solda',
-            'Acab. Solda',
-            'Furação',
-            'Rosca',
-            'Concreto',
-            'Terceirização',
-            'Preparação',
-            'Pintura',
-            'Verniz',
-            'Retoques',
-            'Montagem',
-            'Qualidade',
-            'Embalagem',
-            'Suprimentos',
-            'Fabricação',
-            'Acabamento',
-            'Expedição',
-          ]
+        if (!allComplete) {
+          if (productProcesses.length === 0) {
+            const masterStages = [
+              'Projetos',
+              'Separação',
+              'Cotação',
+              'Compra',
+              'Retirada',
+              'Aguardando',
+              'Corte',
+              'Dobra',
+              'Calandra',
+              'Solda',
+              'Acab. Solda',
+              'Furação',
+              'Rosca',
+              'Concreto',
+              'Terceirização',
+              'Preparação',
+              'Pintura',
+              'Verniz',
+              'Retoques',
+              'Montagem',
+              'Qualidade',
+              'Embalagem',
+              'Suprimentos',
+              'Fabricação',
+              'Acabamento',
+              'Expedição',
+            ]
 
-          processesToFill = masterStages.map((stageName) => {
-            const existing = productProcesses.find((p) => p.name === stageName)
-            return {
-              id: existing ? existing.id : `new_${stageName}`,
+            processesToFill = masterStages.map((stageName) => ({
+              id: `new_${stageName}`,
               name: stageName,
-              isNew: !existing,
-              estimated_hours: existing?.estimated_hours || 0,
-              estimated_days: existing?.estimated_days || 0,
-            }
-          })
+              isNew: true,
+              estimated_hours: 0,
+              estimated_days: 0,
+              kanban_stage: stageName,
+            }))
+          } else {
+            processesToFill = productProcesses.map((p) => ({
+              id: p.id,
+              name: p.name,
+              isNew: false,
+              estimated_hours: p.estimated_hours || 0,
+              estimated_days: p.estimated_days || 0,
+              kanban_stage: p.kanban_stage || '',
+            }))
+          }
         }
       } catch (err) {
         console.error(err)
@@ -590,7 +634,9 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
 function ProductProcessesModal({ missingData, open, onCancel, onSaved }: any) {
   const [loading, setLoading] = useState(false)
   const { toast } = useToast()
-  const [times, setTimes] = useState<Record<string, { hours?: number; days?: number }>>({})
+  const [times, setTimes] = useState<
+    Record<string, { hours?: number; days?: number; kanban_stage?: string }>
+  >({})
 
   useEffect(() => {
     if (open && missingData) {
@@ -599,6 +645,7 @@ function ProductProcessesModal({ missingData, open, onCancel, onSaved }: any) {
         initial[p.id] = {
           hours: p.estimated_hours || undefined,
           days: p.estimated_days || undefined,
+          kanban_stage: p.kanban_stage || undefined,
         }
       })
       setTimes(initial)
@@ -620,8 +667,9 @@ function ProductProcessesModal({ missingData, open, onCancel, onSaved }: any) {
         const data = times[process.id] || {}
         const h = data.hours !== undefined ? data.hours : process.estimated_hours || 0
         const d = data.days !== undefined ? data.days : process.estimated_days || 0
+        const ks = data.kanban_stage !== undefined ? data.kanban_stage : process.kanban_stage || ''
 
-        if (h > 0 || d > 0) {
+        if (h > 0 || d > 0 || ks) {
           if (process.isNew) {
             maxOrder++
             await pb.collection('product_processes').create({
@@ -632,12 +680,14 @@ function ProductProcessesModal({ missingData, open, onCancel, onSaved }: any) {
               color: '',
               estimated_hours: h,
               estimated_days: d,
+              kanban_stage: ks,
               is_required: true,
             })
           } else {
             await pb.collection('product_processes').update(process.id, {
               estimated_hours: h,
               estimated_days: d,
+              kanban_stage: ks,
             })
           }
         } else if (!process.isNew) {
@@ -719,6 +769,32 @@ function ProductProcessesModal({ missingData, open, onCancel, onSaved }: any) {
                       }}
                     />
                   </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Etapa Kanban</Label>
+                  <Select
+                    value={times[proc.id]?.kanban_stage || ''}
+                    onValueChange={(val) => {
+                      setTimes((prev) => ({
+                        ...prev,
+                        [proc.id]: {
+                          ...prev[proc.id],
+                          kanban_stage: val,
+                        },
+                      }))
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {KANBAN_STAGES.map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {s}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
             ))}

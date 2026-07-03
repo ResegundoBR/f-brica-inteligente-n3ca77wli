@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import pb from '@/lib/pocketbase/client'
 import { PcpOrder, ProductProcessModel } from '@/types'
 import { useRealtime } from '@/hooks/use-realtime'
@@ -101,6 +101,7 @@ function getNextStageForOp(current: string, op: PcpOrder, processes: ProductProc
         (name) =>
           ({
             name,
+            kanban_stage: name,
             estimated_hours:
               manualEstimates[name] !== undefined && manualEstimates[name] !== ''
                 ? Number(manualEstimates[name]) || 0
@@ -110,10 +111,10 @@ function getNextStageForOp(current: string, op: PcpOrder, processes: ProductProc
 
   for (let i = currentIdx + 1; i < ALL_STAGES.length; i++) {
     const _stageName = ALL_STAGES[i]
-    const _p = opProcesses.find((proc) => proc.name === _stageName)
+    const _p = opProcesses.find((proc) => proc.kanban_stage === _stageName)
     if (!_p || !_p.estimated_hours || _p.estimated_hours <= 0) continue
     const stage = ALL_STAGES[i]
-    const proc = opProcesses.find((p) => p.name === stage)
+    const proc = opProcesses.find((p) => p.kanban_stage === stage)
     if (proc && proc.estimated_hours && proc.estimated_hours > 0) {
       return stage
     }
@@ -273,7 +274,24 @@ function OperatorCard({
     ? isBefore(parseISO(op.delivery_date), startOfDay(new Date()))
     : false
   const isEmergency = op.manual_priority === 1
-  const stageDelay = getStageDelay(op, process)
+
+  const stageProcesses = useMemo(
+    () =>
+      allProcesses
+        .filter((p) => p.product_id === op.product_id && p.kanban_stage === op.stage)
+        .sort((a, b) => (a.order || 0) - (b.order || 0)),
+    [allProcesses, op.product_id, op.stage],
+  )
+
+  const [currentStepIndex, setCurrentStepIndex] = useState(0)
+
+  useEffect(() => {
+    setCurrentStepIndex(0)
+  }, [op.stage])
+
+  const currentProcess = stageProcesses[currentStepIndex]
+  const displayProcess = currentProcess || process
+  const stageDelay = getStageDelay(op, displayProcess)
 
   let headerClass = 'bg-blue-500'
   let borderClass = 'border-blue-200 dark:border-blue-900 shadow-md shadow-blue-500/5'
@@ -294,7 +312,7 @@ function OperatorCard({
     bgClass = 'bg-white dark:bg-slate-900'
   }
 
-  const estHours = process?.estimated_hours || 0
+  const estHours = displayProcess?.estimated_hours || process?.estimated_hours || 0
   let elapsedHours = 0
   if (op.status === 'Em Andamento' && op.started_at) {
     elapsedHours = (Date.now() - new Date(op.started_at).getTime()) / (1000 * 60 * 60)
@@ -405,6 +423,29 @@ function OperatorCard({
                 : op.expand?.product_id?.name || 'S/Produto'}
           </span>
 
+          {displayProcess && (
+            <div className="w-full p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="font-bold text-blue-700 dark:text-blue-300 text-base">
+                  {displayProcess.name}
+                </span>
+                {stageProcesses.length > 1 && (
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] border-blue-300 text-blue-600 dark:text-blue-400"
+                  >
+                    Passo {currentStepIndex + 1}/{stageProcesses.length}
+                  </Badge>
+                )}
+              </div>
+              {displayProcess.description && (
+                <p className="text-sm text-blue-600 dark:text-blue-400 whitespace-pre-wrap">
+                  {displayProcess.description}
+                </p>
+              )}
+            </div>
+          )}
+
           {estHours > 0 && (
             <div
               className={cn(
@@ -482,9 +523,20 @@ function OperatorCard({
           </Button>
         )}
 
-        {inExecucao && !isLocked && (
-          <FinishDialog op={op} allProcesses={allProcesses} onConfirm={onFinishConfirm} />
-        )}
+        {inExecucao &&
+          !isLocked &&
+          (stageProcesses.length > 1 && currentStepIndex < stageProcesses.length - 1 ? (
+            <Button
+              size="lg"
+              className="w-full text-xl h-14 bg-blue-600 hover:bg-blue-700 text-white"
+              onClick={() => setCurrentStepIndex((prev) => prev + 1)}
+            >
+              <CheckCircle className="mr-2 size-6" /> CONCLUIR PASSO ({currentStepIndex + 1}/
+              {stageProcesses.length})
+            </Button>
+          ) : (
+            <FinishDialog op={op} allProcesses={allProcesses} onConfirm={onFinishConfirm} />
+          ))}
 
         <Dialog open={openBottleneck} onOpenChange={handleOpenBottleneckChange}>
           <DialogTrigger asChild>
@@ -858,7 +910,9 @@ export default function PcpOperator() {
   }
 
   const getRemainingHours = (op: PcpOrder) => {
-    const proc = processes.find((p) => p.product_id === op.product_id && p.name === op.stage)
+    const proc = processes.find(
+      (p) => p.product_id === op.product_id && p.kanban_stage === op.stage,
+    )
     if (!proc || !proc.estimated_hours) return Infinity
     const elapsed = getElapsedHours(op)
     return proc.estimated_hours - elapsed
@@ -1049,7 +1103,7 @@ export default function PcpOperator() {
                   key={op.id}
                   op={op}
                   process={processes.find(
-                    (p) => p.product_id === op.product_id && p.name === op.stage,
+                    (p) => p.product_id === op.product_id && p.kanban_stage === op.stage,
                   )}
                   allProcesses={processes}
                   onStart={() => handleStart(op)}
@@ -1083,7 +1137,7 @@ export default function PcpOperator() {
                   key={op.id}
                   op={op}
                   process={processes.find(
-                    (p) => p.product_id === op.product_id && p.name === op.stage,
+                    (p) => p.product_id === op.product_id && p.kanban_stage === op.stage,
                   )}
                   allProcesses={processes}
                   onStart={() => handleStart(op)}

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-02T23:16:21.623Z",
+  "generatedAt": "2026-07-03T00:17:28.029Z",
   "collections": [
     {
       "name": "users",
@@ -650,6 +650,40 @@
           "type": "number",
           "required": false,
           "system": false
+        },
+        {
+          "name": "kanban_stage",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": [
+            "Separação",
+            "Cotação",
+            "Compra",
+            "Retirada",
+            "Aguardando",
+            "Corte",
+            "Dobra",
+            "Calandra",
+            "Solda",
+            "Acab. Solda",
+            "Furação",
+            "Rosca",
+            "Concreto",
+            "Terceirização",
+            "Preparação",
+            "Pintura",
+            "Verniz",
+            "Retoques",
+            "Montagem",
+            "Qualidade",
+            "Embalagem",
+            "Suprimentos",
+            "Fabricação",
+            "Acabamento",
+            "Expedição",
+            "Projetos"
+          ]
         }
       ],
       "indexes": []

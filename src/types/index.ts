@@ -144,6 +144,7 @@ export interface ProductProcessModel {
   estimated_hours?: number
   estimated_days?: number
   is_required?: boolean
+  kanban_stage?: string
   created: string
   updated: string
 }

@@ -751,7 +751,7 @@ function ProductProcessesModal({ missingData, open, onCancel, onSaved }: any) {
       if (h === 0) return false
       const d = data.days !== undefined ? data.days : process.estimated_days || 0
       const ks = data.kanban_stage !== undefined ? data.kanban_stage : process.kanban_stage || ''
-      return !d || d <= 0 || !ks
+      return d < 0 || !ks
     })
 
     if (incomplete) {
@@ -876,17 +876,17 @@ function ProductProcessesModal({ missingData, open, onCancel, onSaved }: any) {
                           <Label className="text-xs text-muted-foreground">Dias</Label>
                           <Input
                             type="number"
-                            step="1"
+                            step="0.01"
                             min="0"
                             placeholder="0"
                             value={times[proc.id]?.days === undefined ? '' : times[proc.id].days}
                             onChange={(e) => {
-                              const val = e.target.value
+                              const val = e.target.value.replace(',', '.')
                               setTimes((prev) => ({
                                 ...prev,
                                 [proc.id]: {
                                   ...prev[proc.id],
-                                  days: val === '' ? undefined : parseInt(val, 10),
+                                  days: val === '' ? undefined : parseFloat(val),
                                 },
                               }))
                             }}

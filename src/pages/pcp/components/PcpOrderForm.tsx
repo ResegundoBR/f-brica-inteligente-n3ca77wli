@@ -279,14 +279,10 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
           productProcesses.length > 0 &&
           requiredProcessNames.every((reqName) => {
             const proc = productProcesses.find((p) => p.name === reqName)
-            return (
-              proc &&
-              proc.estimated_hours &&
-              proc.estimated_hours > 0 &&
-              proc.estimated_days &&
-              proc.estimated_days > 0 &&
-              proc.kanban_stage
-            )
+            if (!proc) return false
+            const hours = proc.estimated_hours || 0
+            if (hours === 0) return true
+            return proc.estimated_days && proc.estimated_days > 0 && proc.kanban_stage
           })
 
         if (!allComplete) {
@@ -752,15 +748,16 @@ function ProductProcessesModal({ missingData, open, onCancel, onSaved }: any) {
     const incomplete = missingData.processesToDefine.some((process: any) => {
       const data = times[process.id] || {}
       const h = data.hours !== undefined ? data.hours : process.estimated_hours || 0
+      if (h === 0) return false
       const d = data.days !== undefined ? data.days : process.estimated_days || 0
       const ks = data.kanban_stage !== undefined ? data.kanban_stage : process.kanban_stage || ''
-      return !h || h <= 0 || !d || d <= 0 || !ks
+      return !d || d <= 0 || !ks
     })
 
     if (incomplete) {
       toast({
         title: 'Campos obrigatórios',
-        description: 'Preencha horas, dias e etapa Kanban para todos os processos.',
+        description: 'Preencha dias e etapa Kanban para os processos com horas maiores que zero.',
         variant: 'destructive',
       })
       return

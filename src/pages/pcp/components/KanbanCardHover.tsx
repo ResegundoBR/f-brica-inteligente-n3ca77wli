@@ -9,10 +9,12 @@ import { format, parseISO } from 'date-fns'
 export function KanbanCardHover({
   order,
   observations = [],
+  shortages = [],
   children,
 }: {
   order: any
   observations?: any[]
+  shortages?: any[]
   children: ReactNode
 }) {
   const [open, setOpen] = useState(false)
@@ -157,6 +159,38 @@ export function KanbanCardHover({
                   <span className="whitespace-pre-wrap">{obs.content}</span>
                 </div>
               ))}
+            </div>
+          )}
+
+          {shortages.length > 0 && (
+            <div className="space-y-1">
+              <span className="text-muted-foreground font-medium">Materiais</span>
+              {shortages.map((s: any) => {
+                const isResolved = s.status === 'Recebido' || s.status === 'Liberado_Estoque'
+                return (
+                  <div
+                    key={s.id}
+                    className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-900 rounded p-1.5"
+                  >
+                    {isResolved ? (
+                      <span className="text-green-500 text-[10px]">✅</span>
+                    ) : (
+                      <span className="text-slate-400 text-[10px]">⭕</span>
+                    )}
+                    <span
+                      className={cn(
+                        'text-[11px] flex-1 truncate',
+                        isResolved && 'line-through opacity-60',
+                      )}
+                    >
+                      {s.description}
+                    </span>
+                    <span className="text-[9px] text-muted-foreground shrink-0">
+                      {s.status.replace('_', ' ')}
+                    </span>
+                  </div>
+                )
+              })}
             </div>
           )}
 

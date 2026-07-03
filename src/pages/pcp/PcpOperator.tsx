@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import pb from '@/lib/pocketbase/client'
-import { PcpOrder, ProductProcessModel } from '@/types'
+import { PcpOrder, ProductProcessModel, MaterialShortage } from '@/types'
 import { useRealtime } from '@/hooks/use-realtime'
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -30,7 +30,9 @@ import { Play, CheckCircle, AlertTriangle, FastForward } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { shouldHighlightObservation, getStageDelay, formatOpIdentifier } from '@/lib/pcp-utils'
+import { getMaterialAvailabilityStatus } from '@/lib/material-status'
 import { isBefore, startOfDay, parseISO } from 'date-fns'
+import { Package, ChevronDown, ChevronUp, Circle } from 'lucide-react'
 
 const SECTORS = {
   Suprimentos: [
@@ -261,6 +263,8 @@ function OperatorCard({
   onStart,
   onFinishConfirm,
   onBottleneck,
+  shortages,
+  onForceStart,
 }: {
   op: PcpOrder
   process?: ProductProcessModel
@@ -268,12 +272,15 @@ function OperatorCard({
   onStart: () => void
   onFinishConfirm: (nextStage: string | null) => void
   onBottleneck: (reason: string, details: string, missingItems?: any[]) => void
+  shortages?: MaterialShortage[]
+  onForceStart: () => void
 }) {
   const isLocked = op.bottleneck_reason && op.bottleneck_reason !== 'Nenhum'
   const isDelayed = op.delivery_date
     ? isBefore(parseISO(op.delivery_date), startOfDay(new Date()))
     : false
   const isEmergency = op.manual_priority === 1
+  const materialStatus = getMaterialAvailabilityStatus(shortages)
 
   const stageProcesses = useMemo(
     () =>
@@ -284,6 +291,7 @@ function OperatorCard({
   )
 
   const [currentStepIndex, setCurrentStepIndex] = useState(0)
+  const [showMaterials, setShowMaterials] = useState(false)
 
   useEffect(() => {
     setCurrentStepIndex(0)
@@ -397,6 +405,20 @@ function OperatorCard({
                 {parseISO(op.delivery_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
               </span>
             )}
+            {materialStatus !== 'none' && (
+              <Badge
+                className={cn(
+                  'mt-1 text-[10px] px-1.5 py-0 font-bold',
+                  materialStatus === 'red' && 'bg-red-500 text-white',
+                  materialStatus === 'yellow' && 'bg-yellow-400 text-slate-900',
+                  materialStatus === 'green' && 'bg-green-500 text-white',
+                )}
+              >
+                {materialStatus === 'red' && '🔴 Materiais Pendentes'}
+                {materialStatus === 'yellow' && '🟡 Materiais Parciais'}
+                {materialStatus === 'green' && '🟢 Materiais OK'}
+              </Badge>
+            )}
           </div>
         </div>
       </CardHeader>
@@ -495,6 +517,58 @@ function OperatorCard({
               Observações {op.observation_sector ? `(${op.observation_sector})` : ''}
             </div>
             {op.observations}
+          </div>
+        )}
+
+        {shortages && shortages.length > 0 && (
+          <div className="w-full mb-4 border rounded-lg overflow-hidden">
+            <button
+              onClick={() => setShowMaterials(!showMaterials)}
+              className="w-full flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-800/50 text-sm font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            >
+              <span className="flex items-center gap-2">
+                <Package className="size-4 text-slate-500" /> Materiais ({shortages.length})
+              </span>
+              {showMaterials ? (
+                <ChevronUp className="size-4 text-slate-400" />
+              ) : (
+                <ChevronDown className="size-4 text-slate-400" />
+              )}
+            </button>
+            {showMaterials && (
+              <div className="p-2 space-y-1.5 max-h-48 overflow-y-auto bg-white dark:bg-slate-950">
+                {shortages.map((s) => {
+                  const isResolved = s.status === 'Recebido' || s.status === 'Liberado_Estoque'
+                  return (
+                    <div key={s.id} className="flex items-center gap-2 text-xs py-1">
+                      {isResolved ? (
+                        <CheckCircle className="size-3.5 text-green-500 shrink-0" />
+                      ) : (
+                        <Circle className="size-3.5 text-slate-400 shrink-0" />
+                      )}
+                      <span
+                        className={cn(
+                          'flex-1',
+                          isResolved ? 'line-through text-muted-foreground' : 'text-foreground',
+                        )}
+                      >
+                        {s.description}
+                      </span>
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          'text-[9px] px-1 shrink-0',
+                          isResolved &&
+                            'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800',
+                        )}
+                      >
+                        {s.status.replace('_', ' ')}
+                      </Badge>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -669,6 +743,16 @@ function OperatorCard({
           </DialogContent>
         </Dialog>
 
+        {isLocked && op.bottleneck_reason === 'Falta de Material' && (
+          <Button
+            size="lg"
+            className="w-full text-base h-12 bg-amber-600 hover:bg-amber-700 text-white font-bold"
+            onClick={onForceStart}
+          >
+            <Play className="mr-2 size-5" /> INICIAR MESMO COM PENDÊNCIAS
+          </Button>
+        )}
+
         {isLocked && (
           <Button
             size="lg"
@@ -687,6 +771,7 @@ function OperatorCard({
 export default function PcpOperator() {
   const [orders, setOrders] = useState<PcpOrder[]>([])
   const [processes, setProcesses] = useState<ProductProcessModel[]>([])
+  const [shortagesByOrder, setShortagesByOrder] = useState<Record<string, MaterialShortage[]>>({})
   const [selectedSector, setSelectedSector] = useState<SectorName>('Suprimentos')
   const { user } = useAuth()
   const { toast } = useToast()
@@ -722,6 +807,18 @@ export default function PcpOperator() {
 
       setProcesses(procs)
       setOrders(records)
+
+      const shortageRes = await pb.collection('material_shortages').getFullList<MaterialShortage>({
+        sort: '-created',
+      })
+      const sMap: Record<string, MaterialShortage[]> = {}
+      shortageRes.forEach((s) => {
+        if (s.order_id) {
+          if (!sMap[s.order_id]) sMap[s.order_id] = []
+          sMap[s.order_id].push(s)
+        }
+      })
+      setShortagesByOrder(sMap)
     } catch {
       /* intentionally ignored */
     }
@@ -735,6 +832,9 @@ export default function PcpOperator() {
     loadData()
   })
   useRealtime('product_processes', () => {
+    loadData()
+  })
+  useRealtime('material_shortages', () => {
     loadData()
   })
 
@@ -865,6 +965,39 @@ export default function PcpOperator() {
       toast({
         title: reason === 'Nenhum' ? 'Gargalo Resolvido' : 'Gargalo Sinalizado',
         description: 'A equipe foi notificada.',
+      })
+    } catch (err: any) {
+      toast({ title: 'Erro', description: err.message, variant: 'destructive' })
+      loadData()
+    }
+  }
+
+  const handleForceStart = async (op: PcpOrder) => {
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === op.id
+          ? {
+              ...o,
+              status: 'Em Andamento',
+              started_at: new Date().toISOString(),
+              bottleneck_reason: 'Nenhum',
+              bottleneck_details: 'Iniciado mesmo com pendências de material',
+              operator_id: user?.id,
+            }
+          : o,
+      ),
+    )
+    try {
+      await pb.collection('pcp_orders').update(op.id, {
+        status: 'Em Andamento',
+        started_at: new Date().toISOString(),
+        bottleneck_reason: 'Nenhum',
+        bottleneck_details: 'Iniciado mesmo com pendências de material',
+        operator_id: user?.id,
+      })
+      toast({
+        title: 'OP Iniciada',
+        description: 'Produção iniciada mesmo com pendências de material.',
       })
     } catch (err: any) {
       toast({ title: 'Erro', description: err.message, variant: 'destructive' })
@@ -1111,6 +1244,8 @@ export default function PcpOperator() {
                   onBottleneck={(reason, details, items) =>
                     handleBottleneck(op, reason, details, items)
                   }
+                  shortages={shortagesByOrder[op.id] || []}
+                  onForceStart={() => handleForceStart(op)}
                 />
               ))
             )}
@@ -1145,6 +1280,8 @@ export default function PcpOperator() {
                   onBottleneck={(reason, details, items) =>
                     handleBottleneck(op, reason, details, items)
                   }
+                  shortages={shortagesByOrder[op.id] || []}
+                  onForceStart={() => handleForceStart(op)}
                 />
               ))
             )}

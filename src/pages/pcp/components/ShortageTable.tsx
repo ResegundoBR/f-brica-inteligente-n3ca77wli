@@ -26,6 +26,7 @@ import { MaterialShortage } from '@/types'
 import { CheckCircle, ShoppingCart, AlertCircle, TrendingUp, AlertTriangle } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
+import { format, parseISO } from 'date-fns'
 
 function HistoryPanel({ history }: { history: any[] }) {
   if (history.length === 0) return null
@@ -87,6 +88,7 @@ function ShortageDetailsModal({
   const { toast } = useToast()
 
   const [history, setHistory] = useState<MaterialShortage[]>([])
+  const [supplierSuggestions, setSupplierSuggestions] = useState<string[]>([])
 
   useEffect(() => {
     const fetchHistory = async () => {
@@ -103,6 +105,19 @@ function ShortageDetailsModal({
       }
     }
     fetchHistory()
+
+    const fetchSuppliers = async () => {
+      try {
+        const res = await pb.collection('material_shortages').getFullList({ fields: 'supplier' })
+        const unique = Array.from(
+          new Set(res.map((r: any) => r.supplier).filter(Boolean)),
+        ) as string[]
+        setSupplierSuggestions(unique)
+      } catch {
+        /* intentionally ignored */
+      }
+    }
+    fetchSuppliers()
   }, [item])
 
   const handleSave = async () => {
@@ -185,7 +200,7 @@ function ShortageDetailsModal({
       </DialogHeader>
 
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded border border-slate-100 dark:border-slate-800">
             <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
               Solicitante
@@ -196,12 +211,30 @@ function ShortageDetailsModal({
           </div>
           <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded border border-slate-100 dark:border-slate-800">
             <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
-              Origem
+              Pedido
             </span>
             <span className="text-sm font-semibold text-blue-600 dark:text-blue-400">
               {item.order_id && item.expand?.order_id?.order_number
-                ? `OP: ${item.expand.order_id.order_number}`
+                ? item.expand.order_id.order_number
                 : 'Req. Geral'}
+            </span>
+          </div>
+          <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded border border-slate-100 dark:border-slate-800">
+            <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
+              Nº da OP
+            </span>
+            <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+              {item.expand?.order_id?.op_number || '-'}
+            </span>
+          </div>
+          <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded border border-slate-100 dark:border-slate-800">
+            <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
+              Prazo Entrega
+            </span>
+            <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+              {item.expand?.order_id?.delivery_date
+                ? format(parseISO(item.expand.order_id.delivery_date), 'dd/MM/yyyy')
+                : '-'}
             </span>
           </div>
           <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded border border-slate-100 dark:border-slate-800">
@@ -266,7 +299,13 @@ function ShortageDetailsModal({
               onChange={(e) => setSupplier(e.target.value)}
               placeholder="Nome do Fornecedor..."
               className="bg-white dark:bg-slate-950"
+              list="supplier-suggestions-modal"
             />
+            <datalist id="supplier-suggestions-modal">
+              {supplierSuggestions.map((s) => (
+                <option key={s} value={s} />
+              ))}
+            </datalist>
           </div>
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
@@ -460,6 +499,17 @@ function ShortageRow({
             {item.status.replace('_', ' ')}
           </Badge>
         </TableCell>
+        <TableCell className="text-xs font-medium text-slate-600 dark:text-slate-400">
+          {item.expand?.order_id?.order_number || '-'}
+        </TableCell>
+        <TableCell className="text-xs font-medium text-slate-600 dark:text-slate-400">
+          {item.expand?.order_id?.op_number || '-'}
+        </TableCell>
+        <TableCell className="text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">
+          {item.expand?.order_id?.delivery_date
+            ? format(parseISO(item.expand.order_id.delivery_date), 'dd/MM/yyyy')
+            : '-'}
+        </TableCell>
       </TableRow>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-[700px] h-auto max-h-[90vh] overflow-hidden p-0 flex flex-col">
@@ -517,6 +567,9 @@ export function ShortageTable({
             <TableHead className="w-[120px]">Prioridade</TableHead>
             <TableHead className="w-[150px]">Solicitante</TableHead>
             <TableHead className="w-[120px]">Status</TableHead>
+            <TableHead className="w-[100px]">Pedido</TableHead>
+            <TableHead className="w-[100px]">Nº da OP</TableHead>
+            <TableHead className="w-[110px]">Prazo</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>

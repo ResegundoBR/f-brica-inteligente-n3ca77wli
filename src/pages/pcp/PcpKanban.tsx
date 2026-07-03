@@ -28,6 +28,8 @@ import { KanbanCardHover } from './components/KanbanCardHover'
 import { Link } from 'react-router-dom'
 import { Package } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
+import { MaterialShortage } from '@/types'
+import { getMaterialAvailabilityStatus } from '@/lib/material-status'
 
 const MACRO_GROUPS = [
   {
@@ -102,6 +104,7 @@ export function getOrderColor(order: any) {
 export default function PcpKanban() {
   const [orders, setOrders] = useState<any[]>([])
   const [observations, setObservations] = useState<Record<string, any[]>>({})
+  const [shortagesByOrder, setShortagesByOrder] = useState<Record<string, MaterialShortage[]>>({})
   const [stuckModalOpen, setStuckModalOpen] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
   const [listSelectedOp, setListSelectedOp] = useState<any>(null)
@@ -141,12 +144,32 @@ export default function PcpKanban() {
     setObservations(obsMap)
   }
 
+  const fetchShortages = async () => {
+    try {
+      const res = await pb.collection('material_shortages').getFullList<MaterialShortage>({
+        sort: '-created',
+      })
+      const map: Record<string, MaterialShortage[]> = {}
+      res.forEach((s) => {
+        if (s.order_id) {
+          if (!map[s.order_id]) map[s.order_id] = []
+          map[s.order_id].push(s)
+        }
+      })
+      setShortagesByOrder(map)
+    } catch {
+      /* ignored */
+    }
+  }
+
   useEffect(() => {
     fetchOrders()
     fetchObservations()
+    fetchShortages()
   }, [])
   useRealtime('pcp_orders', fetchOrders)
   useRealtime('pcp_order_observations', fetchObservations)
+  useRealtime('material_shortages', fetchShortages)
 
   const handleDragStart = (e: React.DragEvent, id: string) => {
     e.dataTransfer.setData('orderId', id)
@@ -357,6 +380,7 @@ export default function PcpKanban() {
                           key={order.id}
                           order={order}
                           observations={observations[order.id] || []}
+                          shortages={shortagesByOrder[order.id] || []}
                           onDragStart={handleDragStart}
                           onClick={() => setSelectedOrder(order)}
                         />
@@ -415,6 +439,7 @@ export default function PcpKanban() {
                               key={order.id}
                               order={order}
                               observations={observations[order.id] || []}
+                              shortages={shortagesByOrder[order.id] || []}
                               onDragStart={handleDragStart}
                               onClick={() => setSelectedOrder(order)}
                             />
@@ -912,6 +937,51 @@ export default function PcpKanban() {
                 </div>
 
                 <OutsourcingPanel op={selectedOrder} />
+
+                {shortagesByOrder[selectedOrder.id] &&
+                  shortagesByOrder[selectedOrder.id].length > 0 && (
+                    <div className="mt-4">
+                      <span className="text-muted-foreground block text-xs mb-2">Materiais</span>
+                      <div className="space-y-2">
+                        {shortagesByOrder[selectedOrder.id].map((s) => {
+                          const isResolved =
+                            s.status === 'Recebido' || s.status === 'Liberado_Estoque'
+                          return (
+                            <div
+                              key={s.id}
+                              className="flex items-center gap-2 p-2 border rounded-md text-sm"
+                            >
+                              {isResolved ? (
+                                <CheckCircle2 className="size-4 text-green-500 shrink-0" />
+                              ) : (
+                                <Circle className="size-4 text-slate-400 shrink-0" />
+                              )}
+                              <span
+                                className={cn(
+                                  'flex-1',
+                                  isResolved
+                                    ? 'line-through text-muted-foreground'
+                                    : 'text-foreground',
+                                )}
+                              >
+                                {s.description}
+                              </span>
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  'text-[10px] ml-auto shrink-0',
+                                  isResolved &&
+                                    'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800',
+                                )}
+                              >
+                                {s.status.replace('_', ' ')}
+                              </Badge>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
               </TabsContent>
               <TabsContent value="historico" className="flex-1 overflow-y-auto pt-4">
                 <OrderLogsList orderId={selectedOrder.id} />
@@ -924,9 +994,10 @@ export default function PcpKanban() {
   )
 }
 
-function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
+function KanbanCard({ order, observations = [], shortages = [], onDragStart, onClick }: any) {
   const color = getOrderColor(order)
   const isEmergency = order.manual_priority === 1
+  const materialStatus = getMaterialAvailabilityStatus(shortages)
 
   const borderClass = isEmergency
     ? 'border-l-red-600 border-l-4 animate-pulse shadow-[0_0_10px_rgba(220,38,38,0.3)]'
@@ -947,7 +1018,7 @@ function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
           : 'bg-card text-foreground'
 
   return (
-    <KanbanCardHover order={order} observations={observations}>
+    <KanbanCardHover order={order} observations={observations} shortages={shortages}>
       <Card
         draggable
         onDragStart={(e) => onDragStart(e, order.id)}
@@ -961,11 +1032,30 @@ function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
         <CardContent className="p-3 flex flex-col gap-1">
           <div className="flex items-start justify-between">
             <span className="font-semibold text-sm">{order.order_number}</span>
-            {isEmergency && (
-              <span className="text-xs" title="Emergência">
-                🚨
-              </span>
-            )}
+            <div className="flex items-center gap-1">
+              {materialStatus !== 'none' && (
+                <span
+                  className={cn(
+                    'size-2 rounded-full',
+                    materialStatus === 'red' && 'bg-red-500',
+                    materialStatus === 'yellow' && 'bg-yellow-400',
+                    materialStatus === 'green' && 'bg-green-500',
+                  )}
+                  title={
+                    materialStatus === 'red'
+                      ? 'Materiais Pendentes'
+                      : materialStatus === 'yellow'
+                        ? 'Materiais Parciais'
+                        : 'Materiais OK'
+                  }
+                />
+              )}
+              {isEmergency && (
+                <span className="text-xs" title="Emergência">
+                  🚨
+                </span>
+              )}
+            </div>
           </div>
           <div
             className={cn(
@@ -995,9 +1085,16 @@ function KanbanCard({ order, observations = [], onDragStart, onClick }: any) {
   )
 }
 
-function CompactKanbanCard({ order, observations = [], onDragStart, onClick }: any) {
+function CompactKanbanCard({
+  order,
+  observations = [],
+  shortages = [],
+  onDragStart,
+  onClick,
+}: any) {
   const color = getOrderColor(order)
   const isEmergency = order.manual_priority === 1
+  const materialStatus = getMaterialAvailabilityStatus(shortages)
 
   const bgClass = isEmergency
     ? 'bg-red-600 text-white animate-pulse ring-2 ring-red-500 ring-offset-1 ring-offset-background'
@@ -1010,7 +1107,7 @@ function CompactKanbanCard({ order, observations = [], onDragStart, onClick }: a
           : 'bg-blue-500 text-white'
 
   return (
-    <KanbanCardHover order={order} observations={observations}>
+    <KanbanCardHover order={order} observations={observations} shortages={shortages}>
       <div
         draggable
         onDragStart={(e) => onDragStart(e, order.id)}
@@ -1021,7 +1118,15 @@ function CompactKanbanCard({ order, observations = [], onDragStart, onClick }: a
         )}
       >
         <span className="block truncate w-full">
-          {isEmergency && <span className="text-[10px]">🚨</span>} {order.order_number}
+          {isEmergency && <span className="text-[10px]">🚨</span>}
+          {materialStatus !== 'none' && (
+            <span className="text-[10px]">
+              {materialStatus === 'red' && '🔴'}
+              {materialStatus === 'yellow' && '🟡'}
+              {materialStatus === 'green' && '🟢'}
+            </span>
+          )}{' '}
+          {order.order_number}
         </span>
         <span className="block truncate w-full font-normal opacity-90 text-[7px]">
           {order.expand?.client_id?.name || order.client_name}

@@ -12,13 +12,25 @@ import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import ShortageTable from './components/ShortageTable'
 import { NewShortageModal } from './components/NewShortageModal'
-import { Plus, Copy } from 'lucide-react'
+import { Plus, Copy, Tag } from 'lucide-react'
 import { useShortageStore } from '@/stores/useShortageStore'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 
 export default function PcpMaterials() {
   const [modalOpen, setModalOpen] = useState(false)
   const [shortages, setShortages] = useState<MaterialShortage[]>([])
   const [outsourcedOrders, setOutsourcedOrders] = useState<PcpOrder[]>([])
+  const [batchSupplierOpen, setBatchSupplierOpen] = useState(false)
+  const [batchSupplierValue, setBatchSupplierValue] = useState('')
+  const [supplierSuggestions, setSupplierSuggestions] = useState<string[]>([])
   const { toast } = useToast()
 
   const fetchShortages = async () => {
@@ -64,6 +76,41 @@ export default function PcpMaterials() {
       description: 'Lista de cotação copiada para a área de transferência.',
     })
     clear()
+  }
+
+  const fetchSupplierSuggestions = async () => {
+    try {
+      const res = await pb.collection('material_shortages').getFullList({ fields: 'supplier' })
+      const unique = Array.from(
+        new Set(res.map((r: any) => r.supplier).filter(Boolean)),
+      ) as string[]
+      setSupplierSuggestions(unique)
+    } catch {
+      /* ignored */
+    }
+  }
+
+  const handleBatchSupplier = async () => {
+    if (!batchSupplierValue.trim()) {
+      toast({ title: 'Erro', description: 'Informe um fornecedor', variant: 'destructive' })
+      return
+    }
+    try {
+      for (const id of selectedIds) {
+        await pb
+          .collection('material_shortages')
+          .update(id, { supplier: batchSupplierValue.trim() })
+      }
+      toast({
+        title: 'Fornecedor atribuído',
+        description: `${selectedIds.length} item(s) atualizado(s).`,
+      })
+      setBatchSupplierOpen(false)
+      setBatchSupplierValue('')
+      clear()
+    } catch (err: any) {
+      toast({ title: 'Erro', description: err.message, variant: 'destructive' })
+    }
   }
 
   useEffect(() => {
@@ -286,6 +333,18 @@ export default function PcpMaterials() {
             <Button
               size="sm"
               variant="secondary"
+              onClick={() => {
+                fetchSupplierSuggestions()
+                setBatchSupplierOpen(true)
+              }}
+              className="rounded-full text-foreground font-semibold hover:bg-secondary/90"
+            >
+              <Tag className="w-4 h-4 mr-2" />
+              Atribuir Fornecedor
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
               onClick={handleCopyQuotation}
               className="rounded-full text-foreground font-semibold hover:bg-secondary/90"
             >
@@ -295,6 +354,44 @@ export default function PcpMaterials() {
           </div>
         </div>
       )}
+
+      <Dialog open={batchSupplierOpen} onOpenChange={setBatchSupplierOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Atribuir Fornecedor</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label>Fornecedor</Label>
+              <Input
+                value={batchSupplierValue}
+                onChange={(e) => setBatchSupplierValue(e.target.value)}
+                placeholder="Nome do Fornecedor..."
+                list="batch-supplier-suggestions"
+              />
+              <datalist id="batch-supplier-suggestions">
+                {supplierSuggestions.map((s) => (
+                  <option key={s} value={s} />
+                ))}
+              </datalist>
+              <p className="text-xs text-muted-foreground">
+                Será aplicado a {selectedIds.length} item(s) selecionado(s).
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBatchSupplierOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+              onClick={handleBatchSupplier}
+            >
+              Confirmar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

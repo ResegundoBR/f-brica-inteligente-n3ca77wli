@@ -30,6 +30,8 @@ import { MessageNotificationBell } from '@/components/MessageNotificationBell'
 import { Button } from '@/components/ui/button'
 import { PcpOrderDetails } from './components/PcpOrderDetails'
 import { PcpFilters } from './components/PcpFilters'
+import { useOrderMessages } from '@/hooks/use-order-messages'
+import { OrderMessageBell } from '@/components/OrderMessageBell'
 
 export default function PcpOrders() {
   const [orders, setOrders] = useState<PcpOrder[]>([])
@@ -46,6 +48,7 @@ export default function PcpOrders() {
   const [selectedOp, setSelectedOp] = useState<PcpOrder | null>(null)
   const [search, setSearch] = useState('')
   const { toast } = useToast()
+  const { getOrderMessageInfo } = useOrderMessages()
 
   const loadData = async () => {
     Promise.allSettled([
@@ -339,7 +342,15 @@ export default function PcpOrders() {
                       )}
                       onClick={() => setSelectedOp(op)}
                     >
-                      <TableCell className="py-1 pl-6 font-medium">{op.op_number || '-'}</TableCell>
+                      <TableCell className="py-1 pl-6 font-medium">
+                        <div className="flex items-center gap-1.5">
+                          {op.op_number || '-'}
+                          {(() => {
+                            const unread = getOrderMessageInfo(op.id).unreadCount
+                            return unread > 0 ? <OrderMessageBell count={unread} size="sm" /> : null
+                          })()}
+                        </div>
+                      </TableCell>
                       <TableCell className="py-1">
                         <div className="flex flex-col items-start gap-1">
                           <span className="text-sm">

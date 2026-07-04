@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils'
 import { PcpFilters } from './components/PcpFilters'
 import { filterByDeadline, isOrderOverdue } from '@/lib/pcp-utils'
 import { OrderMessagesPanel } from '@/components/OrderMessagesPanel'
+import { useOrderMessages } from '@/hooks/use-order-messages'
 
 const STAGES = [
   'Separação',
@@ -57,7 +58,12 @@ export default function PcpCommercial() {
   const [clientFilter, setClientFilter] = useState('all')
   const [clientTypeFilter, setClientTypeFilter] = useState('all')
   const [deadlineFilter, setDeadlineFilter] = useState('all')
-  const [messageOrder, setMessageOrder] = useState<{ id: string; orderNumber: string } | null>(null)
+  const [messageOrder, setMessageOrder] = useState<{
+    id: string
+    orderNumber: string
+    opNumber: string
+  } | null>(null)
+  const { getOrderMessageInfo, markOrderAsRead } = useOrderMessages()
 
   const loadData = async () => {
     try {
@@ -320,15 +326,24 @@ export default function PcpCommercial() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8"
+                            className="h-8 w-8 relative"
                             onClick={() =>
                               setMessageOrder({
                                 id: op.id,
-                                orderNumber: op.op_number || op.order_number,
+                                orderNumber: op.order_number,
+                                opNumber: op.op_number || '',
                               })
                             }
                           >
                             <MessageCircle className="size-4" />
+                            {(() => {
+                              const info = getOrderMessageInfo(op.id)
+                              return info.count > 0 ? (
+                                <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-blue-500 text-white text-[9px] font-bold">
+                                  {info.count > 99 ? '99+' : info.count}
+                                </span>
+                              ) : null
+                            })()}
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -344,8 +359,10 @@ export default function PcpCommercial() {
       <OrderMessagesPanel
         orderId={messageOrder?.id || null}
         orderNumber={messageOrder?.orderNumber || ''}
+        opNumber={messageOrder?.opNumber || ''}
         open={!!messageOrder}
         onOpenChange={(open) => !open && setMessageOrder(null)}
+        onMessagesRead={markOrderAsRead}
       />
     </div>
   )

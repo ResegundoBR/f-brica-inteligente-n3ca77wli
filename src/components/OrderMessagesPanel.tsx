@@ -1,65 +1,70 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import pb from '@/lib/pocketbase/client'
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Send } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { useRealtime } from '@/hooks/use-realtime'
+import { PcpOrderMessage } from '@/types'
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from '@/components/ui/sheet'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Send } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { format } from 'date-fns'
 
-interface ChatMessage {
-  id: string
-  order_id: string
-  user_id: string
-  content: string
-  created: string
-  updated: string
-  expand?: {
-    user_id?: { id: string; name: string }
-  }
+interface OrderMessagesPanelProps {
+  orderId: string | null
+  orderNumber: string
+  opNumber?: string
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onMessagesRead?: (orderId: string) => void
 }
 
 export function OrderMessagesPanel({
   orderId,
   orderNumber,
+  opNumber,
   open,
   onOpenChange,
-}: {
-  orderId: string | null
-  orderNumber: string
-  open: boolean
-  onOpenChange: (open: boolean) => void
-}) {
-  const { user } = useAuth()
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  onMessagesRead,
+}: OrderMessagesPanelProps) {
+  const [messages, setMessages] = useState<PcpOrderMessage[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const { user } = useAuth()
 
-  const loadMessages = async () => {
+  const loadMessages = useCallback(async () => {
     if (!orderId) return
     try {
-      const res = await pb.collection('pcp_order_messages').getFullList<ChatMessage>({
+      const res = await pb.collection('pcp_order_messages').getFullList<PcpOrderMessage>({
         filter: `order_id="${orderId}"`,
         sort: 'created',
         expand: 'user_id',
       })
       setMessages(res)
     } catch {
-      /* ignored */
+      /* intentionally ignored */
     }
-  }
+  }, [orderId])
 
   useEffect(() => {
     if (open && orderId) {
       loadMessages()
+      onMessagesRead?.(orderId)
     }
-  }, [open, orderId])
+  }, [open, orderId, loadMessages, onMessagesRead])
 
-  useRealtime('pcp_order_messages', (e) => {
-    if (orderId && e.record.order_id === orderId) {
+  useRealtime('pcp_order_messages', () => {
+    if (open && orderId) {
       loadMessages()
+      onMessagesRead?.(orderId)
     }
   })
 
@@ -79,9 +84,10 @@ export function OrderMessagesPanel({
         content: input.trim(),
       })
       setInput('')
-      loadMessages()
+      await loadMessages()
+      onMessagesRead?.(orderId)
     } catch {
-      /* ignored */
+      /* intentionally ignored */
     } finally {
       setSending(false)
     }
@@ -89,15 +95,19 @@ export function OrderMessagesPanel({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="sm:max-w-md flex flex-col">
-        <SheetHeader>
-          <SheetTitle>Mensagens — OP {orderNumber}</SheetTitle>
+      <SheetContent className="flex flex-col w-full sm:max-w-md p-0">
+        <SheetHeader className="px-4 py-3 border-b shrink-0 space-y-1">
+          <SheetTitle className="text-base">Mensagens da OP</SheetTitle>
+          <SheetDescription className="flex flex-col gap-0.5">
+            <span className="font-semibold text-foreground">Pedido: {orderNumber || '-'}</span>
+            <span className="text-sm">OP: {opNumber || '-'}</span>
+          </SheetDescription>
         </SheetHeader>
-        <div ref={scrollRef} className="flex-1 overflow-y-auto -mx-6 px-6 py-4">
-          <div className="flex flex-col gap-3">
+        <ScrollArea className="flex-1 min-h-0" ref={scrollRef}>
+          <div className="p-4 space-y-3">
             {messages.length === 0 ? (
               <p className="text-center text-sm text-muted-foreground py-8">
-                Nenhuma mensagem ainda. Inicie a conversa sobre esta OP.
+                Nenhuma mensagem ainda. Inicie a conversa abaixo.
               </p>
             ) : (
               messages.map((msg) => {
@@ -113,28 +123,23 @@ export function OrderMessagesPanel({
                         isOwn ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground',
                       )}
                     >
-                      {!isOwn && msg.expand?.user_id?.name && (
-                        <span className="text-xs font-semibold opacity-70 block mb-1">
-                          {msg.expand.user_id.name}
+                      {!isOwn && (
+                        <span className="block text-xs font-semibold mb-0.5 opacity-70">
+                          {msg.expand?.user_id?.name || 'Usuário'}
                         </span>
                       )}
-                      <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                      {msg.content}
                     </div>
-                    <span className="text-[10px] text-muted-foreground mt-1">
-                      {new Date(msg.created).toLocaleString('pt-BR', {
-                        day: '2-digit',
-                        month: '2-digit',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
+                    <span className="text-[10px] text-muted-foreground mt-0.5">
+                      {format(new Date(msg.created), 'dd/MM/yyyy HH:mm')}
                     </span>
                   </div>
                 )
               })
             )}
           </div>
-        </div>
-        <div className="flex gap-2 pt-4 border-t">
+        </ScrollArea>
+        <div className="p-3 border-t flex gap-2 shrink-0">
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}

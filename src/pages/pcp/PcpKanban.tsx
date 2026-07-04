@@ -31,6 +31,8 @@ import { Package } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { MaterialShortage } from '@/types'
 import { getMaterialAvailabilityStatus } from '@/lib/material-status'
+import { useOrderMessages } from '@/hooks/use-order-messages'
+import { OrderMessageBell } from '@/components/OrderMessageBell'
 
 const MACRO_GROUPS = [
   {
@@ -118,6 +120,7 @@ export default function PcpKanban() {
   const [sectorModalOpen, setSectorModalOpen] = useState(false)
   const [selectedSectorMacro, setSelectedSectorMacro] = useState<any>(null)
   const [selectedOpLogs, setSelectedOpLogs] = useState<any[]>([])
+  const { getOrderMessageInfo } = useOrderMessages()
 
   const fetchOrders = async () => {
     const res = await pb.collection('pcp_orders').getFullList({
@@ -385,6 +388,7 @@ export default function PcpKanban() {
                           shortages={shortagesByOrder[order.id] || []}
                           onDragStart={handleDragStart}
                           onClick={() => setSelectedOrder(order)}
+                          unreadMessages={getOrderMessageInfo(order.id).unreadCount}
                         />
                       ))}
                       {statusOrders.length === 0 && (
@@ -444,6 +448,7 @@ export default function PcpKanban() {
                               shortages={shortagesByOrder[order.id] || []}
                               onDragStart={handleDragStart}
                               onClick={() => setSelectedOrder(order)}
+                              unreadMessages={getOrderMessageInfo(order.id).unreadCount}
                             />
                           ))}
                         </div>
@@ -517,6 +522,17 @@ export default function PcpKanban() {
                                       ? 'Produto Especial'
                                       : op.expand?.product_id?.name || 'S/Produto'}
                                 </div>
+                                {(() => {
+                                  const unread = getOrderMessageInfo(op.id).unreadCount
+                                  return unread > 0 ? (
+                                    <span
+                                      className="text-[10px] animate-shake shrink-0 text-orange-500 font-bold"
+                                      title={`${unread} mensagens não lidas`}
+                                    >
+                                      🔔{unread}
+                                    </span>
+                                  ) : null
+                                })()}
                                 <Badge
                                   variant="outline"
                                   className="text-[9px] px-1 h-4 shrink-0 bg-background"
@@ -996,7 +1012,14 @@ export default function PcpKanban() {
   )
 }
 
-function KanbanCard({ order, observations = [], shortages = [], onDragStart, onClick }: any) {
+function KanbanCard({
+  order,
+  observations = [],
+  shortages = [],
+  onDragStart,
+  onClick,
+  unreadMessages = 0,
+}: any) {
   const color = getOrderColor(order)
   const isEmergency = order.manual_priority === 1
   const materialStatus = getMaterialAvailabilityStatus(shortages)
@@ -1035,6 +1058,7 @@ function KanbanCard({ order, observations = [], shortages = [], onDragStart, onC
           <div className="flex items-start justify-between">
             <span className="font-semibold text-sm">{order.order_number}</span>
             <div className="flex items-center gap-1">
+              {unreadMessages > 0 && <OrderMessageBell count={unreadMessages} size="sm" />}
               {materialStatus !== 'none' && (
                 <span
                   className={cn(
@@ -1093,6 +1117,7 @@ function CompactKanbanCard({
   shortages = [],
   onDragStart,
   onClick,
+  unreadMessages = 0,
 }: any) {
   const color = getOrderColor(order)
   const isEmergency = order.manual_priority === 1
@@ -1121,6 +1146,11 @@ function CompactKanbanCard({
       >
         <span className="block truncate w-full">
           {isEmergency && <span className="text-[10px]">🚨</span>}
+          {unreadMessages > 0 && (
+            <span className="text-[10px] animate-shake text-orange-500 font-bold">
+              🔔{unreadMessages}
+            </span>
+          )}{' '}
           {materialStatus !== 'none' && (
             <span className="text-[10px]">
               {materialStatus === 'red' && '🔴'}

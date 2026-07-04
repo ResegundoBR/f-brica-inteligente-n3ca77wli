@@ -319,3 +319,16 @@ export interface MaterialShortage {
     requested_by?: User
   }
 }
+
+export interface PcpOrderMessage {
+  id: string
+  order_id: string
+  user_id: string
+  content: string
+  created: string
+  updated: string
+  expand?: {
+    user_id?: User
+    order_id?: PcpOrder
+  }
+}

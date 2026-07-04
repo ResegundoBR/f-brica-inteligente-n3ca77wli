@@ -24,6 +24,7 @@ import { format, parseISO, differenceInDays, startOfDay } from 'date-fns'
 import { formatDeadline, isOrderOverdue, filterByDeadline, isStageDelayed } from '@/lib/pcp-utils'
 import { OutsourcingPanel } from './components/OutsourcingPanel'
 import { PcpFilters } from './components/PcpFilters'
+import { MessageNotificationBell } from '@/components/MessageNotificationBell'
 import { KanbanCardHover } from './components/KanbanCardHover'
 import { Link } from 'react-router-dom'
 import { Package } from 'lucide-react'
@@ -334,6 +335,7 @@ export default function PcpKanban() {
               <List className="size-3.5" /> Lista Lateral
             </Button>
           </div>
+          <MessageNotificationBell className="h-8 w-8" />
           {stuckOrders.length > 0 && (
             <Button
               variant="default"

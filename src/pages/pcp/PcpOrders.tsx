@@ -26,6 +26,7 @@ import {
 import { cn } from '@/lib/utils'
 import { formatDeadline, filterByDeadline, isStageDelayed } from '@/lib/pcp-utils'
 import { PcpOrderForm } from './components/PcpOrderForm'
+import { MessageNotificationBell } from '@/components/MessageNotificationBell'
 import { Button } from '@/components/ui/button'
 import { PcpOrderDetails } from './components/PcpOrderDetails'
 import { PcpFilters } from './components/PcpFilters'
@@ -279,6 +280,7 @@ export default function PcpOrders() {
             stage={stageFilter}
             setStage={setStageFilter}
           />
+          <MessageNotificationBell />
           <Button onClick={() => setIsOpen(true)}>Nova OP</Button>
           <PcpOrderForm open={isOpen} onOpenChange={setIsOpen} onSuccess={loadData} />
         </div>

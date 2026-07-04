@@ -13,19 +13,13 @@ import {
 } from '@/components/ui/table'
 import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { format, parseISO, isAfter, startOfDay } from 'date-fns'
-import { Search } from 'lucide-react'
+import { Search, MessageCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PcpFilters } from './components/PcpFilters'
 import { filterByDeadline, isOrderOverdue } from '@/lib/pcp-utils'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { useToast } from '@/hooks/use-toast'
+import { OrderMessagesPanel } from '@/components/OrderMessagesPanel'
 
 const STAGES = [
   'Separação',
@@ -63,16 +57,7 @@ export default function PcpCommercial() {
   const [clientFilter, setClientFilter] = useState('all')
   const [clientTypeFilter, setClientTypeFilter] = useState('all')
   const [deadlineFilter, setDeadlineFilter] = useState('all')
-  const { toast } = useToast()
-
-  const updateOrder = async (id: string, field: string, value: string) => {
-    try {
-      await pb.collection('pcp_orders').update(id, { [field]: value })
-      toast({ title: 'OP Atualizada', description: 'Alteração salva com sucesso.' })
-    } catch (err) {
-      toast({ title: 'Erro', description: 'Não foi possível atualizar.', variant: 'destructive' })
-    }
-  }
+  const [messageOrder, setMessageOrder] = useState<{ id: string; orderNumber: string } | null>(null)
 
   const loadData = async () => {
     try {
@@ -241,12 +226,13 @@ export default function PcpCommercial() {
               <TableHead className="w-[200px]">Progresso</TableHead>
               <TableHead>Etapa Atual</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead className="w-[60px]">Mensagens</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {groupedOrders.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center h-24">
+                <TableCell colSpan={7} className="text-center h-24">
                   Nenhuma OP encontrada.
                 </TableCell>
               </TableRow>
@@ -259,7 +245,7 @@ export default function PcpCommercial() {
                       'bg-blue-100/80 text-blue-900 dark:bg-blue-900/40 dark:text-blue-100',
                     )}
                   >
-                    <TableCell colSpan={6} className="font-semibold text-sm py-1">
+                    <TableCell colSpan={7} className="font-semibold text-sm py-1">
                       <div className="flex items-center gap-4">
                         <span>Pedido: {group.order_number}</span>
                         <span className="opacity-50">|</span>
@@ -322,43 +308,28 @@ export default function PcpCommercial() {
                           {op.status === 'Concluído' ? (
                             <span className="text-muted-foreground">-</span>
                           ) : (
-                            <Select
-                              value={op.stage}
-                              onValueChange={(val) => updateOrder(op.id, 'stage', val)}
-                            >
-                              <SelectTrigger className="h-7 text-xs border-none shadow-none font-medium px-2 py-0 bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800 w-auto min-w-[120px]">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent className="max-h-60">
-                                {STAGES.map((s) => (
-                                  <SelectItem key={s} value={s}>
-                                    {s}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            <span className="text-sm">{op.stage}</span>
                           )}
                         </TableCell>
                         <TableCell className="py-1">
-                          <div className="flex flex-col gap-1 items-start">
-                            <Badge variant={statusInfo.variant} className={statusInfo.className}>
-                              {statusInfo.label}
-                            </Badge>
-                            <Select
-                              value={op.status}
-                              onValueChange={(val) => updateOrder(op.id, 'status', val)}
-                            >
-                              <SelectTrigger className="h-6 text-[10px] border-none shadow-none px-1 py-0 bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800 text-muted-foreground w-auto min-w-[100px]">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="Fila">Fila</SelectItem>
-                                <SelectItem value="Em Andamento">Em Andamento</SelectItem>
-                                <SelectItem value="Parado">Parado</SelectItem>
-                                <SelectItem value="Concluído">Concluído</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
+                          <Badge variant={statusInfo.variant} className={statusInfo.className}>
+                            {statusInfo.label}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="py-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() =>
+                              setMessageOrder({
+                                id: op.id,
+                                orderNumber: op.op_number || op.order_number,
+                              })
+                            }
+                          >
+                            <MessageCircle className="size-4" />
+                          </Button>
                         </TableCell>
                       </TableRow>
                     )
@@ -369,6 +340,13 @@ export default function PcpCommercial() {
           </TableBody>
         </Table>
       </div>
+
+      <OrderMessagesPanel
+        orderId={messageOrder?.id || null}
+        orderNumber={messageOrder?.orderNumber || ''}
+        open={!!messageOrder}
+        onOpenChange={(open) => !open && setMessageOrder(null)}
+      />
     </div>
   )
 }

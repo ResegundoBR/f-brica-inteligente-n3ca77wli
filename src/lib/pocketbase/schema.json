@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-03T20:58:23.374Z",
+  "generatedAt": "2026-07-03T21:49:19.849Z",
   "collections": [
     {
       "name": "users",
@@ -1393,6 +1393,54 @@
         "CREATE INDEX `idx_material_shortages_code` ON `material_shortages` (code)",
         "CREATE INDEX `idx_material_shortages_description` ON `material_shortages` (description)"
       ]
+    },
+    {
+      "name": "pcp_order_messages",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": null,
+        "delete": null
+      },
+      "fields": [
+        {
+          "name": "order_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "pcp_orders"
+        },
+        {
+          "name": "user_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "content",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": ["CREATE INDEX idx_pcp_order_messages_order ON pcp_order_messages (order_id)"]
     }
   ]
 }

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-04T11:31:17.372Z",
+  "generatedAt": "2026-07-04T12:00:29.236Z",
   "collections": [
     {
       "name": "users",
@@ -1401,7 +1401,7 @@
         "list": "@request.auth.id != ''",
         "view": "@request.auth.id != ''",
         "create": "@request.auth.id != ''",
-        "update": null,
+        "update": "@request.auth.id != ''",
         "delete": null
       },
       "fields": [
@@ -1438,6 +1438,12 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "read",
+          "type": "bool",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": ["CREATE INDEX idx_pcp_order_messages_order ON pcp_order_messages (order_id)"]

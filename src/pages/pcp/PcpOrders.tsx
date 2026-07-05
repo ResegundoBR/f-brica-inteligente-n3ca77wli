@@ -14,7 +14,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { format, parseISO, isBefore, startOfDay, differenceInDays } from 'date-fns'
-import { Paperclip, Clock, Search } from 'lucide-react'
+import { Paperclip, Clock, Search, Bell } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -32,6 +32,7 @@ import { PcpOrderDetails } from './components/PcpOrderDetails'
 import { PcpFilters } from './components/PcpFilters'
 import { useOrderMessages } from '@/hooks/use-order-messages'
 import { OrderMessageBell } from '@/components/OrderMessageBell'
+import { OrderMessagesPanel } from '@/components/OrderMessagesPanel'
 
 export default function PcpOrders() {
   const [orders, setOrders] = useState<PcpOrder[]>([])
@@ -47,8 +48,14 @@ export default function PcpOrders() {
   const [stageFilter, setStageFilter] = useState('all')
   const [selectedOp, setSelectedOp] = useState<PcpOrder | null>(null)
   const [search, setSearch] = useState('')
+  const [messageOrder, setMessageOrder] = useState<{
+    id: string
+    orderNumber: string
+    opNumber: string
+  } | null>(null)
+  const [pendingOnly, setPendingOnly] = useState(false)
   const { toast } = useToast()
-  const { getOrderMessageInfo } = useOrderMessages()
+  const { getOrderMessageInfo, markOrderAsRead } = useOrderMessages()
 
   const loadData = async () => {
     Promise.allSettled([
@@ -148,6 +155,7 @@ export default function PcpOrders() {
       if (statusFilter !== 'all' && op.status !== statusFilter) return false
       if (stageFilter !== 'all' && op.stage !== stageFilter) return false
       if (!filterByDeadline(op.delivery_date, deadlineFilter)) return false
+      if (pendingOnly && getOrderMessageInfo(op.id).unreadCount === 0) return false
       return true
     })
 
@@ -182,6 +190,8 @@ export default function PcpOrders() {
     statusFilter,
     stageFilter,
     deadlineFilter,
+    pendingOnly,
+    getOrderMessageInfo,
   ])
 
   const updateOrder = async (id: string, field: string, value: string) => {
@@ -283,6 +293,15 @@ export default function PcpOrders() {
             stage={stageFilter}
             setStage={setStageFilter}
           />
+          <Button
+            variant={pendingOnly ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setPendingOnly(!pendingOnly)}
+            className="gap-2"
+          >
+            <Bell className="size-4" />
+            Mensagens Pendentes
+          </Button>
           <MessageNotificationBell />
           <Button onClick={() => setIsOpen(true)}>Nova OP</Button>
           <PcpOrderForm open={isOpen} onOpenChange={setIsOpen} onSuccess={loadData} />
@@ -347,7 +366,21 @@ export default function PcpOrders() {
                           {op.op_number || '-'}
                           {(() => {
                             const unread = getOrderMessageInfo(op.id).unreadCount
-                            return unread > 0 ? <OrderMessageBell count={unread} size="sm" /> : null
+                            return unread > 0 ? (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setMessageOrder({
+                                    id: op.id,
+                                    orderNumber: op.order_number,
+                                    opNumber: op.op_number || '',
+                                  })
+                                }}
+                                className="inline-flex items-center"
+                              >
+                                <OrderMessageBell count={unread} size="sm" />
+                              </button>
+                            ) : null
                           })()}
                         </div>
                       </TableCell>
@@ -496,6 +529,15 @@ export default function PcpOrders() {
         op={selectedOp}
         observations={selectedOp ? observations[selectedOp.id] || [] : []}
         onClose={() => setSelectedOp(null)}
+      />
+
+      <OrderMessagesPanel
+        orderId={messageOrder?.id || null}
+        orderNumber={messageOrder?.orderNumber || ''}
+        opNumber={messageOrder?.opNumber || ''}
+        open={!!messageOrder}
+        onOpenChange={(open) => !open && setMessageOrder(null)}
+        onMessagesRead={markOrderAsRead}
       />
     </div>
   )

@@ -325,6 +325,7 @@ export interface PcpOrderMessage {
   order_id: string
   user_id: string
   content: string
+  read?: boolean
   created: string
   updated: string
   expand?: {

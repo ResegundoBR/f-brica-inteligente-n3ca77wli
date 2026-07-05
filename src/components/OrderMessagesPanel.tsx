@@ -98,9 +98,9 @@ export function OrderMessagesPanel({
       <SheetContent className="flex flex-col w-full sm:max-w-md p-0">
         <SheetHeader className="px-4 py-3 border-b shrink-0 space-y-1">
           <SheetTitle className="text-base">Mensagens da OP</SheetTitle>
-          <SheetDescription className="flex flex-col gap-0.5">
+          <SheetDescription className="flex flex-row items-center gap-3 flex-wrap">
             <span className="font-semibold text-foreground">Pedido: {orderNumber || '-'}</span>
-            <span className="text-sm">OP: {opNumber || '-'}</span>
+            <span className="text-sm text-muted-foreground">OP: {opNumber || '-'}</span>
           </SheetDescription>
         </SheetHeader>
         <ScrollArea className="flex-1 min-h-0" ref={scrollRef}>

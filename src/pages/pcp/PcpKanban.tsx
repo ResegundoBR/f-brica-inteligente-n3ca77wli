@@ -17,6 +17,7 @@ import {
   XCircle,
   CircleDot,
   Circle,
+  Bell,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
@@ -33,6 +34,7 @@ import { MaterialShortage } from '@/types'
 import { getMaterialAvailabilityStatus } from '@/lib/material-status'
 import { useOrderMessages } from '@/hooks/use-order-messages'
 import { OrderMessageBell } from '@/components/OrderMessageBell'
+import { OrderMessagesPanel } from '@/components/OrderMessagesPanel'
 
 const MACRO_GROUPS = [
   {
@@ -120,7 +122,13 @@ export default function PcpKanban() {
   const [sectorModalOpen, setSectorModalOpen] = useState(false)
   const [selectedSectorMacro, setSelectedSectorMacro] = useState<any>(null)
   const [selectedOpLogs, setSelectedOpLogs] = useState<any[]>([])
-  const { getOrderMessageInfo } = useOrderMessages()
+  const { getOrderMessageInfo, markOrderAsRead } = useOrderMessages()
+  const [messageOrder, setMessageOrder] = useState<{
+    id: string
+    orderNumber: string
+    opNumber: string
+  } | null>(null)
+  const [pendingOnly, setPendingOnly] = useState(false)
 
   const fetchOrders = async () => {
     const res = await pb.collection('pcp_orders').getFullList({
@@ -209,6 +217,7 @@ export default function PcpKanban() {
         if (clientTypeFilter !== 'all' && o.expand?.client_id?.type !== clientTypeFilter)
           return false
         if (!filterByDeadline(o.delivery_date, deadlineFilter)) return false
+        if (pendingOnly && getOrderMessageInfo(o.id).unreadCount === 0) return false
 
         if (!searchQuery) return true
         const q = searchQuery.toLowerCase()
@@ -232,7 +241,16 @@ export default function PcpKanban() {
           obsSector.includes(q)
         )
       }),
-    [orders, searchQuery, opTypeFilter, clientFilter, clientTypeFilter, deadlineFilter],
+    [
+      orders,
+      searchQuery,
+      opTypeFilter,
+      clientFilter,
+      clientTypeFilter,
+      deadlineFilter,
+      pendingOnly,
+      getOrderMessageInfo,
+    ],
   )
 
   const groupedFilteredOrders = useMemo(() => {
@@ -291,6 +309,15 @@ export default function PcpKanban() {
             deadline={deadlineFilter}
             setDeadline={setDeadlineFilter}
           />
+          <Button
+            variant={pendingOnly ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setPendingOnly(!pendingOnly)}
+            className="gap-2 h-8 text-xs"
+          >
+            <Bell className="size-3.5" />
+            Mensagens Pendentes
+          </Button>
           <Link to="/pcp/materiais">
             <Button
               variant="outline"
@@ -388,6 +415,13 @@ export default function PcpKanban() {
                           shortages={shortagesByOrder[order.id] || []}
                           onDragStart={handleDragStart}
                           onClick={() => setSelectedOrder(order)}
+                          onMessageClick={() =>
+                            setMessageOrder({
+                              id: order.id,
+                              orderNumber: order.order_number,
+                              opNumber: order.op_number || '',
+                            })
+                          }
                           unreadMessages={getOrderMessageInfo(order.id).unreadCount}
                         />
                       ))}
@@ -448,6 +482,13 @@ export default function PcpKanban() {
                               shortages={shortagesByOrder[order.id] || []}
                               onDragStart={handleDragStart}
                               onClick={() => setSelectedOrder(order)}
+                              onMessageClick={() =>
+                                setMessageOrder({
+                                  id: order.id,
+                                  orderNumber: order.order_number,
+                                  opNumber: order.op_number || '',
+                                })
+                              }
                               unreadMessages={getOrderMessageInfo(order.id).unreadCount}
                             />
                           ))}
@@ -526,7 +567,15 @@ export default function PcpKanban() {
                                   const unread = getOrderMessageInfo(op.id).unreadCount
                                   return unread > 0 ? (
                                     <span
-                                      className="text-[10px] animate-shake shrink-0 text-orange-500 font-bold"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setMessageOrder({
+                                          id: op.id,
+                                          orderNumber: op.order_number,
+                                          opNumber: op.op_number || '',
+                                        })
+                                      }}
+                                      className="text-[10px] animate-shake shrink-0 text-orange-500 font-bold cursor-pointer"
                                       title={`${unread} mensagens não lidas`}
                                     >
                                       🔔{unread}
@@ -1008,6 +1057,15 @@ export default function PcpKanban() {
           )}
         </DialogContent>
       </Dialog>
+
+      <OrderMessagesPanel
+        orderId={messageOrder?.id || null}
+        orderNumber={messageOrder?.orderNumber || ''}
+        opNumber={messageOrder?.opNumber || ''}
+        open={!!messageOrder}
+        onOpenChange={(open) => !open && setMessageOrder(null)}
+        onMessagesRead={markOrderAsRead}
+      />
     </div>
   )
 }
@@ -1018,6 +1076,7 @@ function KanbanCard({
   shortages = [],
   onDragStart,
   onClick,
+  onMessageClick,
   unreadMessages = 0,
 }: any) {
   const color = getOrderColor(order)
@@ -1058,7 +1117,17 @@ function KanbanCard({
           <div className="flex items-start justify-between">
             <span className="font-semibold text-sm">{order.order_number}</span>
             <div className="flex items-center gap-1">
-              {unreadMessages > 0 && <OrderMessageBell count={unreadMessages} size="sm" />}
+              {unreadMessages > 0 && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onMessageClick?.()
+                  }}
+                  className="inline-flex items-center"
+                >
+                  <OrderMessageBell count={unreadMessages} size="sm" />
+                </button>
+              )}
               {materialStatus !== 'none' && (
                 <span
                   className={cn(
@@ -1117,6 +1186,7 @@ function CompactKanbanCard({
   shortages = [],
   onDragStart,
   onClick,
+  onMessageClick,
   unreadMessages = 0,
 }: any) {
   const color = getOrderColor(order)
@@ -1147,9 +1217,15 @@ function CompactKanbanCard({
         <span className="block truncate w-full">
           {isEmergency && <span className="text-[10px]">🚨</span>}
           {unreadMessages > 0 && (
-            <span className="text-[10px] animate-shake text-orange-500 font-bold">
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onMessageClick?.()
+              }}
+              className="text-[10px] animate-shake text-orange-500 font-bold inline"
+            >
               🔔{unreadMessages}
-            </span>
+            </button>
           )}{' '}
           {materialStatus !== 'none' && (
             <span className="text-[10px]">

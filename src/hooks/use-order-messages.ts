@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { PcpOrderMessage } from '@/types'
@@ -46,10 +46,21 @@ export function useOrderMessages() {
 
   useRealtime('pcp_order_messages', loadMessages)
 
+  const messagesRef = useRef(messages)
+  messagesRef.current = messages
+
   const markOrderAsRead = useCallback((orderId: string) => {
     const now = new Date().toISOString()
     setReadTimestamp(orderId, now)
     setReadTimestamps(getReadTimestamps())
+
+    messagesRef.current
+      .filter((m) => m.order_id === orderId && !m.read)
+      .forEach((m) => {
+        pb.collection('pcp_order_messages')
+          .update(m.id, { read: true })
+          .catch(() => {})
+      })
   }, [])
 
   const messagesByOrder = useMemo(() => {

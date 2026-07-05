@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Bell, MessageCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUnreadMessages } from '@/hooks/use-unread-messages'
+import { useOrderMessages } from '@/hooks/use-order-messages'
 import { OrderMessagesPanel } from '@/components/OrderMessagesPanel'
 import { formatDistanceToNow } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -11,10 +12,12 @@ import { ptBR } from 'date-fns/locale'
 export function MessageNotificationBell({ className }: { className?: string }) {
   const { unreadCount, recentMessages, hasNewMessage, setHasNewMessage, markAllRead } =
     useUnreadMessages()
+  const { markOrderAsRead } = useOrderMessages()
   const [shake, setShake] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<{
     id: string
     orderNumber: string
+    opNumber: string
   } | null>(null)
 
   useEffect(() => {
@@ -79,6 +82,7 @@ export function MessageNotificationBell({ className }: { className?: string }) {
                     setSelectedOrder({
                       id: msg.order_id,
                       orderNumber: msg.expand?.order_id?.order_number || msg.order_id,
+                      opNumber: msg.expand?.order_id?.op_number || '',
                     })
                   }}
                 >
@@ -108,8 +112,10 @@ export function MessageNotificationBell({ className }: { className?: string }) {
       <OrderMessagesPanel
         orderId={selectedOrder?.id || null}
         orderNumber={selectedOrder?.orderNumber || ''}
+        opNumber={selectedOrder?.opNumber || ''}
         open={!!selectedOrder}
         onOpenChange={(open) => !open && setSelectedOrder(null)}
+        onMessagesRead={markOrderAsRead}
       />
     </>
   )

@@ -1,33 +1,23 @@
 import { Bell } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import type { IndicatorState } from '@/lib/message-sector'
 
 interface OrderMessageBellProps {
-  count: number
+  state: IndicatorState
   className?: string
   size?: 'sm' | 'md'
 }
 
-export function OrderMessageBell({ count, className, size = 'md' }: OrderMessageBellProps) {
-  if (count <= 0) return null
+export function OrderMessageBell({ state, className, size = 'md' }: OrderMessageBellProps) {
+  if (state === 'none') return null
 
   const iconSize = size === 'sm' ? 'size-3.5' : 'size-4'
-  const badgeSize =
-    size === 'sm' ? 'min-w-[14px] h-[14px] text-[8px]' : 'min-w-[16px] h-[16px] text-[9px]'
 
-  return (
-    <span
-      className={cn('relative inline-flex items-center', className)}
-      title={`${count} mensagem(ns) não lida(s)`}
-    >
-      <Bell className={cn(iconSize, 'text-orange-500 animate-shake')} />
-      <span
-        className={cn(
-          'absolute -top-1.5 -right-1.5 flex items-center justify-center px-0.5 rounded-full bg-red-500 text-white font-bold',
-          badgeSize,
-        )}
-      >
-        {count > 99 ? '99+' : count}
-      </span>
-    </span>
-  )
+  const stateClasses: Record<string, string> = {
+    blue: 'text-blue-500',
+    green: 'text-green-500 animate-pulse',
+    gray: 'text-gray-400 dark:text-gray-500',
+  }
+
+  return <Bell className={cn(iconSize, stateClasses[state], className)} />
 }

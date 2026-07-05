@@ -155,7 +155,10 @@ export default function PcpOrders() {
       if (statusFilter !== 'all' && op.status !== statusFilter) return false
       if (stageFilter !== 'all' && op.stage !== stageFilter) return false
       if (!filterByDeadline(op.delivery_date, deadlineFilter)) return false
-      if (pendingOnly && getOrderMessageInfo(op.id).unreadCount === 0) return false
+      if (pendingOnly) {
+        const msgState = getOrderMessageInfo(op.id).indicatorState
+        if (msgState !== 'blue' && msgState !== 'green') return false
+      }
       return true
     })
 
@@ -365,8 +368,8 @@ export default function PcpOrders() {
                         <div className="flex items-center gap-1.5">
                           {op.op_number || '-'}
                           {(() => {
-                            const unread = getOrderMessageInfo(op.id).unreadCount
-                            return unread > 0 ? (
+                            const msgState = getOrderMessageInfo(op.id).indicatorState
+                            return msgState !== 'none' ? (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation()
@@ -378,7 +381,7 @@ export default function PcpOrders() {
                                 }}
                                 className="inline-flex items-center"
                               >
-                                <OrderMessageBell count={unread} size="sm" />
+                                <OrderMessageBell state={msgState} size="sm" />
                               </button>
                             ) : null
                           })()}

@@ -16,6 +16,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Send } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { format } from 'date-fns'
+import { getMessageSenderSector, SECTOR_LABELS } from '@/lib/message-sector'
 
 interface OrderMessagesPanelProps {
   orderId: string | null
@@ -46,7 +47,7 @@ export function OrderMessagesPanel({
       const res = await pb.collection('pcp_order_messages').getFullList<PcpOrderMessage>({
         filter: `order_id="${orderId}"`,
         sort: 'created',
-        expand: 'user_id',
+        expand: 'user_id.role',
       })
       setMessages(res)
     } catch {
@@ -82,6 +83,7 @@ export function OrderMessagesPanel({
         order_id: orderId,
         user_id: user.id,
         content: input.trim(),
+        read: false,
       })
       setInput('')
       await loadMessages()
@@ -111,23 +113,22 @@ export function OrderMessagesPanel({
               </p>
             ) : (
               messages.map((msg) => {
-                const isOwn = msg.user_id === user?.id
+                const sector = getMessageSenderSector(msg)
+                const isPcp = sector === 'pcp'
                 return (
                   <div
                     key={msg.id}
-                    className={cn('flex flex-col', isOwn ? 'items-end' : 'items-start')}
+                    className={cn('flex flex-col', isPcp ? 'items-end' : 'items-start')}
                   >
                     <div
                       className={cn(
                         'max-w-[80%] rounded-lg px-3 py-2 text-sm',
-                        isOwn ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground',
+                        isPcp ? 'bg-blue-600 text-white' : 'bg-purple-600 text-white',
                       )}
                     >
-                      {!isOwn && (
-                        <span className="block text-xs font-semibold mb-0.5 opacity-70">
-                          {msg.expand?.user_id?.name || 'Usuário'}
-                        </span>
-                      )}
+                      <span className="block text-xs font-semibold mb-0.5 opacity-90">
+                        {msg.expand?.user_id?.name || 'Usuário'} - {SECTOR_LABELS[sector]}
+                      </span>
                       {msg.content}
                     </div>
                     <span className="text-[10px] text-muted-foreground mt-0.5">

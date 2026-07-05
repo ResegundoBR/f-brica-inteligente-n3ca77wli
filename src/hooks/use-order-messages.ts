@@ -1,37 +1,26 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
+import { useAuth } from '@/hooks/use-auth'
 import { PcpOrderMessage } from '@/types'
-
-const STORAGE_KEY = 'pcp_order_messages_read'
-
-function getReadTimestamps(): Record<string, string> {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')
-  } catch {
-    return {}
-  }
-}
-
-function setReadTimestamp(orderId: string, timestamp: string) {
-  const data = getReadTimestamps()
-  data[orderId] = timestamp
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
-}
+import { getUserSector, getMessageSenderSector, type IndicatorState } from '@/lib/message-sector'
 
 export interface OrderMessageInfo {
   count: number
   unreadCount: number
+  indicatorState: IndicatorState
 }
 
 export function useOrderMessages() {
+  const { user } = useAuth()
+  const userSector = getUserSector(user)
   const [messages, setMessages] = useState<PcpOrderMessage[]>([])
-  const [readTimestamps, setReadTimestamps] = useState<Record<string, string>>({})
 
   const loadMessages = useCallback(async () => {
     try {
       const res = await pb.collection('pcp_order_messages').getFullList<PcpOrderMessage>({
         sort: 'created',
+        expand: 'user_id.role',
       })
       setMessages(res)
     } catch {
@@ -40,7 +29,6 @@ export function useOrderMessages() {
   }, [])
 
   useEffect(() => {
-    setReadTimestamps(getReadTimestamps())
     loadMessages()
   }, [loadMessages])
 
@@ -49,19 +37,19 @@ export function useOrderMessages() {
   const messagesRef = useRef(messages)
   messagesRef.current = messages
 
-  const markOrderAsRead = useCallback((orderId: string) => {
-    const now = new Date().toISOString()
-    setReadTimestamp(orderId, now)
-    setReadTimestamps(getReadTimestamps())
-
-    messagesRef.current
-      .filter((m) => m.order_id === orderId && !m.read)
-      .forEach((m) => {
+  const markOrderAsRead = useCallback(
+    (orderId: string) => {
+      const otherSectorMessages = messagesRef.current.filter(
+        (m) => m.order_id === orderId && !m.read && getMessageSenderSector(m) !== userSector,
+      )
+      otherSectorMessages.forEach((m) => {
         pb.collection('pcp_order_messages')
           .update(m.id, { read: true })
           .catch(() => {})
       })
-  }, [])
+    },
+    [userSector],
+  )
 
   const messagesByOrder = useMemo(() => {
     const map: Record<string, PcpOrderMessage[]> = {}
@@ -75,13 +63,31 @@ export function useOrderMessages() {
   const getOrderMessageInfo = useCallback(
     (orderId: string): OrderMessageInfo => {
       const orderMessages = messagesByOrder[orderId] || []
-      const readTime = readTimestamps[orderId]
-      const unreadCount = readTime
-        ? orderMessages.filter((m) => new Date(m.created) > new Date(readTime)).length
-        : orderMessages.length
-      return { count: orderMessages.length, unreadCount }
+      if (orderMessages.length === 0) {
+        return { count: 0, unreadCount: 0, indicatorState: 'none' }
+      }
+
+      const sorted = [...orderMessages].sort(
+        (a, b) => new Date(a.created).getTime() - new Date(b.created).getTime(),
+      )
+      const lastMessage = sorted[sorted.length - 1]
+      const lastSenderSector = getMessageSenderSector(lastMessage)
+
+      const unreadCount = orderMessages.filter(
+        (m) => !m.read && getMessageSenderSector(m) !== userSector,
+      ).length
+
+      if (lastSenderSector === userSector) {
+        return { count: orderMessages.length, unreadCount: 0, indicatorState: 'blue' }
+      }
+
+      if (!lastMessage.read) {
+        return { count: orderMessages.length, unreadCount, indicatorState: 'green' }
+      }
+
+      return { count: orderMessages.length, unreadCount: 0, indicatorState: 'gray' }
     },
-    [messagesByOrder, readTimestamps],
+    [messagesByOrder, userSector],
   )
 
   return { messagesByOrder, getOrderMessageInfo, markOrderAsRead }

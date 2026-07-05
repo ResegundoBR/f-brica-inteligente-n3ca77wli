@@ -1,49 +1,49 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { useAuth } from '@/hooks/use-auth'
+import type { Role } from '@/types'
+import { getUserSector, getMessageSenderSector } from '@/lib/message-sector'
 
 export interface UnreadMessage {
   id: string
   order_id: string
   user_id: string
   content: string
+  read?: boolean
   created: string
   updated: string
   expand?: {
-    user_id?: { id: string; name: string }
+    user_id?: { id: string; name: string; expand?: { role?: Role } }
     order_id?: { id: string; order_number: string; op_number?: string }
   }
 }
 
 export function useUnreadMessages() {
   const { user } = useAuth()
+  const userSector = getUserSector(user)
   const [unreadCount, setUnreadCount] = useState(0)
   const [recentMessages, setRecentMessages] = useState<UnreadMessage[]>([])
   const [hasNewMessage, setHasNewMessage] = useState(false)
-
-  const storageKey = `pcp_msg_last_read_${user?.id || 'anon'}`
+  const allUnreadRef = useRef<UnreadMessage[]>([])
 
   const loadMessages = useCallback(async () => {
     if (!user) return
     try {
       const allMessages = await pb.collection('pcp_order_messages').getFullList<UnreadMessage>({
         sort: '-created',
-        expand: 'user_id,order_id',
+        expand: 'user_id.role,order_id',
+        filter: 'read=false',
       })
 
-      const lastReadStr = localStorage.getItem(storageKey)
-      const lastRead = lastReadStr ? new Date(lastReadStr) : new Date(0)
-
-      const unread = allMessages.filter(
-        (m) => m.user_id !== user.id && new Date(m.created) > lastRead,
-      )
+      const unread = allMessages.filter((m) => getMessageSenderSector(m) !== userSector)
+      allUnreadRef.current = unread
       setUnreadCount(unread.length)
       setRecentMessages(unread.slice(0, 10))
     } catch {
       /* collection might not exist yet */
     }
-  }, [user, storageKey])
+  }, [user, userSector])
 
   useEffect(() => {
     loadMessages()
@@ -57,11 +57,15 @@ export function useUnreadMessages() {
   })
 
   const markAllRead = useCallback(() => {
-    localStorage.setItem(storageKey, new Date().toISOString())
+    allUnreadRef.current.forEach((m) => {
+      pb.collection('pcp_order_messages')
+        .update(m.id, { read: true })
+        .catch(() => {})
+    })
     setUnreadCount(0)
     setRecentMessages([])
     setHasNewMessage(false)
-  }, [storageKey])
+  }, [])
 
   return {
     unreadCount,

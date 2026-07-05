@@ -217,7 +217,10 @@ export default function PcpKanban() {
         if (clientTypeFilter !== 'all' && o.expand?.client_id?.type !== clientTypeFilter)
           return false
         if (!filterByDeadline(o.delivery_date, deadlineFilter)) return false
-        if (pendingOnly && getOrderMessageInfo(o.id).unreadCount === 0) return false
+        if (pendingOnly) {
+          const msgState = getOrderMessageInfo(o.id).indicatorState
+          if (msgState !== 'blue' && msgState !== 'green') return false
+        }
 
         if (!searchQuery) return true
         const q = searchQuery.toLowerCase()
@@ -422,7 +425,7 @@ export default function PcpKanban() {
                               opNumber: order.op_number || '',
                             })
                           }
-                          unreadMessages={getOrderMessageInfo(order.id).unreadCount}
+                          messageState={getOrderMessageInfo(order.id).indicatorState}
                         />
                       ))}
                       {statusOrders.length === 0 && (
@@ -489,7 +492,7 @@ export default function PcpKanban() {
                                   opNumber: order.op_number || '',
                                 })
                               }
-                              unreadMessages={getOrderMessageInfo(order.id).unreadCount}
+                              messageState={getOrderMessageInfo(order.id).indicatorState}
                             />
                           ))}
                         </div>
@@ -564,9 +567,9 @@ export default function PcpKanban() {
                                       : op.expand?.product_id?.name || 'S/Produto'}
                                 </div>
                                 {(() => {
-                                  const unread = getOrderMessageInfo(op.id).unreadCount
-                                  return unread > 0 ? (
-                                    <span
+                                  const msgState = getOrderMessageInfo(op.id).indicatorState
+                                  return msgState !== 'none' ? (
+                                    <button
                                       onClick={(e) => {
                                         e.stopPropagation()
                                         setMessageOrder({
@@ -575,11 +578,17 @@ export default function PcpKanban() {
                                           opNumber: op.op_number || '',
                                         })
                                       }}
-                                      className="text-[10px] animate-shake shrink-0 text-orange-500 font-bold cursor-pointer"
-                                      title={`${unread} mensagens não lidas`}
+                                      className="shrink-0 cursor-pointer inline-flex items-center"
+                                      title={
+                                        msgState === 'blue'
+                                          ? 'Aguardando resposta'
+                                          : msgState === 'green'
+                                            ? 'Nova mensagem não lida'
+                                            : 'Mensagens lidas'
+                                      }
                                     >
-                                      🔔{unread}
-                                    </span>
+                                      <OrderMessageBell state={msgState} size="sm" />
+                                    </button>
                                   ) : null
                                 })()}
                                 <Badge
@@ -1077,7 +1086,7 @@ function KanbanCard({
   onDragStart,
   onClick,
   onMessageClick,
-  unreadMessages = 0,
+  messageState = 'none',
 }: any) {
   const color = getOrderColor(order)
   const isEmergency = order.manual_priority === 1
@@ -1117,7 +1126,7 @@ function KanbanCard({
           <div className="flex items-start justify-between">
             <span className="font-semibold text-sm">{order.order_number}</span>
             <div className="flex items-center gap-1">
-              {unreadMessages > 0 && (
+              {messageState !== 'none' && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
@@ -1125,7 +1134,7 @@ function KanbanCard({
                   }}
                   className="inline-flex items-center"
                 >
-                  <OrderMessageBell count={unreadMessages} size="sm" />
+                  <OrderMessageBell state={messageState} size="sm" />
                 </button>
               )}
               {materialStatus !== 'none' && (
@@ -1187,7 +1196,7 @@ function CompactKanbanCard({
   onDragStart,
   onClick,
   onMessageClick,
-  unreadMessages = 0,
+  messageState = 'none',
 }: any) {
   const color = getOrderColor(order)
   const isEmergency = order.manual_priority === 1
@@ -1216,15 +1225,15 @@ function CompactKanbanCard({
       >
         <span className="block truncate w-full">
           {isEmergency && <span className="text-[10px]">🚨</span>}
-          {unreadMessages > 0 && (
+          {messageState !== 'none' && (
             <button
               onClick={(e) => {
                 e.stopPropagation()
                 onMessageClick?.()
               }}
-              className="text-[10px] animate-shake text-orange-500 font-bold inline"
+              className="inline-flex items-center"
             >
-              🔔{unreadMessages}
+              <OrderMessageBell state={messageState} size="sm" />
             </button>
           )}{' '}
           {materialStatus !== 'none' && (

@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import { useUnreadMessages } from '@/hooks/use-unread-messages'
 import { useOrderMessages } from '@/hooks/use-order-messages'
 import { OrderMessagesPanel } from '@/components/OrderMessagesPanel'
+import { getMessageSenderSector, SECTOR_LABELS } from '@/lib/message-sector'
 import { formatDistanceToNow } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
@@ -90,7 +91,8 @@ export function MessageNotificationBell({ className }: { className?: string }) {
                     <MessageCircle className="size-4 mt-0.5 shrink-0 text-blue-500" />
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-medium text-muted-foreground mb-1">
-                        {msg.expand?.user_id?.name || 'Usuário'} • OP{' '}
+                        {msg.expand?.user_id?.name || 'Usuário'} -{' '}
+                        {SECTOR_LABELS[getMessageSenderSector(msg)]} • OP{' '}
                         {msg.expand?.order_id?.order_number || msg.order_id}
                       </div>
                       <p className="text-sm line-clamp-2">{msg.content}</p>

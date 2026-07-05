@@ -3,12 +3,7 @@ import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { useAuth } from '@/hooks/use-auth'
 import { PcpOrderMessage } from '@/types'
-import {
-  isPcpSender,
-  isPcpManager,
-  type MessageChannel,
-  type IndicatorState,
-} from '@/lib/message-sector'
+import { type MessageChannel, type IndicatorState } from '@/lib/message-sector'
 
 export interface OrderMessageInfo {
   count: number
@@ -42,13 +37,11 @@ export function useOrderMessages(channel?: MessageChannel) {
   const messagesRef = useRef(messages)
   messagesRef.current = messages
 
-  const userIsPcp = isPcpManager(user)
-
   const markOrderAsRead = useCallback(
     (orderId: string) => {
-      const messagesToMark = userIsPcp
-        ? messagesRef.current.filter((m) => m.order_id === orderId && !m.read && !isPcpSender(m))
-        : messagesRef.current.filter((m) => m.order_id === orderId && !m.read && isPcpSender(m))
+      const messagesToMark = messagesRef.current.filter(
+        (m) => m.order_id === orderId && !m.read && m.user_id !== user?.id,
+      )
       if (messagesToMark.length > 0) {
         const markIds = new Set(messagesToMark.map((m) => m.id))
         setMessages((prev) => prev.map((m) => (markIds.has(m.id) ? { ...m, read: true } : m)))
@@ -59,7 +52,7 @@ export function useOrderMessages(channel?: MessageChannel) {
           .catch(() => {})
       })
     },
-    [userIsPcp],
+    [user?.id],
   )
 
   const messagesByOrder = useMemo(() => {
@@ -83,19 +76,21 @@ export function useOrderMessages(channel?: MessageChannel) {
         return { count: orderMessages.length, unreadCount: 0, indicatorState: 'gray' }
       }
 
-      const sorted = [...otherMessages].sort(
+      const unreadFromOthers = otherMessages.filter((m) => !m.read)
+      if (unreadFromOthers.length > 0) {
+        return {
+          count: orderMessages.length,
+          unreadCount: unreadFromOthers.length,
+          indicatorState: 'green',
+        }
+      }
+
+      const sorted = [...orderMessages].sort(
         (a, b) => new Date(a.created).getTime() - new Date(b.created).getTime(),
       )
       const lastMessage = sorted[sorted.length - 1]
-      const lastSenderIsPcp = isPcpSender(lastMessage)
 
-      const unreadFromPcp = otherMessages.filter((m) => !m.read && isPcpSender(m)).length
-
-      if (unreadFromPcp > 0) {
-        return { count: orderMessages.length, unreadCount: unreadFromPcp, indicatorState: 'green' }
-      }
-
-      if (!lastSenderIsPcp && !lastMessage.read) {
+      if (lastMessage.user_id === user?.id) {
         return { count: orderMessages.length, unreadCount: 0, indicatorState: 'blue' }
       }
 

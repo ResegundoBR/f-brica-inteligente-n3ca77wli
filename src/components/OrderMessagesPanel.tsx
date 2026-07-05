@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import pb from '@/lib/pocketbase/client'
 import { useAuth } from '@/hooks/use-auth'
 import { useRealtime } from '@/hooks/use-realtime'
@@ -49,6 +49,11 @@ export function OrderMessagesPanel({
   const scrollRef = useRef<HTMLDivElement>(null)
   const { user } = useAuth()
   const showChannelToggle = sector === 'all'
+
+  const displayMessages = useMemo(() => {
+    if (!showChannelToggle) return messages
+    return messages.filter((m) => m.sector === sendChannel)
+  }, [messages, showChannelToggle, sendChannel])
 
   const loadMessages = useCallback(async () => {
     if (!orderId) return
@@ -127,12 +132,12 @@ export function OrderMessagesPanel({
         </SheetHeader>
         <ScrollArea className="flex-1 min-h-0" ref={scrollRef}>
           <div className="p-4 space-y-3">
-            {messages.length === 0 ? (
+            {displayMessages.length === 0 ? (
               <p className="text-center text-sm text-muted-foreground py-8">
                 Nenhuma mensagem ainda. Inicie a conversa abaixo.
               </p>
             ) : (
-              messages.map((msg) => {
+              displayMessages.map((msg) => {
                 const isOwnMessage = msg.user_id === user?.id
                 const senderPcp = isPcpSender(msg)
                 return (

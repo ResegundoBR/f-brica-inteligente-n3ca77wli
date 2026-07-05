@@ -8,6 +8,7 @@ import {
   type IndicatorState,
   isPcpSender,
   isPcpManager,
+  getUserChannel,
 } from '@/lib/message-sector'
 
 export interface OrderMessageInfo {
@@ -20,18 +21,22 @@ export function useOrderMessages(channel?: MessageChannel) {
   const { user } = useAuth()
   const [messages, setMessages] = useState<PcpOrderMessage[]>([])
 
+  const isPcp = isPcpManager(user)
+  const userChannel = getUserChannel(user)
+  const effectiveChannel = channel ?? (isPcp ? undefined : (userChannel ?? undefined))
+
   const loadMessages = useCallback(async () => {
     try {
       const res = await pb.collection('pcp_order_messages').getFullList<PcpOrderMessage>({
         sort: 'created',
         expand: 'user_id.role',
       })
-      const filtered = channel ? res.filter((m) => m.sector === channel) : res
+      const filtered = effectiveChannel ? res.filter((m) => m.sector === effectiveChannel) : res
       setMessages(filtered)
     } catch {
       /* intentionally ignored */
     }
-  }, [channel])
+  }, [effectiveChannel])
 
   useEffect(() => {
     loadMessages()
@@ -102,6 +107,13 @@ export function useOrderMessages(channel?: MessageChannel) {
       const lastFromMe = userIsPcp ? isPcpSender(lastMessage) : !isPcpSender(lastMessage)
 
       if (lastFromMe) {
+        if (lastMessage.read) {
+          return {
+            count: myMessages.length,
+            unreadCount: 0,
+            indicatorState: 'gray',
+          }
+        }
         return {
           count: myMessages.length,
           unreadCount: 0,

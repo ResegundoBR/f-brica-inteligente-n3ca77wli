@@ -3,7 +3,12 @@ import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { useAuth } from '@/hooks/use-auth'
 import type { Role } from '@/types'
-import { getUserSector, getMessageSenderSector } from '@/lib/message-sector'
+import {
+  isPcpSender,
+  isPcpManager,
+  getUserChannel,
+  type MessageChannel,
+} from '@/lib/message-sector'
 
 export interface UnreadMessage {
   id: string
@@ -11,6 +16,7 @@ export interface UnreadMessage {
   user_id: string
   content: string
   read?: boolean
+  sector?: MessageChannel
   created: string
   updated: string
   expand?: {
@@ -21,7 +27,8 @@ export interface UnreadMessage {
 
 export function useUnreadMessages() {
   const { user } = useAuth()
-  const userSector = getUserSector(user)
+  const isPcp = isPcpManager(user)
+  const userChannel = getUserChannel(user)
   const [unreadCount, setUnreadCount] = useState(0)
   const [recentMessages, setRecentMessages] = useState<UnreadMessage[]>([])
   const [hasNewMessage, setHasNewMessage] = useState(false)
@@ -36,14 +43,17 @@ export function useUnreadMessages() {
         filter: 'read=false',
       })
 
-      const unread = allMessages.filter((m) => getMessageSenderSector(m) !== userSector)
+      const unread = isPcp
+        ? allMessages.filter((m) => !isPcpSender(m))
+        : allMessages.filter((m) => m.sector === userChannel && isPcpSender(m))
+
       allUnreadRef.current = unread
       setUnreadCount(unread.length)
       setRecentMessages(unread.slice(0, 10))
     } catch {
       /* collection might not exist yet */
     }
-  }, [user, userSector])
+  }, [user, isPcp, userChannel])
 
   useEffect(() => {
     loadMessages()

@@ -3,7 +3,12 @@ import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { useAuth } from '@/hooks/use-auth'
 import { PcpOrderMessage } from '@/types'
-import { getUserSector, getMessageSenderSector, type IndicatorState } from '@/lib/message-sector'
+import {
+  isPcpSender,
+  isPcpManager,
+  type MessageChannel,
+  type IndicatorState,
+} from '@/lib/message-sector'
 
 export interface OrderMessageInfo {
   count: number
@@ -11,9 +16,8 @@ export interface OrderMessageInfo {
   indicatorState: IndicatorState
 }
 
-export function useOrderMessages() {
+export function useOrderMessages(channel?: MessageChannel) {
   const { user } = useAuth()
-  const userSector = getUserSector(user)
   const [messages, setMessages] = useState<PcpOrderMessage[]>([])
 
   const loadMessages = useCallback(async () => {
@@ -22,11 +26,12 @@ export function useOrderMessages() {
         sort: 'created',
         expand: 'user_id.role',
       })
-      setMessages(res)
+      const filtered = channel ? res.filter((m) => m.sector === channel) : res
+      setMessages(filtered)
     } catch {
       /* intentionally ignored */
     }
-  }, [])
+  }, [channel])
 
   useEffect(() => {
     loadMessages()
@@ -37,18 +42,20 @@ export function useOrderMessages() {
   const messagesRef = useRef(messages)
   messagesRef.current = messages
 
+  const userIsPcp = isPcpManager(user)
+
   const markOrderAsRead = useCallback(
     (orderId: string) => {
-      const otherSectorMessages = messagesRef.current.filter(
-        (m) => m.order_id === orderId && !m.read && getMessageSenderSector(m) !== userSector,
-      )
-      otherSectorMessages.forEach((m) => {
+      const messagesToMark = userIsPcp
+        ? messagesRef.current.filter((m) => m.order_id === orderId && !m.read && !isPcpSender(m))
+        : messagesRef.current.filter((m) => m.order_id === orderId && !m.read && isPcpSender(m))
+      messagesToMark.forEach((m) => {
         pb.collection('pcp_order_messages')
           .update(m.id, { read: true })
           .catch(() => {})
       })
     },
-    [userSector],
+    [userIsPcp],
   )
 
   const messagesByOrder = useMemo(() => {
@@ -71,23 +78,21 @@ export function useOrderMessages() {
         (a, b) => new Date(a.created).getTime() - new Date(b.created).getTime(),
       )
       const lastMessage = sorted[sorted.length - 1]
-      const lastSenderSector = getMessageSenderSector(lastMessage)
+      const lastSenderIsPcp = isPcpSender(lastMessage)
 
-      const unreadCount = orderMessages.filter(
-        (m) => !m.read && getMessageSenderSector(m) !== userSector,
-      ).length
+      const unreadFromPcp = orderMessages.filter((m) => !m.read && isPcpSender(m)).length
 
-      if (lastSenderSector === userSector) {
-        return { count: orderMessages.length, unreadCount: 0, indicatorState: 'blue' }
+      if (unreadFromPcp > 0) {
+        return { count: orderMessages.length, unreadCount: unreadFromPcp, indicatorState: 'green' }
       }
 
-      if (!lastMessage.read) {
-        return { count: orderMessages.length, unreadCount, indicatorState: 'green' }
+      if (!lastSenderIsPcp && !lastMessage.read) {
+        return { count: orderMessages.length, unreadCount: 0, indicatorState: 'blue' }
       }
 
       return { count: orderMessages.length, unreadCount: 0, indicatorState: 'gray' }
     },
-    [messagesByOrder, userSector],
+    [messagesByOrder],
   )
 
   return { messagesByOrder, getOrderMessageInfo, markOrderAsRead }

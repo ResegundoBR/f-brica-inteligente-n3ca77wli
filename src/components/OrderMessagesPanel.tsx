@@ -16,7 +16,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Send } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { format } from 'date-fns'
-import { getMessageSenderSector, getUserSector, SECTOR_LABELS } from '@/lib/message-sector'
+import { isPcpSender, type MessageChannel } from '@/lib/message-sector'
 
 interface OrderMessagesPanelProps {
   orderId: string | null
@@ -25,6 +25,7 @@ interface OrderMessagesPanelProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onMessagesRead?: (orderId: string) => void
+  sector?: MessageChannel | 'all'
 }
 
 export function OrderMessagesPanel({
@@ -34,19 +35,23 @@ export function OrderMessagesPanel({
   open,
   onOpenChange,
   onMessagesRead,
+  sector = 'all',
 }: OrderMessagesPanelProps) {
   const [messages, setMessages] = useState<PcpOrderMessage[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [sendChannel, setSendChannel] = useState<MessageChannel>('Comercial')
   const scrollRef = useRef<HTMLDivElement>(null)
   const { user } = useAuth()
-  const userSector = getUserSector(user)
+  const showChannelToggle = sector === 'all'
 
   const loadMessages = useCallback(async () => {
     if (!orderId) return
     try {
+      const filter =
+        sector !== 'all' ? `order_id="${orderId}" && sector="${sector}"` : `order_id="${orderId}"`
       const res = await pb.collection('pcp_order_messages').getFullList<PcpOrderMessage>({
-        filter: `order_id="${orderId}"`,
+        filter,
         sort: 'created',
         expand: 'user_id.role',
       })
@@ -54,7 +59,7 @@ export function OrderMessagesPanel({
     } catch {
       /* intentionally ignored */
     }
-  }, [orderId])
+  }, [orderId, sector])
 
   useEffect(() => {
     if (open && orderId) {
@@ -80,11 +85,13 @@ export function OrderMessagesPanel({
     if (!input.trim() || !orderId || !user) return
     setSending(true)
     try {
+      const messageSector = sector === 'all' ? sendChannel : sector
       await pb.collection('pcp_order_messages').create({
         order_id: orderId,
         user_id: user.id,
         content: input.trim(),
         read: false,
+        sector: messageSector,
       })
       setInput('')
       await loadMessages()
@@ -114,21 +121,23 @@ export function OrderMessagesPanel({
               </p>
             ) : (
               messages.map((msg) => {
-                const sector = getMessageSenderSector(msg)
-                const isOwnSector = sector === userSector
+                const isOwnMessage = msg.user_id === user?.id
+                const senderPcp = isPcpSender(msg)
                 return (
                   <div
                     key={msg.id}
-                    className={cn('flex flex-col', isOwnSector ? 'items-end' : 'items-start')}
+                    className={cn('flex flex-col', isOwnMessage ? 'items-end' : 'items-start')}
                   >
                     <div
                       className={cn(
                         'max-w-[80%] rounded-lg px-3 py-2 text-sm',
-                        isOwnSector ? 'bg-blue-600 text-white' : 'bg-purple-600 text-white',
+                        isOwnMessage ? 'bg-blue-600 text-white' : 'bg-purple-600 text-white',
                       )}
                     >
                       <span className="block text-xs font-semibold mb-0.5 opacity-90">
-                        {msg.expand?.user_id?.name || 'Usuário'} - {SECTOR_LABELS[sector]}
+                        {msg.expand?.user_id?.name || 'Usuário'}
+                        {senderPcp ? ' - PCP' : ''}
+                        {showChannelToggle && msg.sector ? ` - ${msg.sector}` : ''}
                       </span>
                       {msg.content}
                     </div>
@@ -141,6 +150,21 @@ export function OrderMessagesPanel({
             )}
           </div>
         </ScrollArea>
+        {showChannelToggle && (
+          <div className="px-3 pt-2 flex gap-2 shrink-0">
+            {(['Comercial', 'Operador'] as MessageChannel[]).map((ch) => (
+              <Button
+                key={ch}
+                variant={sendChannel === ch ? 'default' : 'outline'}
+                size="sm"
+                className="text-xs h-7"
+                onClick={() => setSendChannel(ch)}
+              >
+                {ch}
+              </Button>
+            ))}
+          </div>
+        )}
         <div className="p-3 border-t flex gap-2 shrink-0">
           <Input
             value={input}

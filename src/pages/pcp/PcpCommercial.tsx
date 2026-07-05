@@ -64,7 +64,7 @@ export default function PcpCommercial() {
     orderNumber: string
     opNumber: string
   } | null>(null)
-  const { getOrderMessageInfo, markOrderAsRead } = useOrderMessages()
+  const { getOrderMessageInfo, markOrderAsRead } = useOrderMessages('Comercial')
 
   const loadData = async () => {
     try {
@@ -395,6 +395,7 @@ export default function PcpCommercial() {
         open={!!messageOrder}
         onOpenChange={(open) => !open && setMessageOrder(null)}
         onMessagesRead={markOrderAsRead}
+        sector="Comercial"
       />
     </div>
   )

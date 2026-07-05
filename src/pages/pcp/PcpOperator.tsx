@@ -804,7 +804,7 @@ export default function PcpOperator() {
   } | null>(null)
   const { user } = useAuth()
   const { toast } = useToast()
-  const { getOrderMessageInfo, markOrderAsRead } = useOrderMessages()
+  const { getOrderMessageInfo, markOrderAsRead } = useOrderMessages('Operador')
 
   const [openRequest, setOpenRequest] = useState(false)
   const [reqDesc, setReqDesc] = useState('')
@@ -1341,6 +1341,7 @@ export default function PcpOperator() {
         open={!!messageOrder}
         onOpenChange={(open) => !open && setMessageOrder(null)}
         onMessagesRead={markOrderAsRead}
+        sector="Operador"
       />
     </div>
   )

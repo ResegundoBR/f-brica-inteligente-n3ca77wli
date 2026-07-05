@@ -10,6 +10,11 @@ export interface Role {
   access_pcp?: boolean
   access_operator?: boolean
   access_commercial?: boolean
+  access_suprimentos?: boolean
+  access_ordens_producao?: boolean
+  access_visao_comercial?: boolean
+  access_painel_controle?: boolean
+  access_produto_processos?: boolean
 }
 
 export interface ProductStatusModel {
@@ -326,6 +331,7 @@ export interface PcpOrderMessage {
   user_id: string
   content: string
   read?: boolean
+  sector?: 'Comercial' | 'Operador'
   created: string
   updated: string
   expand?: {

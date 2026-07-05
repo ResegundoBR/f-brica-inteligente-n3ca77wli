@@ -5,15 +5,19 @@ import { Bell, MessageCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUnreadMessages } from '@/hooks/use-unread-messages'
 import { useOrderMessages } from '@/hooks/use-order-messages'
+import { useAuth } from '@/hooks/use-auth'
 import { OrderMessagesPanel } from '@/components/OrderMessagesPanel'
-import { getMessageSenderSector, SECTOR_LABELS } from '@/lib/message-sector'
+import { isPcpSender, isPcpManager, getUserChannel } from '@/lib/message-sector'
 import { formatDistanceToNow } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
 export function MessageNotificationBell({ className }: { className?: string }) {
+  const { user } = useAuth()
+  const userChannel = getUserChannel(user)
+  const isPcp = isPcpManager(user)
   const { unreadCount, recentMessages, hasNewMessage, setHasNewMessage, markAllRead } =
     useUnreadMessages()
-  const { markOrderAsRead } = useOrderMessages()
+  const { markOrderAsRead } = useOrderMessages(isPcp ? undefined : (userChannel ?? undefined))
   const [shake, setShake] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<{
     id: string
@@ -92,7 +96,7 @@ export function MessageNotificationBell({ className }: { className?: string }) {
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-medium text-muted-foreground mb-1">
                         {msg.expand?.user_id?.name || 'Usuário'} -{' '}
-                        {SECTOR_LABELS[getMessageSenderSector(msg)]} • OP{' '}
+                        {isPcpSender(msg) ? 'PCP' : msg.sector || 'Geral'} • OP{' '}
                         {msg.expand?.order_id?.order_number || msg.order_id}
                       </div>
                       <p className="text-sm line-clamp-2">{msg.content}</p>
@@ -118,6 +122,7 @@ export function MessageNotificationBell({ className }: { className?: string }) {
         open={!!selectedOrder}
         onOpenChange={(open) => !open && setSelectedOrder(null)}
         onMessagesRead={markOrderAsRead}
+        sector={isPcp ? 'all' : userChannel || 'all'}
       />
     </>
   )

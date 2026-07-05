@@ -127,16 +127,40 @@ function getNextStageForOp(current: string, op: PcpOrder, processes: ProductProc
   return null
 }
 
-function OperatorMessageBubble({ state, onClick }: { state: IndicatorState; onClick: () => void }) {
+function OperatorMessageBubble({
+  state,
+  count,
+  onClick,
+}: {
+  state: IndicatorState
+  count: number
+  onClick: () => void
+}) {
   const colors: Record<string, string> = {
     none: 'text-gray-400 dark:text-gray-500',
     blue: 'text-blue-500',
     green: 'text-green-500 animate-pulse',
     gray: 'text-gray-400 dark:text-gray-500',
   }
+  const badgeBg: Record<string, string> = {
+    none: '',
+    blue: 'bg-blue-500',
+    green: 'bg-green-500',
+    gray: 'bg-gray-400 dark:bg-gray-500',
+  }
   return (
-    <button onClick={onClick} className="inline-flex items-center cursor-pointer">
+    <button onClick={onClick} className="inline-flex items-center cursor-pointer relative">
       <MessageCircle className={cn('size-5', colors[state])} />
+      {state !== 'none' && count > 0 && (
+        <span
+          className={cn(
+            'absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] rounded-full text-white text-[9px] font-bold flex items-center justify-center px-0.5',
+            badgeBg[state],
+          )}
+        >
+          {count > 99 ? '99+' : count}
+        </span>
+      )}
     </button>
   )
 }
@@ -283,6 +307,7 @@ function OperatorCard({
   shortages,
   onForceStart,
   messageState = 'none',
+  messageCount = 0,
   onMessageClick,
 }: {
   op: PcpOrder
@@ -294,6 +319,7 @@ function OperatorCard({
   shortages?: MaterialShortage[]
   onForceStart: () => void
   messageState?: IndicatorState
+  messageCount?: number
   onMessageClick?: () => void
 }) {
   const isLocked = op.bottleneck_reason && op.bottleneck_reason !== 'Nenhum'
@@ -399,7 +425,11 @@ function OperatorCard({
               >
                 {op.stage}
               </Badge>
-              <OperatorMessageBubble state={messageState} onClick={() => onMessageClick?.()} />
+              <OperatorMessageBubble
+                state={messageState}
+                count={messageCount}
+                onClick={() => onMessageClick?.()}
+              />
             </div>
             {isEmergency ? (
               <Badge
@@ -1277,6 +1307,7 @@ export default function PcpOperator() {
                   shortages={shortagesByOrder[op.id] || []}
                   onForceStart={() => handleForceStart(op)}
                   messageState={getOrderMessageInfo(op.id).indicatorState}
+                  messageCount={getOrderMessageInfo(op.id).count}
                   onMessageClick={() =>
                     setMessageOrder({
                       id: op.id,
@@ -1321,6 +1352,7 @@ export default function PcpOperator() {
                   shortages={shortagesByOrder[op.id] || []}
                   onForceStart={() => handleForceStart(op)}
                   messageState={getOrderMessageInfo(op.id).indicatorState}
+                  messageCount={getOrderMessageInfo(op.id).count}
                   onMessageClick={() =>
                     setMessageOrder({
                       id: op.id,

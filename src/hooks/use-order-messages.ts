@@ -3,7 +3,12 @@ import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { useAuth } from '@/hooks/use-auth'
 import { PcpOrderMessage } from '@/types'
-import { type MessageChannel, type IndicatorState } from '@/lib/message-sector'
+import {
+  type MessageChannel,
+  type IndicatorState,
+  isPcpSender,
+  isPcpManager,
+} from '@/lib/message-sector'
 
 export interface OrderMessageInfo {
   count: number
@@ -39,9 +44,12 @@ export function useOrderMessages(channel?: MessageChannel) {
 
   const markOrderAsRead = useCallback(
     (orderId: string) => {
-      const messagesToMark = messagesRef.current.filter(
-        (m) => m.order_id === orderId && !m.read && m.user_id !== user?.id,
-      )
+      const userIsPcp = isPcpManager(user)
+      const messagesToMark = messagesRef.current.filter((m) => {
+        if (m.order_id !== orderId || m.read) return false
+        const senderIsPcp = isPcpSender(m)
+        return userIsPcp ? !senderIsPcp : senderIsPcp
+      })
       if (messagesToMark.length > 0) {
         const markIds = new Set(messagesToMark.map((m) => m.id))
         setMessages((prev) => prev.map((m) => (markIds.has(m.id) ? { ...m, read: true } : m)))
@@ -52,7 +60,7 @@ export function useOrderMessages(channel?: MessageChannel) {
           .catch(() => {})
       })
     },
-    [user?.id],
+    [user],
   )
 
   const messagesByOrder = useMemo(() => {
@@ -71,15 +79,17 @@ export function useOrderMessages(channel?: MessageChannel) {
         return { count: 0, unreadCount: 0, indicatorState: 'none' }
       }
 
-      const otherMessages = orderMessages.filter((m) => m.user_id !== user?.id)
-      if (otherMessages.length === 0) {
-        return { count: orderMessages.length, unreadCount: 0, indicatorState: 'gray' }
-      }
+      const userIsPcp = isPcpManager(user)
+
+      const myMessages = orderMessages.filter((m) => (userIsPcp ? isPcpSender(m) : !isPcpSender(m)))
+      const otherMessages = orderMessages.filter((m) =>
+        userIsPcp ? !isPcpSender(m) : isPcpSender(m),
+      )
 
       const unreadFromOthers = otherMessages.filter((m) => !m.read)
       if (unreadFromOthers.length > 0) {
         return {
-          count: orderMessages.length,
+          count: unreadFromOthers.length,
           unreadCount: unreadFromOthers.length,
           indicatorState: 'green',
         }
@@ -89,14 +99,23 @@ export function useOrderMessages(channel?: MessageChannel) {
         (a, b) => new Date(a.created).getTime() - new Date(b.created).getTime(),
       )
       const lastMessage = sorted[sorted.length - 1]
+      const lastFromMe = userIsPcp ? isPcpSender(lastMessage) : !isPcpSender(lastMessage)
 
-      if (lastMessage.user_id === user?.id) {
-        return { count: orderMessages.length, unreadCount: 0, indicatorState: 'blue' }
+      if (lastFromMe) {
+        return {
+          count: myMessages.length,
+          unreadCount: 0,
+          indicatorState: 'blue',
+        }
       }
 
-      return { count: orderMessages.length, unreadCount: 0, indicatorState: 'gray' }
+      return {
+        count: orderMessages.length,
+        unreadCount: 0,
+        indicatorState: 'gray',
+      }
     },
-    [messagesByOrder, user?.id],
+    [messagesByOrder, user],
   )
 
   return { messagesByOrder, getOrderMessageInfo, markOrderAsRead }

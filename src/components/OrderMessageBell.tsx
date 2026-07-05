@@ -13,13 +13,13 @@ export function OrderMessageBell({ state, className, size = 'md' }: OrderMessage
 
   const iconSize = size === 'sm' ? 'size-3.5' : 'size-4'
 
-  if (state === 'blue') {
+  if (state === 'gray') {
     return <BellOff className={cn(iconSize, 'text-gray-400 dark:text-gray-500', className)} />
   }
 
   const stateClasses: Record<string, string> = {
     green: 'text-green-500 animate-pulse',
-    gray: 'text-gray-400 dark:text-gray-500',
+    blue: 'text-blue-500',
   }
 
   return <Bell className={cn(iconSize, stateClasses[state], className)} />

@@ -32,7 +32,10 @@ import { cn } from '@/lib/utils'
 import { shouldHighlightObservation, getStageDelay, formatOpIdentifier } from '@/lib/pcp-utils'
 import { getMaterialAvailabilityStatus } from '@/lib/material-status'
 import { isBefore, startOfDay, parseISO } from 'date-fns'
-import { Package, ChevronDown, ChevronUp, Circle } from 'lucide-react'
+import { Package, ChevronDown, ChevronUp, Circle, MessageCircle } from 'lucide-react'
+import { useOrderMessages } from '@/hooks/use-order-messages'
+import { OrderMessagesPanel } from '@/components/OrderMessagesPanel'
+import type { IndicatorState } from '@/lib/message-sector'
 
 const SECTORS = {
   Suprimentos: [
@@ -122,6 +125,20 @@ function getNextStageForOp(current: string, op: PcpOrder, processes: ProductProc
     }
   }
   return null
+}
+
+function OperatorMessageBubble({ state, onClick }: { state: IndicatorState; onClick: () => void }) {
+  if (state === 'none') return null
+  const colors: Record<string, string> = {
+    blue: 'text-blue-500',
+    green: 'text-green-500 animate-pulse',
+    gray: 'text-gray-400 dark:text-gray-500',
+  }
+  return (
+    <button onClick={onClick} className="inline-flex items-center cursor-pointer">
+      <MessageCircle className={cn('size-5', colors[state])} />
+    </button>
+  )
 }
 
 function FinishDialog({
@@ -265,6 +282,8 @@ function OperatorCard({
   onBottleneck,
   shortages,
   onForceStart,
+  messageState = 'none',
+  onMessageClick,
 }: {
   op: PcpOrder
   process?: ProductProcessModel
@@ -274,6 +293,8 @@ function OperatorCard({
   onBottleneck: (reason: string, details: string, missingItems?: any[]) => void
   shortages?: MaterialShortage[]
   onForceStart: () => void
+  messageState?: IndicatorState
+  onMessageClick?: () => void
 }) {
   const isLocked = op.bottleneck_reason && op.bottleneck_reason !== 'Nenhum'
   const isDelayed = op.delivery_date
@@ -371,12 +392,15 @@ function OperatorCard({
             </p>
           </div>
           <div className="flex flex-col items-end gap-1">
-            <Badge
-              className="text-lg px-3 py-1 bg-slate-100 text-slate-800 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200"
-              variant="secondary"
-            >
-              {op.stage}
-            </Badge>
+            <div className="flex items-center gap-2">
+              <Badge
+                className="text-lg px-3 py-1 bg-slate-100 text-slate-800 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200"
+                variant="secondary"
+              >
+                {op.stage}
+              </Badge>
+              <OperatorMessageBubble state={messageState} onClick={() => onMessageClick?.()} />
+            </div>
             {isEmergency ? (
               <Badge
                 variant="destructive"
@@ -773,8 +797,14 @@ export default function PcpOperator() {
   const [processes, setProcesses] = useState<ProductProcessModel[]>([])
   const [shortagesByOrder, setShortagesByOrder] = useState<Record<string, MaterialShortage[]>>({})
   const [selectedSector, setSelectedSector] = useState<SectorName>('Suprimentos')
+  const [messageOrder, setMessageOrder] = useState<{
+    id: string
+    orderNumber: string
+    opNumber: string
+  } | null>(null)
   const { user } = useAuth()
   const { toast } = useToast()
+  const { getOrderMessageInfo, markOrderAsRead } = useOrderMessages()
 
   const [openRequest, setOpenRequest] = useState(false)
   const [reqDesc, setReqDesc] = useState('')
@@ -1246,6 +1276,14 @@ export default function PcpOperator() {
                   }
                   shortages={shortagesByOrder[op.id] || []}
                   onForceStart={() => handleForceStart(op)}
+                  messageState={getOrderMessageInfo(op.id).indicatorState}
+                  onMessageClick={() =>
+                    setMessageOrder({
+                      id: op.id,
+                      orderNumber: op.order_number,
+                      opNumber: op.op_number || '',
+                    })
+                  }
                 />
               ))
             )}
@@ -1282,12 +1320,28 @@ export default function PcpOperator() {
                   }
                   shortages={shortagesByOrder[op.id] || []}
                   onForceStart={() => handleForceStart(op)}
+                  messageState={getOrderMessageInfo(op.id).indicatorState}
+                  onMessageClick={() =>
+                    setMessageOrder({
+                      id: op.id,
+                      orderNumber: op.order_number,
+                      opNumber: op.op_number || '',
+                    })
+                  }
                 />
               ))
             )}
           </div>
         </div>
       </div>
+      <OrderMessagesPanel
+        orderId={messageOrder?.id || null}
+        orderNumber={messageOrder?.orderNumber || ''}
+        opNumber={messageOrder?.opNumber || ''}
+        open={!!messageOrder}
+        onOpenChange={(open) => !open && setMessageOrder(null)}
+        onMessagesRead={markOrderAsRead}
+      />
     </div>
   )
 }

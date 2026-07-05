@@ -16,7 +16,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Send } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { format } from 'date-fns'
-import { getMessageSenderSector, SECTOR_LABELS } from '@/lib/message-sector'
+import { getMessageSenderSector, getUserSector, SECTOR_LABELS } from '@/lib/message-sector'
 
 interface OrderMessagesPanelProps {
   orderId: string | null
@@ -40,6 +40,7 @@ export function OrderMessagesPanel({
   const [sending, setSending] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const { user } = useAuth()
+  const userSector = getUserSector(user)
 
   const loadMessages = useCallback(async () => {
     if (!orderId) return
@@ -114,16 +115,16 @@ export function OrderMessagesPanel({
             ) : (
               messages.map((msg) => {
                 const sector = getMessageSenderSector(msg)
-                const isPcp = sector === 'pcp'
+                const isOwnSector = sector === userSector
                 return (
                   <div
                     key={msg.id}
-                    className={cn('flex flex-col', isPcp ? 'items-end' : 'items-start')}
+                    className={cn('flex flex-col', isOwnSector ? 'items-end' : 'items-start')}
                   >
                     <div
                       className={cn(
                         'max-w-[80%] rounded-lg px-3 py-2 text-sm',
-                        isPcp ? 'bg-blue-600 text-white' : 'bg-purple-600 text-white',
+                        isOwnSector ? 'bg-blue-600 text-white' : 'bg-purple-600 text-white',
                       )}
                     >
                       <span className="block text-xs font-semibold mb-0.5 opacity-90">

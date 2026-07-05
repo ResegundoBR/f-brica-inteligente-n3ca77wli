@@ -219,7 +219,7 @@ export default function PcpKanban() {
         if (!filterByDeadline(o.delivery_date, deadlineFilter)) return false
         if (pendingOnly) {
           const msgState = getOrderMessageInfo(o.id).indicatorState
-          if (msgState !== 'blue' && msgState !== 'green') return false
+          if (msgState !== 'green') return false
         }
 
         if (!searchQuery) return true

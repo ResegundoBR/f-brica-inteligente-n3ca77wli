@@ -1,4 +1,4 @@
-import { Bell } from 'lucide-react'
+import { Bell, BellOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { IndicatorState } from '@/lib/message-sector'
 
@@ -13,8 +13,11 @@ export function OrderMessageBell({ state, className, size = 'md' }: OrderMessage
 
   const iconSize = size === 'sm' ? 'size-3.5' : 'size-4'
 
+  if (state === 'blue') {
+    return <BellOff className={cn(iconSize, 'text-gray-400 dark:text-gray-500', className)} />
+  }
+
   const stateClasses: Record<string, string> = {
-    blue: 'text-blue-500',
     green: 'text-green-500 animate-pulse',
     gray: 'text-gray-400 dark:text-gray-500',
   }

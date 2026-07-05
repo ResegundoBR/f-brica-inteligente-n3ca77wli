@@ -157,7 +157,7 @@ export default function PcpOrders() {
       if (!filterByDeadline(op.delivery_date, deadlineFilter)) return false
       if (pendingOnly) {
         const msgState = getOrderMessageInfo(op.id).indicatorState
-        if (msgState !== 'blue' && msgState !== 'green') return false
+        if (msgState !== 'green' && msgState !== 'gray') return false
       }
       return true
     })

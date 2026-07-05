@@ -15,7 +15,7 @@ import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { format, parseISO, isAfter, startOfDay } from 'date-fns'
-import { Search, MessageCircle } from 'lucide-react'
+import { Search, MessageCircle, Bell } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PcpFilters } from './components/PcpFilters'
 import { filterByDeadline, isOrderOverdue } from '@/lib/pcp-utils'
@@ -58,6 +58,7 @@ export default function PcpCommercial() {
   const [clientFilter, setClientFilter] = useState('all')
   const [clientTypeFilter, setClientTypeFilter] = useState('all')
   const [deadlineFilter, setDeadlineFilter] = useState('all')
+  const [pendingOnly, setPendingOnly] = useState(false)
   const [messageOrder, setMessageOrder] = useState<{
     id: string
     orderNumber: string
@@ -126,6 +127,10 @@ export default function PcpCommercial() {
       if (clientTypeFilter !== 'all' && op.expand?.client_id?.type !== clientTypeFilter)
         return false
       if (!filterByDeadline(op.delivery_date, deadlineFilter)) return false
+      if (pendingOnly) {
+        const msgState = getOrderMessageInfo(op.id).indicatorState
+        if (msgState !== 'blue' && msgState !== 'green') return false
+      }
       return true
     })
 
@@ -152,7 +157,15 @@ export default function PcpCommercial() {
       map.get(normalized)!.push(op)
     })
     return groups
-  }, [filteredOrders, opTypeFilter, clientFilter, clientTypeFilter, deadlineFilter])
+  }, [
+    filteredOrders,
+    opTypeFilter,
+    clientFilter,
+    clientTypeFilter,
+    deadlineFilter,
+    pendingOnly,
+    getOrderMessageInfo,
+  ])
 
   const getStatusInfo = (op: PcpOrder) => {
     if (op.status === 'Parado' || (op.bottleneck_reason && op.bottleneck_reason !== 'Nenhum')) {
@@ -216,12 +229,20 @@ export default function PcpCommercial() {
           client={clientFilter}
           setClient={setClientFilter}
           clientType={clientTypeFilter}
-          setClientType={setClientTypeFilter}
+          setClientType={setClientType}
           deadline={deadlineFilter}
           setDeadline={setDeadlineFilter}
         />
+        <Button
+          variant={pendingOnly ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setPendingOnly(!pendingOnly)}
+          className="gap-2"
+        >
+          <Bell className="size-4" />
+          Mensagens Pendentes
+        </Button>
       </div>
-
       <div className="rounded-md border bg-card">
         <Table>
           <TableHeader>
@@ -335,14 +356,25 @@ export default function PcpCommercial() {
                               })
                             }
                           >
-                            <MessageCircle className="size-4" />
                             {(() => {
                               const info = getOrderMessageInfo(op.id)
-                              return info.count > 0 ? (
-                                <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-blue-500 text-white text-[9px] font-bold">
-                                  {info.count > 99 ? '99+' : info.count}
-                                </span>
-                              ) : null
+                              const state = info.indicatorState
+                              const iconColor =
+                                state === 'green'
+                                  ? 'text-green-500 animate-pulse'
+                                  : state === 'blue'
+                                    ? 'text-blue-500'
+                                    : 'text-gray-400 dark:text-gray-500'
+                              return (
+                                <>
+                                  <MessageCircle className={cn('size-4', iconColor)} />
+                                  {info.count > 0 ? (
+                                    <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-blue-500 text-white text-[9px] font-bold">
+                                      {info.count > 99 ? '99+' : info.count}
+                                    </span>
+                                  ) : null}
+                                </>
+                              )
                             })()}
                           </Button>
                         </TableCell>

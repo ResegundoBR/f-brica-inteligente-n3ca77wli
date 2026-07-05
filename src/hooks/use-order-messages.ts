@@ -107,13 +107,6 @@ export function useOrderMessages(channel?: MessageChannel) {
       const lastFromMe = userIsPcp ? isPcpSender(lastMessage) : !isPcpSender(lastMessage)
 
       if (lastFromMe) {
-        if (lastMessage.read) {
-          return {
-            count: myMessages.length,
-            unreadCount: 0,
-            indicatorState: 'gray',
-          }
-        }
         return {
           count: myMessages.length,
           unreadCount: 0,

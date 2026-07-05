@@ -32,7 +32,7 @@ import { cn } from '@/lib/utils'
 import { shouldHighlightObservation, getStageDelay, formatOpIdentifier } from '@/lib/pcp-utils'
 import { getMaterialAvailabilityStatus } from '@/lib/material-status'
 import { isBefore, startOfDay, parseISO } from 'date-fns'
-import { Package, ChevronDown, ChevronUp, Circle, MessageCircle } from 'lucide-react'
+import { Package, ChevronDown, ChevronUp, Circle } from 'lucide-react'
 import { useOrderMessages } from '@/hooks/use-order-messages'
 import { OrderMessagesPanel } from '@/components/OrderMessagesPanel'
 import type { IndicatorState } from '@/lib/message-sector'
@@ -127,40 +127,36 @@ function getNextStageForOp(current: string, op: PcpOrder, processes: ProductProc
   return null
 }
 
-function OperatorMessageBubble({
-  state,
-  count,
-  onClick,
-}: {
-  state: IndicatorState
-  count: number
-  onClick: () => void
-}) {
-  const colors: Record<string, string> = {
-    none: 'text-gray-400 dark:text-gray-500',
-    blue: 'text-blue-500',
-    green: 'text-green-500 animate-pulse',
-    gray: 'text-gray-400 dark:text-gray-500',
+function OperatorMessageBadge({ state, onClick }: { state: IndicatorState; onClick: () => void }) {
+  const config: Record<IndicatorState, { label: string; className: string }> = {
+    none: {
+      label: 'MENSAGEM',
+      className:
+        'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700',
+    },
+    green: {
+      label: 'NOVA MENSAGEM',
+      className: 'bg-green-500 text-white animate-pulse hover:bg-green-600',
+    },
+    blue: {
+      label: 'AGUARDANDO',
+      className: 'bg-blue-500 text-white hover:bg-blue-600',
+    },
+    gray: {
+      label: 'RESPONDIDO',
+      className: 'bg-gray-400 text-white dark:bg-gray-600 hover:bg-gray-500 dark:hover:bg-gray-500',
+    },
   }
-  const badgeBg: Record<string, string> = {
-    none: '',
-    blue: 'bg-blue-500',
-    green: 'bg-green-500',
-    gray: 'bg-gray-400 dark:bg-gray-500',
-  }
+  const c = config[state]
   return (
-    <button onClick={onClick} className="inline-flex items-center cursor-pointer relative">
-      <MessageCircle className={cn('size-5', colors[state])} />
-      {state !== 'none' && count > 0 && (
-        <span
-          className={cn(
-            'absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] rounded-full text-white text-[9px] font-bold flex items-center justify-center px-0.5',
-            badgeBg[state],
-          )}
-        >
-          {count > 99 ? '99+' : count}
-        </span>
+    <button
+      onClick={onClick}
+      className={cn(
+        'text-[10px] font-bold px-2 py-1 rounded-md transition-colors cursor-pointer whitespace-nowrap',
+        c.className,
       )}
+    >
+      {c.label}
     </button>
   )
 }
@@ -425,11 +421,7 @@ function OperatorCard({
               >
                 {op.stage}
               </Badge>
-              <OperatorMessageBubble
-                state={messageState}
-                count={messageCount}
-                onClick={() => onMessageClick?.()}
-              />
+              <OperatorMessageBadge state={messageState} onClick={() => onMessageClick?.()} />
             </div>
             {isEmergency ? (
               <Badge

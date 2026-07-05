@@ -229,7 +229,7 @@ export default function PcpCommercial() {
           client={clientFilter}
           setClient={setClientFilter}
           clientType={clientTypeFilter}
-          setClientType={setClientType}
+          setClientType={setClientTypeFilter}
           deadline={deadlineFilter}
           setDeadline={setDeadlineFilter}
         />

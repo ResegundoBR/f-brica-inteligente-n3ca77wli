@@ -128,8 +128,8 @@ function getNextStageForOp(current: string, op: PcpOrder, processes: ProductProc
 }
 
 function OperatorMessageBubble({ state, onClick }: { state: IndicatorState; onClick: () => void }) {
-  if (state === 'none') return null
   const colors: Record<string, string> = {
+    none: 'text-gray-400 dark:text-gray-500',
     blue: 'text-blue-500',
     green: 'text-green-500 animate-pulse',
     gray: 'text-gray-400 dark:text-gray-500',

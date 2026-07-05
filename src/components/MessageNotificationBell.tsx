@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
 import { Bell, MessageCircle } from 'lucide-react'
@@ -15,9 +15,22 @@ export function MessageNotificationBell({ className }: { className?: string }) {
   const { user } = useAuth()
   const userChannel = getUserChannel(user)
   const isPcp = isPcpManager(user)
-  const { unreadCount, recentMessages, hasNewMessage, setHasNewMessage, markAllRead } =
-    useUnreadMessages()
+  const {
+    unreadCount,
+    recentMessages,
+    hasNewMessage,
+    setHasNewMessage,
+    markAllRead,
+    markOrderAsRead: markOrderUnreadAsRead,
+  } = useUnreadMessages()
   const { markOrderAsRead } = useOrderMessages(isPcp ? undefined : (userChannel ?? undefined))
+  const handleMessagesRead = useCallback(
+    (orderId: string) => {
+      markOrderAsRead(orderId)
+      markOrderUnreadAsRead(orderId)
+    },
+    [markOrderAsRead, markOrderUnreadAsRead],
+  )
   const [shake, setShake] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<{
     id: string
@@ -121,7 +134,7 @@ export function MessageNotificationBell({ className }: { className?: string }) {
         opNumber={selectedOrder?.opNumber || ''}
         open={!!selectedOrder}
         onOpenChange={(open) => !open && setSelectedOrder(null)}
-        onMessagesRead={markOrderAsRead}
+        onMessagesRead={handleMessagesRead}
         sector={isPcp ? 'all' : userChannel || 'all'}
       />
     </>

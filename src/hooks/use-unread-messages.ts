@@ -44,8 +44,10 @@ export function useUnreadMessages() {
       })
 
       const unread = isPcp
-        ? allMessages.filter((m) => !isPcpSender(m))
-        : allMessages.filter((m) => m.sector === userChannel && isPcpSender(m))
+        ? allMessages.filter((m) => !isPcpSender(m) && m.user_id !== user?.id)
+        : allMessages.filter(
+            (m) => m.sector === userChannel && isPcpSender(m) && m.user_id !== user?.id,
+          )
 
       allUnreadRef.current = unread
       setUnreadCount(unread.length)
@@ -72,9 +74,18 @@ export function useUnreadMessages() {
         .update(m.id, { read: true })
         .catch(() => {})
     })
+    allUnreadRef.current = []
     setUnreadCount(0)
     setRecentMessages([])
     setHasNewMessage(false)
+  }, [])
+
+  const markOrderAsRead = useCallback((orderId: string) => {
+    const remaining = allUnreadRef.current.filter((m) => m.order_id !== orderId)
+    allUnreadRef.current = remaining
+    setUnreadCount(remaining.length)
+    setRecentMessages(remaining.slice(0, 10))
+    if (remaining.length === 0) setHasNewMessage(false)
   }, [])
 
   return {
@@ -83,5 +94,6 @@ export function useUnreadMessages() {
     hasNewMessage,
     setHasNewMessage,
     markAllRead,
+    markOrderAsRead,
   }
 }

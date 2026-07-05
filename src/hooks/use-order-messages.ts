@@ -49,6 +49,10 @@ export function useOrderMessages(channel?: MessageChannel) {
       const messagesToMark = userIsPcp
         ? messagesRef.current.filter((m) => m.order_id === orderId && !m.read && !isPcpSender(m))
         : messagesRef.current.filter((m) => m.order_id === orderId && !m.read && isPcpSender(m))
+      if (messagesToMark.length > 0) {
+        const markIds = new Set(messagesToMark.map((m) => m.id))
+        setMessages((prev) => prev.map((m) => (markIds.has(m.id) ? { ...m, read: true } : m)))
+      }
       messagesToMark.forEach((m) => {
         pb.collection('pcp_order_messages')
           .update(m.id, { read: true })
@@ -74,13 +78,18 @@ export function useOrderMessages(channel?: MessageChannel) {
         return { count: 0, unreadCount: 0, indicatorState: 'none' }
       }
 
-      const sorted = [...orderMessages].sort(
+      const otherMessages = orderMessages.filter((m) => m.user_id !== user?.id)
+      if (otherMessages.length === 0) {
+        return { count: orderMessages.length, unreadCount: 0, indicatorState: 'gray' }
+      }
+
+      const sorted = [...otherMessages].sort(
         (a, b) => new Date(a.created).getTime() - new Date(b.created).getTime(),
       )
       const lastMessage = sorted[sorted.length - 1]
       const lastSenderIsPcp = isPcpSender(lastMessage)
 
-      const unreadFromPcp = orderMessages.filter((m) => !m.read && isPcpSender(m)).length
+      const unreadFromPcp = otherMessages.filter((m) => !m.read && isPcpSender(m)).length
 
       if (unreadFromPcp > 0) {
         return { count: orderMessages.length, unreadCount: unreadFromPcp, indicatorState: 'green' }
@@ -92,7 +101,7 @@ export function useOrderMessages(channel?: MessageChannel) {
 
       return { count: orderMessages.length, unreadCount: 0, indicatorState: 'gray' }
     },
-    [messagesByOrder],
+    [messagesByOrder, user?.id],
   )
 
   return { messagesByOrder, getOrderMessageInfo, markOrderAsRead }

@@ -16,7 +16,12 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Send } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { format } from 'date-fns'
-import { isPcpSender, type MessageChannel } from '@/lib/message-sector'
+import {
+  isPcpSender,
+  isPcpManager,
+  getUserChannel,
+  type MessageChannel,
+} from '@/lib/message-sector'
 
 interface OrderMessagesPanelProps {
   orderId: string | null
@@ -55,11 +60,18 @@ export function OrderMessagesPanel({
         sort: 'created',
         expand: 'user_id.role',
       })
-      setMessages(res)
+      const userIsPcp = isPcpManager(user)
+      const userChan = getUserChannel(user)
+      const visible = res.filter((m) => {
+        if (userIsPcp) return true
+        if (!m.sector) return true
+        return m.sector === userChan
+      })
+      setMessages(visible)
     } catch {
       /* intentionally ignored */
     }
-  }, [orderId, sector])
+  }, [orderId, sector, user])
 
   useEffect(() => {
     if (open && orderId) {

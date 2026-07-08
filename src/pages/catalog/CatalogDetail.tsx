@@ -301,10 +301,10 @@ export default function CatalogDetail() {
     if (lower === 'ajuste/pendência' || lower === 'pendência') {
       return {
         text: 'Existem pendências sinalizadas. O Registrador deve realizar os ajustes.',
-        bg: 'bg-[#2196F3]/20',
-        border: 'border-[#2196F3]/50',
-        textCol: 'text-blue-800 dark:text-blue-200',
-        color: '#2196F3',
+        bg: 'bg-[#9C27B0]/20',
+        border: 'border-[#9C27B0]/50',
+        textCol: 'text-purple-800 dark:text-purple-200',
+        color: '#9C27B0',
       }
     }
     if (lower === 'validado') {

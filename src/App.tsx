@@ -20,6 +20,8 @@ import PcpClients from './pages/pcp/PcpClients'
 import PcpOperator from './pages/pcp/PcpOperator'
 import PcpCommercial from './pages/pcp/PcpCommercial'
 import PcpOcorrencias from './pages/pcp/PcpOcorrencias'
+import ConsultationList from './pages/consultation/ConsultationList'
+import ConsultationDetail from './pages/consultation/ConsultationDetail'
 import Login from './pages/Login'
 import ChangePassword from './pages/ChangePassword'
 import { AuthProvider } from './hooks/use-auth'
@@ -75,6 +77,22 @@ const App = () => (
                 element={
                   <RoleGuard module="catalog">
                     <CatalogDetail />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/consulta"
+                element={
+                  <RoleGuard module="catalog_consultation">
+                    <ConsultationList />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/consulta/:id"
+                element={
+                  <RoleGuard module="catalog_consultation">
+                    <ConsultationDetail />
                   </RoleGuard>
                 }
               />

@@ -43,6 +43,32 @@ onRecordAfterCreateSuccess((e) => {
         }
       }
     } catch (_) {}
+
+    try {
+      const product = $app.findRecordById('products', productId)
+      const ownerId = product.getString('owner')
+      const userId = e.auth ? e.auth.id : null
+      if (ownerId && ownerId !== userId) {
+        const notifsCol = $app.findCollectionByNameOrId('notifications')
+        const notif = new Record(notifsCol)
+        notif.set('user_id', ownerId)
+        const authorName = e.auth
+          ? e.auth.getString('name') || e.auth.getString('email')
+          : 'Operador'
+        notif.set(
+          'message',
+          'Nova observação da fábrica no produto "' +
+            product.getString('name') +
+            '" por ' +
+            authorName +
+            ': ' +
+            e.record.getString('description'),
+        )
+        notif.set('action_url', '/catalogo/' + productId + '?tab=revisao')
+        notif.set('read', false)
+        $app.saveNoValidate(notif)
+      }
+    } catch (_) {}
   } catch (err) {
     $app.logger().error('Error logging revision point create', 'error', String(err))
   }

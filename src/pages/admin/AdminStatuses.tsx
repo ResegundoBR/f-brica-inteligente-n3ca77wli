@@ -133,6 +133,7 @@ export default function AdminStatuses() {
                     <SelectItem value="warning">Aviso (Laranja)</SelectItem>
                     <SelectItem value="success">Sucesso (Verde)</SelectItem>
                     <SelectItem value="outline">Contorno (Bordada)</SelectItem>
+                    <SelectItem value="purple">Roxo (Purple)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -196,7 +197,11 @@ export default function AdminStatuses() {
                   <TableRow key={s.id}>
                     <TableCell className="font-medium capitalize">{s.name}</TableCell>
                     <TableCell>
-                      {s.color === 'warning' ? (
+                      {s.color === 'purple' ? (
+                        <Badge className="bg-purple-600 hover:bg-purple-700 text-white border-transparent">
+                          {s.name}
+                        </Badge>
+                      ) : s.color === 'warning' ? (
                         <Badge className="bg-orange-500 hover:bg-orange-600 text-white border-transparent">
                           {s.name}
                         </Badge>

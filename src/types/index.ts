@@ -15,6 +15,7 @@ export interface Role {
   access_visao_comercial?: boolean
   access_painel_controle?: boolean
   access_produto_processos?: boolean
+  access_catalog_consultation?: boolean
 }
 
 export interface ProductStatusModel {

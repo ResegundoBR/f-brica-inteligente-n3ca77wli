@@ -19,6 +19,7 @@ import {
   PanelLeftClose,
   PanelLeft,
   Package,
+  Search,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -42,6 +43,7 @@ import {
 const navItems = [
   { title: 'Dashboard', url: '/', icon: LayoutDashboard, group: 'Produto/Processos' },
   { title: 'Catálogo Técnico', url: '/catalogo', icon: BookOpen, group: 'Produto/Processos' },
+  { title: 'Consulta Catálogo', url: '/consulta', icon: Search, group: 'Produto/Processos' },
   {
     title: 'Evolução Aprendizado',
     url: '/aprendizado',
@@ -101,6 +103,8 @@ export function AppSidebar() {
         return !!role.access_dashboard || !!role.access_produto_processos
       case 'Catálogo Técnico':
         return !!role.access_catalog || !!role.access_produto_processos
+      case 'Consulta Catálogo':
+        return !!role.access_catalog_consultation
       case 'Evolução Aprendizado':
         return !!role.access_learning || !!role.access_produto_processos
       case 'Usuários':

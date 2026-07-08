@@ -86,6 +86,7 @@ export default function AdminRoles() {
       access_visao_comercial: !!role.access_visao_comercial,
       access_painel_controle: !!role.access_painel_controle,
       access_produto_processos: !!role.access_produto_processos,
+      access_catalog_consultation: !!role.access_catalog_consultation,
     })
     setOpen(true)
   }
@@ -122,6 +123,7 @@ export default function AdminRoles() {
       access_visao_comercial: false,
       access_painel_controle: false,
       access_produto_processos: false,
+      access_catalog_consultation: false,
     })
   }
 
@@ -179,6 +181,18 @@ export default function AdminRoles() {
                     />
                     <Label htmlFor="acc_cat" className="font-normal text-sm">
                       Catálogo Técnico
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <Checkbox
+                      id="acc_consult"
+                      checked={formData.access_catalog_consultation}
+                      onCheckedChange={(c) =>
+                        setFormData({ ...formData, access_catalog_consultation: !!c })
+                      }
+                    />
+                    <Label htmlFor="acc_consult" className="font-normal text-sm">
+                      Consulta Catálogo Técnico
                     </Label>
                   </div>
                   <div className="flex items-center space-x-3">

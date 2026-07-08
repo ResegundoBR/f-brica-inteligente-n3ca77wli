@@ -33,6 +33,7 @@ import { PcpFilters } from './components/PcpFilters'
 import { useOrderMessages } from '@/hooks/use-order-messages'
 import { OrderMessageBell } from '@/components/OrderMessageBell'
 import { OrderMessagesPanel } from '@/components/OrderMessagesPanel'
+import { StatusLegend } from '@/components/StatusLegend'
 
 export default function PcpOrders() {
   const [orders, setOrders] = useState<PcpOrder[]>([])
@@ -310,6 +311,8 @@ export default function PcpOrders() {
           <PcpOrderForm open={isOpen} onOpenChange={setIsOpen} onSuccess={loadData} />
         </div>
       </div>
+
+      <StatusLegend />
 
       <div className="rounded-md border bg-card">
         <Table>

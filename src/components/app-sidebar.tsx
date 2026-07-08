@@ -50,7 +50,7 @@ const navItems = [
     icon: GraduationCap,
     group: 'Produto/Processos',
   },
-  { title: 'Suprimentos', url: '/pcp/materiais', icon: Package, group: 'Produto/Processos' },
+  { title: 'Suprimentos', url: '/pcp/materiais', icon: Package, group: 'Suprimentos' },
   { title: 'Dashboard PCP', url: '/pcp/dashboard', icon: LayoutDashboard, group: 'PCP' },
   { title: 'Painel de Controle', url: '/pcp/kanban', icon: Kanban, group: 'PCP' },
   { title: 'Ordens de Produção', url: '/pcp/ordens', icon: FileText, group: 'PCP' },
@@ -163,7 +163,7 @@ export function AppSidebar() {
           collapsible
           className="w-full space-y-2 p-2"
         >
-          {['Produto/Processos', 'PCP', 'Administração'].map((group) => {
+          {['Produto/Processos', 'Suprimentos', 'PCP', 'Administração'].map((group) => {
             const groupItems = navItems.filter((i) => i.group === group && hasAccess(i.title))
             if (groupItems.length === 0) return null
 

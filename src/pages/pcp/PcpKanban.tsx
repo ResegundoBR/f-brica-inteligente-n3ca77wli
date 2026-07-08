@@ -35,6 +35,7 @@ import { getMaterialAvailabilityStatus } from '@/lib/material-status'
 import { useOrderMessages } from '@/hooks/use-order-messages'
 import { OrderMessageBell } from '@/components/OrderMessageBell'
 import { OrderMessagesPanel } from '@/components/OrderMessagesPanel'
+import { StatusLegend } from '@/components/StatusLegend'
 
 const MACRO_GROUPS = [
   {
@@ -382,6 +383,8 @@ export default function PcpKanban() {
           )}
         </div>
       </div>
+
+      <StatusLegend className="shrink-0 mb-1" />
 
       <div className="flex-1 min-h-0 flex gap-4 items-start w-full">
         {viewMode === 'status' && (

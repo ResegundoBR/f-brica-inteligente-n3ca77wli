@@ -420,10 +420,10 @@ function ShortageRow({
             onCheckedChange={() => toggle(item.id)}
           />
         </TableCell>
-        <TableCell className="font-medium text-xs text-slate-500">{item.code || '-'}</TableCell>
-        <TableCell className="font-semibold text-slate-900 dark:text-slate-100">
-          {item.description}
+        <TableCell className="text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">
+          {format(parseISO(item.created), 'dd/MM/yyyy')}
         </TableCell>
+        <TableCell className="font-medium text-xs text-slate-500">{item.code || '-'}</TableCell>
         <TableCell
           className="text-right"
           onClick={(e) => {
@@ -457,8 +457,11 @@ function ShortageRow({
             <span className="font-black text-slate-700 dark:text-slate-300">{item.quantity}</span>
           )}
         </TableCell>
+        <TableCell className="font-semibold text-slate-900 dark:text-slate-100">
+          {item.description}
+        </TableCell>
         <TableCell className="text-xs text-slate-600 dark:text-slate-400">
-          {item.request_type || item.sector}
+          {item.supplier || '-'}
         </TableCell>
         <TableCell>
           <Badge
@@ -488,7 +491,9 @@ function ShortageRow({
                 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800',
               item.status === 'Pendente' &&
                 'bg-slate-100 text-slate-800 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
-              (item.status === 'Cotação' || item.status === 'Compra') &&
+              item.status === 'Cotação' &&
+                'bg-pink-100 text-pink-800 border-pink-200 dark:bg-pink-900/30 dark:text-pink-300 dark:border-pink-800',
+              item.status === 'Compra' &&
                 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800',
               item.status === 'Cancelado' &&
                 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800',
@@ -506,9 +511,7 @@ function ShortageRow({
           {item.expand?.order_id?.op_number || '-'}
         </TableCell>
         <TableCell className="text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">
-          {item.expand?.order_id?.delivery_date
-            ? format(parseISO(item.expand.order_id.delivery_date), 'dd/MM/yyyy')
-            : '-'}
+          {item.expected_date ? format(parseISO(item.expected_date), 'dd/MM/yyyy') : '-'}
         </TableCell>
       </TableRow>
       <Dialog open={open} onOpenChange={setOpen}>
@@ -560,15 +563,16 @@ export function ShortageTable({
                 onCheckedChange={() => toggleAll()}
               />
             </TableHead>
+            <TableHead className="w-[110px]">Data solicitação</TableHead>
             <TableHead className="w-[100px]">Código</TableHead>
+            <TableHead className="text-right w-[80px]">Qtde</TableHead>
             <TableHead>Descrição</TableHead>
-            <TableHead className="text-right w-[80px]">Qtd</TableHead>
-            <TableHead className="w-[120px]">Tipo / Setor</TableHead>
+            <TableHead className="w-[140px]">Fornecedor</TableHead>
             <TableHead className="w-[120px]">Prioridade</TableHead>
             <TableHead className="w-[150px]">Solicitante</TableHead>
             <TableHead className="w-[120px]">Status</TableHead>
             <TableHead className="w-[100px]">Pedido</TableHead>
-            <TableHead className="w-[100px]">Nº da OP</TableHead>
+            <TableHead className="w-[100px]">Nº OP</TableHead>
             <TableHead className="w-[110px]">Prazo</TableHead>
           </TableRow>
         </TableHeader>

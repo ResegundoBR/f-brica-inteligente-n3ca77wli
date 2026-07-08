@@ -55,14 +55,19 @@ onRecordAfterCreateSuccess((e) => {
         const authorName = e.auth
           ? e.auth.getString('name') || e.auth.getString('email')
           : 'Operador'
+        const desc = e.record.getString('description')
+        const isGeneral = desc.startsWith('[Observação Geral]')
         notif.set(
           'message',
-          'Nova observação da fábrica no produto "' +
-            product.getString('name') +
-            '" por ' +
-            authorName +
-            ': ' +
-            e.record.getString('description'),
+          isGeneral
+            ? 'Nova observação geral da fábrica recebida para o produto ' +
+                product.getString('name')
+            : 'Nova observação da fábrica no produto "' +
+                product.getString('name') +
+                '" por ' +
+                authorName +
+                ': ' +
+                desc,
         )
         notif.set('action_url', '/catalogo/' + productId + '?tab=revisao')
         notif.set('read', false)

@@ -126,7 +126,7 @@ export default function PcpCommercial() {
       if (clientFilter !== 'all' && op.client_id !== clientFilter) return false
       if (clientTypeFilter !== 'all' && op.expand?.client_id?.type !== clientTypeFilter)
         return false
-      if (!filterByDeadline(op.delivery_date, deadlineFilter)) return false
+      if (!filterByDeadline(op.delivery_date, deadlineFilter, op.status)) return false
       if (pendingOnly) {
         const msgState = getOrderMessageInfo(op.id).indicatorState
         if (msgState !== 'blue' && msgState !== 'green') return false

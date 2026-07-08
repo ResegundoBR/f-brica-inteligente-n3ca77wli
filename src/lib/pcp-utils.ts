@@ -41,8 +41,16 @@ export function isOrderOverdue(
 export function filterByDeadline(
   deliveryDateStr: string | null | undefined,
   filter: string,
+  status?: string,
 ): boolean {
   if (!filter || filter === 'all') return true
+  if (filter === 'atrasados') {
+    if (status === 'Concluído') return false
+    if (!deliveryDateStr) return false
+    const date = parseISO(deliveryDateStr)
+    if (!isValid(date)) return false
+    return isBefore(startOfDay(date), startOfDay(new Date()))
+  }
   if (!deliveryDateStr) return false
   const date = parseISO(deliveryDateStr)
   if (!isValid(date)) return false

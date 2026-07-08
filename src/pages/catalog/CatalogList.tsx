@@ -57,7 +57,7 @@ export function LightPanelStatus({ status }: { status?: ProductStatusModel | str
     const lower = statusName.toLowerCase()
     if (lower === 'falta docs' || lower === 'iniciado') color = '#FFEB3B'
     else if (lower === 'pronto p/ revisão' || lower === 'revisão') color = '#FF9800'
-    else if (lower === 'ajuste/pendência' || lower === 'pendência') color = '#2196F3'
+    else if (lower === 'ajuste/pendência' || lower === 'pendência') color = '#9C27B0'
     else if (lower === 'validado') color = '#4CAF50'
   }
 

@@ -12,9 +12,12 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { ArrowLeft, Package } from 'lucide-react'
+import { ArrowLeft, Package, Send } from 'lucide-react'
+import { Textarea } from '@/components/ui/textarea'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
+import { useAuth } from '@/hooks/use-auth'
+import { useToast } from '@/hooks/use-toast'
 import { Product, ProductProcessModel } from '@/types'
 import { ProcessObservationCard } from './ProcessObservationCard'
 import { ConsultationFiles } from './ConsultationFiles'
@@ -25,6 +28,10 @@ export default function ConsultationDetail() {
   const [product, setProduct] = useState<Product | null>(null)
   const [processes, setProcesses] = useState<ProductProcessModel[]>([])
   const [loading, setLoading] = useState(true)
+  const [generalObservation, setGeneralObservation] = useState('')
+  const [submittingGeneral, setSubmittingGeneral] = useState(false)
+  const { user } = useAuth()
+  const { toast } = useToast()
 
   const loadData = async () => {
     if (!id) return
@@ -54,6 +61,38 @@ export default function ConsultationDetail() {
   useRealtime('product_processes', () => {
     loadData()
   })
+
+  const handleGeneralObservation = async () => {
+    if (!generalObservation.trim() || !product) return
+    setSubmittingGeneral(true)
+    try {
+      await pb.collection('revision_points').create({
+        product_id: product.id,
+        user_id: user?.id,
+        description: `[Observação Geral] ${generalObservation.trim()}`,
+        resolved: false,
+      })
+
+      const ajusteStatus = await pb
+        .collection('product_statuses')
+        .getFirstListItem(`name = "Ajuste/Pendência"`)
+      await pb.collection('products').update(product.id, { status: ajusteStatus.id })
+
+      toast({
+        title: 'Observação geral enviada com sucesso!',
+        description: 'A engenharia foi notificada.',
+      })
+      setGeneralObservation('')
+    } catch (error: any) {
+      toast({
+        title: 'Erro ao enviar observação',
+        description: error.message,
+        variant: 'destructive',
+      })
+    } finally {
+      setSubmittingGeneral(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -177,6 +216,34 @@ export default function ConsultationDetail() {
           </div>
         )}
       </div>
+
+      <Card className="p-4 space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold">Observações Gerais</h2>
+          <p className="text-sm text-muted-foreground">
+            Reporte observações gerais sobre o produto que não estão vinculadas a um processo
+            específico.
+          </p>
+        </div>
+        <div className="space-y-2 pt-2 border-t">
+          <Textarea
+            value={generalObservation}
+            onChange={(e) => setGeneralObservation(e.target.value)}
+            placeholder="Descreva observações gerais, dúvidas ou não conformidades do produto..."
+            className="min-h-[100px] text-sm"
+          />
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              onClick={handleGeneralObservation}
+              disabled={submittingGeneral || !generalObservation.trim()}
+            >
+              <Send className="mr-2 h-3 w-3" />
+              {submittingGeneral ? 'Enviando...' : 'Enviar Observação Geral'}
+            </Button>
+          </div>
+        </div>
+      </Card>
     </div>
   )
 }

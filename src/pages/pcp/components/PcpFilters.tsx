@@ -158,6 +158,7 @@ export function PcpFilters({
           <SelectItem value="esta-semana">Esta Semana</SelectItem>
           <SelectItem value="prox-semana">Próxima Semana</SelectItem>
           <SelectItem value="prox-15d">Próximos 15 dias</SelectItem>
+          <SelectItem value="atrasados">Atrasados</SelectItem>
         </SelectContent>
       </Select>
     </div>

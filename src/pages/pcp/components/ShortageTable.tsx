@@ -76,10 +76,13 @@ function ShortageDetailsModal({
   onClose: () => void
 }) {
   const [quantity, setQuantity] = useState(item.quantity)
+  const [receivedQuantity, setReceivedQuantity] = useState<number | ''>(
+    item.received_quantity != null ? item.received_quantity : '',
+  )
   const [status, setStatus] = useState(item.status)
-  const [unitPrice, setUnitPrice] = useState<number | ''>(item.unit_price || '')
-  const [purchaseDate, setPurchaseDate] = useState(
-    item.purchase_date ? item.purchase_date.substring(0, 10) : '',
+  const [priority, setPriority] = useState(item.priority || 'Sem pressa')
+  const [unitPrice, setUnitPrice] = useState<number | ''>(
+    item.unit_price != null ? item.unit_price : '',
   )
   const [supplier, setSupplier] = useState(item.supplier || '')
   const [expectedDate, setExpectedDate] = useState(
@@ -122,13 +125,24 @@ function ShortageDetailsModal({
 
   const handleSave = async () => {
     try {
+      const safeQuantity = Number.isFinite(quantity) && quantity > 0 ? quantity : item.quantity
+      const safeReceivedQty =
+        receivedQuantity === ''
+          ? null
+          : Number.isFinite(Number(receivedQuantity))
+            ? Number(receivedQuantity)
+            : null
+      const safeUnitPrice =
+        unitPrice === '' ? null : Number.isFinite(Number(unitPrice)) ? Number(unitPrice) : null
+
       await pb.collection('material_shortages').update(item.id, {
-        quantity,
+        quantity: safeQuantity,
+        received_quantity: safeReceivedQty,
         status,
-        unit_price: unitPrice === '' ? null : Number(unitPrice),
-        purchase_date: purchaseDate ? new Date(purchaseDate).toISOString() : null,
-        supplier,
-        expected_date: expectedDate ? new Date(expectedDate).toISOString() : null,
+        priority,
+        unit_price: safeUnitPrice,
+        supplier: supplier || '',
+        expected_date: expectedDate || null,
       })
       toast({ title: 'Item atualizado com sucesso' })
       onClose()
@@ -262,7 +276,7 @@ function ShortageDetailsModal({
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="space-y-1.5">
             <Label>Quantidade (Editável)</Label>
             <Input
@@ -270,6 +284,18 @@ function ShortageDetailsModal({
               min={1}
               value={quantity}
               onChange={(e) => setQuantity(Number(e.target.value))}
+              className="bg-white dark:bg-slate-950"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Quantidade Recebida</Label>
+            <Input
+              type="number"
+              min={0}
+              step={0.01}
+              value={receivedQuantity}
+              onChange={(e) => setReceivedQuantity(e.target.value ? Number(e.target.value) : '')}
+              placeholder="0"
               className="bg-white dark:bg-slate-950"
             />
           </div>
@@ -284,6 +310,7 @@ function ShortageDetailsModal({
                 <SelectItem value="Liberado_Estoque">Liberado Estoque</SelectItem>
                 <SelectItem value="Cotação">Cotação</SelectItem>
                 <SelectItem value="Compra">Compra</SelectItem>
+                <SelectItem value="Recebido_Parcial">Recebido Parcial</SelectItem>
                 <SelectItem value="Recebido">Recebido</SelectItem>
                 <SelectItem value="Cancelado">Cancelado</SelectItem>
               </SelectContent>
@@ -292,6 +319,19 @@ function ShortageDetailsModal({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="space-y-1.5">
+            <Label>Prioridade</Label>
+            <Select value={priority} onValueChange={setPriority}>
+              <SelectTrigger className="bg-white dark:bg-slate-950">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Sem pressa">Sem pressa</SelectItem>
+                <SelectItem value="Próximos dias">Próximos dias</SelectItem>
+                <SelectItem value="Urgente">Urgente</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <div className="space-y-1.5">
             <Label>Fornecedor</Label>
             <Input
@@ -334,18 +374,27 @@ function ShortageDetailsModal({
               )}
             </div>
           </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="space-y-1.5">
+            <Label>Data da Cotação</Label>
+            <Input
+              value={
+                item.quotation_date ? format(parseISO(item.quotation_date), 'dd/MM/yyyy') : '-'
+              }
+              disabled
+              className="bg-slate-50 dark:bg-slate-900"
+            />
+          </div>
           <div className="space-y-1.5">
             <Label>Data da Compra</Label>
             <Input
-              type="date"
-              value={purchaseDate}
-              onChange={(e) => setPurchaseDate(e.target.value)}
-              className="bg-white dark:bg-slate-950"
+              value={item.purchase_date ? format(parseISO(item.purchase_date), 'dd/MM/yyyy') : '-'}
+              disabled
+              className="bg-slate-50 dark:bg-slate-900"
             />
           </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label>Previsão de Entrega (Retorno)</Label>
             <Input
@@ -499,6 +548,8 @@ function ShortageRow({
                 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800',
               item.status === 'Liberado_Estoque' &&
                 'bg-teal-100 text-teal-800 border-teal-200 dark:bg-teal-900/30 dark:text-teal-300 dark:border-teal-800',
+              item.status === 'Recebido_Parcial' &&
+                'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800',
             )}
           >
             {item.status.replace('_', ' ')}

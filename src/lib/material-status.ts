@@ -16,7 +16,9 @@ export function getMaterialAvailabilityStatus(
   const allResolved = active.every((s) => resolvedStatuses.includes(s.status))
   if (allResolved) return 'green'
 
-  const hasResolved = active.some((s) => resolvedStatuses.includes(s.status))
+  const hasResolved = active.some(
+    (s) => resolvedStatuses.includes(s.status) || s.status === 'Recebido_Parcial',
+  )
   if (hasResolved) return 'yellow'
 
   const allPending = active.every((s) => pendingStatuses.includes(s.status))

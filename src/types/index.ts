@@ -308,8 +308,16 @@ export interface MaterialShortage {
   description: string
   code: string
   quantity: number
+  received_quantity?: number
   sector: string
-  status: 'Pendente' | 'Liberado_Estoque' | 'Cotação' | 'Compra' | 'Recebido' | 'Cancelado'
+  status:
+    | 'Pendente'
+    | 'Liberado_Estoque'
+    | 'Cotação'
+    | 'Compra'
+    | 'Recebido'
+    | 'Recebido_Parcial'
+    | 'Cancelado'
   supplier?: string
   expected_date?: string
   observation?: string
@@ -318,6 +326,7 @@ export interface MaterialShortage {
   requested_by?: string
   unit_price?: number
   purchase_date?: string
+  quotation_date?: string
   created: string
   updated: string
   expand?: {

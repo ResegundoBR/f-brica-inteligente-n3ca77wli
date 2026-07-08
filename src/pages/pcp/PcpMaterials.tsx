@@ -146,7 +146,9 @@ export default function PcpMaterials() {
   }
 
   const triagemItems = shortages.filter((s) => s.status === 'Pendente')
-  const comprasItems = shortages.filter((s) => s.status === 'Cotação' || s.status === 'Compra')
+  const comprasItems = shortages.filter(
+    (s) => s.status === 'Cotação' || s.status === 'Compra' || s.status === 'Recebido_Parcial',
+  )
   const historicoItems = shortages.filter(
     (s) => s.status === 'Recebido' || s.status === 'Liberado_Estoque' || s.status === 'Cancelado',
   )

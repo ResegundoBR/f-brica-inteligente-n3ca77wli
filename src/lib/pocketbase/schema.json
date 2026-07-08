@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-08T21:37:17.968Z",
+  "generatedAt": "2026-07-08T22:59:37.211Z",
   "collections": [
     {
       "name": "users",
@@ -1313,20 +1313,6 @@
           "system": false
         },
         {
-          "name": "status",
-          "type": "select",
-          "required": true,
-          "system": false,
-          "selectValues": [
-            "Pendente",
-            "Liberado_Estoque",
-            "Cotação",
-            "Compra",
-            "Recebido",
-            "Cancelado"
-          ]
-        },
-        {
           "name": "supplier",
           "type": "text",
           "required": false,
@@ -1390,6 +1376,33 @@
           "type": "date",
           "required": false,
           "system": false
+        },
+        {
+          "name": "received_quantity",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "quotation_date",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": [
+            "Pendente",
+            "Liberado_Estoque",
+            "Cotação",
+            "Compra",
+            "Recebido",
+            "Recebido_Parcial",
+            "Cancelado"
+          ]
         }
       ],
       "indexes": [

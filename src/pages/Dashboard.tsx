@@ -127,10 +127,17 @@ export default function Dashboard() {
     'Pronto p/ Revisão',
     '#FF9800',
   )
-  const kpiAjustePendencia = getStatusInfo(
-    ['ajuste/pendência', 'ajuste/pendencia', 'pendência', 'pendencia'],
-    'Ajuste/Pendência',
-    '#2196F3',
+  const kpiRevFabrica = getStatusInfo(
+    [
+      'rev fábrica',
+      'rev fabrica',
+      'ajuste/pendência',
+      'ajuste/pendencia',
+      'pendência',
+      'pendencia',
+    ],
+    'Rev Fábrica',
+    '#9C27B0',
   )
   const kpiValidado = getStatusInfo(['validado'], 'Validado', '#4CAF50')
 
@@ -233,7 +240,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {[kpiFaltaDocs, kpiProntoRevisao, kpiAjustePendencia, kpiValidado].map((kpi) => (
+        {[kpiFaltaDocs, kpiProntoRevisao, kpiRevFabrica, kpiValidado].map((kpi) => (
           <Card key={kpi.label} className="border-l-4" style={{ borderLeftColor: kpi.color }}>
             <CardContent className="p-4 flex flex-col justify-center">
               <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">

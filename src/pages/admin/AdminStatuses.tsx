@@ -202,6 +202,10 @@ export default function AdminStatuses() {
                           {s.name}
                         </Badge>
                       ) : s.color === 'warning' ? (
+                        <Badge className="bg-yellow-500 hover:bg-yellow-600 text-black border-transparent">
+                          {s.name}
+                        </Badge>
+                      ) : s.color === 'orange' ? (
                         <Badge className="bg-orange-500 hover:bg-orange-600 text-white border-transparent">
                           {s.name}
                         </Badge>

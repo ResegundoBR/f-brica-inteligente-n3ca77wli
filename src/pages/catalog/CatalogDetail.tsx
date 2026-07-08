@@ -80,7 +80,11 @@ export default function CatalogDetail() {
       const urlParams = new URLSearchParams(window.location.search)
       if (urlParams.get('tab') === 'revisao') {
         setActiveTab('revisao')
-      } else if (statusName.includes('pendencia') || statusName.includes('pendência')) {
+      } else if (
+        statusName.includes('rev fábrica') ||
+        statusName.includes('pendencia') ||
+        statusName.includes('pendência')
+      ) {
         setActiveTab('revisao')
       }
 
@@ -188,7 +192,9 @@ export default function CatalogDetail() {
       } else if (action === 'return_for_adjustments') {
         const adjStatus = statuses.find(
           (s) =>
-            s.name.toLowerCase().includes('pendência') || s.name.toLowerCase().includes('ajuste'),
+            s.name.toLowerCase().includes('rev fábrica') ||
+            s.name.toLowerCase().includes('pendência') ||
+            s.name.toLowerCase().includes('ajuste'),
         )
         if (adjStatus) targetStatus = adjStatus.id
       } else if (id === 'novo' && !targetStatus) {
@@ -298,7 +304,7 @@ export default function CatalogDetail() {
         color: '#FF9800',
       }
     }
-    if (lower === 'ajuste/pendência' || lower === 'pendência') {
+    if (lower === 'rev fábrica' || lower === 'ajuste/pendência' || lower === 'pendência') {
       return {
         text: 'Existem pendências sinalizadas. O Registrador deve realizar os ajustes.',
         bg: 'bg-[#9C27B0]/20',

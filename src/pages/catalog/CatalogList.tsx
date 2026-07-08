@@ -33,6 +33,7 @@ import {
 } from '@/components/ui/table'
 import { Product, ProductStatusModel } from '@/types'
 import pb from '@/lib/pocketbase/client'
+import { resolveStatusColor } from '@/lib/status-colors'
 import { useRealtime } from '@/hooks/use-realtime'
 import { useAuth } from '@/hooks/use-auth'
 import { format } from 'date-fns'
@@ -51,15 +52,7 @@ export function LightPanelStatus({ status }: { status?: ProductStatusModel | str
 
   const statusObj = typeof status === 'string' ? null : status
   const statusName = statusObj ? statusObj.name : (status as string)
-  let color = statusObj?.color || '#94a3b8'
-
-  if (!statusObj?.color) {
-    const lower = statusName.toLowerCase()
-    if (lower === 'falta docs' || lower === 'iniciado') color = '#FFEB3B'
-    else if (lower === 'pronto p/ revisão' || lower === 'revisão') color = '#FF9800'
-    else if (lower === 'ajuste/pendência' || lower === 'pendência') color = '#9C27B0'
-    else if (lower === 'validado') color = '#4CAF50'
-  }
+  const color = resolveStatusColor(statusObj?.color, statusName)
 
   return (
     <div className="flex items-center gap-2">

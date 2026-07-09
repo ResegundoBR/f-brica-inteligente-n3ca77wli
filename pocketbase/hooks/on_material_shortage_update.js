@@ -1,9 +1,22 @@
 onRecordUpdate((e) => {
   const record = e.record
-  const oldStatus = record.original().getString('status') || ''
-  const newStatus = record.getString('status') || ''
+  if (!record) {
+    e.next()
+    return
+  }
 
-  const dateStr = new Date().toISOString().split('T')[0]
+  var oldStatus = ''
+  try {
+    var original = record.original()
+    if (original && typeof original.getString === 'function') {
+      oldStatus = original.getString('status') || ''
+    }
+  } catch (_) {
+    // original() may not be available in all contexts
+  }
+
+  var newStatus = record.getString('status') || ''
+  var dateStr = new Date().toISOString().split('T')[0]
 
   if (newStatus === 'Cotação' && oldStatus !== 'Cotação') {
     if (!record.getString('quotation_date')) {
@@ -17,9 +30,16 @@ onRecordUpdate((e) => {
     }
   }
 
-  const receivedQty = record.getNumber('received_quantity') || 0
-  const totalQty = record.getNumber('quantity') || 0
-  const currentStatus = record.getString('status') || ''
+  var receivedQty = 0
+  var totalQty = 0
+  try {
+    receivedQty = record.getNumber('received_quantity') || 0
+    totalQty = record.getNumber('quantity') || 0
+  } catch (_) {
+    // numeric getters may fail if fields are not yet set
+  }
+
+  var currentStatus = record.getString('status') || ''
 
   if (currentStatus !== 'Cancelado' && currentStatus !== 'Liberado_Estoque') {
     if (totalQty > 0 && receivedQty > 0 && receivedQty >= totalQty) {

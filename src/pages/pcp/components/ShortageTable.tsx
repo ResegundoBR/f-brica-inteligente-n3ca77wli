@@ -28,6 +28,14 @@ import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { format, parseISO } from 'date-fns'
 import { extractFieldErrors, type FieldErrors } from '@/lib/pocketbase/errors'
+import {
+  sanitizeNumber,
+  sanitizeDate,
+  sanitizeString,
+  sanitizeSelectValue,
+  VALID_PRIORITIES,
+  VALID_STATUSES,
+} from '@/lib/shortage-utils'
 
 function HistoryPanel({ history }: { history: any[] }) {
   if (history.length === 0) return null
@@ -155,26 +163,14 @@ function ShortageDetailsModal({
 
     try {
       const safeQuantity = Number.isFinite(qtyNum) && qtyNum > 0 ? qtyNum : 1
+      const safeReceivedQty = sanitizeNumber(receivedQuantity, 0, 0)
+      const safeUnitPrice = sanitizeNumber(unitPrice, 0, 0)
+      const safeExpectedDate = sanitizeDate(expectedDate)
+      const safeSupplier = sanitizeString(supplier)
+      const safePriority = sanitizeSelectValue(priority, VALID_PRIORITIES, 'Sem pressa')
 
-      const rqRaw =
-        receivedQuantity !== '' && receivedQuantity != null ? Number(receivedQuantity) : 0
-      const safeReceivedQty = Number.isFinite(rqRaw) && rqRaw >= 0 ? rqRaw : 0
-
-      const upRaw = unitPrice !== '' && unitPrice != null ? Number(unitPrice) : 0
-      const safeUnitPrice = Number.isFinite(upRaw) && upRaw >= 0 ? upRaw : 0
-
-      const safeExpectedDate =
-        typeof expectedDate === 'string' && expectedDate.trim().length > 0
-          ? expectedDate.trim()
-          : null
-
-      const safeSupplier = typeof supplier === 'string' ? supplier.trim() : ''
-
-      const validPriorities = ['Sem pressa', 'Próximos dias', 'Urgente']
-      const safePriority = validPriorities.includes(priority) ? priority : 'Sem pressa'
-
-      let computedStatus = status
-      if (status !== 'Cancelado' && status !== 'Liberado_Estoque') {
+      let computedStatus = sanitizeSelectValue(status, VALID_STATUSES, 'Pendente')
+      if (computedStatus !== 'Cancelado' && computedStatus !== 'Liberado_Estoque') {
         if (safeQuantity > 0 && safeReceivedQty >= safeQuantity) {
           computedStatus = 'Recebido'
         } else if (safeQuantity > 0 && safeReceivedQty > 0 && safeReceivedQty < safeQuantity) {

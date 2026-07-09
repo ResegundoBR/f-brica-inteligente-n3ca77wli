@@ -27,6 +27,13 @@ import { PcpOrder, Product, MaterialShortage } from '@/types'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
 import { extractFieldErrors, type FieldErrors } from '@/lib/pocketbase/errors'
+import {
+  sanitizeNumber,
+  sanitizeString,
+  sanitizeSelectValue,
+  VALID_PRIORITIES,
+  VALID_REQUEST_TYPES,
+} from '@/lib/shortage-utils'
 
 export function NewShortageModal({
   open,
@@ -183,19 +190,19 @@ export function NewShortageModal({
         throw new Error('A quantidade deve ser maior que zero')
       if (!sector) throw new Error('O setor é obrigatório')
 
-      const safeUnitPrice = unitPrice && Number.isFinite(Number(unitPrice)) ? Number(unitPrice) : 0
+      const safeUnitPrice = sanitizeNumber(unitPrice, 0, 0)
 
       await pb.collection('material_shortages').create({
         order_id: selectedOrderId === 'none' ? undefined : selectedOrderId,
-        description: itemDesc,
-        code: itemCode,
+        description: sanitizeString(itemDesc),
+        code: sanitizeString(itemCode),
         quantity: numQty,
-        sector,
+        sector: sanitizeString(sector),
         status: 'Pendente',
-        priority,
-        request_type: requestType,
+        priority: sanitizeSelectValue(priority, VALID_PRIORITIES, 'Sem pressa'),
+        request_type: sanitizeSelectValue(requestType, VALID_REQUEST_TYPES, 'Materiais'),
         requested_by: user?.id,
-        observation,
+        observation: sanitizeString(observation),
         unit_price: safeUnitPrice,
       })
 

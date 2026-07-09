@@ -154,19 +154,14 @@ function ShortageDetailsModal({
     }
 
     try {
-      const safeQuantity = qtyNum > 0 ? qtyNum : 1
+      const safeQuantity = Number.isFinite(qtyNum) && qtyNum > 0 ? qtyNum : 1
 
-      let safeReceivedQty: number | null = null
-      if (receivedQuantity !== '' && receivedQuantity != null) {
-        const rq = Number(receivedQuantity)
-        safeReceivedQty = Number.isFinite(rq) && rq >= 0 ? rq : null
-      }
+      const rqRaw =
+        receivedQuantity !== '' && receivedQuantity != null ? Number(receivedQuantity) : 0
+      const safeReceivedQty = Number.isFinite(rqRaw) && rqRaw >= 0 ? rqRaw : 0
 
-      let safeUnitPrice: number | null = null
-      if (unitPrice !== '' && unitPrice != null) {
-        const up = Number(unitPrice)
-        safeUnitPrice = Number.isFinite(up) && up >= 0 ? up : null
-      }
+      const upRaw = unitPrice !== '' && unitPrice != null ? Number(unitPrice) : 0
+      const safeUnitPrice = Number.isFinite(upRaw) && upRaw >= 0 ? upRaw : 0
 
       const safeExpectedDate =
         typeof expectedDate === 'string' && expectedDate.trim().length > 0
@@ -180,19 +175,14 @@ function ShortageDetailsModal({
 
       let computedStatus = status
       if (status !== 'Cancelado' && status !== 'Liberado_Estoque') {
-        if (safeQuantity > 0 && safeReceivedQty != null && safeReceivedQty >= safeQuantity) {
+        if (safeQuantity > 0 && safeReceivedQty >= safeQuantity) {
           computedStatus = 'Recebido'
-        } else if (
-          safeQuantity > 0 &&
-          safeReceivedQty != null &&
-          safeReceivedQty > 0 &&
-          safeReceivedQty < safeQuantity
-        ) {
+        } else if (safeQuantity > 0 && safeReceivedQty > 0 && safeReceivedQty < safeQuantity) {
           computedStatus = 'Recebido_Parcial'
         }
       }
 
-      await pb.collection('material_shortages').update(item.id, {
+      const updatePayload: Record<string, number | string | null> = {
         quantity: safeQuantity,
         received_quantity: safeReceivedQty,
         status: computedStatus,
@@ -200,7 +190,9 @@ function ShortageDetailsModal({
         unit_price: safeUnitPrice,
         supplier: safeSupplier,
         expected_date: safeExpectedDate,
-      })
+      }
+
+      await pb.collection('material_shortages').update(item.id, updatePayload)
       toast({ title: 'Item atualizado com sucesso' })
       onClose()
     } catch (err: any) {
@@ -572,7 +564,7 @@ function ShortageRow({
               defaultValue={item.quantity}
               onBlur={async (e) => {
                 const val = Number(e.target.value)
-                if (val > 0 && val !== item.quantity) {
+                if (Number.isFinite(val) && val > 0 && val !== item.quantity) {
                   try {
                     await pb.collection('material_shortages').update(item.id, { quantity: val })
                   } catch (err: any) {

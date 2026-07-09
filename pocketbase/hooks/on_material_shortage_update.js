@@ -3,7 +3,7 @@ onRecordUpdate((e) => {
   const oldStatus = record.original().getString('status') || ''
   const newStatus = record.getString('status') || ''
 
-  var dateStr = new Date().toISOString().split('T')[0]
+  const dateStr = new Date().toISOString().split('T')[0]
 
   if (newStatus === 'Cotação' && oldStatus !== 'Cotação') {
     if (!record.getString('quotation_date')) {
@@ -17,20 +17,12 @@ onRecordUpdate((e) => {
     }
   }
 
-  var receivedQty = record.getNumber('received_quantity')
-  if (receivedQty !== receivedQty) {
-    receivedQty = 0
-  }
-
-  var totalQty = record.getNumber('quantity')
-  if (totalQty !== totalQty) {
-    totalQty = 0
-  }
-
-  var currentStatus = record.getString('status') || ''
+  const receivedQty = record.getNumber('received_quantity') || 0
+  const totalQty = record.getNumber('quantity') || 0
+  const currentStatus = record.getString('status') || ''
 
   if (currentStatus !== 'Cancelado' && currentStatus !== 'Liberado_Estoque') {
-    if (totalQty > 0 && receivedQty >= totalQty) {
+    if (totalQty > 0 && receivedQty > 0 && receivedQty >= totalQty) {
       record.set('status', 'Recebido')
     } else if (totalQty > 0 && receivedQty > 0 && receivedQty < totalQty) {
       record.set('status', 'Recebido_Parcial')

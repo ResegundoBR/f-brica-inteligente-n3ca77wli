@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-09T12:35:30.289Z",
+  "generatedAt": "2026-07-09T14:12:13.521Z",
   "collections": [
     {
       "name": "users",
@@ -1333,40 +1333,11 @@
           "autodateTriggers": ["onCreate", "onUpdate"]
         },
         {
-          "name": "priority",
-          "type": "select",
-          "required": false,
-          "system": false,
-          "selectValues": ["Sem pressa", "Próximos dias", "Urgente"]
-        },
-        {
-          "name": "request_type",
-          "type": "select",
-          "required": false,
-          "system": false,
-          "selectValues": ["Ferramentas", "Materiais", "Produtos", "Insumos"]
-        },
-        {
           "name": "requested_by",
           "type": "relation",
           "required": false,
           "system": false,
           "collectionRef": "users"
-        },
-        {
-          "name": "status",
-          "type": "select",
-          "required": true,
-          "system": false,
-          "selectValues": [
-            "Pendente",
-            "Liberado_Estoque",
-            "Cotação",
-            "Compra",
-            "Recebido",
-            "Recebido_Parcial",
-            "Cancelado"
-          ]
         },
         {
           "name": "expected_date",
@@ -1403,6 +1374,35 @@
           "type": "text",
           "required": false,
           "system": false
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": [
+            "Pendente",
+            "Liberado_Estoque",
+            "Cotação",
+            "Compra",
+            "Recebido",
+            "Recebido_Parcial",
+            "Cancelado"
+          ]
+        },
+        {
+          "name": "priority",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["Sem pressa", "Próximos dias", "Urgente"]
+        },
+        {
+          "name": "request_type",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["Ferramentas", "Materiais", "Produtos", "Insumos"]
         }
       ],
       "indexes": [

@@ -183,11 +183,10 @@ export function NewShortageModal({
         throw new Error('A quantidade deve ser maior que zero')
       if (!sector) throw new Error('O setor é obrigatório')
 
-      const safeUnitPrice =
-        unitPrice && Number.isFinite(Number(unitPrice)) ? Number(unitPrice) : null
+      const safeUnitPrice = unitPrice && Number.isFinite(Number(unitPrice)) ? Number(unitPrice) : 0
 
       await pb.collection('material_shortages').create({
-        order_id: selectedOrderId === 'none' ? null : selectedOrderId,
+        order_id: selectedOrderId === 'none' ? undefined : selectedOrderId,
         description: itemDesc,
         code: itemCode,
         quantity: numQty,

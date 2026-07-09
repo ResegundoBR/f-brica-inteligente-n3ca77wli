@@ -6,15 +6,26 @@ onRecordAfterUpdateSuccess((e) => {
   const orderId = e.record.getString('order_id')
   if (!orderId) return e.next()
 
+  var shortages = []
+  try {
+    shortages = $app.findRecordsByFilter(
+      'material_shortages',
+      "order_id = '" + orderId + "'",
+      '',
+      1000,
+      0,
+    )
+  } catch (err) {
+    console.log('Error fetching shortages for order', orderId, err.message)
+    return e.next()
+  }
+
+  if (shortages.length === 0) return e.next()
+
   const resolvedStatuses = ['Recebido', 'Liberado_Estoque', 'Cancelado']
-  const shortages = $app.findRecordsByFilter(
-    'material_shortages',
-    "order_id = '" + orderId + "'",
-    '',
-    1000,
-    0,
-  )
-  const allResolved = shortages.every((s) => resolvedStatuses.includes(s.getString('status')))
+  const allResolved = shortages.every(function (s) {
+    return resolvedStatuses.includes(s.getString('status'))
+  })
 
   if (allResolved) {
     try {
@@ -49,15 +60,26 @@ onRecordAfterDeleteSuccess((e) => {
   const orderId = e.record.getString('order_id')
   if (!orderId) return e.next()
 
+  var shortages = []
+  try {
+    shortages = $app.findRecordsByFilter(
+      'material_shortages',
+      "order_id = '" + orderId + "'",
+      '',
+      1000,
+      0,
+    )
+  } catch (err) {
+    console.log('Error fetching shortages for order', orderId, err.message)
+    return e.next()
+  }
+
   const resolvedStatuses = ['Recebido', 'Liberado_Estoque', 'Cancelado']
-  const shortages = $app.findRecordsByFilter(
-    'material_shortages',
-    "order_id = '" + orderId + "'",
-    '',
-    1000,
-    0,
-  )
-  const allResolved = shortages.every((s) => resolvedStatuses.includes(s.getString('status')))
+  var allResolved =
+    shortages.length === 0 ||
+    shortages.every(function (s) {
+      return resolvedStatuses.includes(s.getString('status'))
+    })
 
   if (allResolved) {
     try {

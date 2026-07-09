@@ -125,24 +125,45 @@ function ShortageDetailsModal({
 
   const handleSave = async () => {
     try {
-      const safeQuantity = Number.isFinite(quantity) && quantity > 0 ? quantity : item.quantity
-      const safeReceivedQty =
-        receivedQuantity === ''
-          ? null
-          : Number.isFinite(Number(receivedQuantity))
-            ? Number(receivedQuantity)
-            : null
-      const safeUnitPrice =
-        unitPrice === '' ? null : Number.isFinite(Number(unitPrice)) ? Number(unitPrice) : null
+      const qtyNum = Number(quantity)
+      const itemQty = Number(item.quantity)
+      const safeQuantity =
+        Number.isFinite(qtyNum) && qtyNum > 0
+          ? qtyNum
+          : Number.isFinite(itemQty) && itemQty > 0
+            ? itemQty
+            : 1
+
+      let safeReceivedQty: number | null = null
+      if (receivedQuantity !== '' && receivedQuantity != null) {
+        const rq = Number(receivedQuantity)
+        safeReceivedQty = Number.isFinite(rq) && rq >= 0 ? rq : null
+      }
+
+      let safeUnitPrice: number | null = null
+      if (unitPrice !== '' && unitPrice != null) {
+        const up = Number(unitPrice)
+        safeUnitPrice = Number.isFinite(up) && up >= 0 ? up : null
+      }
+
+      const safeExpectedDate =
+        typeof expectedDate === 'string' && expectedDate.trim().length > 0
+          ? expectedDate.trim()
+          : null
+
+      const safeSupplier = typeof supplier === 'string' ? supplier.trim() : ''
+
+      const validPriorities = ['Sem pressa', 'Próximos dias', 'Urgente']
+      const safePriority = validPriorities.includes(priority) ? priority : 'Sem pressa'
 
       await pb.collection('material_shortages').update(item.id, {
         quantity: safeQuantity,
         received_quantity: safeReceivedQty,
         status,
-        priority,
+        priority: safePriority,
         unit_price: safeUnitPrice,
-        supplier: supplier || '',
-        expected_date: expectedDate || null,
+        supplier: safeSupplier,
+        expected_date: safeExpectedDate,
       })
       toast({ title: 'Item atualizado com sucesso' })
       onClose()

@@ -175,22 +175,26 @@ export function NewShortageModal({
   const handleSubmit = async () => {
     try {
       if (!itemDesc) throw new Error('A descrição do item é obrigatória')
-      if (!quantity || Number(quantity) <= 0)
+      const numQty = Number(quantity)
+      if (!Number.isFinite(numQty) || numQty <= 0)
         throw new Error('A quantidade deve ser maior que zero')
       if (!sector) throw new Error('O setor é obrigatório')
+
+      const safeUnitPrice =
+        unitPrice && Number.isFinite(Number(unitPrice)) ? Number(unitPrice) : null
 
       await pb.collection('material_shortages').create({
         order_id: selectedOrderId === 'none' ? null : selectedOrderId,
         description: itemDesc,
         code: itemCode,
-        quantity: Number(quantity),
+        quantity: numQty,
         sector,
         status: 'Pendente',
         priority,
         request_type: requestType,
         requested_by: user?.id,
         observation,
-        unit_price: unitPrice ? Number(unitPrice) : null,
+        unit_price: safeUnitPrice,
       })
 
       toast({ title: 'Solicitação criada com sucesso' })

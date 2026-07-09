@@ -27,6 +27,7 @@ import { CheckCircle, ShoppingCart, AlertCircle, TrendingUp, AlertTriangle } fro
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { format, parseISO } from 'date-fns'
+import { extractFieldErrors, type FieldErrors } from '@/lib/pocketbase/errors'
 
 function HistoryPanel({ history }: { history: any[] }) {
   if (history.length === 0) return null
@@ -92,6 +93,7 @@ function ShortageDetailsModal({
 
   const [history, setHistory] = useState<MaterialShortage[]>([])
   const [supplierSuggestions, setSupplierSuggestions] = useState<string[]>([])
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
 
   useEffect(() => {
     const fetchHistory = async () => {
@@ -124,15 +126,35 @@ function ShortageDetailsModal({
   }, [item])
 
   const handleSave = async () => {
+    setFieldErrors({})
+
+    const validationErrors: FieldErrors = {}
+    const qtyNum = Number(quantity)
+    if (!Number.isFinite(qtyNum) || qtyNum <= 0) {
+      validationErrors.quantity = 'A quantidade deve ser maior que zero.'
+    }
+
+    if (receivedQuantity !== '' && receivedQuantity != null) {
+      const rq = Number(receivedQuantity)
+      if (!Number.isFinite(rq) || rq < 0) {
+        validationErrors.received_quantity = 'A quantidade recebida deve ser maior ou igual a zero.'
+      }
+    }
+
+    if (unitPrice !== '' && unitPrice != null) {
+      const up = Number(unitPrice)
+      if (!Number.isFinite(up) || up < 0) {
+        validationErrors.unit_price = 'O preço unitário deve ser maior ou igual a zero.'
+      }
+    }
+
+    if (Object.keys(validationErrors).length > 0) {
+      setFieldErrors(validationErrors)
+      return
+    }
+
     try {
-      const qtyNum = Number(quantity)
-      const itemQty = Number(item.quantity)
-      const safeQuantity =
-        Number.isFinite(qtyNum) && qtyNum > 0
-          ? qtyNum
-          : Number.isFinite(itemQty) && itemQty > 0
-            ? itemQty
-            : 1
+      const safeQuantity = qtyNum > 0 ? qtyNum : 1
 
       let safeReceivedQty: number | null = null
       if (receivedQuantity !== '' && receivedQuantity != null) {
@@ -156,10 +178,24 @@ function ShortageDetailsModal({
       const validPriorities = ['Sem pressa', 'Próximos dias', 'Urgente']
       const safePriority = validPriorities.includes(priority) ? priority : 'Sem pressa'
 
+      let computedStatus = status
+      if (status !== 'Cancelado' && status !== 'Liberado_Estoque') {
+        if (safeQuantity > 0 && safeReceivedQty != null && safeReceivedQty >= safeQuantity) {
+          computedStatus = 'Recebido'
+        } else if (
+          safeQuantity > 0 &&
+          safeReceivedQty != null &&
+          safeReceivedQty > 0 &&
+          safeReceivedQty < safeQuantity
+        ) {
+          computedStatus = 'Recebido_Parcial'
+        }
+      }
+
       await pb.collection('material_shortages').update(item.id, {
         quantity: safeQuantity,
         received_quantity: safeReceivedQty,
-        status,
+        status: computedStatus,
         priority: safePriority,
         unit_price: safeUnitPrice,
         supplier: safeSupplier,
@@ -168,7 +204,13 @@ function ShortageDetailsModal({
       toast({ title: 'Item atualizado com sucesso' })
       onClose()
     } catch (err: any) {
-      toast({ title: 'Erro', description: err.message, variant: 'destructive' })
+      const backendErrors = extractFieldErrors(err)
+      if (Object.keys(backendErrors).length > 0) {
+        setFieldErrors(backendErrors)
+      }
+      const errorMsg =
+        Object.values(backendErrors).join(' ') || err.message || 'Falha ao atualizar o registro.'
+      toast({ title: 'Erro ao atualizar', description: errorMsg, variant: 'destructive' })
     }
   }
 
@@ -178,7 +220,10 @@ function ShortageDetailsModal({
       toast({ title: 'Status atualizado com sucesso' })
       onClose()
     } catch (err: any) {
-      toast({ title: 'Erro', description: err.message, variant: 'destructive' })
+      const errors = extractFieldErrors(err)
+      const errorMsg =
+        Object.values(errors).join(' ') || err.message || 'Falha ao atualizar o status.'
+      toast({ title: 'Erro ao atualizar status', description: errorMsg, variant: 'destructive' })
     }
   }
 
@@ -305,8 +350,9 @@ function ShortageDetailsModal({
               min={1}
               value={quantity}
               onChange={(e) => setQuantity(Number(e.target.value))}
-              className="bg-white dark:bg-slate-950"
+              className={cn('bg-white dark:bg-slate-950', fieldErrors.quantity && 'border-red-500')}
             />
+            {fieldErrors.quantity && <p className="text-xs text-red-500">{fieldErrors.quantity}</p>}
           </div>
           <div className="space-y-1.5">
             <Label>Quantidade Recebida</Label>
@@ -317,8 +363,14 @@ function ShortageDetailsModal({
               value={receivedQuantity}
               onChange={(e) => setReceivedQuantity(e.target.value ? Number(e.target.value) : '')}
               placeholder="0"
-              className="bg-white dark:bg-slate-950"
+              className={cn(
+                'bg-white dark:bg-slate-950',
+                fieldErrors.received_quantity && 'border-red-500',
+              )}
             />
+            {fieldErrors.received_quantity && (
+              <p className="text-xs text-red-500">{fieldErrors.received_quantity}</p>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label>Status</Label>
@@ -388,12 +440,16 @@ function ShortageDetailsModal({
                 className={cn(
                   'bg-white dark:bg-slate-950',
                   isPriceHigher && 'border-amber-400 focus-visible:ring-amber-400',
+                  fieldErrors.unit_price && 'border-red-500',
                 )}
               />
               {isPriceHigher && (
                 <AlertTriangle className="size-4 text-amber-500 absolute right-3 top-1/2 -translate-y-1/2" />
               )}
             </div>
+            {fieldErrors.unit_price && (
+              <p className="text-xs text-red-500">{fieldErrors.unit_price}</p>
+            )}
           </div>
         </div>
 
@@ -422,8 +478,14 @@ function ShortageDetailsModal({
               type="date"
               value={expectedDate}
               onChange={(e) => setExpectedDate(e.target.value)}
-              className="bg-white dark:bg-slate-950"
+              className={cn(
+                'bg-white dark:bg-slate-950',
+                fieldErrors.expected_date && 'border-red-500',
+              )}
             />
+            {fieldErrors.expected_date && (
+              <p className="text-xs text-red-500">{fieldErrors.expected_date}</p>
+            )}
           </div>
         </div>
 
@@ -477,6 +539,7 @@ function ShortageRow({
   const isUrgent = item.priority === 'Urgente'
   const selectedIds = useShortageStore((state) => state.selectedIds)
   const toggle = useShortageStore((state) => state.toggle)
+  const { toast } = useToast()
 
   return (
     <>
@@ -512,8 +575,13 @@ function ShortageRow({
                 if (val > 0 && val !== item.quantity) {
                   try {
                     await pb.collection('material_shortages').update(item.id, { quantity: val })
-                  } catch (err) {
-                    /* ignore */
+                  } catch (err: any) {
+                    const errors = extractFieldErrors(err)
+                    const errorMsg =
+                      Object.values(errors).join(' ') ||
+                      err.message ||
+                      'Falha ao atualizar quantidade.'
+                    toast({ title: 'Erro', description: errorMsg, variant: 'destructive' })
                   }
                 }
               }}

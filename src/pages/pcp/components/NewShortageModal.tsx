@@ -26,6 +26,7 @@ import { cn } from '@/lib/utils'
 import { PcpOrder, Product, MaterialShortage } from '@/types'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
+import { extractFieldErrors, type FieldErrors } from '@/lib/pocketbase/errors'
 
 export function NewShortageModal({
   open,
@@ -51,6 +52,7 @@ export function NewShortageModal({
 
   const [unitPrice, setUnitPrice] = useState<string>('')
   const [history, setHistory] = useState<MaterialShortage[]>([])
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
 
   const [comboboxOpen, setComboboxOpen] = useState(false)
   const [suggestions, setSuggestions] = useState<{ code: string; desc: string }[]>([])
@@ -173,6 +175,7 @@ export function NewShortageModal({
   const isPriceHigh = averagePrice > 0 && Number(unitPrice) > averagePrice
 
   const handleSubmit = async () => {
+    setFieldErrors({})
     try {
       if (!itemDesc) throw new Error('A descrição do item é obrigatória')
       const numQty = Number(quantity)
@@ -200,7 +203,11 @@ export function NewShortageModal({
       toast({ title: 'Solicitação criada com sucesso' })
       onOpenChange(false)
     } catch (err: any) {
-      toast({ title: 'Erro', description: err.message, variant: 'destructive' })
+      const errors = extractFieldErrors(err)
+      setFieldErrors(errors)
+      const errorMsg =
+        Object.values(errors).join(' ') || err.message || 'Falha ao criar a solicitação.'
+      toast({ title: 'Erro', description: errorMsg, variant: 'destructive' })
     }
   }
 

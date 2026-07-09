@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-08T23:22:12.140Z",
+  "generatedAt": "2026-07-09T12:35:30.289Z",
   "collections": [
     {
       "name": "users",
@@ -1313,18 +1313,6 @@
           "system": false
         },
         {
-          "name": "supplier",
-          "type": "text",
-          "required": false,
-          "system": false
-        },
-        {
-          "name": "expected_date",
-          "type": "date",
-          "required": false,
-          "system": false
-        },
-        {
           "name": "observation",
           "type": "text",
           "required": false,
@@ -1366,30 +1354,6 @@
           "collectionRef": "users"
         },
         {
-          "name": "unit_price",
-          "type": "number",
-          "required": false,
-          "system": false
-        },
-        {
-          "name": "purchase_date",
-          "type": "date",
-          "required": false,
-          "system": false
-        },
-        {
-          "name": "received_quantity",
-          "type": "number",
-          "required": false,
-          "system": false
-        },
-        {
-          "name": "quotation_date",
-          "type": "date",
-          "required": false,
-          "system": false
-        },
-        {
           "name": "status",
           "type": "select",
           "required": true,
@@ -1403,6 +1367,42 @@
             "Recebido_Parcial",
             "Cancelado"
           ]
+        },
+        {
+          "name": "expected_date",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "purchase_date",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "quotation_date",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "unit_price",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "received_quantity",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "supplier",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [

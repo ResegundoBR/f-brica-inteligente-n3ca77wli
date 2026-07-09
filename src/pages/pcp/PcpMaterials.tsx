@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { extractFieldErrors } from '@/lib/pocketbase/errors'
 
 export default function PcpMaterials() {
   const [modalOpen, setModalOpen] = useState(false)
@@ -109,7 +110,10 @@ export default function PcpMaterials() {
       setBatchSupplierValue('')
       clear()
     } catch (err: any) {
-      toast({ title: 'Erro', description: err.message, variant: 'destructive' })
+      const errors = extractFieldErrors(err)
+      const errorMsg =
+        Object.values(errors).join(' ') || err.message || 'Falha ao atribuir fornecedor.'
+      toast({ title: 'Erro', description: errorMsg, variant: 'destructive' })
     }
   }
 

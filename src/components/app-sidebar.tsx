@@ -18,8 +18,13 @@ import {
   LogOut,
   PanelLeftClose,
   PanelLeft,
-  Package,
   Search,
+  ClipboardList,
+  Tags,
+  ShoppingCart,
+  PackageCheck,
+  Warehouse,
+  Truck,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -50,7 +55,27 @@ const navItems = [
     icon: GraduationCap,
     group: 'Produto/Processos',
   },
-  { title: 'Suprimentos', url: '/pcp/materiais', icon: Package, group: 'Suprimentos' },
+  {
+    title: 'Solicitações',
+    url: '/pcp/suprimentos/solicitacoes',
+    icon: ClipboardList,
+    group: 'Suprimentos',
+  },
+  { title: 'Cotações', url: '/pcp/suprimentos/cotacoes', icon: Tags, group: 'Suprimentos' },
+  { title: 'Compras', url: '/pcp/suprimentos/compras', icon: ShoppingCart, group: 'Suprimentos' },
+  {
+    title: 'Recebimento',
+    url: '/pcp/suprimentos/recebimento',
+    icon: PackageCheck,
+    group: 'Suprimentos',
+  },
+  { title: 'Estoque', url: '/pcp/suprimentos/estoque', icon: Warehouse, group: 'Suprimentos' },
+  {
+    title: 'Terceirização',
+    url: '/pcp/suprimentos/terceirizacao',
+    icon: Truck,
+    group: 'Suprimentos',
+  },
   { title: 'Dashboard PCP', url: '/pcp/dashboard', icon: LayoutDashboard, group: 'PCP' },
   { title: 'Painel de Controle', url: '/pcp/kanban', icon: Kanban, group: 'PCP' },
   { title: 'Ordens de Produção', url: '/pcp/ordens', icon: FileText, group: 'PCP' },
@@ -120,7 +145,12 @@ export function AppSidebar() {
         return !!role.access_painel_controle || !!role.access_pcp
       case 'Ordens de Produção':
         return !!role.access_ordens_producao || !!role.access_pcp
-      case 'Suprimentos':
+      case 'Solicitações':
+      case 'Cotações':
+      case 'Compras':
+      case 'Recebimento':
+      case 'Estoque':
+      case 'Terceirização':
         return !!role.access_suprimentos || !!role.access_pcp || !!role.access_produto_processos
       case 'Portal do Operador':
         return !!role.access_operator || !!role.access_pcp

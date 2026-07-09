@@ -15,7 +15,12 @@ import AdminLogs from './pages/admin/AdminLogs'
 import PcpKanban from './pages/pcp/PcpKanban'
 import PcpDashboard from './pages/pcp/PcpDashboard'
 import PcpOrders from './pages/pcp/PcpOrders'
-import PcpMaterials from './pages/pcp/PcpMaterials'
+import SolicitacoesPage from './pages/pcp/suprimentos/SolicitacoesPage'
+import CotacoesPage from './pages/pcp/suprimentos/CotacoesPage'
+import ComprasPage from './pages/pcp/suprimentos/ComprasPage'
+import RecebimentoPage from './pages/pcp/suprimentos/RecebimentoPage'
+import EstoquePage from './pages/pcp/suprimentos/EstoquePage'
+import TerceirizacaoPage from './pages/pcp/suprimentos/TerceirizacaoPage'
 import PcpClients from './pages/pcp/PcpClients'
 import PcpOperator from './pages/pcp/PcpOperator'
 import PcpCommercial from './pages/pcp/PcpCommercial'
@@ -177,10 +182,50 @@ const App = () => (
                 }
               />
               <Route
-                path="/pcp/materiais"
+                path="/pcp/suprimentos/solicitacoes"
                 element={
                   <RoleGuard module="suprimentos">
-                    <PcpMaterials />
+                    <SolicitacoesPage />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/pcp/suprimentos/cotacoes"
+                element={
+                  <RoleGuard module="suprimentos">
+                    <CotacoesPage />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/pcp/suprimentos/compras"
+                element={
+                  <RoleGuard module="suprimentos">
+                    <ComprasPage />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/pcp/suprimentos/recebimento"
+                element={
+                  <RoleGuard module="suprimentos">
+                    <RecebimentoPage />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/pcp/suprimentos/estoque"
+                element={
+                  <RoleGuard module="suprimentos">
+                    <EstoquePage />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/pcp/suprimentos/terceirizacao"
+                element={
+                  <RoleGuard module="suprimentos">
+                    <TerceirizacaoPage />
                   </RoleGuard>
                 }
               />

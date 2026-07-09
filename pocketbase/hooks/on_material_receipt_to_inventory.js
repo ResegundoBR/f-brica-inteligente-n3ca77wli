@@ -3,7 +3,6 @@ onRecordAfterUpdateSuccess((e) => {
   const oldStatus = e.record.original().getString('status')
 
   if (newStatus !== 'Recebido' && newStatus !== 'Recebido_Parcial') return e.next()
-  if (newStatus === oldStatus) return e.next()
 
   const code = e.record.getString('code') || ''
   const description = e.record.getString('description') || ''

@@ -349,3 +349,45 @@ export interface PcpOrderMessage {
     order_id?: PcpOrder
   }
 }
+
+export interface Quotation {
+  id: string
+  material_shortage_id: string
+  supplier: string
+  price: number
+  delivery_days?: number
+  selected?: boolean
+  created: string
+  updated: string
+  expand?: {
+    material_shortage_id?: MaterialShortage
+  }
+}
+
+export interface Inventory {
+  id: string
+  code: string
+  description: string
+  quantity: number
+  min_quantity?: number
+  unit?: string
+  created: string
+  updated: string
+}
+
+export interface InventoryMovement {
+  id: string
+  inventory_id: string
+  user_id?: string
+  quantity: number
+  type: 'Entrada' | 'Saída'
+  reason?: string
+  order_id?: string
+  created: string
+  updated: string
+  expand?: {
+    inventory_id?: Inventory
+    user_id?: User
+    order_id?: PcpOrder
+  }
+}

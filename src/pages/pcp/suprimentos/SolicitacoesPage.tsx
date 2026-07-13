@@ -14,21 +14,25 @@ import { Label } from '@/components/ui/label'
 import { MaterialShortage } from '@/types'
 import { ClipboardList, Plus, Copy, Tag } from 'lucide-react'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
-import ShortageTable from '@/pages/pcp/components/ShortageTable'
+import { TriageTable } from './components/TriageTable'
+import { TriageDetailDialog } from './components/TriageDetailDialog'
 import { NewShortageModal } from '@/pages/pcp/components/NewShortageModal'
 import { useShortageStore } from '@/stores/useShortageStore'
 import { useToast } from '@/hooks/use-toast'
+import { useNewRequests } from '@/hooks/use-new-requests'
 import { extractFieldErrors } from '@/lib/pocketbase/errors'
 
 export default function SolicitacoesPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [shortages, setShortages] = useState<MaterialShortage[]>([])
+  const [selectedItem, setSelectedItem] = useState<MaterialShortage | null>(null)
   const [batchSupplierOpen, setBatchSupplierOpen] = useState(false)
   const [batchSupplierValue, setBatchSupplierValue] = useState('')
   const [supplierSuggestions, setSupplierSuggestions] = useState<string[]>([])
   const { toast } = useToast()
   const selectedIds = useShortageStore((s) => s.selectedIds)
   const clear = useShortageStore((s) => s.clear)
+  const { markAsViewed } = useNewRequests()
 
   const fetchShortages = async () => {
     try {
@@ -37,8 +41,8 @@ export default function SolicitacoesPage() {
         expand: 'order_id,order_id.product_id,requested_by',
       })
       setShortages(res)
-    } catch (err) {
-      /* ignored */
+    } catch {
+      /* intentionally ignored */
     }
   }
 
@@ -46,15 +50,18 @@ export default function SolicitacoesPage() {
     fetchShortages()
     return () => clear()
   }, [clear])
-
   useRealtime('material_shortages', fetchShortages)
 
+  const handleRowClick = (item: MaterialShortage) => {
+    markAsViewed(item.id)
+    setSelectedItem(item)
+  }
+
   const handleCopyQuotation = () => {
-    const selectedItems = shortages.filter((s) => selectedIds.includes(s.id))
-    if (selectedItems.length === 0) return
-    const text = selectedItems.map((i) => `${i.quantity}x ${i.description}`).join('\n')
-    navigator.clipboard.writeText(text)
-    toast({ title: 'Copiado!', description: 'Lista de cotacao copiada.' })
+    const items = shortages.filter((s) => selectedIds.includes(s.id))
+    if (items.length === 0) return
+    navigator.clipboard.writeText(items.map((i) => `${i.quantity}x ${i.description}`).join('\n'))
+    toast({ title: 'Copiado!', description: 'Lista de cotação copiada.' })
     clear()
   }
 
@@ -65,7 +72,7 @@ export default function SolicitacoesPage() {
         Array.from(new Set(res.map((r: any) => r.supplier).filter(Boolean))) as string[],
       )
     } catch {
-      /* ignored */
+      /* intentionally ignored */
     }
   }
 
@@ -75,13 +82,12 @@ export default function SolicitacoesPage() {
       return
     }
     try {
-      for (const id of selectedIds) {
+      for (const id of selectedIds)
         await pb
           .collection('material_shortages')
           .update(id, { supplier: batchSupplierValue.trim() })
-      }
       toast({
-        title: 'Fornecedor atribuido',
+        title: 'Fornecedor atribuído',
         description: `${selectedIds.length} item(s) atualizado(s).`,
       })
       setBatchSupplierOpen(false)
@@ -89,9 +95,11 @@ export default function SolicitacoesPage() {
       clear()
     } catch (err: any) {
       const errors = extractFieldErrors(err)
-      const errorMsg =
-        Object.values(errors).join(' ') || err.message || 'Falha ao atribuir fornecedor.'
-      toast({ title: 'Erro', description: errorMsg, variant: 'destructive' })
+      toast({
+        title: 'Erro',
+        description: Object.values(errors).join(' ') || err.message || 'Falha ao atribuir.',
+        variant: 'destructive',
+      })
     }
   }
 
@@ -100,29 +108,26 @@ export default function SolicitacoesPage() {
   return (
     <div className="flex flex-col gap-6 p-4 md:p-8 bg-slate-50 min-h-[calc(100vh-4rem)] dark:bg-slate-950">
       <SuprimentosHeader
-        title="Solicitacoes"
-        description="Triagem de solicitacoes da fabrica: usar estoque ou iniciar compra."
+        title="Solicitações"
+        description="Triagem de solicitações da fábrica: usar estoque ou iniciar cotação."
         icon={ClipboardList}
         action={
           <Button
             onClick={() => setModalOpen(true)}
             className="bg-blue-600 hover:bg-blue-700 text-white"
           >
-            <Plus className="size-4 mr-2" /> Nova Solicitacao
+            <Plus className="size-4 mr-2" /> Nova Solicitação
           </Button>
         }
       />
-
       <NewShortageModal open={modalOpen} onOpenChange={setModalOpen} />
-
       {triagemItems.length === 0 ? (
         <div className="p-8 text-center border-2 border-dashed rounded-xl border-slate-200 dark:border-slate-800 text-slate-400 font-medium">
-          Nenhuma solicitacao pendente.
+          Nenhuma solicitação pendente.
         </div>
       ) : (
-        <ShortageTable items={triagemItems} allShortages={shortages} />
+        <TriageTable items={triagemItems} onRowClick={handleRowClick} />
       )}
-
       {selectedIds.length > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-fade-in-up">
           <div className="bg-primary text-primary-foreground shadow-lg rounded-full px-6 py-3 flex items-center gap-4">
@@ -144,12 +149,11 @@ export default function SolicitacoesPage() {
               onClick={handleCopyQuotation}
               className="rounded-full"
             >
-              <Copy className="w-4 h-4 mr-2" /> Copiar Cotacao
+              <Copy className="w-4 h-4 mr-2" /> Copiar Cotação
             </Button>
           </div>
         </div>
       )}
-
       <Dialog open={batchSupplierOpen} onOpenChange={setBatchSupplierOpen}>
         <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
@@ -170,7 +174,7 @@ export default function SolicitacoesPage() {
                 ))}
               </datalist>
               <p className="text-xs text-muted-foreground">
-                Sera aplicado a {selectedIds.length} item(s).
+                Será aplicado a {selectedIds.length} item(s).
               </p>
             </div>
           </div>
@@ -187,6 +191,12 @@ export default function SolicitacoesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <TriageDetailDialog
+        item={selectedItem}
+        open={!!selectedItem}
+        onOpenChange={(o) => !o && setSelectedItem(null)}
+        onAction={fetchShortages}
+      />
     </div>
   )
 }

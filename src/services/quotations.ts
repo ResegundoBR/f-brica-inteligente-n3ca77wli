@@ -51,3 +51,8 @@ export const deleteQuotation = (id: string) => pb.collection('quotations').delet
 
 export const advanceToCompra = (shortageId: string) =>
   pb.collection('material_shortages').update(shortageId, { status: 'Compra' })
+
+export const updateShortageItem = (
+  shortageId: string,
+  data: { description?: string; quantity?: number },
+) => pb.collection('material_shortages').update(shortageId, data)

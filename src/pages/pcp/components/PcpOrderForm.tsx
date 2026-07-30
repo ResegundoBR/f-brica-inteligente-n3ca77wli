@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useForm, Controller, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
@@ -36,6 +36,7 @@ import { useToast } from '@/components/ui/use-toast'
 import { format } from 'date-fns'
 import { Plus, Trash, Check, ChevronsUpDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { getErrorMessage } from '@/lib/pocketbase/errors'
 
 const schema = z
   .object({
@@ -105,6 +106,10 @@ const KANBAN_STAGES = [
   'Expedição',
   'Projetos',
 ]
+
+function safeKey(name: string) {
+  return name.replace(/[^a-zA-Z0-9]/g, '_')
+}
 
 const DEFAULT_FABRICACAO_PROCESSES = [
   'Corte',
@@ -201,6 +206,14 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
   })
 
   const opType = form.watch('op_type')
+
+  const processKeyMap = useMemo(() => {
+    const map: Record<string, string> = {}
+    processes.forEach((p) => {
+      map[safeKey(p.name)] = p.name
+    })
+    return map
+  }, [processes])
 
   const reloadProducts = () => {
     pb.collection('products')
@@ -369,7 +382,8 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
         if (data.estimates) {
           for (const [key, val] of Object.entries(data.estimates)) {
             if (!Number.isNaN(val) && val > 0) {
-              validEstimates[key] = val
+              const originalName = processKeyMap[key] || key
+              validEstimates[originalName] = val
             }
           }
         }
@@ -394,7 +408,11 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
       onSuccess?.()
       onOpenChange(false)
     } catch (err: any) {
-      toast({ title: 'Erro ao criar OP', description: err.message, variant: 'destructive' })
+      toast({
+        title: 'Erro ao criar OP',
+        description: getErrorMessage(err),
+        variant: 'destructive',
+      })
     } finally {
       setLoading(false)
     }
@@ -407,7 +425,16 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
           <DialogHeader>
             <DialogTitle>Nova Ordem de Produção</DialogTitle>
           </DialogHeader>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 py-4">
+          <form
+            onSubmit={form.handleSubmit(onSubmit, () =>
+              toast({
+                title: 'Erro de validação',
+                description: 'Verifique os campos obrigatórios do formulário.',
+                variant: 'destructive',
+              }),
+            )}
+            className="space-y-4 py-4"
+          >
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Número do Pedido</Label>
@@ -654,7 +681,9 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
                         step="0.1"
                         min="0"
                         placeholder="0"
-                        {...form.register(`estimates.${proc.name}`, { valueAsNumber: true })}
+                        {...form.register(`estimates.${safeKey(proc.name)}`, {
+                          valueAsNumber: true,
+                        })}
                       />
                     </div>
                   ))}

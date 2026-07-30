@@ -61,10 +61,20 @@ const schema = z
   .refine(
     (data) => {
       if (data.op_type === 'Linha' && !data.product_id) return false
-      if (data.op_type === 'Assistência' && !data.manual_product_name) return false
       return true
     },
     { message: 'Preencha o produto corretamente', path: ['product_id'] },
+  )
+  .refine(
+    (data) => {
+      if (
+        (data.op_type === 'Assistência' || data.op_type === 'Especial') &&
+        !data.manual_product_name
+      )
+        return false
+      return true
+    },
+    { message: 'Nome do produto é obrigatório', path: ['manual_product_name'] },
   )
 
 const KANBAN_STAGES = [
@@ -351,7 +361,7 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
       if (data.op_type === 'Linha') {
         payload.product_id = data.product_id
       } else {
-        if (data.op_type === 'Assistência') {
+        if (data.op_type === 'Assistência' || data.op_type === 'Especial') {
           payload.manual_product_name = data.manual_product_name
         }
 
@@ -526,9 +536,11 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
                 </div>
               )}
 
-              {opType === 'Assistência' && (
+              {(opType === 'Assistência' || opType === 'Especial') && (
                 <div className="space-y-2">
-                  <Label>Nome do Produto (Assistência)</Label>
+                  <Label>
+                    {opType === 'Especial' ? 'Nome da Luminária' : 'Nome do Produto (Assistência)'}
+                  </Label>
                   <Input
                     {...form.register('manual_product_name')}
                     placeholder="Descrição do produto"

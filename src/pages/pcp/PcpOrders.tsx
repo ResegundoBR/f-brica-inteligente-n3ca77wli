@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import pb from '@/lib/pocketbase/client'
 import { PcpOrder, Product, Client, PcpOrderObservation } from '@/types'
 import { useRealtime } from '@/hooks/use-realtime'
@@ -334,198 +334,194 @@ export default function PcpOrders() {
                 </TableCell>
               </TableRow>
             ) : (
-              groupedOrders.map((group) => (
-                <Fragment key={group.normalized_key}>
+              groupedOrders.flatMap((group) => [
+                <TableRow
+                  key={`header-${group.normalized_key}`}
+                  className={cn(
+                    'hover:opacity-90 border-y transition-colors',
+                    getHeaderColor(group.op_type),
+                  )}
+                >
+                  <TableCell colSpan={6} className="font-semibold text-sm py-1">
+                    <div className="flex items-center gap-4">
+                      <span>Pedido: {group.order_number}</span>
+                      <span className="opacity-50">|</span>
+                      <span>Cliente: {group.client_name}</span>
+                      <Badge className="bg-white/20 text-white border-none hover:bg-white/30">
+                        {group.op_type}
+                      </Badge>
+                    </div>
+                  </TableCell>
+                </TableRow>,
+                ...group.items.map((op) => (
                   <TableRow
+                    key={op.id}
                     className={cn(
-                      'hover:opacity-90 border-y transition-colors',
-                      getHeaderColor(group.op_type),
+                      'cursor-pointer transition-colors',
+                      getOrderColor(op) === 'neon-orange' &&
+                        'bg-orange-500 text-white hover:bg-orange-600 dark:bg-orange-600 dark:hover:bg-orange-700',
+                      getOrderColor(op) === 'yellow' &&
+                        'bg-yellow-400 text-slate-900 hover:bg-yellow-500 dark:bg-yellow-500 dark:hover:bg-yellow-600',
+                      (getOrderColor(op) === 'purple' || getOrderColor(op) === 'blue') &&
+                        'bg-white dark:bg-slate-900 hover:bg-muted/30',
                     )}
+                    onClick={() => setSelectedOp(op)}
                   >
-                    <TableCell colSpan={6} className="font-semibold text-sm py-1">
-                      <div className="flex items-center gap-4">
-                        <span>Pedido: {group.order_number}</span>
-                        <span className="opacity-50">|</span>
-                        <span>Cliente: {group.client_name}</span>
-                        <Badge className="bg-white/20 text-white border-none hover:bg-white/30">
-                          {group.op_type}
-                        </Badge>
+                    <TableCell className="py-1 pl-6 font-medium">
+                      <div className="flex items-center gap-1.5">
+                        {op.op_number || '-'}
+                        {(() => {
+                          const msgState = getOrderMessageInfo(op.id).indicatorState
+                          return msgState !== 'none' ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setMessageOrder({
+                                  id: op.id,
+                                  orderNumber: op.order_number,
+                                  opNumber: op.op_number || '',
+                                })
+                              }}
+                              className="inline-flex items-center"
+                            >
+                              <OrderMessageBell state={msgState} size="sm" />
+                            </button>
+                          ) : null
+                        })()}
                       </div>
                     </TableCell>
-                  </TableRow>
-                  {group.items.map((op) => (
-                    <TableRow
-                      key={op.id}
-                      className={cn(
-                        'cursor-pointer transition-colors',
-                        getOrderColor(op) === 'neon-orange' &&
-                          'bg-orange-500 text-white hover:bg-orange-600 dark:bg-orange-600 dark:hover:bg-orange-700',
-                        getOrderColor(op) === 'yellow' &&
-                          'bg-yellow-400 text-slate-900 hover:bg-yellow-500 dark:bg-yellow-500 dark:hover:bg-yellow-600',
-                        (getOrderColor(op) === 'purple' || getOrderColor(op) === 'blue') &&
-                          'bg-white dark:bg-slate-900 hover:bg-muted/30',
-                      )}
-                      onClick={() => setSelectedOp(op)}
-                    >
-                      <TableCell className="py-1 pl-6 font-medium">
-                        <div className="flex items-center gap-1.5">
-                          {op.op_number || '-'}
-                          {(() => {
-                            const msgState = getOrderMessageInfo(op.id).indicatorState
-                            return msgState !== 'none' ? (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setMessageOrder({
-                                    id: op.id,
-                                    orderNumber: op.order_number,
-                                    opNumber: op.op_number || '',
-                                  })
-                                }}
-                                className="inline-flex items-center"
+                    <TableCell className="py-1">
+                      <div className="flex flex-col items-start gap-1">
+                        <span className="text-sm">
+                          {op.op_type === 'Assistência'
+                            ? op.manual_product_name
+                            : op.op_type === 'Especial'
+                              ? 'Produto Especial'
+                              : op.expand?.product_id?.name || '-'}
+                        </span>
+                        {(observations[op.id] || []).length > 0 && (
+                          <div className="flex flex-col gap-1 mt-1 w-full max-w-sm">
+                            {(observations[op.id] || []).map((obs) => (
+                              <span
+                                key={obs.id}
+                                className={cn(
+                                  'text-[10px] whitespace-pre-wrap leading-tight border-l-2 pl-2',
+                                  getOrderColor(op) === 'neon-orange'
+                                    ? 'text-orange-50 border-orange-400'
+                                    : getOrderColor(op) === 'yellow'
+                                      ? 'text-slate-800 border-yellow-600'
+                                      : 'text-muted-foreground border-slate-200 dark:border-slate-800',
+                                )}
                               >
-                                <OrderMessageBell state={msgState} size="sm" />
-                              </button>
-                            ) : null
-                          })()}
-                        </div>
-                      </TableCell>
-                      <TableCell className="py-1">
-                        <div className="flex flex-col items-start gap-1">
-                          <span className="text-sm">
-                            {op.op_type === 'Assistência'
-                              ? op.manual_product_name
-                              : op.op_type === 'Especial'
-                                ? 'Produto Especial'
-                                : op.expand?.product_id?.name || '-'}
-                          </span>
-                          {(observations[op.id] || []).length > 0 && (
-                            <div className="flex flex-col gap-1 mt-1 w-full max-w-sm">
-                              {(observations[op.id] || []).map((obs) => (
                                 <span
-                                  key={obs.id}
                                   className={cn(
-                                    'text-[10px] whitespace-pre-wrap leading-tight border-l-2 pl-2',
+                                    'font-medium',
                                     getOrderColor(op) === 'neon-orange'
-                                      ? 'text-orange-50 border-orange-400'
+                                      ? 'text-white'
                                       : getOrderColor(op) === 'yellow'
-                                        ? 'text-slate-800 border-yellow-600'
-                                        : 'text-muted-foreground border-slate-200 dark:border-slate-800',
+                                        ? 'text-slate-900'
+                                        : 'text-slate-700 dark:text-slate-300',
                                   )}
                                 >
-                                  <span
-                                    className={cn(
-                                      'font-medium',
-                                      getOrderColor(op) === 'neon-orange'
-                                        ? 'text-white'
-                                        : getOrderColor(op) === 'yellow'
-                                          ? 'text-slate-900'
-                                          : 'text-slate-700 dark:text-slate-300',
-                                    )}
-                                  >
-                                    {' '}
-                                    {obs.sector}:
-                                  </span>{' '}
-                                  {obs.content}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="py-1">{op.quantity}</TableCell>
-                      <TableCell className="py-1">
-                        <div className="flex items-center gap-2">
-                          {op.delivery_date && !isNaN(parseISO(op.delivery_date).getTime())
-                            ? format(parseISO(op.delivery_date), 'dd/MM/yyyy')
-                            : '-'}
-                          {getOrderColor(op) === 'purple' && (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Clock className="size-4 text-purple-500" />
-                              </TooltipTrigger>
-                              <TooltipContent>Entrega atrasada</TooltipContent>
-                            </Tooltip>
-                          )}
-                          {getOrderColor(op) === 'neon-orange' && (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Clock className="size-4 text-orange-500" />
-                              </TooltipTrigger>
-                              <TooltipContent>Ordem Parada / Gargalo</TooltipContent>
-                            </Tooltip>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="py-1" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex flex-col gap-1">
-                          <Select
-                            value={op.status}
-                            onValueChange={(val) => updateOrder(op.id, 'status', val)}
-                          >
-                            <SelectTrigger
-                              className={cn(
-                                'h-7 text-xs border-none shadow-none font-medium px-2 py-0 bg-transparent',
-                                getOrderColor(op) === 'neon-orange' ||
-                                  getOrderColor(op) === 'yellow'
-                                  ? 'hover:bg-black/10 focus:ring-0'
-                                  : 'hover:bg-slate-100 dark:hover:bg-slate-800',
-                              )}
-                            >
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="Fila">Fila</SelectItem>
-                              <SelectItem value="Em Andamento">Em Andamento</SelectItem>
-                              <SelectItem value="Parado">Parado</SelectItem>
-                              <SelectItem value="Concluído">Concluído</SelectItem>
-                            </SelectContent>
-                          </Select>
-
-                          <Select
-                            value={op.stage}
-                            onValueChange={(val) => updateOrder(op.id, 'stage', val)}
-                          >
-                            <SelectTrigger
-                              className={cn(
-                                'h-6 text-xs border-none shadow-none px-2 py-0 bg-transparent',
-                                getOrderColor(op) === 'neon-orange' ||
-                                  getOrderColor(op) === 'yellow'
-                                  ? 'hover:bg-black/10 focus:ring-0 text-inherit opacity-90'
-                                  : 'text-muted-foreground hover:bg-slate-100 dark:hover:bg-slate-800',
-                              )}
-                            >
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent className="max-h-60">
-                              {STAGES.map((s) => (
-                                <SelectItem key={s} value={s}>
-                                  {s}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </TableCell>
-                      <TableCell className="py-1">
-                        <span
-                          className={cn(
-                            'text-sm font-medium whitespace-nowrap',
-                            getOrderColor(op) === 'purple'
-                              ? 'text-purple-500'
-                              : getOrderColor(op) === 'neon-orange' ||
-                                  getOrderColor(op) === 'yellow'
-                                ? 'text-inherit opacity-90'
-                                : 'text-slate-600 dark:text-slate-400',
-                          )}
+                                  {' '}
+                                  {obs.sector}:
+                                </span>{' '}
+                                {obs.content}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="py-1">{op.quantity}</TableCell>
+                    <TableCell className="py-1">
+                      <div className="flex items-center gap-2">
+                        {op.delivery_date && !isNaN(parseISO(op.delivery_date).getTime())
+                          ? format(parseISO(op.delivery_date), 'dd/MM/yyyy')
+                          : '-'}
+                        {getOrderColor(op) === 'purple' && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Clock className="size-4 text-purple-500" />
+                            </TooltipTrigger>
+                            <TooltipContent>Entrega atrasada</TooltipContent>
+                          </Tooltip>
+                        )}
+                        {getOrderColor(op) === 'neon-orange' && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Clock className="size-4 text-orange-500" />
+                            </TooltipTrigger>
+                            <TooltipContent>Ordem Parada / Gargalo</TooltipContent>
+                          </Tooltip>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="py-1" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex flex-col gap-1">
+                        <Select
+                          value={op.status}
+                          onValueChange={(val) => updateOrder(op.id, 'status', val)}
                         >
-                          {formatDeadline(op.delivery_date, op.status)}
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </Fragment>
-              ))
+                          <SelectTrigger
+                            className={cn(
+                              'h-7 text-xs border-none shadow-none font-medium px-2 py-0 bg-transparent',
+                              getOrderColor(op) === 'neon-orange' || getOrderColor(op) === 'yellow'
+                                ? 'hover:bg-black/10 focus:ring-0'
+                                : 'hover:bg-slate-100 dark:hover:bg-slate-800',
+                            )}
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Fila">Fila</SelectItem>
+                            <SelectItem value="Em Andamento">Em Andamento</SelectItem>
+                            <SelectItem value="Parado">Parado</SelectItem>
+                            <SelectItem value="Concluído">Concluído</SelectItem>
+                          </SelectContent>
+                        </Select>
+
+                        <Select
+                          value={op.stage}
+                          onValueChange={(val) => updateOrder(op.id, 'stage', val)}
+                        >
+                          <SelectTrigger
+                            className={cn(
+                              'h-6 text-xs border-none shadow-none px-2 py-0 bg-transparent',
+                              getOrderColor(op) === 'neon-orange' || getOrderColor(op) === 'yellow'
+                                ? 'hover:bg-black/10 focus:ring-0 text-inherit opacity-90'
+                                : 'text-muted-foreground hover:bg-slate-100 dark:hover:bg-slate-800',
+                            )}
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="max-h-60">
+                            {STAGES.map((s) => (
+                              <SelectItem key={s} value={s}>
+                                {s}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </TableCell>
+                    <TableCell className="py-1">
+                      <span
+                        className={cn(
+                          'text-sm font-medium whitespace-nowrap',
+                          getOrderColor(op) === 'purple'
+                            ? 'text-purple-500'
+                            : getOrderColor(op) === 'neon-orange' || getOrderColor(op) === 'yellow'
+                              ? 'text-inherit opacity-90'
+                              : 'text-slate-600 dark:text-slate-400',
+                        )}
+                      >
+                        {formatDeadline(op.delivery_date, op.status)}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                )),
+              ])
             )}
           </TableBody>
         </Table>

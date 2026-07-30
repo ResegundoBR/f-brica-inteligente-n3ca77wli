@@ -19,6 +19,7 @@ import { format, parseISO } from 'date-fns'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
+import { getErrorMessage } from '@/lib/pocketbase/errors'
 
 export default function RecebimentoPage() {
   const [shortages, setShortages] = useState<MaterialShortage[]>([])
@@ -61,18 +62,28 @@ export default function RecebimentoPage() {
       return
     }
 
+    const currentReceived = item.received_quantity || 0
+    const total = Number(item.quantity) || 0
+    const newReceivedQty = currentReceived + numQty
+
+    if (total > 0 && newReceivedQty > total) {
+      toast({
+        title: 'Erro',
+        description: `A quantidade recebida (${newReceivedQty}) excede o total solicitado (${total}).`,
+        variant: 'destructive',
+      })
+      return
+    }
+
     setLoading((prev) => ({ ...prev, [item.id]: true }))
     try {
-      const currentReceived = item.received_quantity || 0
-      const newReceivedQty = currentReceived + numQty
-
       await pb.collection('material_shortages').update(item.id, {
         received_quantity: newReceivedQty,
       })
 
       toast({
         title: 'Recebimento confirmado',
-        description: `${numQty} unidade(s) recebidas. Total: ${newReceivedQty}/${item.quantity}.`,
+        description: `${numQty} unidade(s) recebidas. Total: ${newReceivedQty}/${total}.`,
       })
 
       setReceiveInputs((prev) => {
@@ -80,8 +91,9 @@ export default function RecebimentoPage() {
         delete next[item.id]
         return next
       })
-    } catch (err: any) {
-      toast({ title: 'Erro', description: err.message, variant: 'destructive' })
+      fetchShortages()
+    } catch (err: unknown) {
+      toast({ title: 'Erro', description: getErrorMessage(err), variant: 'destructive' })
     } finally {
       setLoading((prev) => ({ ...prev, [item.id]: false }))
     }

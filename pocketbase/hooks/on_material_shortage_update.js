@@ -39,6 +39,17 @@ onRecordUpdate((e) => {
     // numeric getters may fail if fields are not yet set
   }
 
+  if (totalQty > 0 && receivedQty > totalQty) {
+    throw new BadRequestError('Erro de validação', {
+      received_quantity:
+        'A quantidade recebida (' +
+        receivedQty +
+        ') não pode exceder a quantidade total (' +
+        totalQty +
+        ').',
+    })
+  }
+
   var currentStatus = record.getString('status') || ''
 
   if (currentStatus !== 'Cancelado' && currentStatus !== 'Liberado_Estoque') {

@@ -69,7 +69,10 @@ export function KanbanCardHover({
       >
         <div className="space-y-2.5">
           <div className="flex items-center justify-between gap-2 border-b pb-2">
-            <span className="font-bold text-sm">{formatOpIdentifier(order)}</span>
+            <span className="font-bold text-sm flex items-center gap-1">
+              {order.manual_priority === 2 && <span title="Prazo Especial">⚡</span>}
+              {formatOpIdentifier(order)}
+            </span>
             <Badge
               variant="outline"
               className={cn(

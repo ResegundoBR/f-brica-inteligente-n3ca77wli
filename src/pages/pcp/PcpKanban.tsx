@@ -1093,25 +1093,30 @@ function KanbanCard({
 }: any) {
   const color = getOrderColor(order)
   const isEmergency = order.manual_priority === 1
+  const isPrazoEspecial = order.manual_priority === 2
   const materialStatus = getMaterialAvailabilityStatus(shortages)
 
   const borderClass = isEmergency
     ? 'border-l-red-600 border-l-4 animate-pulse shadow-[0_0_10px_rgba(220,38,38,0.3)]'
-    : color === 'neon-orange' || color === 'yellow'
-      ? 'border-transparent shadow-md'
-      : color === 'purple'
-        ? 'border-l-purple-500'
-        : 'border-l-blue-500'
+    : isPrazoEspecial
+      ? 'border-l-lime-500 border-l-4 shadow-md'
+      : color === 'neon-orange' || color === 'yellow'
+        ? 'border-transparent shadow-md'
+        : color === 'purple'
+          ? 'border-l-purple-500'
+          : 'border-l-blue-500'
 
   const cardBgClass = isEmergency
     ? 'bg-red-50/80 dark:bg-red-950/20 ring-1 ring-red-500/50 text-foreground'
-    : color === 'neon-orange'
-      ? 'bg-orange-500 text-white border-orange-600'
-      : color === 'yellow'
-        ? 'bg-yellow-400 text-slate-900 border-yellow-500 shadow-yellow-400/20'
-        : color === 'purple'
-          ? 'bg-purple-50/50 dark:bg-purple-950/10 text-foreground'
-          : 'bg-card text-foreground'
+    : isPrazoEspecial
+      ? 'bg-lime-400 text-black'
+      : color === 'neon-orange'
+        ? 'bg-orange-500 text-white border-orange-600'
+        : color === 'yellow'
+          ? 'bg-yellow-400 text-slate-900 border-yellow-500 shadow-yellow-400/20'
+          : color === 'purple'
+            ? 'bg-purple-50/50 dark:bg-purple-950/10 text-foreground'
+            : 'bg-card text-foreground'
 
   return (
     <KanbanCardHover order={order} observations={observations} shortages={shortages}>
@@ -1127,7 +1132,10 @@ function KanbanCard({
       >
         <CardContent className="p-3 flex flex-col gap-1">
           <div className="flex items-start justify-between">
-            <span className="font-semibold text-sm">{order.order_number}</span>
+            <span className="font-semibold text-sm flex items-center gap-1">
+              {isPrazoEspecial && <span title="Prazo Especial">⚡</span>}
+              {order.order_number}
+            </span>
             <div className="flex items-center gap-1">
               {messageState !== 'none' && (
                 <button
@@ -1203,17 +1211,20 @@ function CompactKanbanCard({
 }: any) {
   const color = getOrderColor(order)
   const isEmergency = order.manual_priority === 1
+  const isPrazoEspecial = order.manual_priority === 2
   const materialStatus = getMaterialAvailabilityStatus(shortages)
 
   const bgClass = isEmergency
     ? 'bg-red-600 text-white animate-pulse ring-2 ring-red-500 ring-offset-1 ring-offset-background'
-    : color === 'neon-orange'
-      ? 'bg-orange-500 text-white animate-pulse'
-      : color === 'purple'
-        ? 'bg-purple-500 text-white'
-        : color === 'yellow'
-          ? 'bg-yellow-400 text-slate-900 shadow-[0_0_8px_rgba(250,204,21,0.8)] dark:shadow-[0_0_8px_rgba(250,204,21,0.5)]'
-          : 'bg-blue-500 text-white'
+    : isPrazoEspecial
+      ? 'bg-lime-400 text-black'
+      : color === 'neon-orange'
+        ? 'bg-orange-500 text-white animate-pulse'
+        : color === 'purple'
+          ? 'bg-purple-500 text-white'
+          : color === 'yellow'
+            ? 'bg-yellow-400 text-slate-900 shadow-[0_0_8px_rgba(250,204,21,0.8)] dark:shadow-[0_0_8px_rgba(250,204,21,0.5)]'
+            : 'bg-blue-500 text-white'
 
   return (
     <KanbanCardHover order={order} observations={observations} shortages={shortages}>

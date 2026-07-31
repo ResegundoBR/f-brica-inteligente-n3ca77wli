@@ -55,6 +55,7 @@ export default function PcpOrders() {
     opNumber: string
   } | null>(null)
   const [pendingOnly, setPendingOnly] = useState(false)
+  const [prazoEspecialOnly, setPrazoEspecialOnly] = useState(false)
   const { toast } = useToast()
   const { getOrderMessageInfo, markOrderAsRead } = useOrderMessages()
 
@@ -160,6 +161,7 @@ export default function PcpOrders() {
         const msgState = getOrderMessageInfo(op.id).indicatorState
         if (msgState !== 'green') return false
       }
+      if (prazoEspecialOnly && op.manual_priority !== 2) return false
       return true
     })
 
@@ -185,6 +187,14 @@ export default function PcpOrders() {
       }
       map.get(normalized)!.push(op)
     })
+    groups.sort((a, b) => {
+      const prioOf = (items: PcpOrder[]) => {
+        if (items.some((o) => o.manual_priority === 1)) return 0
+        if (items.some((o) => o.manual_priority === 2)) return 1
+        return 2
+      }
+      return prioOf(a.items) - prioOf(b.items)
+    })
     return groups
   }, [
     filteredOrders,
@@ -195,6 +205,7 @@ export default function PcpOrders() {
     stageFilter,
     deadlineFilter,
     pendingOnly,
+    prazoEspecialOnly,
     getOrderMessageInfo,
   ])
 
@@ -239,6 +250,7 @@ export default function PcpOrders() {
 
   const today = startOfDay(new Date())
   const getOrderColor = (op: PcpOrder) => {
+    if (op.manual_priority === 2) return 'lime'
     if (op.status === 'Parado' || (op.bottleneck_reason && op.bottleneck_reason !== 'Nenhum'))
       return 'neon-orange'
 
@@ -297,6 +309,18 @@ export default function PcpOrders() {
             stage={stageFilter}
             setStage={setStageFilter}
           />
+          <Button
+            variant={prazoEspecialOnly ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setPrazoEspecialOnly(!prazoEspecialOnly)}
+            className={cn(
+              'gap-2',
+              prazoEspecialOnly && 'bg-lime-500 hover:bg-lime-600 text-black border-lime-600',
+            )}
+          >
+            <span>⚡</span>
+            Prazo Especial
+          </Button>
           <Button
             variant={pendingOnly ? 'default' : 'outline'}
             size="sm"
@@ -358,6 +382,7 @@ export default function PcpOrders() {
                     key={op.id}
                     className={cn(
                       'cursor-pointer transition-colors',
+                      getOrderColor(op) === 'lime' && 'bg-lime-400 text-black hover:bg-lime-500',
                       getOrderColor(op) === 'neon-orange' &&
                         'bg-orange-500 text-white hover:bg-orange-600 dark:bg-orange-600 dark:hover:bg-orange-700',
                       getOrderColor(op) === 'yellow' &&
@@ -369,6 +394,7 @@ export default function PcpOrders() {
                   >
                     <TableCell className="py-1 pl-6 font-medium">
                       <div className="flex items-center gap-1.5">
+                        {op.manual_priority === 2 && <span title="Prazo Especial">⚡</span>}
                         {op.op_number || '-'}
                         {(() => {
                           const msgState = getOrderMessageInfo(op.id).indicatorState
@@ -406,21 +432,25 @@ export default function PcpOrders() {
                                 key={obs.id}
                                 className={cn(
                                   'text-[10px] whitespace-pre-wrap leading-tight border-l-2 pl-2',
-                                  getOrderColor(op) === 'neon-orange'
-                                    ? 'text-orange-50 border-orange-400'
-                                    : getOrderColor(op) === 'yellow'
-                                      ? 'text-slate-800 border-yellow-600'
-                                      : 'text-muted-foreground border-slate-200 dark:border-slate-800',
+                                  getOrderColor(op) === 'lime'
+                                    ? 'text-black border-lime-700'
+                                    : getOrderColor(op) === 'neon-orange'
+                                      ? 'text-orange-50 border-orange-400'
+                                      : getOrderColor(op) === 'yellow'
+                                        ? 'text-slate-800 border-yellow-600'
+                                        : 'text-muted-foreground border-slate-200 dark:border-slate-800',
                                 )}
                               >
                                 <span
                                   className={cn(
                                     'font-medium',
-                                    getOrderColor(op) === 'neon-orange'
-                                      ? 'text-white'
-                                      : getOrderColor(op) === 'yellow'
-                                        ? 'text-slate-900'
-                                        : 'text-slate-700 dark:text-slate-300',
+                                    getOrderColor(op) === 'lime'
+                                      ? 'text-black'
+                                      : getOrderColor(op) === 'neon-orange'
+                                        ? 'text-white'
+                                        : getOrderColor(op) === 'yellow'
+                                          ? 'text-slate-900'
+                                          : 'text-slate-700 dark:text-slate-300',
                                   )}
                                 >
                                   {' '}
@@ -466,7 +496,9 @@ export default function PcpOrders() {
                           <SelectTrigger
                             className={cn(
                               'h-7 text-xs border-none shadow-none font-medium px-2 py-0 bg-transparent',
-                              getOrderColor(op) === 'neon-orange' || getOrderColor(op) === 'yellow'
+                              getOrderColor(op) === 'lime' ||
+                                getOrderColor(op) === 'neon-orange' ||
+                                getOrderColor(op) === 'yellow'
                                 ? 'hover:bg-black/10 focus:ring-0'
                                 : 'hover:bg-slate-100 dark:hover:bg-slate-800',
                             )}
@@ -488,7 +520,9 @@ export default function PcpOrders() {
                           <SelectTrigger
                             className={cn(
                               'h-6 text-xs border-none shadow-none px-2 py-0 bg-transparent',
-                              getOrderColor(op) === 'neon-orange' || getOrderColor(op) === 'yellow'
+                              getOrderColor(op) === 'lime' ||
+                                getOrderColor(op) === 'neon-orange' ||
+                                getOrderColor(op) === 'yellow'
                                 ? 'hover:bg-black/10 focus:ring-0 text-inherit opacity-90'
                                 : 'text-muted-foreground hover:bg-slate-100 dark:hover:bg-slate-800',
                             )}
@@ -509,11 +543,14 @@ export default function PcpOrders() {
                       <span
                         className={cn(
                           'text-sm font-medium whitespace-nowrap',
-                          getOrderColor(op) === 'purple'
-                            ? 'text-purple-500'
-                            : getOrderColor(op) === 'neon-orange' || getOrderColor(op) === 'yellow'
-                              ? 'text-inherit opacity-90'
-                              : 'text-slate-600 dark:text-slate-400',
+                          getOrderColor(op) === 'lime'
+                            ? 'text-black'
+                            : getOrderColor(op) === 'purple'
+                              ? 'text-purple-500'
+                              : getOrderColor(op) === 'neon-orange' ||
+                                  getOrderColor(op) === 'yellow'
+                                ? 'text-inherit opacity-90'
+                                : 'text-slate-600 dark:text-slate-400',
                         )}
                       >
                         {formatDeadline(op.delivery_date, op.status)}

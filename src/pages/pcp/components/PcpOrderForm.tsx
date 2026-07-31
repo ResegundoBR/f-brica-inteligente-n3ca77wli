@@ -622,25 +622,43 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
               )}
             </div>
 
-            <div className="flex items-center justify-between p-4 border rounded-lg bg-red-50/50 dark:bg-red-950/20">
-              <div className="space-y-0.5">
-                <Label className="text-red-600 dark:text-red-400 font-bold">
-                  Marcar como Emergência
-                </Label>
-                <p className="text-sm text-muted-foreground">
-                  Esta OP terá prioridade máxima no painel do operador.
-                </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex items-center justify-between p-4 border rounded-lg bg-red-50/50 dark:bg-red-950/20">
+                <div className="space-y-0.5">
+                  <Label className="text-red-600 dark:text-red-400 font-bold">
+                    Marcar como Emergência
+                  </Label>
+                  <p className="text-sm text-muted-foreground">Prioridade máxima no painel.</p>
+                </div>
+                <Controller
+                  control={form.control}
+                  name="manual_priority"
+                  render={({ field }) => (
+                    <Switch
+                      checked={field.value === 1}
+                      onCheckedChange={(c) => field.onChange(c ? 1 : 0)}
+                    />
+                  )}
+                />
               </div>
-              <Controller
-                control={form.control}
-                name="manual_priority"
-                render={({ field }) => (
-                  <Switch
-                    checked={field.value === 1}
-                    onCheckedChange={(c) => field.onChange(c ? 1 : 0)}
-                  />
-                )}
-              />
+              <div className="flex items-center justify-between p-4 border rounded-lg bg-lime-50/50 dark:bg-lime-950/20">
+                <div className="space-y-0.5">
+                  <Label className="text-lime-700 dark:text-lime-400 font-bold">
+                    ⚡ Prazo Especial
+                  </Label>
+                  <p className="text-sm text-muted-foreground">Atenção de todos os setores.</p>
+                </div>
+                <Controller
+                  control={form.control}
+                  name="manual_priority"
+                  render={({ field }) => (
+                    <Switch
+                      checked={field.value === 2}
+                      onCheckedChange={(c) => field.onChange(c ? 2 : 0)}
+                    />
+                  )}
+                />
+              </div>
             </div>
 
             <div className="mt-6 border-t pt-4">

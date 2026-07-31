@@ -68,6 +68,12 @@ export function PcpOrderDetails({
         </SheetHeader>
         {op && (
           <div className="mt-6 space-y-6">
+            {op.manual_priority === 2 && (
+              <div className="bg-lime-400 text-black p-4 rounded-md border border-lime-600 flex items-center gap-2 font-bold">
+                <span className="text-xl">⚡</span>
+                <span>⚠️ Prazo Especial – Atenção de Todos os Setores</span>
+              </div>
+            )}
             {op.status === 'Parado' && (
               <div className="bg-red-50 dark:bg-red-950/20 p-4 rounded-md border border-red-200 dark:border-red-900">
                 <h3 className="font-semibold text-red-800 dark:text-red-400 mb-2 flex items-center">

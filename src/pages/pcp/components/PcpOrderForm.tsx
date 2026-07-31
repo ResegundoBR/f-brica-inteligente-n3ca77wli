@@ -50,7 +50,7 @@ const schema = z
     quantity: z.coerce.number().min(1, 'Quantidade deve ser maior que zero'),
     delivery_date: z.string().min(1, 'Data de entrega é obrigatória'),
     manual_priority: z.number().default(0),
-    estimates: z.record(z.string(), z.any()).optional(),
+    estimates: z.record(z.any()).optional(),
     observations: z
       .array(
         z.object({
@@ -434,16 +434,38 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
           </DialogHeader>
           <form
             onSubmit={form.handleSubmit(
-              (data) => {
-                setSubmitError(null)
-                return onSubmit(data)
+              async (data) => {
+                try {
+                  setSubmitError(null)
+                  await onSubmit(data)
+                } catch (err: any) {
+                  const errorMsg = err?.message || 'Erro inesperado ao criar OP.'
+                  setSubmitError(errorMsg)
+                  toast({
+                    title: 'Erro ao criar OP',
+                    description: errorMsg,
+                    variant: 'destructive',
+                  })
+                } finally {
+                  setLoading(false)
+                  setCheckingProcesses(false)
+                }
               },
               (errors) => {
-                const messages = Object.values(errors)
-                  .map((err: any) => err?.message)
-                  .filter(Boolean)
+                const messages: string[] = []
+                Object.values(errors).forEach((err: any) => {
+                  if (err?.message) {
+                    messages.push(err.message)
+                  } else if (err && typeof err === 'object') {
+                    Object.values(err).forEach((nested: any) => {
+                      if (nested?.message) messages.push(nested.message)
+                    })
+                  }
+                })
                 setSubmitError(
-                  messages.join(' ') || 'Verifique os campos obrigatórios do formulário.',
+                  messages.length > 0
+                    ? messages.join(' ')
+                    : 'Verifique os campos obrigatórios do formulário.',
                 )
                 toast({
                   title: 'Erro de validação',
@@ -705,9 +727,7 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
                         step="0.1"
                         min="0"
                         placeholder="0"
-                        {...form.register(`estimates.${safeKey(proc.name)}`, {
-                          valueAsNumber: true,
-                        })}
+                        {...form.register(`estimates.${safeKey(proc.name)}`)}
                       />
                     </div>
                   ))}

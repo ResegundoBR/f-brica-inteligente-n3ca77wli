@@ -37,6 +37,7 @@ import { format } from 'date-fns'
 import { Plus, Trash, Check, ChevronsUpDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getErrorMessage } from '@/lib/pocketbase/errors'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 
 const schema = z
   .object({
@@ -49,7 +50,7 @@ const schema = z
     quantity: z.coerce.number().min(1, 'Quantidade deve ser maior que zero'),
     delivery_date: z.string().min(1, 'Data de entrega é obrigatória'),
     manual_priority: z.number().default(0),
-    estimates: z.record(z.string(), z.union([z.number(), z.nan()])).optional(),
+    estimates: z.record(z.string(), z.any()).optional(),
     observations: z
       .array(
         z.object({
@@ -179,6 +180,7 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
     fabricationProcesses: string[]
   } | null>(null)
   const [checkingProcesses, setCheckingProcesses] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
   const { toast } = useToast()
 
   const form = useForm<z.infer<typeof schema>>({
@@ -238,6 +240,7 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
         estimates: {},
         observations: [],
       })
+      setSubmitError(null)
       loadClients()
       reloadProducts()
 
@@ -280,6 +283,7 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
 
   const onSubmit = async (data: z.infer<typeof schema>) => {
     if (checkingProcesses) return
+    setSubmitError(null)
 
     let processesToFill: any[] = []
     let fabricationProcesses: string[] = DEFAULT_FABRICACAO_PROCESSES
@@ -381,9 +385,10 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
         const validEstimates: Record<string, number> = {}
         if (data.estimates) {
           for (const [key, val] of Object.entries(data.estimates)) {
-            if (!Number.isNaN(val) && val > 0) {
+            const numVal = typeof val === 'number' ? val : parseFloat(String(val))
+            if (!Number.isNaN(numVal) && numVal > 0) {
               const originalName = processKeyMap[key] || key
-              validEstimates[originalName] = val
+              validEstimates[originalName] = numVal
             }
           }
         }
@@ -408,9 +413,11 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
       onSuccess?.()
       onOpenChange(false)
     } catch (err: any) {
+      const errorMsg = getErrorMessage(err)
+      setSubmitError(errorMsg)
       toast({
         title: 'Erro ao criar OP',
-        description: getErrorMessage(err),
+        description: errorMsg,
         variant: 'destructive',
       })
     } finally {
@@ -426,15 +433,32 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
             <DialogTitle>Nova Ordem de Produção</DialogTitle>
           </DialogHeader>
           <form
-            onSubmit={form.handleSubmit(onSubmit, () =>
-              toast({
-                title: 'Erro de validação',
-                description: 'Verifique os campos obrigatórios do formulário.',
-                variant: 'destructive',
-              }),
+            onSubmit={form.handleSubmit(
+              (data) => {
+                setSubmitError(null)
+                return onSubmit(data)
+              },
+              (errors) => {
+                const messages = Object.values(errors)
+                  .map((err: any) => err?.message)
+                  .filter(Boolean)
+                setSubmitError(
+                  messages.join(' ') || 'Verifique os campos obrigatórios do formulário.',
+                )
+                toast({
+                  title: 'Erro de validação',
+                  description: 'Verifique os campos obrigatórios do formulário.',
+                  variant: 'destructive',
+                })
+              },
             )}
             className="space-y-4 py-4"
           >
+            {submitError && (
+              <Alert variant="destructive">
+                <AlertDescription>{submitError}</AlertDescription>
+              </Alert>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Número do Pedido</Label>

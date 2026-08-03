@@ -3,6 +3,17 @@ import pb from '@/lib/pocketbase/client'
 import { PcpOrder, Product, Client, PcpOrderObservation } from '@/types'
 import { useRealtime } from '@/hooks/use-realtime'
 import { useToast } from '@/hooks/use-toast'
+import { useAuth } from '@/hooks/use-auth'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import {
   Table,
   TableBody,
@@ -56,8 +67,20 @@ export default function PcpOrders() {
   } | null>(null)
   const [pendingOnly, setPendingOnly] = useState(false)
   const [prazoEspecialOnly, setPrazoEspecialOnly] = useState(false)
+  const [editingOp, setEditingOp] = useState<PcpOrder | null>(null)
+  const [deleteOp, setDeleteOp] = useState<PcpOrder | null>(null)
   const { toast } = useToast()
   const { getOrderMessageInfo, markOrderAsRead } = useOrderMessages()
+  const { user } = useAuth()
+
+  const isAdmin = useMemo(() => {
+    if (!user) return false
+    return (
+      user.expand?.role?.name === 'admin' ||
+      user.expand?.role?.name === 'Administrador' ||
+      user.email === 'reginaldo.segundo@planagroup.com.br'
+    )
+  }, [user])
 
   const loadData = async () => {
     Promise.allSettled([
@@ -331,8 +354,24 @@ export default function PcpOrders() {
             Mensagens Pendentes
           </Button>
           <MessageNotificationBell />
-          <Button onClick={() => setIsOpen(true)}>Nova OP</Button>
-          <PcpOrderForm open={isOpen} onOpenChange={setIsOpen} onSuccess={loadData} />
+          <Button
+            onClick={() => {
+              setEditingOp(null)
+              setIsOpen(true)
+            }}
+          >
+            Nova OP
+          </Button>
+          <PcpOrderForm
+            open={isOpen}
+            onOpenChange={(open) => {
+              setIsOpen(open)
+              if (!open) setEditingOp(null)
+            }}
+            onSuccess={loadData}
+            editingOrder={editingOp}
+            editObservations={editingOp ? observations[editingOp.id] || [] : []}
+          />
         </div>
       </div>
 
@@ -568,7 +607,50 @@ export default function PcpOrders() {
         op={selectedOp}
         observations={selectedOp ? observations[selectedOp.id] || [] : []}
         onClose={() => setSelectedOp(null)}
+        onEdit={() => {
+          if (!selectedOp) return
+          setEditingOp(selectedOp)
+          setSelectedOp(null)
+          setIsOpen(true)
+        }}
+        onDelete={() => {
+          if (!selectedOp) return
+          setDeleteOp(selectedOp)
+        }}
+        isAdmin={isAdmin}
       />
+
+      <AlertDialog open={!!deleteOp} onOpenChange={(open) => !open && setDeleteOp(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir OP</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir a OP {deleteOp?.op_number || deleteOp?.order_number}?
+              Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (!deleteOp) return
+                try {
+                  await pb.collection('pcp_orders').delete(deleteOp.id)
+                  toast({ title: 'OP excluída com sucesso!' })
+                  setDeleteOp(null)
+                  setSelectedOp(null)
+                  loadData()
+                } catch (err) {
+                  toast({ title: 'Erro ao excluir OP', variant: 'destructive' })
+                }
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <OrderMessagesPanel
         orderId={messageOrder?.id || null}

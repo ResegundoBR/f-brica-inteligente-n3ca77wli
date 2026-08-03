@@ -33,7 +33,7 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import { useToast } from '@/components/ui/use-toast'
-import { format } from 'date-fns'
+import { format, parseISO } from 'date-fns'
 import { Plus, Trash, Check, ChevronsUpDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getErrorMessage } from '@/lib/pocketbase/errors'
@@ -163,7 +163,13 @@ function getSectorGroups(fabricationProcesses: string[] = DEFAULT_FABRICACAO_PRO
   ]
 }
 
-export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
+export function PcpOrderForm({
+  open,
+  onOpenChange,
+  onSuccess,
+  editingOrder,
+  editObservations,
+}: any) {
   const [clients, setClients] = useState<any[]>([])
   const [products, setProducts] = useState<any[]>([])
   const [processes, setProcesses] = useState<any[]>([])
@@ -229,17 +235,6 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
       pb.collection('clients').getFullList({ sort: 'name' }).then(setClients)
 
     if (open) {
-      form.reset({
-        order_number: '',
-        op_number: '',
-        client_id: '',
-        op_type: 'Linha',
-        quantity: 1,
-        delivery_date: format(new Date(), 'yyyy-MM-dd'),
-        manual_priority: 0,
-        estimates: {},
-        observations: [],
-      })
       setSubmitError(null)
       loadClients()
       reloadProducts()
@@ -252,8 +247,56 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
             .filter(Boolean)
           setProcesses(unique)
         })
+
+      if (editingOrder) {
+        const deliveryDate = editingOrder.delivery_date
+          ? format(parseISO(editingOrder.delivery_date), 'yyyy-MM-dd')
+          : format(new Date(), 'yyyy-MM-dd')
+
+        const estimates: Record<string, any> = {}
+        if (editingOrder.outsourcing_data) {
+          const od = editingOrder.outsourcing_data
+          const estData = od?.estimates || (Array.isArray(od) ? od[0]?.estimates : null)
+          if (estData && typeof estData === 'object') {
+            for (const [name, hours] of Object.entries(estData)) {
+              estimates[safeKey(name)] = hours
+            }
+          }
+        }
+
+        const obs = (editObservations || []).map((o: any) => ({
+          sector: o.sector,
+          content: o.content,
+        }))
+
+        form.reset({
+          order_number: editingOrder.order_number || '',
+          op_number: editingOrder.op_number || '',
+          client_id: editingOrder.client_id || '',
+          op_type: editingOrder.op_type,
+          product_id: editingOrder.product_id || '',
+          manual_product_name: editingOrder.manual_product_name || '',
+          quantity: Number(editingOrder.quantity) || 1,
+          delivery_date: deliveryDate,
+          manual_priority: editingOrder.manual_priority || 0,
+          estimates,
+          observations: obs,
+        })
+      } else {
+        form.reset({
+          order_number: '',
+          op_number: '',
+          client_id: '',
+          op_type: 'Linha',
+          quantity: 1,
+          delivery_date: format(new Date(), 'yyyy-MM-dd'),
+          manual_priority: 0,
+          estimates: {},
+          observations: [],
+        })
+      }
     }
-  }, [open, form])
+  }, [open, form, editingOrder])
 
   useRealtime('product_processes', () => {
     if (open) reloadProducts()
@@ -284,6 +327,11 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
   const onSubmit = async (data: z.infer<typeof schema>) => {
     if (checkingProcesses) return
     setSubmitError(null)
+
+    if (editingOrder) {
+      await updateOrder(data)
+      return
+    }
 
     let processesToFill: any[] = []
     let fabricationProcesses: string[] = DEFAULT_FABRICACAO_PROCESSES
@@ -425,12 +473,88 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
     }
   }
 
+  const updateOrder = async (data: z.infer<typeof schema>) => {
+    setLoading(true)
+    try {
+      const client = clients.find((c) => c.id === data.client_id)
+
+      const payload: any = {
+        order_number: data.order_number,
+        op_number: data.op_number || '',
+        client_id: data.client_id,
+        client_name: client?.name || '',
+        op_type: data.op_type,
+        quantity: data.quantity,
+        delivery_date: new Date(data.delivery_date).toISOString(),
+        manual_priority: data.manual_priority,
+      }
+
+      if (data.op_type === 'Linha') {
+        payload.product_id = data.product_id
+        payload.manual_product_name = ''
+      } else {
+        if (data.op_type === 'Assistência' || data.op_type === 'Especial') {
+          payload.manual_product_name = data.manual_product_name
+        }
+
+        const validEstimates: Record<string, number> = {}
+        if (data.estimates) {
+          for (const [key, val] of Object.entries(data.estimates)) {
+            const numVal = typeof val === 'number' ? val : parseFloat(String(val))
+            if (!Number.isNaN(numVal) && numVal > 0) {
+              const originalName = processKeyMap[key] || key
+              validEstimates[originalName] = numVal
+            }
+          }
+        }
+        payload.outsourcing_data = {
+          estimates: validEstimates,
+        }
+      }
+
+      await pb.collection('pcp_orders').update(editingOrder.id, payload)
+
+      const existingObs = await pb
+        .collection('pcp_order_observations')
+        .getFullList({ filter: `order_id="${editingOrder.id}"` })
+      for (const obs of existingObs) {
+        await pb.collection('pcp_order_observations').delete(obs.id)
+      }
+
+      if (data.observations && data.observations.length > 0) {
+        for (const obs of data.observations) {
+          await pb.collection('pcp_order_observations').create({
+            order_id: editingOrder.id,
+            sector: obs.sector,
+            content: obs.content,
+          })
+        }
+      }
+
+      toast({ title: 'OP atualizada com sucesso!' })
+      onSuccess?.()
+      onOpenChange(false)
+    } catch (err: any) {
+      const errorMsg = getErrorMessage(err)
+      setSubmitError(errorMsg)
+      toast({
+        title: 'Erro ao atualizar OP',
+        description: errorMsg,
+        variant: 'destructive',
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Nova Ordem de Produção</DialogTitle>
+            <DialogTitle>
+              {editingOrder ? 'Editar Ordem de Produção' : 'Nova Ordem de Produção'}
+            </DialogTitle>
           </DialogHeader>
           <form
             onSubmit={form.handleSubmit(
@@ -439,10 +563,10 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
                   setSubmitError(null)
                   await onSubmit(data)
                 } catch (err: any) {
-                  const errorMsg = err?.message || 'Erro inesperado ao criar OP.'
+                  const errorMsg = err?.message || 'Erro inesperado ao salvar OP.'
                   setSubmitError(errorMsg)
                   toast({
-                    title: 'Erro ao criar OP',
+                    title: 'Erro ao salvar OP',
                     description: errorMsg,
                     variant: 'destructive',
                   })
@@ -758,7 +882,7 @@ export function PcpOrderForm({ open, onOpenChange, onSuccess }: any) {
                 Cancelar
               </Button>
               <Button type="submit" disabled={loading || checkingProcesses}>
-                {loading ? 'Salvando...' : 'Criar OP'}
+                {loading ? 'Salvando...' : editingOrder ? 'Salvar Alterações' : 'Criar OP'}
               </Button>
             </DialogFooter>
           </form>

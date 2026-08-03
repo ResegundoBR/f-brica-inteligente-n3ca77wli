@@ -8,21 +8,28 @@ import {
 } from '@/components/ui/sheet'
 import { Label } from '@/components/ui/label'
 import { format, parseISO, isBefore, startOfDay, isValid } from 'date-fns'
-import { Paperclip, AlertCircle, Clock } from 'lucide-react'
+import { Paperclip, AlertCircle, Clock, Pencil, Trash2 } from 'lucide-react'
 import pb from '@/lib/pocketbase/client'
 import { cn } from '@/lib/utils'
 import { OutsourcingPanel } from './OutsourcingPanel'
 import { Switch } from '@/components/ui/switch'
+import { Button } from '@/components/ui/button'
 import { useState, useEffect } from 'react'
 
 export function PcpOrderDetails({
   op,
   observations,
   onClose,
+  onEdit,
+  onDelete,
+  isAdmin,
 }: {
   op: PcpOrder | null
   observations: PcpOrderObservation[]
   onClose: () => void
+  onEdit: () => void
+  onDelete: () => void
+  isAdmin: boolean
 }) {
   const [logs, setLogs] = useState<any[]>([])
 
@@ -66,6 +73,18 @@ export function PcpOrderDetails({
           <SheetTitle>Detalhes da OP</SheetTitle>
           <SheetDescription>Pedido: {op?.order_number}</SheetDescription>
         </SheetHeader>
+        {isAdmin && op && (
+          <div className="flex gap-2 mt-2">
+            <Button variant="outline" size="sm" className="flex-1" onClick={onEdit}>
+              <Pencil className="size-4 mr-2" />
+              Editar OP
+            </Button>
+            <Button variant="destructive" size="sm" className="flex-1" onClick={onDelete}>
+              <Trash2 className="size-4 mr-2" />
+              Excluir OP
+            </Button>
+          </div>
+        )}
         {op && (
           <div className="mt-6 space-y-6">
             {op.manual_priority === 2 && (

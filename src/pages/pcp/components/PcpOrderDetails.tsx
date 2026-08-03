@@ -138,7 +138,7 @@ export function PcpOrderDetails({
                   {op.op_type === 'Assistência'
                     ? op.manual_product_name
                     : op.op_type === 'Especial'
-                      ? 'Produto Especial'
+                      ? op.manual_product_name || 'Produto Especial'
                       : op.expand?.product_id?.name || '-'}
                 </p>
               </div>

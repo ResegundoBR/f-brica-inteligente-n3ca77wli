@@ -42,7 +42,7 @@ export function KanbanCardHover({
     order.op_type === 'Assistência'
       ? order.manual_product_name
       : order.op_type === 'Especial'
-        ? 'Produto Especial'
+        ? order.manual_product_name || 'Produto Especial'
         : order.expand?.product_id?.name || 'S/Produto'
 
   const clientName = order.expand?.client_id?.name || order.client_name || 'S/Cliente'

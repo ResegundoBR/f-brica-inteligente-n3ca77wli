@@ -566,7 +566,7 @@ export default function PcpKanban() {
                                   {op.op_type === 'Assistência'
                                     ? op.manual_product_name
                                     : op.op_type === 'Especial'
-                                      ? 'Produto Especial'
+                                      ? op.manual_product_name || 'Produto Especial'
                                       : op.expand?.product_id?.name || 'S/Produto'}
                                 </div>
                                 {(() => {
@@ -620,7 +620,7 @@ export default function PcpKanban() {
                         {listSelectedOp.op_type === 'Assistência'
                           ? listSelectedOp.manual_product_name
                           : listSelectedOp.op_type === 'Especial'
-                            ? 'Produto Especial'
+                            ? listSelectedOp.manual_product_name || 'Produto Especial'
                             : listSelectedOp.expand?.product_id?.name || 'S/Produto'}
                       </h2>
                       <p className="text-muted-foreground mt-1">
@@ -748,7 +748,7 @@ export default function PcpKanban() {
                       {o.op_type === 'Assistência'
                         ? o.manual_product_name
                         : o.op_type === 'Especial'
-                          ? 'Produto Especial'
+                          ? o.manual_product_name || 'Produto Especial'
                           : o.expand?.product_id?.name || 'S/Produto'}
                       <span className="ml-4 font-medium text-foreground">Qtd:</span> {o.quantity}
                     </div>
@@ -909,7 +909,7 @@ export default function PcpKanban() {
                       {selectedOrder.op_type === 'Assistência'
                         ? selectedOrder.manual_product_name
                         : selectedOrder.op_type === 'Especial'
-                          ? 'Produto Especial'
+                          ? selectedOrder.manual_product_name || 'Produto Especial'
                           : selectedOrder.expand?.product_id?.name || 'S/Produto'}
                     </span>
                   </div>
@@ -1191,7 +1191,7 @@ function KanbanCard({
             {order.op_type === 'Assistência'
               ? order.manual_product_name
               : order.op_type === 'Especial'
-                ? 'Produto Especial'
+                ? order.manual_product_name || 'Produto Especial'
                 : order.expand?.product_id?.name || 'S/Produto'}
           </div>
         </CardContent>
@@ -1266,7 +1266,7 @@ function CompactKanbanCard({
           {order.op_type === 'Assistência'
             ? order.manual_product_name
             : order.op_type === 'Especial'
-              ? 'Produto Especial'
+              ? order.manual_product_name || 'Produto Especial'
               : order.expand?.product_id?.name || 'S/Produto'}
         </span>
       </div>

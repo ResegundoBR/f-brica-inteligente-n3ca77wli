@@ -487,7 +487,7 @@ function OperatorCard({
             {op.op_type === 'Assistência'
               ? op.manual_product_name
               : op.op_type === 'Especial'
-                ? 'Produto Especial (Ver Anexo)'
+                ? op.manual_product_name || 'Produto Especial (Ver Anexo)'
                 : op.expand?.product_id?.name || 'S/Produto'}
           </span>
 

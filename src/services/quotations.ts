@@ -49,8 +49,33 @@ export const selectQuotation = async (quotationId: string, shortageId: string) =
 
 export const deleteQuotation = (id: string) => pb.collection('quotations').delete(id)
 
-export const advanceToCompra = (shortageId: string) =>
-  pb.collection('material_shortages').update(shortageId, { status: 'Compra' })
+export const advanceToCompra = async (shortageId: string) => {
+  let selectedQuotation: Quotation | null = null
+  try {
+    selectedQuotation = await pb
+      .collection('quotations')
+      .getFirstListItem<Quotation>(`material_shortage_id = "${shortageId}" && selected = true`)
+  } catch {
+    // No selected quotation found — proceed with status-only update
+  }
+
+  if (selectedQuotation) {
+    const expectedDate =
+      selectedQuotation.delivery_days && selectedQuotation.delivery_days > 0
+        ? new Date(Date.now() + selectedQuotation.delivery_days * 24 * 60 * 60 * 1000)
+            .toISOString()
+            .split('T')[0]
+        : undefined
+    await pb.collection('material_shortages').update(shortageId, {
+      status: 'Compra',
+      supplier: selectedQuotation.supplier,
+      unit_price: selectedQuotation.price,
+      ...(expectedDate && { expected_date: expectedDate }),
+    })
+  } else {
+    await pb.collection('material_shortages').update(shortageId, { status: 'Compra' })
+  }
+}
 
 export const sendDirectToCompra = (
   shortageId: string,

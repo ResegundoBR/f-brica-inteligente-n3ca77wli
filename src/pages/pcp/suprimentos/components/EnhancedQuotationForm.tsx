@@ -8,6 +8,7 @@ import { Plus, Copy, Check, Loader2, Trash2 } from 'lucide-react'
 import { MaterialShortage, Quotation } from '@/types'
 import { toast } from 'sonner'
 import pb from '@/lib/pocketbase/client'
+import { selectQuotation } from '@/services/quotations'
 import { SupplierSearch } from './SupplierSearch'
 import { SupplierFormDialog } from './SupplierFormDialog'
 
@@ -73,14 +74,10 @@ export function EnhancedQuotationForm({ item, onUpdate, onClose }: EnhancedQuota
 
   const handleSelectQuotation = async (q: Quotation) => {
     try {
-      await pb.collection('quotations').update(q.id, { selected: true })
-      const others = quotations.filter((x) => x.id !== q.id && x.selected)
-      for (const o of others) {
-        await pb.collection('quotations').update(o.id, { selected: false })
-      }
+      await selectQuotation(q.id, item.id)
       await loadQuotations()
       onUpdate()
-      toast.success('Fornecedor selecionado')
+      toast.success('Fornecedor selecionado e dados sincronizados')
     } catch {
       toast.error('Erro ao selecionar')
     }

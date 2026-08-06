@@ -11,6 +11,13 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   Table,
   TableBody,
   TableCell,
@@ -33,7 +40,13 @@ interface OrdemCompraModalProps {
   onOpenChange: (open: boolean) => void
   supplierName: string
   initialItems: OCItemInput[]
-  onConfirm: (items: OCItemInput[], deliveryTerms: string, expectedDate: string) => Promise<void>
+  onConfirm: (
+    items: OCItemInput[],
+    deliveryTerms: string,
+    expectedDate: string,
+    paymentTerms: string,
+    deliveryType: string,
+  ) => Promise<void>
 }
 
 export function OrdemCompraModal({
@@ -46,8 +59,11 @@ export function OrdemCompraModal({
   const [items, setItems] = useState<OCItemInput[]>(initialItems)
   const [deliveryTerms, setDeliveryTerms] = useState('')
   const [expectedDate, setExpectedDate] = useState('')
+  const [paymentTerms, setPaymentTerms] = useState('')
+  const [deliveryType, setDeliveryType] = useState('Entrega')
   const [saving, setSaving] = useState(false)
   const [newDesc, setNewDesc] = useState('')
+  const [newCode, setNewCode] = useState('')
   const [newQty, setNewQty] = useState('1')
   const [newPrice, setNewPrice] = useState('')
 
@@ -56,12 +72,16 @@ export function OrdemCompraModal({
       setItems(initialItems)
       setDeliveryTerms('')
       setExpectedDate('')
+      setPaymentTerms('')
+      setDeliveryType('Entrega')
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
+  }, [open, initialItems])
 
   const formatCurrency = (v: number) =>
     v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+
+  const updateCode = (idx: number, code: string) =>
+    setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, code } : it)))
 
   const updateQty = (idx: number, qty: number) =>
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, quantity: qty } : it)))
@@ -77,11 +97,13 @@ export function OrdemCompraModal({
       ...prev,
       {
         description: newDesc.trim(),
+        ...(newCode.trim() && { code: newCode.trim() }),
         quantity: Number(newQty) || 1,
         unit_price: Number(newPrice) || 0,
       },
     ])
     setNewDesc('')
+    setNewCode('')
     setNewQty('1')
     setNewPrice('')
   }
@@ -91,7 +113,7 @@ export function OrdemCompraModal({
   const handleConfirm = async () => {
     setSaving(true)
     try {
-      await onConfirm(items, deliveryTerms, expectedDate)
+      await onConfirm(items, deliveryTerms, expectedDate, paymentTerms, deliveryType)
       onOpenChange(false)
     } catch {
       /* handled by parent */
@@ -102,7 +124,7 @@ export function OrdemCompraModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Gerar Ordem de Compra</DialogTitle>
         </DialogHeader>
@@ -122,10 +144,34 @@ export function OrdemCompraModal({
             </div>
           </div>
 
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Condições de Pagamento</Label>
+              <Input
+                value={paymentTerms}
+                onChange={(e) => setPaymentTerms(e.target.value)}
+                placeholder="Ex.: À vista, 30 dias..."
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Entrega / Retira</Label>
+              <Select value={deliveryType} onValueChange={setDeliveryType}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Entrega">Entrega</SelectItem>
+                  <SelectItem value="Retira">Retira</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
           <div className="border rounded-lg overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-[100px]">Código</TableHead>
                   <TableHead>Descrição</TableHead>
                   <TableHead className="w-[100px]">Qtde</TableHead>
                   <TableHead className="w-[120px]">Vl. Unit.</TableHead>
@@ -136,6 +182,14 @@ export function OrdemCompraModal({
               <TableBody>
                 {items.map((item, idx) => (
                   <TableRow key={idx}>
+                    <TableCell>
+                      <Input
+                        className="h-8 w-24"
+                        value={item.code || ''}
+                        onChange={(e) => updateCode(idx, e.target.value)}
+                        placeholder="-"
+                      />
+                    </TableCell>
                     <TableCell className="text-sm font-medium">{item.description}</TableCell>
                     <TableCell>
                       <Input
@@ -173,6 +227,10 @@ export function OrdemCompraModal({
           </div>
 
           <div className="flex flex-wrap items-end gap-2 p-3 border-2 border-dashed rounded-lg">
+            <div className="w-24 space-y-1">
+              <Label className="text-xs">Código</Label>
+              <Input value={newCode} onChange={(e) => setNewCode(e.target.value)} placeholder="-" />
+            </div>
             <div className="flex-1 min-w-[150px] space-y-1">
               <Label className="text-xs">Nova Descrição</Label>
               <Input

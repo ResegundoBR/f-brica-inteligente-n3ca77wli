@@ -64,6 +64,12 @@ const navItems = [
   { title: 'Cotações', url: '/pcp/suprimentos/cotacoes', icon: Tags, group: 'Suprimentos' },
   { title: 'Compras', url: '/pcp/suprimentos/compras', icon: ShoppingCart, group: 'Suprimentos' },
   {
+    title: 'Ordens de Compra',
+    url: '/pcp/suprimentos/ordens-compra',
+    icon: FileText,
+    group: 'Suprimentos',
+  },
+  {
     title: 'Recebimento',
     url: '/pcp/suprimentos/recebimento',
     icon: PackageCheck,
@@ -154,6 +160,7 @@ export function AppSidebar() {
       case 'Solicitações':
       case 'Cotações':
       case 'Compras':
+      case 'Ordens de Compra':
       case 'Recebimento':
       case 'Estoque':
       case 'Terceirização':

@@ -11,8 +11,15 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { MaterialShortage } from '@/types'
+import { MaterialShortage, PcpOrder } from '@/types'
 import { ClipboardList, Plus, Copy, Tag } from 'lucide-react'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
 import { TriageTable } from './components/TriageTable'
 import { TriageDetailDialog } from './components/TriageDetailDialog'
@@ -29,6 +36,8 @@ export default function SolicitacoesPage() {
   const [batchSupplierOpen, setBatchSupplierOpen] = useState(false)
   const [batchSupplierValue, setBatchSupplierValue] = useState('')
   const [supplierSuggestions, setSupplierSuggestions] = useState<string[]>([])
+  const [opFilter, setOpFilter] = useState('all')
+  const [orders, setOrders] = useState<PcpOrder[]>([])
   const { toast } = useToast()
   const selectedIds = useShortageStore((s) => s.selectedIds)
   const clear = useShortageStore((s) => s.clear)
@@ -48,6 +57,10 @@ export default function SolicitacoesPage() {
 
   useEffect(() => {
     fetchShortages()
+    pb.collection('pcp_orders')
+      .getFullList<PcpOrder>({ sort: '-created' })
+      .then(setOrders)
+      .catch(() => {})
     return () => clear()
   }, [clear])
   useRealtime('material_shortages', fetchShortages)
@@ -103,7 +116,11 @@ export default function SolicitacoesPage() {
     }
   }
 
-  const triagemItems = shortages.filter((s) => s.status === 'Pendente')
+  const triagemItems = shortages.filter((s) => {
+    if (s.status !== 'Pendente') return false
+    if (opFilter !== 'all' && s.order_id !== opFilter) return false
+    return true
+  })
 
   return (
     <div className="flex flex-col gap-6 p-4 md:p-8 bg-slate-50 min-h-[calc(100vh-4rem)] dark:bg-slate-950">
@@ -121,6 +138,22 @@ export default function SolicitacoesPage() {
         }
       />
       <NewShortageModal open={modalOpen} onOpenChange={setModalOpen} />
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-medium text-muted-foreground">Filtrar por OP:</span>
+        <Select value={opFilter} onValueChange={setOpFilter}>
+          <SelectTrigger className="w-[220px]">
+            <SelectValue placeholder="Todas as OPs" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todas as OPs</SelectItem>
+            {orders.map((o) => (
+              <SelectItem key={o.id} value={o.id}>
+                {o.op_number || o.order_number}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
       {triagemItems.length === 0 ? (
         <div className="p-8 text-center border-2 border-dashed rounded-xl border-slate-200 dark:border-slate-800 text-slate-400 font-medium">
           Nenhuma solicitação pendente.

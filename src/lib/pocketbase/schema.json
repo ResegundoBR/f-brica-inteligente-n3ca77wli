@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-06T18:43:14.800Z",
+  "generatedAt": "2026-08-06T19:40:19.665Z",
   "collections": [
     {
       "name": "users",
@@ -1808,6 +1808,19 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "payment_terms",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "delivery_type",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["Entrega", "Retira"]
         }
       ],
       "indexes": [

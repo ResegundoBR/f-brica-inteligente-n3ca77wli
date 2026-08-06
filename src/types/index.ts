@@ -413,6 +413,8 @@ export interface OrdemCompra {
   status?: 'Pendente' | 'Enviada' | 'Recebida' | 'Cancelada'
   expected_date?: string
   delivery_terms?: string
+  payment_terms?: string
+  delivery_type?: 'Entrega' | 'Retira'
   total?: number
   user_id?: string
   created: string

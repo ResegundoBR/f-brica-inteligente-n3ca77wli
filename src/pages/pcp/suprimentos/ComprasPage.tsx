@@ -4,10 +4,17 @@ import { useRealtime } from '@/hooks/use-realtime'
 import { useAuth } from '@/hooks/use-auth'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { MaterialShortage, OrdemCompra, OrdemCompraItem } from '@/types'
+import { MaterialShortage, OrdemCompra, OrdemCompraItem, PcpOrder } from '@/types'
 import { ShoppingCart, FileText, Layers } from 'lucide-react'
 import { parseISO, isBefore, startOfDay, isValid } from 'date-fns'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { ComprasTable } from './components/ComprasTable'
 import { ComprasItemDialog } from './components/ComprasItemDialog'
 import { OrdemCompraModal, type OCItemInput } from './components/OrdemCompraModal'
@@ -29,6 +36,8 @@ export default function ComprasPage() {
   const clear = useShortageStore((s) => s.clear)
   const { user } = useAuth()
   const [grouped, setGrouped] = useState(false)
+  const [opFilter, setOpFilter] = useState('all')
+  const [orders, setOrders] = useState<PcpOrder[]>([])
 
   const fetchShortages = async () => {
     try {
@@ -44,6 +53,10 @@ export default function ComprasPage() {
 
   useEffect(() => {
     fetchShortages()
+    pb.collection('pcp_orders')
+      .getFullList<PcpOrder>({ sort: '-created' })
+      .then(setOrders)
+      .catch(() => {})
     return () => clear()
   }, [clear])
 
@@ -53,11 +66,12 @@ export default function ComprasPage() {
     () =>
       shortages.filter((s) => {
         if (s.status !== 'Compra' && s.status !== 'Recebido_Parcial') return false
+        if (opFilter !== 'all' && s.order_id !== opFilter) return false
         const total = Number(s.quantity) || 0
         const received = Number(s.received_quantity) || 0
         return total === 0 || received < total
       }),
-    [shortages],
+    [shortages, opFilter],
   )
 
   const summary = useMemo(() => {
@@ -131,6 +145,8 @@ export default function ComprasPage() {
     items: OCItemInput[],
     deliveryTerms: string,
     expectedDate: string,
+    paymentTerms: string,
+    deliveryType: string,
   ) => {
     const total = items.reduce((sum, it) => sum + it.quantity * it.unit_price, 0)
     try {
@@ -138,6 +154,8 @@ export default function ComprasPage() {
         supplier: ocSupplier,
         expected_date: expectedDate || undefined,
         delivery_terms: deliveryTerms || undefined,
+        payment_terms: paymentTerms || undefined,
+        delivery_type: deliveryType || undefined,
         total,
         ...(user?.id && { user_id: user.id }),
         itens: items.map((it) => ({
@@ -170,6 +188,19 @@ export default function ComprasPage() {
           icon={ShoppingCart}
         />
         <div className="flex items-center gap-2">
+          <Select value={opFilter} onValueChange={setOpFilter}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Todas as OPs" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas as OPs</SelectItem>
+              {orders.map((o) => (
+                <SelectItem key={o.id} value={o.id}>
+                  {o.op_number || o.order_number}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button variant="outline" size="sm" onClick={() => setGrouped((g) => !g)}>
             <Layers className="w-4 h-4" />
             {grouped ? 'Lista' : 'Agrupar por fornecedor'}

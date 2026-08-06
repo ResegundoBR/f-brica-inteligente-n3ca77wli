@@ -13,6 +13,7 @@ const suprimentosTabs = [
   { label: 'Solicitações', href: '/pcp/suprimentos/solicitacoes' },
   { label: 'Cotações', href: '/pcp/suprimentos/cotacoes' },
   { label: 'Compras', href: '/pcp/suprimentos/compras' },
+  { label: 'Ordens de Compra', href: '/pcp/suprimentos/ordens-compra' },
   { label: 'Recebimento', href: '/pcp/suprimentos/recebimento' },
   { label: 'Estoque', href: '/pcp/suprimentos/estoque' },
   { label: 'Terceirização', href: '/pcp/suprimentos/terceirizacao' },

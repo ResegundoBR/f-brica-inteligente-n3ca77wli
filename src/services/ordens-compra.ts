@@ -1,6 +1,8 @@
 import pb from '@/lib/pocketbase/client'
 import type { OrdemCompra, OrdemCompraItem } from '@/types'
 
+const OC_NUMBER_SEED = 38896
+
 export const getOrdensCompra = () =>
   pb.collection('ordens_de_compra').getFullList<OrdemCompra>({
     sort: '-created',
@@ -16,15 +18,24 @@ export const getOrdemCompraItens = (ocId: string) =>
     sort: 'created',
   })
 
+export const updateOrdemCompraStatus = (id: string, status: string) =>
+  pb.collection('ordens_de_compra').update(id, { status })
+
 async function generateOcNumber(): Promise<string> {
-  const year = new Date().getFullYear()
+  let maxNum = OC_NUMBER_SEED - 1
   try {
-    const list = await pb.collection('ordens_de_compra').getList(1, 1, { sort: '-created' })
-    const seq = String((list.totalItems || 0) + 1).padStart(4, '0')
-    return `OC-${year}-${seq}`
+    const all = await pb.collection('ordens_de_compra').getFullList({ fields: 'oc_number' })
+    for (const r of all as any[]) {
+      const raw = (r.oc_number || '').trim()
+      if (/^\d+$/.test(raw)) {
+        const num = parseInt(raw, 10)
+        if (!isNaN(num) && num > maxNum) maxNum = num
+      }
+    }
   } catch {
-    return `OC-${year}-0001`
+    /* ignore */
   }
+  return String(maxNum + 1)
 }
 
 export const createOrdemCompra = async (data: {
@@ -32,6 +43,8 @@ export const createOrdemCompra = async (data: {
   supplier_id?: string
   expected_date?: string
   delivery_terms?: string
+  payment_terms?: string
+  delivery_type?: string
   total: number
   user_id?: string
   itens: Array<{
@@ -51,6 +64,8 @@ export const createOrdemCompra = async (data: {
     status: 'Pendente',
     ...(data.expected_date && { expected_date: data.expected_date }),
     ...(data.delivery_terms && { delivery_terms: data.delivery_terms }),
+    ...(data.payment_terms && { payment_terms: data.payment_terms }),
+    ...(data.delivery_type && { delivery_type: data.delivery_type }),
     total: data.total,
     ...(data.user_id && { user_id: data.user_id }),
   })

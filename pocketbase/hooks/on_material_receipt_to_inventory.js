@@ -1,18 +1,17 @@
 onRecordAfterUpdateSuccess((e) => {
-  const newStatus = e.record.getString('status')
-  const oldStatus = e.record.original().getString('status')
-
+  var newStatus = e.record.getString('status')
   if (newStatus !== 'Recebido' && newStatus !== 'Recebido_Parcial') return e.next()
 
-  const code = e.record.getString('code') || ''
-  const description = e.record.getString('description') || ''
+  var code = (e.record.getString('code') || '').trim()
+  var description = (e.record.getString('description') || '').trim()
   if (!description) return e.next()
 
-  const shortageId = e.record.id
-  const receivedQty = e.record.getNumber('received_quantity') || 0
-  const totalQty = e.record.getNumber('quantity') || 0
+  var shortageId = e.record.id
+  var receivedQty = e.record.getNumber('received_quantity') || 0
+  var totalQty = e.record.getNumber('quantity') || 0
 
-  var targetQty = newStatus === 'Recebido' ? totalQty : receivedQty
+  var targetQty =
+    newStatus === 'Recebido' ? (receivedQty > 0 ? receivedQty : totalQty) : receivedQty
   if (targetQty <= 0) return e.next()
 
   var inventoryRecord = null
@@ -24,7 +23,7 @@ onRecordAfterUpdateSuccess((e) => {
       )
     } catch (_) {}
   }
-  if (!inventoryRecord) {
+  if (!inventoryRecord && description) {
     try {
       inventoryRecord = $app.findFirstRecordByFilter(
         'inventory',
@@ -37,16 +36,22 @@ onRecordAfterUpdateSuccess((e) => {
     try {
       var invCol = $app.findCollectionByNameOrId('inventory')
       inventoryRecord = new Record(invCol)
-      inventoryRecord.set('code', code || 'AUTO-' + shortageId)
+      var finalCode = code || 'REF-' + shortageId.substring(0, 6).toUpperCase()
+      inventoryRecord.set('code', finalCode)
       inventoryRecord.set('description', description)
       inventoryRecord.set('quantity', 0)
       inventoryRecord.set('min_quantity', 0)
       inventoryRecord.set('unit', 'un')
       $app.save(inventoryRecord)
     } catch (err) {
-      console.log('Error creating inventory record', err.message)
+      console.log('Error creating inventory record:', err.message)
       return e.next()
     }
+  } else if (!inventoryRecord.getString('code') && code) {
+    try {
+      inventoryRecord.set('code', code)
+      $app.save(inventoryRecord)
+    } catch (_) {}
   }
 
   var alreadyAdded = 0
@@ -72,7 +77,7 @@ onRecordAfterUpdateSuccess((e) => {
     movement.set('inventory_id', inventoryRecord.id)
     movement.set('quantity', qtyToAdd)
     movement.set('type', 'Entrada')
-    movement.set('reason', 'Recebimento de Material (Solicitacao ID: ' + shortageId + ')')
+    movement.set('reason', 'Recebimento de Solicitação (ID: ' + shortageId + ')')
 
     var requestedBy = e.record.getString('requested_by') || ''
     if (requestedBy) {
@@ -86,7 +91,7 @@ onRecordAfterUpdateSuccess((e) => {
 
     $app.save(movement)
   } catch (err) {
-    console.log('Error creating inventory movement', err.message)
+    console.log('Error creating inventory movement:', err.message)
   }
 
   return e.next()

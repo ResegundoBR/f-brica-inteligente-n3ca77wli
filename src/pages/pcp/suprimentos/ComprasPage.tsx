@@ -33,7 +33,13 @@ export default function ComprasPage() {
   useRealtime('material_shortages', fetchShortages)
 
   const comprasItems = useMemo(
-    () => shortages.filter((s) => s.status === 'Compra' || s.status === 'Recebido_Parcial'),
+    () =>
+      shortages.filter((s) => {
+        if (s.status !== 'Compra' && s.status !== 'Recebido_Parcial') return false
+        const total = Number(s.quantity) || 0
+        const received = Number(s.received_quantity) || 0
+        return total === 0 || received < total
+      }),
     [shortages],
   )
 
@@ -42,9 +48,11 @@ export default function ComprasPage() {
     let totalValue = 0
     let overdue = 0
     comprasItems.forEach((s) => {
-      const qty = Number(s.quantity) || 0
+      const total = Number(s.quantity) || 0
+      const received = Number(s.received_quantity) || 0
+      const pendingQty = Math.max(0, total - received)
       const price = Number(s.unit_price) || 0
-      totalValue += qty * price
+      totalValue += pendingQty * price
       if (s.expected_date) {
         const d = parseISO(s.expected_date)
         if (isValid(d) && isBefore(startOfDay(d), today)) overdue++
@@ -75,7 +83,13 @@ export default function ComprasPage() {
             <CardTitle className="text-sm text-muted-foreground">Valor Total</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-blue-600">R$ {summary.totalValue.toFixed(2)}</p>
+            <p className="text-2xl font-bold text-blue-600">
+              R${' '}
+              {summary.totalValue.toLocaleString('pt-BR', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
+            </p>
           </CardContent>
         </Card>
         <Card>

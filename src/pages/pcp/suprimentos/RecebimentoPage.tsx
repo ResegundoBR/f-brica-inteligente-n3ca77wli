@@ -24,6 +24,7 @@ import { getErrorMessage } from '@/lib/pocketbase/errors'
 export default function RecebimentoPage() {
   const [shortages, setShortages] = useState<MaterialShortage[]>([])
   const [receiveInputs, setReceiveInputs] = useState<Record<string, string>>({})
+  const [codeInputs, setCodeInputs] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState<Record<string, boolean>>({})
   const { toast } = useToast()
 
@@ -34,7 +35,12 @@ export default function RecebimentoPage() {
         sort: '-created',
         expand: 'order_id,requested_by',
       })
-      setShortages(res)
+      const activePending = res.filter((item) => {
+        const total = Number(item.quantity) || 0
+        const received = Number(item.received_quantity) || 0
+        return total === 0 || received < total
+      })
+      setShortages(activePending)
     } catch {
       /* ignored */
     }
@@ -62,7 +68,7 @@ export default function RecebimentoPage() {
       return
     }
 
-    const currentReceived = item.received_quantity || 0
+    const currentReceived = Number(item.received_quantity) || 0
     const total = Number(item.quantity) || 0
     const newReceivedQty = currentReceived + numQty
 
@@ -75,10 +81,16 @@ export default function RecebimentoPage() {
       return
     }
 
+    const newStatus = total > 0 && newReceivedQty >= total ? 'Recebido' : 'Recebido_Parcial'
+    const enteredCode = (codeInputs[item.id] ?? item.code ?? '').trim()
+    const resolvedCode = enteredCode || `REF-${item.id.slice(-6).toUpperCase()}`
+
     setLoading((prev) => ({ ...prev, [item.id]: true }))
     try {
       await pb.collection('material_shortages').update(item.id, {
         received_quantity: newReceivedQty,
+        status: newStatus,
+        code: resolvedCode,
       })
 
       toast({
@@ -87,6 +99,11 @@ export default function RecebimentoPage() {
       })
 
       setReceiveInputs((prev) => {
+        const next = { ...prev }
+        delete next[item.id]
+        return next
+      })
+      setCodeInputs((prev) => {
         const next = { ...prev }
         delete next[item.id]
         return next
@@ -149,7 +166,7 @@ export default function RecebimentoPage() {
           <Table>
             <TableHeader className="bg-slate-50 dark:bg-slate-800/50">
               <TableRow>
-                <TableHead className="w-[100px]">Código</TableHead>
+                <TableHead className="w-[120px]">Código</TableHead>
                 <TableHead>Descrição</TableHead>
                 <TableHead className="text-right w-[80px]">Qtde Total</TableHead>
                 <TableHead className="text-right w-[110px]">Recebido</TableHead>
@@ -161,12 +178,25 @@ export default function RecebimentoPage() {
             </TableHeader>
             <TableBody>
               {shortages.map((item) => {
-                const received = item.received_quantity || 0
+                const received = Number(item.received_quantity) || 0
                 const total = Number(item.quantity) || 0
                 return (
                   <TableRow key={item.id}>
                     <TableCell className="text-xs text-muted-foreground">
-                      {item.code || '-'}
+                      {item.code ? (
+                        <span className="font-mono text-slate-700 dark:text-slate-300 font-medium">
+                          {item.code}
+                        </span>
+                      ) : (
+                        <Input
+                          placeholder="Cod. opcional"
+                          className="h-7 w-24 text-xs"
+                          value={codeInputs[item.id] ?? ''}
+                          onChange={(e) =>
+                            setCodeInputs((prev) => ({ ...prev, [item.id]: e.target.value }))
+                          }
+                        />
+                      )}
                     </TableCell>
                     <TableCell className="font-medium text-sm">{item.description}</TableCell>
                     <TableCell className="text-right font-semibold">{total}</TableCell>

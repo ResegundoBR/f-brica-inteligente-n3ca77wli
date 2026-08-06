@@ -1,25 +1,23 @@
 onRecordAfterCreateSuccess((e) => {
-  var movement = e.record
-  var inventoryId = movement.getString('inventory_id')
-  if (!inventoryId) return e.next()
+  var invId = e.record.getString('inventory_id')
+  var qty = e.record.getNumber('quantity') || 0
+  var type = e.record.getString('type')
 
-  var type = movement.getString('type')
-  var quantity = movement.getNumber('quantity') || 0
-  if (quantity <= 0) return e.next()
+  if (!invId || qty <= 0) return e.next()
 
   try {
-    var inventory = $app.findRecordById('inventory', inventoryId)
-    var currentQty = inventory.getNumber('quantity') || 0
-
+    var invRecord = $app.findRecordById('inventory', invId)
+    var currentQty = invRecord.getNumber('quantity') || 0
+    var newQty = currentQty
     if (type === 'Entrada') {
-      inventory.set('quantity', currentQty + quantity)
-    } else if (type === 'Saida' || type === 'Sa\u00edda') {
-      inventory.set('quantity', Math.max(0, currentQty - quantity))
+      newQty = currentQty + qty
+    } else if (type === 'Saída') {
+      newQty = Math.max(0, currentQty - qty)
     }
-
-    $app.save(inventory)
+    invRecord.set('quantity', newQty)
+    $app.save(invRecord)
   } catch (err) {
-    console.log('Error updating inventory balance', err.message)
+    console.log('Error updating inventory quantity from movement:', err.message)
   }
 
   return e.next()

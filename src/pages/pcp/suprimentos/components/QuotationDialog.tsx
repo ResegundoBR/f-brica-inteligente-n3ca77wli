@@ -12,7 +12,18 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Plus, Trash2, Check, ShoppingCart, Pencil, Save, X, Copy } from 'lucide-react'
+import {
+  Plus,
+  Trash2,
+  Check,
+  ShoppingCart,
+  Pencil,
+  Save,
+  X,
+  Copy,
+  FastForward,
+  Loader2,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { MaterialShortage, Quotation } from '@/types'
 import {
@@ -21,6 +32,7 @@ import {
   selectQuotation,
   deleteQuotation,
   advanceToCompra,
+  sendDirectToCompra,
   updateShortageItem,
 } from '@/services/quotations'
 import { SupplierSearchSelect } from './SupplierSearchSelect'
@@ -47,6 +59,11 @@ export function QuotationDialog({
   const [editQty, setEditQty] = useState('')
   const [quickSupplierOpen, setQuickSupplierOpen] = useState(false)
   const [supplierRefreshKey, setSupplierRefreshKey] = useState(0)
+  const [showDirectForm, setShowDirectForm] = useState(false)
+  const [directSupplier, setDirectSupplier] = useState('')
+  const [directPrice, setDirectPrice] = useState('')
+  const [directExpectedDate, setDirectExpectedDate] = useState('')
+  const [directLoading, setDirectLoading] = useState(false)
   const { toast } = useToast()
 
   useEffect(() => {
@@ -60,6 +77,10 @@ export function QuotationDialog({
       setEditing(false)
       setEditDesc(item.description)
       setEditQty(String(item.quantity))
+      setShowDirectForm(false)
+      setDirectSupplier('')
+      setDirectPrice('')
+      setDirectExpectedDate('')
     }
   }, [open, item])
 
@@ -141,6 +162,26 @@ export function QuotationDialog({
       onUpdate?.()
     } catch (err: any) {
       toast({ title: 'Erro', description: err.message, variant: 'destructive' })
+    }
+  }
+
+  const handleDirectCompra = async () => {
+    if (!item) return
+    setDirectLoading(true)
+    try {
+      const data: { supplier?: string; unit_price?: number; expected_date?: string } = {}
+      if (directSupplier.trim()) data.supplier = directSupplier.trim()
+      const numPrice = Number(directPrice)
+      if (directPrice && Number.isFinite(numPrice) && numPrice > 0) data.unit_price = numPrice
+      if (directExpectedDate) data.expected_date = directExpectedDate
+      await sendDirectToCompra(item.id, data)
+      toast({ title: 'Item enviado direto para Compras' })
+      onOpenChange(false)
+      onUpdate?.()
+    } catch (err: any) {
+      toast({ title: 'Erro', description: err.message, variant: 'destructive' })
+    } finally {
+      setDirectLoading(false)
     }
   }
 
@@ -321,7 +362,62 @@ export function QuotationDialog({
                 <Plus className="size-4 mr-1" /> Adicionar Cotação
               </Button>
             </div>
-            <div className="flex justify-end pt-2 border-t">
+            {showDirectForm && (
+              <div className="border rounded-md p-3 space-y-3 bg-slate-50 dark:bg-slate-800/50">
+                <Label className="font-semibold text-sm">Enviar direto para Compras</Label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Fornecedor</Label>
+                    <Input
+                      value={directSupplier}
+                      onChange={(e) => setDirectSupplier(e.target.value)}
+                      placeholder="Opcional"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Preço Unit. (R$)</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={directPrice}
+                      onChange={(e) => setDirectPrice(e.target.value)}
+                      placeholder="Opcional"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Data prevista de chegada</Label>
+                    <Input
+                      type="date"
+                      value={directExpectedDate}
+                      onChange={(e) => setDirectExpectedDate(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button size="sm" variant="ghost" onClick={() => setShowDirectForm(false)}>
+                    Cancelar
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="bg-amber-600 hover:bg-amber-700 text-white"
+                    onClick={handleDirectCompra}
+                    disabled={directLoading}
+                  >
+                    {directLoading ? (
+                      <Loader2 className="size-4 mr-1 animate-spin" />
+                    ) : (
+                      <FastForward className="size-4 mr-1" />
+                    )}
+                    Confirmar
+                  </Button>
+                </div>
+              </div>
+            )}
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <Button variant="outline" onClick={() => setShowDirectForm((v) => !v)}>
+                <FastForward className="size-4 mr-2" /> Enviar direto para Compras
+              </Button>
               <Button
                 className="bg-blue-600 hover:bg-blue-700 text-white"
                 onClick={handleAdvance}

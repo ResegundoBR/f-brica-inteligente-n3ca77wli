@@ -15,6 +15,7 @@ import {
 import { MaterialShortage } from '@/types'
 import { Tags, Copy, Check } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
+import { advanceToCompra } from '@/services/quotations'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
 import { TriageDialog } from './components/TriageDialog'
 import { NovoBadge } from '@/components/NovoBadge'
@@ -45,10 +46,7 @@ export default function CotacoesPage() {
   }, [])
   useRealtime('material_shortages', fetchData)
 
-  const cotacaoItems = useMemo(
-    () => shortages.filter((s) => s.status === 'Cotação' && !s.quotation_date),
-    [shortages],
-  )
+  const cotacaoItems = useMemo(() => shortages.filter((s) => s.status === 'Cotação'), [shortages])
 
   const handleRowClick = (item: MaterialShortage) => {
     markAsViewed(item.id)
@@ -69,6 +67,16 @@ export default function CotacoesPage() {
       setSelectedIds(new Set())
     } else {
       setSelectedIds(new Set(cotacaoItems.map((i) => i.id)))
+    }
+  }
+
+  const handleQuickCompra = async (item: MaterialShortage) => {
+    try {
+      await advanceToCompra(item.id)
+      toast.success('Item enviado direto para Compras')
+      fetchData()
+    } catch {
+      toast.error('Erro ao enviar item para Compras')
     }
   }
 
@@ -121,6 +129,7 @@ export default function CotacoesPage() {
                 <TableHead>Descrição</TableHead>
                 <TableHead className="text-right w-[60px]">Qtde</TableHead>
                 <TableHead className="w-[80px]">Prioridade</TableHead>
+                <TableHead className="w-[110px]">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -157,6 +166,16 @@ export default function CotacoesPage() {
                         {item.priority}
                       </Badge>
                     )}
+                  </TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-xs whitespace-nowrap"
+                      onClick={() => handleQuickCompra(item)}
+                    >
+                      ⏭️ Compras
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}

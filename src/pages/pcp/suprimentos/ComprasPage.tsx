@@ -6,11 +6,13 @@ import { MaterialShortage } from '@/types'
 import { ShoppingCart } from 'lucide-react'
 import { parseISO, isBefore, startOfDay, isValid } from 'date-fns'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
-import ShortageTable from '@/pages/pcp/components/ShortageTable'
+import { ComprasTable } from './components/ComprasTable'
+import { ComprasItemDialog } from './components/ComprasItemDialog'
 import { useShortageStore } from '@/stores/useShortageStore'
 
 export default function ComprasPage() {
   const [shortages, setShortages] = useState<MaterialShortage[]>([])
+  const [editItem, setEditItem] = useState<MaterialShortage | null>(null)
   const clear = useShortageStore((s) => s.clear)
 
   const fetchShortages = async () => {
@@ -111,8 +113,15 @@ export default function ComprasPage() {
           Nenhuma compra ativa no momento.
         </div>
       ) : (
-        <ShortageTable items={comprasItems} allShortages={shortages} editableQuantity />
+        <ComprasTable items={comprasItems} onEditSupplier={setEditItem} />
       )}
+
+      <ComprasItemDialog
+        item={editItem}
+        open={!!editItem}
+        onOpenChange={(o) => !o && setEditItem(null)}
+        onUpdate={fetchShortages}
+      />
     </div>
   )
 }

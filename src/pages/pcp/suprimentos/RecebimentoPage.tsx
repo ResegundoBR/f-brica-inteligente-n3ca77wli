@@ -17,6 +17,7 @@ import { MaterialShortage } from '@/types'
 import { PackageCheck, CheckCircle } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
+import { SmartReceiveDialog } from './components/SmartReceiveDialog'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { getErrorMessage } from '@/lib/pocketbase/errors'
@@ -26,6 +27,7 @@ export default function RecebimentoPage() {
   const [receiveInputs, setReceiveInputs] = useState<Record<string, string>>({})
   const [codeInputs, setCodeInputs] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState<Record<string, boolean>>({})
+  const [smartReceiveItem, setSmartReceiveItem] = useState<MaterialShortage | null>(null)
   const { toast } = useToast()
 
   const fetchShortages = async () => {
@@ -232,28 +234,14 @@ export default function RecebimentoPage() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="number"
-                          min="0.01"
-                          step="0.01"
-                          placeholder="Qtde"
-                          className="h-8 w-20 text-sm"
-                          value={receiveInputs[item.id] || ''}
-                          onChange={(e) =>
-                            setReceiveInputs((prev) => ({ ...prev, [item.id]: e.target.value }))
-                          }
-                        />
-                        <Button
-                          size="sm"
-                          className="h-8 bg-green-600 hover:bg-green-700 text-white"
-                          disabled={loading[item.id]}
-                          onClick={() => handleReceive(item)}
-                        >
-                          <CheckCircle className="size-3.5 mr-1" />
-                          Confirmar
-                        </Button>
-                      </div>
+                      <Button
+                        size="sm"
+                        className="h-8 bg-green-600 hover:bg-green-700 text-white"
+                        onClick={() => setSmartReceiveItem(item)}
+                      >
+                        <CheckCircle className="size-3.5 mr-1" />
+                        Distribuir
+                      </Button>
                     </TableCell>
                   </TableRow>
                 )
@@ -262,6 +250,13 @@ export default function RecebimentoPage() {
           </Table>
         </div>
       )}
+
+      <SmartReceiveDialog
+        item={smartReceiveItem}
+        open={!!smartReceiveItem}
+        onOpenChange={(o) => !o && setSmartReceiveItem(null)}
+        onUpdate={fetchShortages}
+      />
     </div>
   )
 }

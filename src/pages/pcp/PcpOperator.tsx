@@ -326,6 +326,20 @@ function OperatorCard({
     : false
   const isEmergency = op.manual_priority === 1
   const materialStatus = getMaterialAvailabilityStatus(shortages)
+  const receivedShortages =
+    shortages?.filter(
+      (s) =>
+        s.status === 'Recebido' ||
+        s.status === 'Recebido_Parcial' ||
+        s.status === 'Liberado_Estoque',
+    ) || []
+  const receivedQty = receivedShortages.reduce(
+    (sum, s) => sum + (Number(s.received_quantity) || 0),
+    0,
+  )
+  const materialSectors = Array.from(
+    new Set(receivedShortages.map((s) => s.sector).filter(Boolean)),
+  )
 
   const stageProcesses = useMemo(
     () =>
@@ -454,18 +468,25 @@ function OperatorCard({
               </span>
             )}
             {materialStatus !== 'none' && (
-              <Badge
-                className={cn(
-                  'mt-1 text-[10px] px-1.5 py-0 font-bold',
-                  materialStatus === 'red' && 'bg-red-500 text-white',
-                  materialStatus === 'yellow' && 'bg-yellow-400 text-slate-900',
-                  materialStatus === 'green' && 'bg-green-500 text-white',
+              <div className="mt-1 flex flex-col items-end gap-0.5">
+                <Badge
+                  className={cn(
+                    'text-[10px] px-1.5 py-0 font-bold',
+                    materialStatus === 'red' && 'bg-red-500 text-white',
+                    materialStatus === 'yellow' && 'bg-yellow-400 text-slate-900',
+                    materialStatus === 'green' && 'bg-green-500 text-white',
+                  )}
+                >
+                  {materialStatus === 'red' && '🔴 Materiais Pendentes'}
+                  {materialStatus === 'yellow' && '🟡 Materiais Parciais'}
+                  {materialStatus === 'green' && '🟢 Materiais OK'}
+                </Badge>
+                {receivedQty > 0 && (
+                  <span className="text-[9px] text-muted-foreground font-medium whitespace-nowrap">
+                    {receivedQty} un · {materialSectors.join(', ')}
+                  </span>
                 )}
-              >
-                {materialStatus === 'red' && '🔴 Materiais Pendentes'}
-                {materialStatus === 'yellow' && '🟡 Materiais Parciais'}
-                {materialStatus === 'green' && '🟢 Materiais OK'}
-              </Badge>
+              </div>
             )}
           </div>
         </div>

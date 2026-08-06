@@ -391,3 +391,51 @@ export interface InventoryMovement {
     order_id?: PcpOrder
   }
 }
+
+export interface Supplier {
+  id: string
+  name: string
+  contact_name?: string
+  email?: string
+  phone?: string
+  whatsapp?: string
+  address?: string
+  notes?: string
+  created: string
+  updated: string
+}
+
+export interface OrdemCompra {
+  id: string
+  oc_number: string
+  supplier: string
+  supplier_id?: string
+  status?: 'Pendente' | 'Enviada' | 'Recebida' | 'Cancelada'
+  expected_date?: string
+  delivery_terms?: string
+  total?: number
+  user_id?: string
+  created: string
+  updated: string
+  expand?: {
+    supplier_id?: Supplier
+    user_id?: User
+  }
+}
+
+export interface OrdemCompraItem {
+  id: string
+  oc_id: string
+  material_shortage_id?: string
+  description: string
+  code?: string
+  quantity: number
+  unit_price?: number
+  total?: number
+  created: string
+  updated: string
+  expand?: {
+    oc_id?: OrdemCompra
+    material_shortage_id?: MaterialShortage
+  }
+}

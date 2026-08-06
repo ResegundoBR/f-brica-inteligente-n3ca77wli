@@ -1,8 +1,6 @@
-import { useState, useEffect } from 'react'
+import { format, parseISO } from 'date-fns'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
   Table,
   TableBody,
@@ -12,54 +10,27 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { MaterialShortage } from '@/types'
-import { format, parseISO, isValid } from 'date-fns'
-import { Edit3 } from 'lucide-react'
-import pb from '@/lib/pocketbase/client'
-import { toast } from 'sonner'
+import { Pencil } from 'lucide-react'
 
 interface ComprasTableProps {
   items: MaterialShortage[]
-  onEditSupplier: (item: MaterialShortage) => void
+  onEdit: (item: MaterialShortage) => void
+  selectedIds: Set<string>
+  onToggleSelect: (id: string) => void
+  onToggleSelectAll: () => void
 }
 
-export function ComprasTable({ items, onEditSupplier }: ComprasTableProps) {
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [editingQty, setEditingQty] = useState<string | null>(null)
-  const [qtyValue, setQtyValue] = useState('')
+export function ComprasTable({
+  items,
+  onEdit,
+  selectedIds,
+  onToggleSelect,
+  onToggleSelectAll,
+}: ComprasTableProps) {
+  const formatCurrency = (v: number) =>
+    v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
-  useEffect(() => {
-    setSelectedIds(new Set())
-  }, [items])
-
-  const toggle = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  const toggleAll = () => {
-    if (selectedIds.size === items.length) setSelectedIds(new Set())
-    else setSelectedIds(new Set(items.map((i) => i.id)))
-  }
-
-  const handleSaveQty = async (id: string) => {
-    try {
-      await pb.collection('material_shortages').update(id, { quantity: Number(qtyValue) })
-      toast.success('Quantidade atualizada')
-    } catch {
-      toast.error('Erro ao atualizar quantidade')
-    }
-    setEditingQty(null)
-  }
-
-  const isOverdue = (date?: string) => {
-    if (!date) return false
-    const d = parseISO(date)
-    return isValid(d) && d < new Date(new Date().toDateString())
-  }
+  const allSelected = items.length > 0 && selectedIds.size === items.length
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-lg border shadow-sm overflow-hidden">
@@ -67,95 +38,69 @@ export function ComprasTable({ items, onEditSupplier }: ComprasTableProps) {
         <TableHeader className="bg-slate-50 dark:bg-slate-800/50">
           <TableRow>
             <TableHead className="w-[40px]">
-              <Checkbox
-                checked={selectedIds.size === items.length && items.length > 0}
-                onCheckedChange={toggleAll}
-              />
+              <Checkbox checked={allSelected} onCheckedChange={onToggleSelectAll} />
             </TableHead>
-            <TableHead className="w-[70px]">Data</TableHead>
-            <TableHead className="w-[70px]">Código</TableHead>
+            <TableHead className="w-[80px]">Data</TableHead>
+            <TableHead className="w-[80px]">Código</TableHead>
             <TableHead>Descrição</TableHead>
+            <TableHead className="w-[140px]">Fornecedor</TableHead>
             <TableHead className="text-right w-[70px]">Qtde</TableHead>
-            <TableHead className="text-right w-[70px]">Recebido</TableHead>
-            <TableHead className="w-[130px]">Fornecedor</TableHead>
-            <TableHead className="text-right w-[90px]">Preço</TableHead>
-            <TableHead className="w-[90px]">Previsão</TableHead>
-            <TableHead className="w-[60px]">Ação</TableHead>
+            <TableHead className="text-right w-[80px]">Recebida</TableHead>
+            <TableHead className="text-right w-[100px]">Vl. Unit.</TableHead>
+            <TableHead className="text-right w-[110px]">Vl. Total</TableHead>
+            <TableHead className="w-[100px]">Prazo</TableHead>
+            <TableHead className="w-[60px]"></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {items.map((item) => (
-            <TableRow
-              key={item.id}
-              className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-            >
-              <TableCell>
-                <Checkbox
-                  checked={selectedIds.has(item.id)}
-                  onCheckedChange={() => toggle(item.id)}
-                />
-              </TableCell>
-              <TableCell className="text-xs text-muted-foreground">
-                {format(parseISO(item.created), 'dd/MM/yy')}
-              </TableCell>
-              <TableCell className="text-xs text-muted-foreground">{item.code || '-'}</TableCell>
-              <TableCell className="font-medium text-sm">{item.description}</TableCell>
-              <TableCell className="text-right text-sm">
-                {editingQty === item.id ? (
-                  <Input
-                    type="number"
-                    value={qtyValue}
-                    onChange={(e) => setQtyValue(e.target.value)}
-                    onBlur={() => handleSaveQty(item.id)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSaveQty(item.id)}
-                    className="h-7 w-16 text-xs"
-                    autoFocus
-                  />
-                ) : (
-                  <span
-                    className="cursor-pointer hover:text-blue-600"
-                    onClick={() => {
-                      setEditingQty(item.id)
-                      setQtyValue(String(item.quantity))
-                    }}
-                  >
-                    {item.quantity}
-                  </span>
-                )}
-              </TableCell>
-              <TableCell className="text-right text-sm text-muted-foreground">
-                {item.received_quantity || 0}
-              </TableCell>
-              <TableCell className="text-sm">
-                <button
-                  className="text-left hover:underline text-blue-600 truncate max-w-[120px] block"
-                  onClick={() => onEditSupplier(item)}
-                >
-                  {item.supplier || '— Definir —'}
-                </button>
-              </TableCell>
-              <TableCell className="text-right text-sm">
-                {item.unit_price
-                  ? `R$ ${Number(item.unit_price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
-                  : '-'}
-              </TableCell>
-              <TableCell
-                className={`text-xs ${isOverdue(item.expected_date) ? 'text-red-600 font-semibold' : 'text-muted-foreground'}`}
+          {items.map((item) => {
+            const total = (Number(item.quantity) || 0) * (Number(item.unit_price) || 0)
+            const received = Number(item.received_quantity) || 0
+            return (
+              <TableRow
+                key={item.id}
+                className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
               >
-                {item.expected_date ? format(parseISO(item.expected_date), 'dd/MM/yy') : '-'}
-              </TableCell>
-              <TableCell>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 w-7 p-0"
-                  onClick={() => onEditSupplier(item)}
-                >
-                  <Edit3 className="size-3.5" />
-                </Button>
-              </TableCell>
-            </TableRow>
-          ))}
+                <TableCell onClick={(e) => e.stopPropagation()}>
+                  <Checkbox
+                    checked={selectedIds.has(item.id)}
+                    onCheckedChange={() => onToggleSelect(item.id)}
+                  />
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {format(parseISO(item.created), 'dd/MM/yy')}
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">{item.code || '-'}</TableCell>
+                <TableCell className="font-medium text-sm">{item.description}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {item.supplier || '-'}
+                </TableCell>
+                <TableCell className="text-right text-sm font-semibold">{item.quantity}</TableCell>
+                <TableCell className="text-right text-xs text-muted-foreground">
+                  {received || '-'}
+                </TableCell>
+                <TableCell className="text-right text-sm">
+                  {item.unit_price ? formatCurrency(Number(item.unit_price)) : '-'}
+                </TableCell>
+                <TableCell className="text-right text-sm font-semibold">
+                  {item.unit_price ? formatCurrency(total) : '-'}
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {item.expected_date ? format(parseISO(item.expected_date), 'dd/MM/yy') : '-'}
+                </TableCell>
+                <TableCell>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 w-7 p-0"
+                    onClick={() => onEdit(item)}
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </Button>
+                </TableCell>
+              </TableRow>
+            )
+          })}
         </TableBody>
       </Table>
     </div>

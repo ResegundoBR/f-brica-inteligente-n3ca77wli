@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-06T17:33:40.194Z",
+  "generatedAt": "2026-08-06T18:02:56.978Z",
   "collections": [
     {
       "name": "users",
@@ -1732,6 +1732,163 @@
         }
       ],
       "indexes": ["CREATE UNIQUE INDEX idx_suppliers_name ON suppliers (name COLLATE NOCASE)"]
+    },
+    {
+      "name": "ordens_de_compra",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "oc_number",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "supplier",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "supplier_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "suppliers"
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["Pendente", "Enviada", "Recebida", "Cancelada"]
+        },
+        {
+          "name": "expected_date",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "delivery_terms",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "total",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "user_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_ordens_de_compra_oc_number ON ordens_de_compra (oc_number)",
+        "CREATE INDEX idx_ordens_de_compra_supplier_id ON ordens_de_compra (supplier_id)"
+      ]
+    },
+    {
+      "name": "ordem_compra_itens",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "oc_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "ordens_de_compra"
+        },
+        {
+          "name": "material_shortage_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "material_shortages"
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "code",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "quantity",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "unit_price",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "total",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_ordem_compra_itens_oc_id ON ordem_compra_itens (oc_id)",
+        "CREATE INDEX idx_ordem_compra_itens_material_shortage_id ON ordem_compra_itens (material_shortage_id)"
+      ]
     }
   ]
 }

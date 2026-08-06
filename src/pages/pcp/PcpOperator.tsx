@@ -302,6 +302,7 @@ function OperatorCard({
   onBottleneck,
   shortages,
   onForceStart,
+  onReportMaterial,
   messageState = 'none',
   messageCount = 0,
   onMessageClick,
@@ -314,6 +315,7 @@ function OperatorCard({
   onBottleneck: (reason: string, details: string, missingItems?: any[]) => void
   shortages?: MaterialShortage[]
   onForceStart: () => void
+  onReportMaterial?: () => void
   messageState?: IndicatorState
   messageCount?: number
   onMessageClick?: () => void
@@ -633,6 +635,16 @@ function OperatorCard({
         )}
       </CardContent>
       <CardFooter className="flex flex-col gap-3 pt-0">
+        {onReportMaterial && (
+          <Button
+            size="lg"
+            variant="outline"
+            className="w-full text-base h-11 border-2 border-dashed border-amber-400 text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-900/20 font-semibold"
+            onClick={onReportMaterial}
+          >
+            <Plus className="mr-2 size-5" /> Material Faltante
+          </Button>
+        )}
         {inFila && !isLocked && (
           <Button
             size="lg"
@@ -1057,6 +1069,16 @@ export default function PcpOperator() {
     }
   }
 
+  const handleReportMaterial = (op: PcpOrder) => {
+    setReqOrderId(op.id)
+    setReqDesc('')
+    setReqQtd(1)
+    setReqType('Materiais')
+    setReqPriority('Sem pressa')
+    setReqObs('')
+    setOpenRequest(true)
+  }
+
   const handlePurchaseRequest = async () => {
     if (!reqDesc) {
       toast({ title: 'Erro', description: 'Preencha a descrição do item', variant: 'destructive' })
@@ -1219,7 +1241,7 @@ export default function PcpOperator() {
                     <SelectItem value="none">Nenhuma (Requisição Geral)</SelectItem>
                     {orders.map((op) => (
                       <SelectItem key={op.id} value={op.id}>
-                        OP: {op.order_number}
+                        Pedido {op.order_number} | OP {op.op_number || '-'}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1298,6 +1320,7 @@ export default function PcpOperator() {
                   }
                   shortages={shortagesByOrder[op.id] || []}
                   onForceStart={() => handleForceStart(op)}
+                  onReportMaterial={() => handleReportMaterial(op)}
                   messageState={getOrderMessageInfo(op.id).indicatorState}
                   messageCount={getOrderMessageInfo(op.id).count}
                   onMessageClick={() =>
@@ -1343,6 +1366,7 @@ export default function PcpOperator() {
                   }
                   shortages={shortagesByOrder[op.id] || []}
                   onForceStart={() => handleForceStart(op)}
+                  onReportMaterial={() => handleReportMaterial(op)}
                   messageState={getOrderMessageInfo(op.id).indicatorState}
                   messageCount={getOrderMessageInfo(op.id).count}
                   onMessageClick={() =>

@@ -2,24 +2,13 @@ import { useState, useEffect, useMemo } from 'react'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { MaterialShortage } from '@/types'
-import { Tags, Copy, Check, Search } from 'lucide-react'
-import { format, parseISO } from 'date-fns'
+import { Tags, Copy, Check, Search, Layers } from 'lucide-react'
 import { advanceToCompra } from '@/services/quotations'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
 import { TriageDialog } from './components/TriageDialog'
-import { NovoBadge } from '@/components/NovoBadge'
+import { CotacoesTable } from './components/CotacoesTable'
 import { useViewedItems } from '@/hooks/use-viewed-items'
 import { toast } from 'sonner'
 
@@ -29,6 +18,7 @@ export default function CotacoesPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [copied, setCopied] = useState(false)
   const [search, setSearch] = useState('')
+  const [grouped, setGrouped] = useState(false)
   const { isNew, markAsViewed } = useViewedItems('cotacoes')
 
   const fetchData = async () => {
@@ -96,6 +86,16 @@ export default function CotacoesPage() {
     }
   }
 
+  const toggleSelectGroup = (ids: string[]) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      const allSelected = ids.every((id) => next.has(id))
+      if (allSelected) ids.forEach((id) => next.delete(id))
+      else ids.forEach((id) => next.add(id))
+      return next
+    })
+  }
+
   const handleQuickCompra = async (item: MaterialShortage) => {
     try {
       await advanceToCompra(item.id)
@@ -127,12 +127,18 @@ export default function CotacoesPage() {
           description="Triagem e cotação de solicitações de material."
           icon={Tags}
         />
-        {selectedIds.size > 0 && (
-          <Button variant="outline" size="sm" onClick={handleCopySelected}>
-            {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-            Copiar ({selectedIds.size})
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setGrouped((g) => !g)}>
+            <Layers className="w-4 h-4" />
+            {grouped ? 'Lista' : 'Agrupar por fornecedor'}
           </Button>
-        )}
+          {selectedIds.size > 0 && (
+            <Button variant="outline" size="sm" onClick={handleCopySelected}>
+              {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              Copiar ({selectedIds.size})
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="relative max-w-sm">
@@ -152,89 +158,17 @@ export default function CotacoesPage() {
             : 'Nenhum item para triagem no momento.'}
         </div>
       ) : (
-        <div className="bg-white dark:bg-slate-900 rounded-lg border shadow-sm overflow-hidden">
-          <Table>
-            <TableHeader className="bg-slate-50 dark:bg-slate-800/50">
-              <TableRow>
-                <TableHead className="w-[40px]">
-                  <Checkbox
-                    checked={
-                      selectedIds.size === filteredCotacaoItems.length &&
-                      filteredCotacaoItems.length > 0
-                    }
-                    onCheckedChange={toggleSelectAll}
-                  />
-                </TableHead>
-                <TableHead className="w-[80px]">Data</TableHead>
-                <TableHead className="w-[80px]">Código</TableHead>
-                <TableHead>Descrição</TableHead>
-                <TableHead className="w-[120px]">Solicitante</TableHead>
-                <TableHead className="w-[100px]">Nº do Pedido</TableHead>
-                <TableHead className="w-[100px]">Nº da OP</TableHead>
-                <TableHead className="text-right w-[60px]">Qtde</TableHead>
-                <TableHead className="w-[80px]">Prioridade</TableHead>
-                <TableHead className="w-[110px]">Ações</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredCotacaoItems.map((item) => (
-                <TableRow
-                  key={item.id}
-                  className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                  onClick={() => handleRowClick(item)}
-                >
-                  <TableCell onClick={(e) => e.stopPropagation()}>
-                    <Checkbox
-                      checked={selectedIds.has(item.id)}
-                      onCheckedChange={() => toggleSelect(item.id)}
-                    />
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {format(parseISO(item.created), 'dd/MM/yy')}
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {item.code || '-'}
-                  </TableCell>
-                  <TableCell className="font-medium text-sm">
-                    <div className="flex items-center gap-2">
-                      {item.description}
-                      {isNew(item.id) && <NovoBadge />}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {item.expand?.requested_by?.name || '-'}
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {item.expand?.order_id?.order_number || '-'}
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {item.expand?.order_id?.op_number || '-'}
-                  </TableCell>
-                  <TableCell className="text-right text-sm font-semibold">
-                    {item.quantity}
-                  </TableCell>
-                  <TableCell>
-                    {item.priority && (
-                      <Badge variant="outline" className="text-[10px]">
-                        {item.priority}
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell onClick={(e) => e.stopPropagation()}>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 text-xs whitespace-nowrap"
-                      onClick={() => handleQuickCompra(item)}
-                    >
-                      ⏭️ Compras
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <CotacoesTable
+          items={filteredCotacaoItems}
+          selectedIds={selectedIds}
+          onToggleSelect={toggleSelect}
+          onToggleSelectAll={toggleSelectAll}
+          onToggleSelectGroup={toggleSelectGroup}
+          onRowClick={handleRowClick}
+          onQuickCompra={handleQuickCompra}
+          isNew={isNew}
+          grouped={grouped}
+        />
       )}
 
       <TriageDialog

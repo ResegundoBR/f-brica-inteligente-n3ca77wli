@@ -5,7 +5,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { MaterialShortage, OrdemCompra, OrdemCompraItem } from '@/types'
-import { ShoppingCart, FileText } from 'lucide-react'
+import { ShoppingCart, FileText, Layers } from 'lucide-react'
 import { parseISO, isBefore, startOfDay, isValid } from 'date-fns'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
 import { ComprasTable } from './components/ComprasTable'
@@ -28,6 +28,7 @@ export default function ComprasPage() {
   const [ocDocOpen, setOcDocOpen] = useState(false)
   const clear = useShortageStore((s) => s.clear)
   const { user } = useAuth()
+  const [grouped, setGrouped] = useState(false)
 
   const fetchShortages = async () => {
     try {
@@ -89,6 +90,16 @@ export default function ComprasPage() {
   const toggleSelectAll = () => {
     if (selectedIds.size === comprasItems.length) setSelectedIds(new Set())
     else setSelectedIds(new Set(comprasItems.map((i) => i.id)))
+  }
+
+  const toggleSelectGroup = (ids: string[]) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      const allSelected = ids.every((id) => next.has(id))
+      if (allSelected) ids.forEach((id) => next.delete(id))
+      else ids.forEach((id) => next.add(id))
+      return next
+    })
   }
 
   const handleGerarOC = () => {
@@ -158,12 +169,18 @@ export default function ComprasPage() {
           description="Monitoramento de pedidos de compra ativos e previsão de entrega."
           icon={ShoppingCart}
         />
-        {selectedIds.size > 0 && (
-          <Button onClick={handleGerarOC}>
-            <FileText className="w-4 h-4" />
-            Gerar OC ({selectedIds.size})
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setGrouped((g) => !g)}>
+            <Layers className="w-4 h-4" />
+            {grouped ? 'Lista' : 'Agrupar por fornecedor'}
           </Button>
-        )}
+          {selectedIds.size > 0 && (
+            <Button onClick={handleGerarOC}>
+              <FileText className="w-4 h-4" />
+              Gerar OC ({selectedIds.size})
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -214,6 +231,8 @@ export default function ComprasPage() {
           selectedIds={selectedIds}
           onToggleSelect={toggleSelect}
           onToggleSelectAll={toggleSelectAll}
+          onToggleSelectGroup={toggleSelectGroup}
+          grouped={grouped}
         />
       )}
 

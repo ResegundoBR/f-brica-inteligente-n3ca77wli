@@ -1,6 +1,7 @@
 import { format, parseISO } from 'date-fns'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import {
   Table,
   TableBody,
@@ -10,38 +11,43 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { MaterialShortage } from '@/types'
-import { Pencil } from 'lucide-react'
+import { NovoBadge } from '@/components/NovoBadge'
 import { useSupplierGroups } from '@/hooks/use-supplier-groups'
 import { SupplierGroupSection } from './SupplierGroupSection'
 
-interface ComprasTableProps {
+interface CotacoesTableProps {
   items: MaterialShortage[]
-  onEdit: (item: MaterialShortage) => void
   selectedIds: Set<string>
   onToggleSelect: (id: string) => void
   onToggleSelectAll: () => void
-  onToggleSelectGroup?: (ids: string[]) => void
+  onToggleSelectGroup: (ids: string[]) => void
+  onRowClick: (item: MaterialShortage) => void
+  onQuickCompra: (item: MaterialShortage) => void
+  isNew: (id: string) => boolean
   grouped?: boolean
 }
 
-const formatCurrency = (v: number) =>
-  v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-
-function ComprasRow({
+function CotacoesRow({
   item,
-  onEdit,
   selectedIds,
   onToggleSelect,
+  onRowClick,
+  onQuickCompra,
+  isNew,
 }: {
   item: MaterialShortage
-  onEdit: (item: MaterialShortage) => void
   selectedIds: Set<string>
   onToggleSelect: (id: string) => void
+  onRowClick: (item: MaterialShortage) => void
+  onQuickCompra: (item: MaterialShortage) => void
+  isNew: (id: string) => boolean
 }) {
-  const total = (Number(item.quantity) || 0) * (Number(item.unit_price) || 0)
-  const received = Number(item.received_quantity) || 0
   return (
-    <TableRow key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+    <TableRow
+      key={item.id}
+      className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+      onClick={() => onRowClick(item)}
+    >
       <TableCell onClick={(e) => e.stopPropagation()}>
         <Checkbox
           checked={selectedIds.has(item.id)}
@@ -52,22 +58,37 @@ function ComprasRow({
         {format(parseISO(item.created), 'dd/MM/yy')}
       </TableCell>
       <TableCell className="text-xs text-muted-foreground">{item.code || '-'}</TableCell>
-      <TableCell className="font-medium text-sm">{item.description}</TableCell>
-      <TableCell className="text-xs text-muted-foreground">{item.supplier || '-'}</TableCell>
-      <TableCell className="text-right text-sm font-semibold">{item.quantity}</TableCell>
-      <TableCell className="text-right text-xs text-muted-foreground">{received || '-'}</TableCell>
-      <TableCell className="text-right text-sm">
-        {item.unit_price ? formatCurrency(Number(item.unit_price)) : '-'}
-      </TableCell>
-      <TableCell className="text-right text-sm font-semibold">
-        {item.unit_price ? formatCurrency(total) : '-'}
+      <TableCell className="font-medium text-sm">
+        <div className="flex items-center gap-2">
+          {item.description}
+          {isNew(item.id) && <NovoBadge />}
+        </div>
       </TableCell>
       <TableCell className="text-xs text-muted-foreground">
-        {item.expected_date ? format(parseISO(item.expected_date), 'dd/MM/yy') : '-'}
+        {item.expand?.requested_by?.name || '-'}
       </TableCell>
+      <TableCell className="text-xs text-muted-foreground">
+        {item.expand?.order_id?.order_number || '-'}
+      </TableCell>
+      <TableCell className="text-xs text-muted-foreground">
+        {item.expand?.order_id?.op_number || '-'}
+      </TableCell>
+      <TableCell className="text-right text-sm font-semibold">{item.quantity}</TableCell>
       <TableCell>
-        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => onEdit(item)}>
-          <Pencil className="w-3.5 h-3.5" />
+        {item.priority && (
+          <Badge variant="outline" className="text-[10px]">
+            {item.priority}
+          </Badge>
+        )}
+      </TableCell>
+      <TableCell onClick={(e) => e.stopPropagation()}>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 text-xs whitespace-nowrap"
+          onClick={() => onQuickCompra(item)}
+        >
+          ⏭️ Compras
         </Button>
       </TableCell>
     </TableRow>
@@ -92,27 +113,28 @@ function TableCols({
         <TableHead className="w-[80px]">Data</TableHead>
         <TableHead className="w-[80px]">Código</TableHead>
         <TableHead>Descrição</TableHead>
-        <TableHead className="w-[140px]">Fornecedor</TableHead>
-        <TableHead className="text-right w-[70px]">Qtde</TableHead>
-        <TableHead className="text-right w-[80px]">Recebida</TableHead>
-        <TableHead className="text-right w-[100px]">Vl. Unit.</TableHead>
-        <TableHead className="text-right w-[110px]">Vl. Total</TableHead>
-        <TableHead className="w-[100px]">Prazo</TableHead>
-        <TableHead className="w-[60px]"></TableHead>
+        <TableHead className="w-[120px]">Solicitante</TableHead>
+        <TableHead className="w-[100px]">Nº do Pedido</TableHead>
+        <TableHead className="w-[100px]">Nº da OP</TableHead>
+        <TableHead className="text-right w-[60px]">Qtde</TableHead>
+        <TableHead className="w-[80px]">Prioridade</TableHead>
+        <TableHead className="w-[110px]">Ações</TableHead>
       </TableRow>
     </TableHeader>
   )
 }
 
-export function ComprasTable({
+export function CotacoesTable({
   items,
-  onEdit,
   selectedIds,
   onToggleSelect,
   onToggleSelectAll,
   onToggleSelectGroup,
+  onRowClick,
+  onQuickCompra,
+  isNew,
   grouped = false,
-}: ComprasTableProps) {
+}: CotacoesTableProps) {
   const groups = useSupplierGroups(items)
   const allSelected = items.length > 0 && selectedIds.size === items.length
 
@@ -123,12 +145,14 @@ export function ComprasTable({
           <TableCols showCheckbox allSelected={allSelected} onToggleSelectAll={onToggleSelectAll} />
           <TableBody>
             {items.map((item) => (
-              <ComprasRow
+              <CotacoesRow
                 key={item.id}
                 item={item}
-                onEdit={onEdit}
                 selectedIds={selectedIds}
                 onToggleSelect={onToggleSelect}
+                onRowClick={onRowClick}
+                onQuickCompra={onQuickCompra}
+                isNew={isNew}
               />
             ))}
           </TableBody>
@@ -149,18 +173,20 @@ export function ComprasTable({
             itemCount={group.items.length}
             totalValue={group.totalValue}
             allSelected={groupAllSelected}
-            onSelectAll={() => onToggleSelectGroup?.(groupIds)}
+            onSelectAll={() => onToggleSelectGroup(groupIds)}
           >
             <Table>
               <TableCols showCheckbox={false} allSelected={false} onToggleSelectAll={() => {}} />
               <TableBody>
                 {group.items.map((item) => (
-                  <ComprasRow
+                  <CotacoesRow
                     key={item.id}
                     item={item}
-                    onEdit={onEdit}
                     selectedIds={selectedIds}
                     onToggleSelect={onToggleSelect}
+                    onRowClick={onRowClick}
+                    onQuickCompra={onQuickCompra}
+                    isNew={isNew}
                   />
                 ))}
               </TableBody>

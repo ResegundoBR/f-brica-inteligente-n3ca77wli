@@ -15,6 +15,7 @@ const suprimentosTabs = [
   { label: 'Compras', href: '/pcp/suprimentos/compras' },
   { label: 'Ordens de Compra', href: '/pcp/suprimentos/ordens-compra' },
   { label: 'Recebimento', href: '/pcp/suprimentos/recebimento' },
+  { label: 'Destino de Materiais', href: '/pcp/suprimentos/destino-materiais' },
   { label: 'Estoque', href: '/pcp/suprimentos/estoque' },
   { label: 'Terceirização', href: '/pcp/suprimentos/terceirizacao' },
   { label: 'Fornecedores', href: '/pcp/suprimentos/fornecedores' },

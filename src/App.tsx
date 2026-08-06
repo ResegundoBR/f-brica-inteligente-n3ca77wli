@@ -23,6 +23,7 @@ import EstoquePage from './pages/pcp/suprimentos/EstoquePage'
 import TerceirizacaoPage from './pages/pcp/suprimentos/TerceirizacaoPage'
 import FornecedoresPage from './pages/pcp/suprimentos/FornecedoresPage'
 import OrdensCompraPage from './pages/pcp/suprimentos/OrdensCompraPage'
+import CentralDestinoPage from './pages/pcp/suprimentos/CentralDestinoPage'
 import PcpClients from './pages/pcp/PcpClients'
 import PcpOperator from './pages/pcp/PcpOperator'
 import PcpCommercial from './pages/pcp/PcpCommercial'
@@ -244,6 +245,14 @@ const App = () => (
                 element={
                   <RoleGuard module="suprimentos">
                     <OrdensCompraPage />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/pcp/suprimentos/destino-materiais"
+                element={
+                  <RoleGuard module="suprimentos">
+                    <CentralDestinoPage />
                   </RoleGuard>
                 }
               />

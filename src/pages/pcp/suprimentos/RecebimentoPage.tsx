@@ -2,23 +2,13 @@ import { useState, useEffect } from 'react'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { MaterialShortage } from '@/types'
-import { PackageCheck, CheckCircle } from 'lucide-react'
-import { format, parseISO } from 'date-fns'
+import { PackageCheck, Layers } from 'lucide-react'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
+import { SmartReceiveDialog } from './components/SmartReceiveDialog'
+import { RecebimentoTable } from './components/RecebimentoTable'
 import { useToast } from '@/hooks/use-toast'
-import { cn } from '@/lib/utils'
 import { getErrorMessage } from '@/lib/pocketbase/errors'
 
 export default function RecebimentoPage() {
@@ -26,6 +16,8 @@ export default function RecebimentoPage() {
   const [receiveInputs, setReceiveInputs] = useState<Record<string, string>>({})
   const [codeInputs, setCodeInputs] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState<Record<string, boolean>>({})
+  const [smartReceiveItem, setSmartReceiveItem] = useState<MaterialShortage | null>(null)
+  const [grouped, setGrouped] = useState(false)
   const { toast } = useToast()
 
   const fetchShortages = async () => {
@@ -124,11 +116,17 @@ export default function RecebimentoPage() {
 
   return (
     <div className="flex flex-col gap-6 p-4 md:p-8 bg-slate-50 min-h-[calc(100vh-4rem)] dark:bg-slate-950">
-      <SuprimentosHeader
-        title="Recebimento"
-        description="Confira o recebimento físico de materiais e atualize o estoque automaticamente."
-        icon={PackageCheck}
-      />
+      <div className="flex items-center justify-between">
+        <SuprimentosHeader
+          title="Recebimento"
+          description="Confira o recebimento físico de materiais e atualize o estoque automaticamente."
+          icon={PackageCheck}
+        />
+        <Button variant="outline" size="sm" onClick={() => setGrouped((g) => !g)}>
+          <Layers className="w-4 h-4" />
+          {grouped ? 'Lista' : 'Agrupar por fornecedor'}
+        </Button>
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card>
@@ -162,106 +160,21 @@ export default function RecebimentoPage() {
           Nenhum item aguardando recebimento no momento.
         </div>
       ) : (
-        <div className="bg-white dark:bg-slate-900 rounded-lg border shadow-sm overflow-hidden">
-          <Table>
-            <TableHeader className="bg-slate-50 dark:bg-slate-800/50">
-              <TableRow>
-                <TableHead className="w-[120px]">Código</TableHead>
-                <TableHead>Descrição</TableHead>
-                <TableHead className="text-right w-[80px]">Qtde Total</TableHead>
-                <TableHead className="text-right w-[110px]">Recebido</TableHead>
-                <TableHead className="w-[140px]">Fornecedor</TableHead>
-                <TableHead className="w-[110px]">Previsão</TableHead>
-                <TableHead className="w-[100px]">Status</TableHead>
-                <TableHead className="w-[190px]">Receber</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {shortages.map((item) => {
-                const received = Number(item.received_quantity) || 0
-                const total = Number(item.quantity) || 0
-                return (
-                  <TableRow key={item.id}>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {item.code ? (
-                        <span className="font-mono text-slate-700 dark:text-slate-300 font-medium">
-                          {item.code}
-                        </span>
-                      ) : (
-                        <Input
-                          placeholder="Cod. opcional"
-                          className="h-7 w-24 text-xs"
-                          value={codeInputs[item.id] ?? ''}
-                          onChange={(e) =>
-                            setCodeInputs((prev) => ({ ...prev, [item.id]: e.target.value }))
-                          }
-                        />
-                      )}
-                    </TableCell>
-                    <TableCell className="font-medium text-sm">{item.description}</TableCell>
-                    <TableCell className="text-right font-semibold">{total}</TableCell>
-                    <TableCell className="text-right">
-                      <span
-                        className={cn(
-                          'font-bold',
-                          received > 0 && received < total && 'text-amber-600',
-                        )}
-                      >
-                        {received}
-                      </span>
-                      <span className="text-xs text-muted-foreground"> / {total}</span>
-                    </TableCell>
-                    <TableCell className="text-xs">{item.supplier || '-'}</TableCell>
-                    <TableCell className="text-xs">
-                      {item.expected_date
-                        ? format(parseISO(item.expected_date), 'dd/MM/yyyy')
-                        : '-'}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          'whitespace-nowrap',
-                          item.status === 'Recebido_Parcial' &&
-                            'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800',
-                          item.status === 'Compra' &&
-                            'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800',
-                        )}
-                      >
-                        {item.status.replace('_', ' ')}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="number"
-                          min="0.01"
-                          step="0.01"
-                          placeholder="Qtde"
-                          className="h-8 w-20 text-sm"
-                          value={receiveInputs[item.id] || ''}
-                          onChange={(e) =>
-                            setReceiveInputs((prev) => ({ ...prev, [item.id]: e.target.value }))
-                          }
-                        />
-                        <Button
-                          size="sm"
-                          className="h-8 bg-green-600 hover:bg-green-700 text-white"
-                          disabled={loading[item.id]}
-                          onClick={() => handleReceive(item)}
-                        >
-                          <CheckCircle className="size-3.5 mr-1" />
-                          Confirmar
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table>
-        </div>
+        <RecebimentoTable
+          items={shortages}
+          grouped={grouped}
+          codeInputs={codeInputs}
+          onCodeChange={(id, value) => setCodeInputs((prev) => ({ ...prev, [id]: value }))}
+          onDistribuir={setSmartReceiveItem}
+        />
       )}
+
+      <SmartReceiveDialog
+        item={smartReceiveItem}
+        open={!!smartReceiveItem}
+        onOpenChange={(o) => !o && setSmartReceiveItem(null)}
+        onUpdate={fetchShortages}
+      />
     </div>
   )
 }

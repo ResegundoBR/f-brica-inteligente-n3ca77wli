@@ -25,6 +25,7 @@ import {
   PackageCheck,
   Warehouse,
   Truck,
+  MapPin,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -73,6 +74,12 @@ const navItems = [
     title: 'Recebimento',
     url: '/pcp/suprimentos/recebimento',
     icon: PackageCheck,
+    group: 'Suprimentos',
+  },
+  {
+    title: 'Destino de Materiais',
+    url: '/pcp/suprimentos/destino-materiais',
+    icon: MapPin,
     group: 'Suprimentos',
   },
   { title: 'Estoque', url: '/pcp/suprimentos/estoque', icon: Warehouse, group: 'Suprimentos' },
@@ -162,6 +169,7 @@ export function AppSidebar() {
       case 'Compras':
       case 'Ordens de Compra':
       case 'Recebimento':
+      case 'Destino de Materiais':
       case 'Estoque':
       case 'Terceirização':
       case 'Fornecedores':

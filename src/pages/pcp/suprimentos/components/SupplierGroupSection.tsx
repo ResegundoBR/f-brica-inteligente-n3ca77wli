@@ -10,6 +10,7 @@ interface SupplierGroupSectionProps {
   totalValue: number
   allSelected: boolean
   onSelectAll: () => void
+  showCheckbox?: boolean
   children: ReactNode
 }
 
@@ -19,6 +20,7 @@ export function SupplierGroupSection({
   totalValue,
   allSelected,
   onSelectAll,
+  showCheckbox = true,
   children,
 }: SupplierGroupSectionProps) {
   const [collapsed, setCollapsed] = useState(false)
@@ -32,11 +34,13 @@ export function SupplierGroupSection({
         className="flex items-center gap-3 px-4 py-3 bg-slate-50 dark:bg-slate-800/50 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
         onClick={() => setCollapsed((c) => !c)}
       >
-        <Checkbox
-          checked={allSelected}
-          onCheckedChange={onSelectAll}
-          onClick={(e) => e.stopPropagation()}
-        />
+        {showCheckbox && (
+          <Checkbox
+            checked={allSelected}
+            onCheckedChange={onSelectAll}
+            onClick={(e) => e.stopPropagation()}
+          />
+        )}
         <ChevronDown
           className={cn(
             'w-4 h-4 text-muted-foreground transition-transform',

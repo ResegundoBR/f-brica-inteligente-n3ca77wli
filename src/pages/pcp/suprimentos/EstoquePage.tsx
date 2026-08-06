@@ -163,7 +163,10 @@ export default function EstoquePage() {
                 return (
                   <TableRow
                     key={item.id}
-                    className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                    className={cn(
+                      'cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors',
+                      isLow && 'bg-red-50 dark:bg-red-950/20',
+                    )}
                     onClick={() => setSelectedItemId(item.id)}
                   >
                     <TableCell className="text-xs font-medium text-slate-500">
@@ -191,7 +194,15 @@ export default function EstoquePage() {
                       )}
                     </TableCell>
                     <TableCell className="text-center">
-                      <Button size="sm" variant="outline" className="h-7 text-xs">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setSelectedItemId(item.id)
+                        }}
+                      >
                         <History className="size-3 mr-1" /> Movimentações
                       </Button>
                     </TableCell>

@@ -22,6 +22,7 @@ import {
 import { Inventory, InventoryMovement } from '@/types'
 import { getMovementsByInventory, createMovement } from '@/services/inventory'
 import { useToast } from '@/hooks/use-toast'
+import { cn } from '@/lib/utils'
 import { format } from 'date-fns'
 
 export function InventoryItemDialog({
@@ -54,7 +55,7 @@ export function InventoryItemDialog({
     if (!item) return
     const numQty = Number(quantity)
     if (!Number.isFinite(numQty) || numQty <= 0) {
-      toast({ title: 'Erro', description: 'Quantidade invalida', variant: 'destructive' })
+      toast({ title: 'Erro', description: 'Quantidade inválida', variant: 'destructive' })
       return
     }
     try {
@@ -68,25 +69,31 @@ export function InventoryItemDialog({
       setMovements(refreshed)
       setQuantity('')
       setReason('')
-      toast({ title: 'Movimentacao registrada' })
+      toast({ title: 'Movimentação registrada' })
     } catch (err: any) {
       toast({ title: 'Erro', description: err.message, variant: 'destructive' })
     }
   }
 
   if (!item) return null
-  const isLow = item.quantity < (item.min_quantity || 0)
+  const isLow = item.quantity <= (item.min_quantity || 0)
+
+  const orderLabel = (m: InventoryMovement) => {
+    const o = m.expand?.order_id
+    if (!o) return '-'
+    return o.op_number || o.order_number || '-'
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[780px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{item.description}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
             <div className="bg-slate-50 dark:bg-slate-800/50 p-2 rounded border">
-              <span className="text-[10px] uppercase font-bold text-slate-500 block">Codigo</span>
+              <span className="text-[10px] uppercase font-bold text-slate-500 block">Código</span>
               <span className="font-semibold text-sm">{item.code}</span>
             </div>
             <div className="bg-slate-50 dark:bg-slate-800/50 p-2 rounded border">
@@ -94,14 +101,17 @@ export function InventoryItemDialog({
                 Saldo Atual
               </span>
               <span
-                className={`font-bold text-sm ${isLow ? 'text-red-600' : 'text-slate-800 dark:text-slate-200'}`}
+                className={cn(
+                  'font-bold text-sm',
+                  isLow ? 'text-red-600' : 'text-slate-800 dark:text-slate-200',
+                )}
               >
                 {item.quantity} {item.unit}
               </span>
             </div>
             <div className="bg-slate-50 dark:bg-slate-800/50 p-2 rounded border">
               <span className="text-[10px] uppercase font-bold text-slate-500 block">
-                Estoque Min.
+                Estoque Mín.
               </span>
               <span className="font-semibold text-sm">
                 {item.min_quantity || 0} {item.unit}
@@ -121,7 +131,7 @@ export function InventoryItemDialog({
             </div>
           </div>
 
-          <div className="border rounded-md overflow-hidden max-h-[200px] overflow-y-auto">
+          <div className="border rounded-md overflow-hidden max-h-[260px] overflow-y-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -129,22 +139,24 @@ export function InventoryItemDialog({
                   <TableHead className="text-xs">Tipo</TableHead>
                   <TableHead className="text-xs text-right">Qtde</TableHead>
                   <TableHead className="text-xs">Motivo</TableHead>
+                  <TableHead className="text-xs">Ordem</TableHead>
+                  <TableHead className="text-xs">Responsável</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {movements.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={4}
+                      colSpan={6}
                       className="text-center text-muted-foreground text-xs py-4"
                     >
-                      Sem movimentacoes.
+                      Sem movimentações.
                     </TableCell>
                   </TableRow>
                 ) : (
                   movements.map((m) => (
                     <TableRow key={m.id}>
-                      <TableCell className="text-xs">
+                      <TableCell className="text-xs whitespace-nowrap">
                         {format(new Date(m.created), 'dd/MM/yy HH:mm')}
                       </TableCell>
                       <TableCell className="text-xs">
@@ -156,13 +168,20 @@ export function InventoryItemDialog({
                         </Badge>
                       </TableCell>
                       <TableCell
-                        className={`text-xs text-right font-semibold ${m.type === 'Entrada' ? 'text-green-600' : 'text-red-500'}`}
+                        className={cn(
+                          'text-xs text-right font-semibold whitespace-nowrap',
+                          m.type === 'Entrada' ? 'text-green-600' : 'text-red-500',
+                        )}
                       >
                         {m.type === 'Entrada' ? '+' : '-'}
                         {m.quantity}
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
+                      <TableCell className="text-xs text-muted-foreground max-w-[180px] truncate">
                         {m.reason || '-'}
+                      </TableCell>
+                      <TableCell className="text-xs whitespace-nowrap">{orderLabel(m)}</TableCell>
+                      <TableCell className="text-xs whitespace-nowrap">
+                        {m.expand?.user_id?.name || '-'}
                       </TableCell>
                     </TableRow>
                   ))
@@ -172,7 +191,7 @@ export function InventoryItemDialog({
           </div>
 
           <div className="border-t pt-3 space-y-3">
-            <Label className="font-semibold text-sm">Nova Movimentacao Manual</Label>
+            <Label className="font-semibold text-sm">Nova Movimentação Manual</Label>
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">Tipo</Label>
@@ -182,7 +201,7 @@ export function InventoryItemDialog({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Entrada">Entrada</SelectItem>
-                    <SelectItem value="Saída">Saida</SelectItem>
+                    <SelectItem value="Saída">Saída</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -207,7 +226,7 @@ export function InventoryItemDialog({
               </div>
             </div>
             <Button size="sm" onClick={handleAddMovement} disabled={!quantity}>
-              Registrar Movimentacao
+              Registrar Movimentação
             </Button>
           </div>
         </div>

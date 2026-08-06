@@ -37,6 +37,10 @@ export function TriageTable({ items, onRowClick }: TriageTableProps) {
             <TableHead className="text-right w-[60px]">Qtde</TableHead>
             <TableHead className="w-[100px]">Setor</TableHead>
             <TableHead className="w-[100px]">Prioridade</TableHead>
+            <TableHead className="w-[120px]">Solicitante</TableHead>
+            <TableHead className="w-[90px]">Nº do Pedido</TableHead>
+            <TableHead className="w-[90px]">Nº da OP</TableHead>
+            <TableHead className="w-[100px]">Data da Necessidade</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -80,6 +84,18 @@ export function TriageTable({ items, onRowClick }: TriageTableProps) {
                       {item.priority}
                     </Badge>
                   )}
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {item.expand?.requested_by?.name || '-'}
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {item.expand?.order_id?.order_number || '-'}
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {item.expand?.order_id?.op_number || '-'}
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {item.expected_date ? format(parseISO(item.expected_date), 'dd/MM/yy') : ''}
                 </TableCell>
               </TableRow>
             )

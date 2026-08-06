@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Package, ShoppingCart, FileText } from 'lucide-react'
+import { ShoppingCart, FileText, XCircle } from 'lucide-react'
 import { MaterialShortage } from '@/types'
 import { format, parseISO } from 'date-fns'
 import pb from '@/lib/pocketbase/client'
@@ -29,11 +29,11 @@ export function TriageDetailDialog({
   const { toast } = useToast()
   if (!item) return null
 
-  const handleTriage = async (status: 'Liberado_Estoque' | 'Cotação') => {
+  const handleTriage = async (status: 'Cotação' | 'Cancelado') => {
     try {
       await pb.collection('material_shortages').update(item.id, { status })
       toast({
-        title: status === 'Liberado_Estoque' ? 'Liberado do estoque' : 'Enviado para cotação',
+        title: status === 'Cotação' ? 'Enviado para cotação' : 'Solicitação reprovada',
       })
       onOpenChange(false)
       onAction()
@@ -93,16 +93,16 @@ export function TriageDetailDialog({
         </div>
         <DialogFooter className="gap-2">
           <Button
-            className="flex-1 bg-green-600 hover:bg-green-700 text-white"
-            onClick={() => handleTriage('Liberado_Estoque')}
-          >
-            <Package className="size-4 mr-2" /> No Estoque
-          </Button>
-          <Button
             className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
             onClick={() => handleTriage('Cotação')}
           >
             <ShoppingCart className="size-4 mr-2" /> Para Cotação
+          </Button>
+          <Button
+            className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+            onClick={() => handleTriage('Cancelado')}
+          >
+            <XCircle className="size-4 mr-2" /> Reprovar
           </Button>
         </DialogFooter>
       </DialogContent>

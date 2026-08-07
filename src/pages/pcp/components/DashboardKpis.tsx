@@ -4,7 +4,7 @@ import {
   AlertTriangle,
   Pause,
   CheckCircle2,
-  CalendarDay,
+  CalendarDays,
   CalendarRange,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -102,7 +102,7 @@ export function DashboardKpis({ orders }: DashboardKpisProps) {
     {
       label: 'Entregas Hoje',
       value: deliveriesToday,
-      icon: CalendarDay,
+      icon: CalendarDays,
       colorClass: 'text-indigo-600',
       iconColor: 'bg-indigo-100 dark:bg-indigo-950',
     },

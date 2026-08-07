@@ -16,7 +16,8 @@ import { differenceInDays, parseISO } from 'date-fns'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
 import { SupplierFormDialog } from './components/SupplierFormDialog'
 import { SupplierMetrics } from './components/SupplierMetrics'
-import type { Supplier, Quotation, MaterialShortage } from '@/types'
+import type { Supplier, Quotation, MaterialShortage, OrdemCompra } from '@/types'
+import { getOrdensCompra } from '@/services/ordens-compra'
 
 export default function FornecedoresPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
@@ -24,17 +25,20 @@ export default function FornecedoresPage() {
   const [showForm, setShowForm] = useState(false)
   const [quotations, setQuotations] = useState<Quotation[]>([])
   const [shortages, setShortages] = useState<MaterialShortage[]>([])
+  const [ocs, setOcs] = useState<OrdemCompra[]>([])
 
   const fetchData = async () => {
     try {
-      const [suppRes, quotRes, shortRes] = await Promise.all([
+      const [suppRes, quotRes, shortRes, ocRes] = await Promise.all([
         pb.collection('suppliers').getFullList<Supplier>({ sort: 'name' }),
         pb.collection('quotations').getFullList<Quotation>({ sort: '-created' }),
         pb.collection('material_shortages').getFullList<MaterialShortage>({ sort: '-created' }),
+        getOrdensCompra(),
       ])
       setSuppliers(suppRes)
       setQuotations(quotRes)
       setShortages(shortRes)
+      setOcs(ocRes)
     } catch {
       /* ignored */
     }
@@ -46,6 +50,7 @@ export default function FornecedoresPage() {
   useRealtime('suppliers', fetchData)
   useRealtime('quotations', fetchData)
   useRealtime('material_shortages', fetchData)
+  useRealtime('ordens_de_compra', fetchData)
 
   const supplierData = useMemo(() => {
     return suppliers.map((s) => {
@@ -144,6 +149,7 @@ export default function FornecedoresPage() {
         supplier={selected}
         quotations={quotations.filter((q) => q.supplier === selected?.name)}
         shortages={shortages.filter((ms) => ms.supplier === selected?.name)}
+        ocs={ocs}
         open={!!selected}
         onOpenChange={(o) => !o && setSelected(null)}
       />

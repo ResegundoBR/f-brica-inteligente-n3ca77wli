@@ -12,13 +12,11 @@ import {
   getOrdemCompraItens,
   updateOrdemCompraStatus,
 } from '@/services/ordens-compra'
-import { getSuppliers } from '@/services/suppliers'
 import { getMaterialShortages } from '@/services/material-shortages'
 import { useToast } from '@/hooks/use-toast'
-import type { OrdemCompra, OrdemCompraItem, Supplier, MaterialShortage } from '@/types'
-import { SupplierPerformanceCards } from './components/SupplierPerformanceCards'
-import { PendingReceivingPanel } from './components/PendingReceivingPanel'
+import type { OrdemCompra, OrdemCompraItem, MaterialShortage } from '@/types'
 import { MaterialShortageBySectorPanel } from './components/MaterialShortageBySectorPanel'
+import { MaterialShortageBySectorModal } from './components/MaterialShortageBySectorModal'
 import { OrdemCompraGroupedView } from './components/OrdemCompraGroupedView'
 import { OrdemCompraRow } from './components/OrdemCompraRow'
 
@@ -27,27 +25,19 @@ const formatCurrency = (v: number) =>
 
 export default function OrdensCompraPage() {
   const [ocs, setOcs] = useState<OrdemCompra[]>([])
-  const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [shortages, setShortages] = useState<MaterialShortage[]>([])
   const [docOc, setDocOc] = useState<OrdemCompra | null>(null)
   const [docItems, setDocItems] = useState<OrdemCompraItem[]>([])
   const [docOpen, setDocOpen] = useState(false)
   const [grouped, setGrouped] = useState(false)
+  const [selectedSector, setSelectedSector] = useState<string | null>(null)
+  const [sectorModalOpen, setSectorModalOpen] = useState(false)
   const { toast } = useToast()
 
   const fetchOCs = async () => {
     try {
       const res = await getOrdensCompra()
       setOcs(res)
-    } catch {
-      /* ignored */
-    }
-  }
-
-  const fetchSuppliers = async () => {
-    try {
-      const res = await getSuppliers()
-      setSuppliers(res)
     } catch {
       /* ignored */
     }
@@ -64,7 +54,6 @@ export default function OrdensCompraPage() {
 
   useEffect(() => {
     fetchOCs()
-    fetchSuppliers()
     fetchShortages()
   }, [])
 
@@ -91,6 +80,11 @@ export default function OrdensCompraPage() {
     } catch (err: any) {
       toast({ title: 'Erro', description: err.message, variant: 'destructive' })
     }
+  }
+
+  const handleSectorClick = (sector: string) => {
+    setSelectedSector(sector)
+    setSectorModalOpen(true)
   }
 
   const summary = useMemo(() => {
@@ -120,8 +114,6 @@ export default function OrdensCompraPage() {
           {grouped ? 'Lista' : 'Agrupar por fornecedor'}
         </Button>
       </div>
-
-      <SupplierPerformanceCards ocs={ocs} suppliers={suppliers} />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>
@@ -158,10 +150,7 @@ export default function OrdensCompraPage() {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <PendingReceivingPanel ocs={ocs} />
-        <MaterialShortageBySectorPanel shortages={shortages} />
-      </div>
+      <MaterialShortageBySectorPanel shortages={shortages} onSectorClick={handleSectorClick} />
 
       {ocs.length === 0 ? (
         <div className="p-8 text-center border-2 border-dashed rounded-xl border-slate-200 dark:border-slate-800 text-slate-400 font-medium">
@@ -204,6 +193,13 @@ export default function OrdensCompraPage() {
       )}
 
       <OrdemCompraDocument oc={docOc} items={docItems} open={docOpen} onOpenChange={setDocOpen} />
+
+      <MaterialShortageBySectorModal
+        sector={selectedSector}
+        shortages={shortages}
+        open={sectorModalOpen}
+        onOpenChange={setSectorModalOpen}
+      />
     </div>
   )
 }

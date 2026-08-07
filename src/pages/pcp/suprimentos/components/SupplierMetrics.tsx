@@ -1,14 +1,23 @@
 import { useMemo } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
-import { TrendingUp, Clock, ShoppingCart } from 'lucide-react'
-import { format, parseISO, differenceInDays } from 'date-fns'
-import type { Supplier, Quotation, MaterialShortage } from '@/types'
+import {
+  TrendingUp,
+  Clock,
+  ShoppingCart,
+  CheckCircle,
+  AlertTriangle,
+  Truck,
+  FileText,
+} from 'lucide-react'
+import { format, parseISO, differenceInDays, isValid, isBefore, startOfDay } from 'date-fns'
+import type { Supplier, Quotation, MaterialShortage, OrdemCompra } from '@/types'
 
 interface SupplierMetricsProps {
   supplier: Supplier | null
   quotations: Quotation[]
   shortages: MaterialShortage[]
+  ocs?: OrdemCompra[]
   open: boolean
   onOpenChange: (open: boolean) => void
 }
@@ -17,6 +26,7 @@ export function SupplierMetrics({
   supplier,
   quotations,
   shortages,
+  ocs = [],
   open,
   onOpenChange,
 }: SupplierMetricsProps) {
@@ -35,11 +45,31 @@ export function SupplierMetrics({
     return { purchases, delivered, avgDelivery }
   }, [shortages])
 
+  const ocMetrics = useMemo(() => {
+    const today = startOfDay(new Date())
+    const supplierOCs = ocs.filter(
+      (o) => o.supplier === supplier?.name || (supplier?.id && o.supplier_id === supplier.id),
+    )
+    const received = supplierOCs.filter((o) => o.status === 'Recebida')
+    const cancelled = supplierOCs.filter((o) => o.status === 'Cancelada')
+    const delayed = supplierOCs.filter((o) => {
+      if (o.status === 'Recebida' || o.status === 'Cancelada' || !o.expected_date) return false
+      const d = parseISO(o.expected_date)
+      return isValid(d) && isBefore(startOfDay(d), today)
+    })
+    return {
+      total: supplierOCs.length,
+      onTime: received.length,
+      delayed: delayed.length,
+      received: received.length,
+    }
+  }, [ocs, supplier])
+
   if (!supplier) return null
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{supplier.name}</DialogTitle>
         </DialogHeader>
@@ -68,6 +98,45 @@ export function SupplierMetrics({
               )}
             </div>
           )}
+
+          {ocMetrics.total > 0 && (
+            <div>
+              <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                <FileText className="w-4 h-4 text-blue-600" />
+                Performance de Ordens de Compra
+              </h4>
+              <div className="grid grid-cols-4 gap-2">
+                <div className="rounded-md bg-slate-50 dark:bg-slate-800/50 border p-3 text-center">
+                  <p className="text-2xl font-bold text-slate-700 dark:text-slate-300">
+                    {ocMetrics.total}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">Total</p>
+                </div>
+                <div className="rounded-md bg-green-50 dark:bg-green-900/20 border p-3 text-center">
+                  <CheckCircle className="w-4 h-4 mx-auto text-green-600 mb-1" />
+                  <p className="text-2xl font-bold text-green-700 dark:text-green-400">
+                    {ocMetrics.onTime}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">No Prazo</p>
+                </div>
+                <div className="rounded-md bg-red-50 dark:bg-red-900/20 border p-3 text-center">
+                  <AlertTriangle className="w-4 h-4 mx-auto text-red-600 mb-1" />
+                  <p className="text-2xl font-bold text-red-700 dark:text-red-400">
+                    {ocMetrics.delayed}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">Atrasadas</p>
+                </div>
+                <div className="rounded-md bg-blue-50 dark:bg-blue-900/20 border p-3 text-center">
+                  <Truck className="w-4 h-4 mx-auto text-blue-600 mb-1" />
+                  <p className="text-2xl font-bold text-blue-700 dark:text-blue-400">
+                    {ocMetrics.received}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">Recebidas</p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-3 gap-3">
             <div className="p-3 border rounded-lg text-center">
               <TrendingUp className="w-4 h-4 mx-auto text-blue-500 mb-1" />

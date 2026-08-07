@@ -4,7 +4,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Package, Calendar, Factory } from 'lucide-react'
 import { format, parseISO, isValid } from 'date-fns'
 import type { MaterialShortage } from '@/types'
-import { getShortageSector } from './MaterialShortageBySectorPanel'
+import { getShortageSector, SECTORS } from './MaterialShortageBySectorPanel'
 import { cn } from '@/lib/utils'
 
 interface MaterialShortageBySectorModalProps {
@@ -36,9 +36,14 @@ export function MaterialShortageBySectorModal({
   open,
   onOpenChange,
 }: MaterialShortageBySectorModalProps) {
+  const isOutros = sector === 'Outros'
   const filtered = sector
     ? shortages.filter((s) => {
         if (s.status === 'Recebido' || s.status === 'Cancelado') return false
+        if (isOutros) {
+          const sSector = getShortageSector(s)
+          return !sSector || !(SECTORS as readonly string[]).includes(sSector)
+        }
         return getShortageSector(s) === sector
       })
     : []
@@ -110,6 +115,15 @@ export function MaterialShortageBySectorModal({
                         </span>
                       </span>
                     </div>
+                    {isOutros && (
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground pl-6">
+                        <Factory className="w-3.5 h-3.5" />
+                        <span>
+                          Setor Solicitante:{' '}
+                          <span className="font-medium text-foreground">{s.sector || '—'}</span>
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )
               })}

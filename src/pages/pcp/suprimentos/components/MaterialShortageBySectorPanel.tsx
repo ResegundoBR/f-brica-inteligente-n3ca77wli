@@ -5,7 +5,7 @@ import { Layers, ChevronRight } from 'lucide-react'
 import type { MaterialShortage } from '@/types'
 import { cn } from '@/lib/utils'
 
-const SECTORS = ['Fabricação', 'Acabamento', 'Montagem', 'Projetos'] as const
+export const SECTORS = ['Fabricação', 'Acabamento', 'Montagem', 'Projetos'] as const
 
 export function getShortageSector(s: MaterialShortage): string {
   if (s.order_id && s.expand?.order_id?.observation_sector) {
@@ -83,10 +83,17 @@ export function MaterialShortageBySectorPanel({
           )
         })}
         {other > 0 && (
-          <div className="flex items-center justify-between p-3 rounded-md border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/40 text-sm">
+          <button
+            type="button"
+            onClick={() => onSectorClick?.('Outros')}
+            className="flex items-center justify-between w-full p-3 rounded-md border text-sm transition-all cursor-pointer hover:bg-orange-50 hover:border-orange-300 dark:hover:bg-orange-900/20 dark:hover:border-orange-700 border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/40"
+          >
             <span className="font-medium">Outros</span>
-            <Badge variant="outline">{other}</Badge>
-          </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline">{other}</Badge>
+              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+            </div>
+          </button>
         )}
       </CardContent>
     </Card>

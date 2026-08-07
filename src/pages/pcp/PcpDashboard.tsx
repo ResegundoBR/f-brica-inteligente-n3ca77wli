@@ -24,31 +24,40 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { parseISO, startOfDay, isBefore } from 'date-fns'
-import { PcpOrder, MaterialShortage, ProductProcessModel } from '@/types'
+import { PcpOrder, MaterialShortage, ProductProcessModel, Inventory } from '@/types'
 import { Loader2, BrainCircuit } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
+import { useRealtime } from '@/hooks/use-realtime'
+import { DashboardKpis } from './components/DashboardKpis'
+import { DeadlineAlerts } from './components/DeadlineAlerts'
+import { CriticalStockPanel } from './components/CriticalStockPanel'
 
 export default function PcpDashboard() {
   const [orders, setOrders] = useState<any[]>([])
   const [logs, setLogs] = useState<any[]>([])
   const [shortages, setShortages] = useState<MaterialShortage[]>([])
   const [processes, setProcesses] = useState<ProductProcessModel[]>([])
+  const [inventory, setInventory] = useState<Inventory[]>([])
   const [loading, setLoading] = useState(true)
   const { toast } = useToast()
 
   const fetchData = async () => {
     try {
-      const [ordersData, logsData, shortagesData, processesData] = await Promise.all([
-        pb.collection('pcp_orders').getFullList({ sort: '-created', expand: 'product_id' }),
-        pb.collection('pcp_order_logs').getFullList({ sort: 'created' }),
-        pb.collection('material_shortages').getFullList({ sort: '-created' }),
-        pb.collection('product_processes').getFullList(),
-      ])
+      const [ordersData, logsData, shortagesData, processesData, inventoryData] = await Promise.all(
+        [
+          pb.collection('pcp_orders').getFullList({ sort: '-created', expand: 'product_id' }),
+          pb.collection('pcp_order_logs').getFullList({ sort: 'created' }),
+          pb.collection('material_shortages').getFullList({ sort: '-created' }),
+          pb.collection('product_processes').getFullList(),
+          pb.collection('inventory').getFullList({ sort: 'description' }),
+        ],
+      )
       setOrders(ordersData)
       setLogs(logsData)
       setShortages(shortagesData)
       setProcesses(processesData)
+      setInventory(inventoryData)
     } catch (err) {
       console.error('Failed to fetch dashboard data', err)
     } finally {
@@ -59,6 +68,9 @@ export default function PcpDashboard() {
   useEffect(() => {
     fetchData()
   }, [])
+
+  useRealtime('pcp_orders', () => fetchData())
+  useRealtime('inventory', () => fetchData())
 
   const handleUpdateEstimate = async (procId: string, newEstimate: number) => {
     try {
@@ -256,6 +268,13 @@ export default function PcpDashboard() {
         <p className="text-muted-foreground mt-1">
           Indicadores de desempenho, gargalos e lead time de produção.
         </p>
+      </div>
+
+      <DashboardKpis orders={orders} />
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <DeadlineAlerts orders={orders} />
+        <CriticalStockPanel inventory={inventory} />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

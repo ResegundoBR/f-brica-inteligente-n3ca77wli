@@ -88,7 +88,7 @@ export function MaterialShortageBySectorPanel({
             onClick={() => onSectorClick?.('Outros')}
             className="flex items-center justify-between w-full p-3 rounded-md border text-sm transition-all cursor-pointer hover:bg-orange-50 hover:border-orange-300 dark:hover:bg-orange-900/20 dark:hover:border-orange-700 border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/40"
           >
-            <span className="font-medium">Outros</span>
+            <span className="font-medium">Suprimentos</span>
             <div className="flex items-center gap-2">
               <Badge variant="outline">{other}</Badge>
               <ChevronRight className="w-4 h-4 text-muted-foreground" />

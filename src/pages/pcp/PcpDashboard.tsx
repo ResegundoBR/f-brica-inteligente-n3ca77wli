@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import pb from '@/lib/pocketbase/client'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import {
@@ -32,6 +32,11 @@ import { useRealtime } from '@/hooks/use-realtime'
 import { DashboardKpis } from './components/DashboardKpis'
 import { DeadlineAlerts } from './components/DeadlineAlerts'
 import { CriticalStockPanel } from './components/CriticalStockPanel'
+import { EnhancedBottlenecks } from './components/EnhancedBottlenecks'
+import { WorkloadByMacroGroup } from './components/WorkloadByMacroGroup'
+import { FlowFunnel } from './components/FlowFunnel'
+import { ProductivityByMacroGroup } from './components/ProductivityByMacroGroup'
+import { TemporalTrends } from './components/TemporalTrends'
 
 export default function PcpDashboard() {
   const [orders, setOrders] = useState<any[]>([])
@@ -39,6 +44,7 @@ export default function PcpDashboard() {
   const [shortages, setShortages] = useState<MaterialShortage[]>([])
   const [processes, setProcesses] = useState<ProductProcessModel[]>([])
   const [inventory, setInventory] = useState<Inventory[]>([])
+  const [dismissedSuggestions, setDismissedSuggestions] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const { toast } = useToast()
 
@@ -46,7 +52,9 @@ export default function PcpDashboard() {
     try {
       const [ordersData, logsData, shortagesData, processesData, inventoryData] = await Promise.all(
         [
-          pb.collection('pcp_orders').getFullList({ sort: '-created', expand: 'product_id' }),
+          pb
+            .collection('pcp_orders')
+            .getFullList({ sort: '-created', expand: 'product_id,client_id' }),
           pb.collection('pcp_order_logs').getFullList({ sort: 'created' }),
           pb.collection('material_shortages').getFullList({ sort: '-created' }),
           pb.collection('product_processes').getFullList(),
@@ -70,6 +78,8 @@ export default function PcpDashboard() {
   }, [])
 
   useRealtime('pcp_orders', () => fetchData())
+  useRealtime('pcp_order_logs', () => fetchData())
+  useRealtime('material_shortages', () => fetchData())
   useRealtime('inventory', () => fetchData())
 
   const handleUpdateEstimate = async (procId: string, newEstimate: number) => {
@@ -153,6 +163,23 @@ export default function PcpDashboard() {
 
     return results.sort((a, b) => Number(b.deviation) - Number(a.deviation))
   }, [logs, processes, orders])
+
+  const handleDismissSuggestion = useCallback(
+    (processId: string) => {
+      setDismissedSuggestions((prev) => {
+        const next = new Set(prev)
+        next.add(processId)
+        return next
+      })
+      toast({ title: 'Manter', description: 'Tempo mantido sem alterações.' })
+    },
+    [toast],
+  )
+
+  const visibleSuggestions = useMemo(
+    () => suggestions.filter((s) => !dismissedSuggestions.has(s.process.id)),
+    [suggestions, dismissedSuggestions],
+  )
 
   const onTimeDeliveryData = useMemo(() => {
     const completed = orders.filter((o) => o.status === 'Concluído')
@@ -277,6 +304,18 @@ export default function PcpDashboard() {
         <CriticalStockPanel inventory={inventory} />
       </div>
 
+      <FlowFunnel orders={orders} />
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <EnhancedBottlenecks orders={orders} logs={logs} />
+        <WorkloadByMacroGroup orders={orders} />
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <ProductivityByMacroGroup orders={orders} logs={logs} />
+        <TemporalTrends orders={orders} />
+      </div>
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <Card className="md:col-span-2 lg:col-span-3">
           <CardHeader>
@@ -301,14 +340,14 @@ export default function PcpDashboard() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {suggestions.length === 0 ? (
+                {visibleSuggestions.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground h-[100px]">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground h-[100px]">
                       Nenhuma sugestão no momento. Os tempos estão precisos!
                     </TableCell>
                   </TableRow>
                 ) : (
-                  suggestions.map((s, idx) => (
+                  visibleSuggestions.map((s, idx) => (
                     <TableRow key={idx}>
                       <TableCell className="font-medium text-xs">{s.productName}</TableCell>
                       <TableCell className="text-xs">{s.process.name}</TableCell>
@@ -327,13 +366,22 @@ export default function PcpDashboard() {
                         </span>
                       </TableCell>
                       <TableCell className="text-center">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleUpdateEstimate(s.process.id, s.suggested)}
-                        >
-                          Atualizar para {s.suggested}h
-                        </Button>
+                        <div className="flex items-center justify-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleUpdateEstimate(s.process.id, s.suggested)}
+                          >
+                            Atualizar para {s.suggested}h
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleDismissSuggestion(s.process.id)}
+                          >
+                            Manter
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))

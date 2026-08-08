@@ -132,7 +132,7 @@ export function DeadlineAlerts({ orders }: DeadlineAlertsProps) {
                           className="flex items-center justify-between gap-2 text-xs py-1 px-2 rounded bg-background/60"
                         >
                           <span className="font-medium truncate">
-                            {op.op_number || op.order_number}
+                            {`Pedido #${op.order_number}${op.op_number ? ` - OP ${op.op_number}` : ''}`}
                           </span>
                           <Badge variant="outline" className="text-[9px] shrink-0">
                             {op.status}

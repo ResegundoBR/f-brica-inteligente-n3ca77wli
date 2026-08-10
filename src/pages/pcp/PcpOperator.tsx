@@ -38,6 +38,7 @@ import {
 import { getMaterialAvailabilityStatus } from '@/lib/material-status'
 import { isBefore, startOfDay, parseISO } from 'date-fns'
 import { Package, ChevronDown, ChevronUp, Circle, Search, X } from 'lucide-react'
+import { MaterialDescriptionAutocomplete } from '@/pages/pcp/components/MaterialDescriptionAutocomplete'
 import { useOrderMessages } from '@/hooks/use-order-messages'
 import { OrderMessagesPanel } from '@/components/OrderMessagesPanel'
 import type { IndicatorState } from '@/lib/message-sector'
@@ -749,16 +750,24 @@ function OperatorCard({
                             }}
                             className="w-20 sm:w-24 text-xs h-9 bg-white dark:bg-slate-950"
                           />
-                          <Input
-                            placeholder="Descrição do material"
-                            value={item.description}
-                            onChange={(e) => {
-                              const newItems = [...missingItems]
-                              newItems[idx].description = e.target.value
-                              setMissingItems(newItems)
-                            }}
-                            className="flex-1 text-xs h-9 bg-white dark:bg-slate-950"
-                          />
+                          <div className="flex-1">
+                            <MaterialDescriptionAutocomplete
+                              productId={op.product_id}
+                              value={item.description}
+                              onChange={(val) => {
+                                const newItems = [...missingItems]
+                                newItems[idx].description = val
+                                setMissingItems(newItems)
+                              }}
+                              onCodeChange={(code) => {
+                                const newItems = [...missingItems]
+                                newItems[idx].code = code
+                                setMissingItems(newItems)
+                              }}
+                              placeholder="Descrição do material"
+                              inputClassName="text-xs h-9 bg-white dark:bg-slate-950"
+                            />
+                          </div>
                           <Input
                             type="number"
                             min="1"
@@ -869,6 +878,7 @@ export default function PcpOperator() {
 
   const [openRequest, setOpenRequest] = useState(false)
   const [reqDesc, setReqDesc] = useState('')
+  const [reqCode, setReqCode] = useState('')
   const [reqQtd, setReqQtd] = useState(1)
   const [reqType, setReqType] = useState('Materiais')
   const [reqPriority, setReqPriority] = useState('Sem pressa')
@@ -1099,6 +1109,7 @@ export default function PcpOperator() {
   const handleReportMaterial = (op: PcpOrder) => {
     setReqOrderId(op.id)
     setReqDesc('')
+    setReqCode('')
     setReqQtd(1)
     setReqType('Materiais')
     setReqPriority('Sem pressa')
@@ -1114,6 +1125,7 @@ export default function PcpOperator() {
     try {
       await pb.collection('material_shortages').create({
         description: reqDesc,
+        code: reqCode,
         quantity: reqQtd,
         request_type: reqType,
         priority: reqPriority,
@@ -1126,6 +1138,7 @@ export default function PcpOperator() {
       toast({ title: 'Solicitação enviada com sucesso!' })
       setOpenRequest(false)
       setReqDesc('')
+      setReqCode('')
       setReqQtd(1)
       setReqType('Materiais')
       setReqPriority('Sem pressa')
@@ -1191,6 +1204,8 @@ export default function PcpOperator() {
   const sortedFila = sortOrders(filaOrders)
   const sortedExecucao = sortOrders(execucaoOrders)
 
+  const selectedOp = orders.find((o) => o.id === reqOrderId)
+
   return (
     <div className="flex flex-col gap-6 p-4 md:p-8 bg-slate-50 min-h-[calc(100vh-4rem)] dark:bg-slate-950">
       <div className="mb-2 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1220,14 +1235,27 @@ export default function PcpOperator() {
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="req-desc">Item / Descrição</Label>
-                <Input
-                  id="req-desc"
-                  placeholder="Ex: Broca 8mm, Fita Crepe..."
-                  value={reqDesc}
-                  onChange={(e) => setReqDesc(e.target.value)}
-                />
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="req-code">Código</Label>
+                  <Input
+                    id="req-code"
+                    placeholder="Opcional"
+                    value={reqCode}
+                    onChange={(e) => setReqCode(e.target.value)}
+                  />
+                </div>
+                <div className="col-span-2 space-y-2">
+                  <Label htmlFor="req-desc">Item / Descrição</Label>
+                  <MaterialDescriptionAutocomplete
+                    id="req-desc"
+                    productId={selectedOp?.product_id}
+                    value={reqDesc}
+                    onChange={setReqDesc}
+                    onCodeChange={setReqCode}
+                    placeholder="Ex: Broca 8mm, Fita Crepe..."
+                  />
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">

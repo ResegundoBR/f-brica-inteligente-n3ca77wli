@@ -29,10 +29,15 @@ import { Badge } from '@/components/ui/badge'
 import { Play, CheckCircle, AlertTriangle, FastForward } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
-import { shouldHighlightObservation, getStageDelay, formatOpIdentifier } from '@/lib/pcp-utils'
+import {
+  shouldHighlightObservation,
+  getStageDelay,
+  formatOpIdentifier,
+  normalizeSearchText,
+} from '@/lib/pcp-utils'
 import { getMaterialAvailabilityStatus } from '@/lib/material-status'
 import { isBefore, startOfDay, parseISO } from 'date-fns'
-import { Package, ChevronDown, ChevronUp, Circle } from 'lucide-react'
+import { Package, ChevronDown, ChevronUp, Circle, Search, X } from 'lucide-react'
 import { useOrderMessages } from '@/hooks/use-order-messages'
 import { OrderMessagesPanel } from '@/components/OrderMessagesPanel'
 import type { IndicatorState } from '@/lib/message-sector'
@@ -852,6 +857,7 @@ export default function PcpOperator() {
   const [processes, setProcesses] = useState<ProductProcessModel[]>([])
   const [shortagesByOrder, setShortagesByOrder] = useState<Record<string, MaterialShortage[]>>({})
   const [selectedSector, setSelectedSector] = useState<SectorName>('Suprimentos')
+  const [searchTerm, setSearchTerm] = useState('')
   const [messageOrder, setMessageOrder] = useState<{
     id: string
     orderNumber: string
@@ -1166,10 +1172,19 @@ export default function PcpOperator() {
     (SECTORS[selectedSector] as readonly string[]).includes(o.stage),
   )
 
-  const filaOrders = sectorOrders.filter(
+  const normalizedSearch = normalizeSearchText(searchTerm)
+  const filteredSectorOrders = normalizedSearch
+    ? sectorOrders.filter((o) => {
+        const productName = o.expand?.product_id?.name || o.manual_product_name || ''
+        const fields = [o.order_number || '', o.op_number || '', o.client_name || '', productName]
+        return fields.some((f) => normalizeSearchText(f).includes(normalizedSearch))
+      })
+    : sectorOrders
+
+  const filaOrders = filteredSectorOrders.filter(
     (o) => o.status === 'Fila' || (o.status === 'Parado' && !o.started_at),
   )
-  const execucaoOrders = sectorOrders.filter(
+  const execucaoOrders = filteredSectorOrders.filter(
     (o) => o.status === 'Em Andamento' || (o.status === 'Parado' && o.started_at),
   )
 
@@ -1308,6 +1323,25 @@ export default function PcpOperator() {
             {sector}
           </Button>
         ))}
+      </div>
+
+      <div className="relative mb-4">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-5 text-slate-400" />
+        <Input
+          type="text"
+          placeholder="Buscar por pedido, OP, cliente ou produto..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="h-12 pl-11 pr-10 text-base"
+        />
+        {searchTerm && (
+          <button
+            onClick={() => setSearchTerm('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+          >
+            <X className="size-5" />
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 items-start">

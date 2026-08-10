@@ -223,3 +223,13 @@ export function formatOpIdentifier(order: any): string {
   const opNum = order.op_number || ''
   return `Pedido ${orderNum} | OP ${opNum}`
 }
+
+export function normalizeSearchText(text: string): string {
+  if (!text) return ''
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[.,\-/]/g, '')
+    .toLowerCase()
+    .trim()
+}

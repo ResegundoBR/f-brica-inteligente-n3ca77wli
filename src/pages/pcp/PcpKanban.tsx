@@ -18,6 +18,7 @@ import {
   CircleDot,
   Circle,
   Bell,
+  Truck,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
@@ -36,6 +37,7 @@ import { useOrderMessages } from '@/hooks/use-order-messages'
 import { OrderMessageBell } from '@/components/OrderMessageBell'
 import { OrderMessagesPanel } from '@/components/OrderMessagesPanel'
 import { StatusLegend } from '@/components/StatusLegend'
+import { ExpeditionModal } from './components/ExpeditionModal'
 
 const MACRO_GROUPS = [
   {
@@ -130,6 +132,9 @@ export default function PcpKanban() {
     opNumber: string
   } | null>(null)
   const [pendingOnly, setPendingOnly] = useState(false)
+  const [hideConcluded, setHideConcluded] = useState(true)
+  const [expeditionModalOpen, setExpeditionModalOpen] = useState(false)
+  const [expeditionOrderNumber, setExpeditionOrderNumber] = useState('')
 
   const fetchOrders = async () => {
     const res = await pb.collection('pcp_orders').getFullList({
@@ -213,6 +218,7 @@ export default function PcpKanban() {
   const filteredOrders = useMemo(
     () =>
       orders.filter((o) => {
+        if (hideConcluded && o.status === 'Concluído') return false
         if (opTypeFilter !== 'all' && o.op_type !== opTypeFilter) return false
         if (clientFilter !== 'all' && o.client_id !== clientFilter) return false
         if (clientTypeFilter !== 'all' && o.expand?.client_id?.type !== clientTypeFilter)
@@ -253,6 +259,7 @@ export default function PcpKanban() {
       clientTypeFilter,
       deadlineFilter,
       pendingOnly,
+      hideConcluded,
       getOrderMessageInfo,
     ],
   )
@@ -321,6 +328,15 @@ export default function PcpKanban() {
           >
             <Bell className="size-3.5" />
             Mensagens Pendentes
+          </Button>
+          <Button
+            variant={hideConcluded ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setHideConcluded(!hideConcluded)}
+            className="gap-2 h-8 text-xs"
+          >
+            <CheckCircle2 className="size-3.5" />
+            {hideConcluded ? 'Ocultar Concluídos' : 'Mostrar Concluídos'}
           </Button>
           <Link to="/pcp/materiais">
             <Button
@@ -496,6 +512,10 @@ export default function PcpKanban() {
                                 })
                               }
                               messageState={getOrderMessageInfo(order.id).indicatorState}
+                              onExpedition={() => {
+                                setExpeditionOrderNumber(order.order_number)
+                                setExpeditionModalOpen(true)
+                              }}
                             />
                           ))}
                         </div>
@@ -846,6 +866,20 @@ export default function PcpKanban() {
           <DialogHeader>
             <DialogTitle>Detalhes da OP: {selectedOrder?.order_number}</DialogTitle>
           </DialogHeader>
+          {selectedOrder?.stage === 'Expedição' && (
+            <Button
+              variant="default"
+              className="bg-teal-600 hover:bg-teal-700 text-white gap-2 w-fit"
+              onClick={() => {
+                setExpeditionOrderNumber(selectedOrder.order_number)
+                setSelectedOrder(null)
+                setExpeditionModalOpen(true)
+              }}
+            >
+              <Truck className="size-4" />
+              Registrar Expedição
+            </Button>
+          )}
           {selectedOrder && (
             <Tabs defaultValue="detalhes" className="flex-1 flex flex-col overflow-hidden">
               <TabsList className="grid w-full grid-cols-2 shrink-0">
@@ -1078,6 +1112,11 @@ export default function PcpKanban() {
         onOpenChange={(open) => !open && setMessageOrder(null)}
         onMessagesRead={markOrderAsRead}
       />
+      <ExpeditionModal
+        open={expeditionModalOpen}
+        onOpenChange={setExpeditionModalOpen}
+        initialOrderNumber={expeditionOrderNumber}
+      />
     </div>
   )
 }
@@ -1208,6 +1247,7 @@ function CompactKanbanCard({
   onClick,
   onMessageClick,
   messageState = 'none',
+  onExpedition,
 }: any) {
   const color = getOrderColor(order)
   const isEmergency = order.manual_priority === 1
@@ -1239,6 +1279,18 @@ function CompactKanbanCard({
       >
         <span className="block truncate w-full">
           {isEmergency && <span className="text-[10px]">🚨</span>}
+          {order.stage === 'Expedição' && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onExpedition?.()
+              }}
+              className="inline-flex items-center"
+              title="Registrar Expedição"
+            >
+              <Truck className="size-2.5" />
+            </button>
+          )}{' '}
           {messageState !== 'none' && (
             <button
               onClick={(e) => {

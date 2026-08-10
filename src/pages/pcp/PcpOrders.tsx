@@ -35,7 +35,12 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import { formatDeadline, filterByDeadline, isStageDelayed } from '@/lib/pcp-utils'
+import {
+  formatDeadline,
+  filterByDeadline,
+  isStageDelayed,
+  normalizeSearchText,
+} from '@/lib/pcp-utils'
 import { PcpOrderForm } from './components/PcpOrderForm'
 import { MessageNotificationBell } from '@/components/MessageNotificationBell'
 import { Button } from '@/components/ui/button'
@@ -147,27 +152,21 @@ export default function PcpOrders() {
 
   const filteredOrders = useMemo(() => {
     if (!search) return orders
-    const q = search.toLowerCase()
+    const q = normalizeSearchText(search)
+    if (!q) return orders
     return orders.filter((op) => {
-      const clientName = (op.expand?.client_id?.name || op.client_name || '').toLowerCase()
-      const productName = (
+      const clientName = op.expand?.client_id?.name || op.client_name || ''
+      const productName =
         op.op_type === 'Assistência'
           ? op.manual_product_name || ''
           : op.expand?.product_id?.name || ''
-      ).toLowerCase()
-      const productCode = (op.expand?.product_id?.code || '').toLowerCase()
-      const orderNum = (op.order_number || '').toLowerCase()
-      const opNum = (op.op_number || '').toLowerCase()
-      const obsSector = (op.observation_sector || '').toLowerCase()
+      const productCode = op.expand?.product_id?.code || ''
+      const orderNum = op.order_number || ''
+      const opNum = op.op_number || ''
+      const obsSector = op.observation_sector || ''
 
-      return (
-        clientName.includes(q) ||
-        productName.includes(q) ||
-        productCode.includes(q) ||
-        orderNum.includes(q) ||
-        opNum.includes(q) ||
-        obsSector.includes(q)
-      )
+      const fields = [clientName, productName, productCode, orderNum, opNum, obsSector]
+      return fields.some((f) => normalizeSearchText(f).includes(q))
     })
   }, [orders, search])
 

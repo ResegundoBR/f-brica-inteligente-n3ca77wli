@@ -18,7 +18,7 @@ import { format, parseISO, isAfter, startOfDay } from 'date-fns'
 import { Search, MessageCircle, Bell } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PcpFilters } from './components/PcpFilters'
-import { filterByDeadline, isOrderOverdue } from '@/lib/pcp-utils'
+import { filterByDeadline, isOrderOverdue, normalizeSearchText } from '@/lib/pcp-utils'
 import { OrderMessagesPanel } from '@/components/OrderMessagesPanel'
 import { useOrderMessages } from '@/hooks/use-order-messages'
 
@@ -100,24 +100,19 @@ export default function PcpCommercial() {
 
   const filteredOrders = orders.filter((op) => {
     if (!search) return true
-    const q = search.toLowerCase()
-    const clientName = (op.expand?.client_id?.name || op.client_name || '').toLowerCase()
-    const productName = (
+    const q = normalizeSearchText(search)
+    if (!q) return true
+    const clientName = op.expand?.client_id?.name || op.client_name || ''
+    const productName =
       op.op_type === 'Assistência'
         ? op.manual_product_name || ''
         : op.expand?.product_id?.name || ''
-    ).toLowerCase()
-    const orderNum = (op.order_number || '').toLowerCase()
-    const opNum = (op.op_number || '').toLowerCase()
-    const obsSector = (op.observation_sector || '').toLowerCase()
+    const orderNum = op.order_number || ''
+    const opNum = op.op_number || ''
+    const obsSector = op.observation_sector || ''
 
-    return (
-      clientName.includes(q) ||
-      productName.includes(q) ||
-      orderNum.includes(q) ||
-      opNum.includes(q) ||
-      obsSector.includes(q)
-    )
+    const fields = [clientName, productName, orderNum, opNum, obsSector]
+    return fields.some((f) => normalizeSearchText(f).includes(q))
   })
 
   const groupedOrders = useMemo(() => {

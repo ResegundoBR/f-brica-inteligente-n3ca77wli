@@ -23,7 +23,13 @@ import {
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { format, parseISO, differenceInDays, startOfDay } from 'date-fns'
-import { formatDeadline, isOrderOverdue, filterByDeadline, isStageDelayed } from '@/lib/pcp-utils'
+import {
+  formatDeadline,
+  isOrderOverdue,
+  filterByDeadline,
+  isStageDelayed,
+  normalizeSearchText,
+} from '@/lib/pcp-utils'
 import { OutsourcingPanel } from './components/OutsourcingPanel'
 import { PcpFilters } from './components/PcpFilters'
 import { MessageNotificationBell } from '@/components/MessageNotificationBell'
@@ -230,26 +236,20 @@ export default function PcpKanban() {
         }
 
         if (!searchQuery) return true
-        const q = searchQuery.toLowerCase()
-        const clientName = (o.expand?.client_id?.name || o.client_name || '').toLowerCase()
-        const productName = (
+        const q = normalizeSearchText(searchQuery)
+        if (!q) return true
+        const clientName = o.expand?.client_id?.name || o.client_name || ''
+        const productName =
           o.op_type === 'Assistência'
             ? o.manual_product_name || ''
             : o.expand?.product_id?.name || ''
-        ).toLowerCase()
         const date = o.delivery_date ? format(parseISO(o.delivery_date), 'dd/MM/yyyy') : ''
-        const orderNum = (o.order_number || '').toLowerCase()
-        const opNum = (o.op_number || '').toLowerCase()
-        const obsSector = (o.observation_sector || '').toLowerCase()
+        const orderNum = o.order_number || ''
+        const opNum = o.op_number || ''
+        const obsSector = o.observation_sector || ''
 
-        return (
-          clientName.includes(q) ||
-          productName.includes(q) ||
-          date.includes(q) ||
-          orderNum.includes(q) ||
-          opNum.includes(q) ||
-          obsSector.includes(q)
-        )
+        const fields = [clientName, productName, date, orderNum, opNum, obsSector]
+        return fields.some((f) => normalizeSearchText(f).includes(q))
       }),
     [
       orders,

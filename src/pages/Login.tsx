@@ -7,6 +7,8 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/hooks/use-toast'
 import { extractFieldErrors, getErrorMessage } from '@/lib/pocketbase/errors'
+import { getPostLoginRedirectPath } from '@/lib/post-login-redirect'
+import type { User } from '@/types'
 import { Factory } from 'lucide-react'
 
 export default function Login() {
@@ -37,7 +39,8 @@ export default function Login() {
       if (authData.record.must_change_password) {
         navigate('/change-password')
       } else {
-        navigate('/')
+        const redirectPath = await getPostLoginRedirectPath(authData.record as unknown as User)
+        navigate(redirectPath)
       }
     } catch (err: any) {
       const fErrors = extractFieldErrors(err)

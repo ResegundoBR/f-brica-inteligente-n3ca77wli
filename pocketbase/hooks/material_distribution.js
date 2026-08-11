@@ -65,7 +65,7 @@ routerAdd(
         invRecord.set('quantity', 0)
         invRecord.set('min_quantity', 0)
         invRecord.set('unit', 'un')
-        $app.saveNoValidate(invRecord)
+        $app.dao().saveRecord(invRecord)
         if (!code) code = finalCode
         // Recarrega do banco para garantir que getNumber()/getString() estejam disponíveis
         invRecord = $app.findRecordById('inventory', invRecord.id)
@@ -77,7 +77,7 @@ routerAdd(
     } else if (!invRecord.getString('code') && code) {
       try {
         invRecord.set('code', code)
-        $app.saveNoValidate(invRecord)
+        $app.dao().saveRecord(invRecord)
       } catch (_) {}
     }
 
@@ -119,7 +119,7 @@ routerAdd(
       if (totalValue > 0) entrada.set('total_value', totalValue)
       if (freight > 0) entrada.set('freight', freight)
       if (userId) entrada.set('user_id', userId)
-      $app.saveNoValidate(entrada)
+      $app.dao().saveRecord(entrada)
       runningBalance = Number(runningBalance) + Number(totalReceived)
     } catch (err) {
       return e.json(500, {
@@ -155,7 +155,7 @@ routerAdd(
         shortage.set('received_quantity', sNewReceived)
         shortage.set('status', newStatus)
         if (code) shortage.set('code', code)
-        $app.saveNoValidate(shortage)
+        $app.dao().saveRecord(shortage)
 
         var orderId = shortage.getString('order_id') || ''
         var opNumber = ''
@@ -184,7 +184,7 @@ routerAdd(
           if (orderId) saida.set('order_id', orderId)
           if (userId) saida.set('user_id', userId)
           if (unitPrice > 0) saida.set('unit_price', unitPrice)
-          $app.saveNoValidate(saida)
+          $app.dao().saveRecord(saida)
           runningBalance = Number(runningBalance) - distQty
         } catch (err) {
           console.log('Error creating Saída movement:', err.message)
@@ -222,7 +222,7 @@ routerAdd(
 
     try {
       invRecord.set('quantity', Number(runningBalance))
-      $app.saveNoValidate(invRecord)
+      $app.dao().saveRecord(invRecord)
     } catch (err) {
       console.log('Error updating inventory quantity:', err.message)
     }

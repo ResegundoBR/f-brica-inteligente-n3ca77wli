@@ -58,7 +58,11 @@ onRecordAfterUpdateSuccess((e) => {
   try {
     var existingMovements = $app.findRecordsByFilter(
       'inventory_movements',
-      "inventory_id = '" + inventoryRecord.id + "' && reason ~ '" + shortageId + "'",
+      "inventory_id = '" +
+        inventoryRecord.id +
+        "' && type = 'Entrada' && reason ~ '" +
+        shortageId +
+        "'",
       '-created',
       100,
       0,
@@ -71,6 +75,14 @@ onRecordAfterUpdateSuccess((e) => {
   var qtyToAdd = targetQty - alreadyAdded
   if (qtyToAdd <= 0) return e.next()
 
+  var purchaseDate = e.record.getString('purchase_date') || ''
+  var unitPrice = e.record.getNumber('unit_price') || 0
+  var totalValue = unitPrice > 0 ? unitPrice * qtyToAdd : 0
+  var todayStr = new Date().toISOString().split('T')[0]
+
+  var currentBalance = inventoryRecord.getNumber('quantity') || 0
+  var balanceAfter = currentBalance + qtyToAdd
+
   try {
     var movCol = $app.findCollectionByNameOrId('inventory_movements')
     var movement = new Record(movCol)
@@ -78,6 +90,16 @@ onRecordAfterUpdateSuccess((e) => {
     movement.set('quantity', qtyToAdd)
     movement.set('type', 'Entrada')
     movement.set('reason', 'Recebimento de Solicitação (ID: ' + shortageId + ')')
+    movement.set('arrival_date', todayStr)
+    movement.set('balance_after', balanceAfter)
+
+    if (purchaseDate) {
+      movement.set('purchase_date', purchaseDate)
+    }
+    if (unitPrice > 0) {
+      movement.set('unit_price', unitPrice)
+      movement.set('total_value', totalValue)
+    }
 
     var requestedBy = e.record.getString('requested_by') || ''
     if (requestedBy) {

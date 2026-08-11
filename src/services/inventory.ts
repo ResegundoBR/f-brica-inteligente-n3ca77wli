@@ -39,14 +39,27 @@ export const getMovementsByInventory = (inventoryId: string) =>
     expand: 'user_id,order_id',
   })
 
-export const createMovement = (data: {
+export const createMovement = async (data: {
   inventory_id: string
   quantity: number
   type: 'Entrada' | 'Saída'
   reason?: string
   order_id?: string
-}) =>
-  pb.collection('inventory_movements').create({
+  purchase_date?: string
+  arrival_date?: string
+  unit_price?: number
+  total_value?: number
+  freight?: number
+  exit_date?: string
+}) => {
+  const item = await pb.collection('inventory').getOne<Inventory>(data.inventory_id)
+  const currentQty = Number(item.quantity) || 0
+  const balance_after =
+    data.type === 'Entrada' ? currentQty + data.quantity : Math.max(0, currentQty - data.quantity)
+
+  return pb.collection('inventory_movements').create({
     ...data,
+    balance_after,
     user_id: pb.authStore.isValid ? pb.authStore.record?.id : undefined,
   })
+}

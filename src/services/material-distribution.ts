@@ -5,15 +5,22 @@ export interface Distribution {
   quantity: number
 }
 
-export interface SurplusInfo {
-  code: string
-  description: string
-  quantity: number
+export interface TraceabilityInfo {
+  code?: string
+  description?: string
+  purchase_date?: string
+  arrival_date?: string
+  unit_price?: number
+  freight?: number
 }
 
-export const distributeMaterials = (distributions: Distribution[], surplus?: SurplusInfo) =>
+export const distributeMaterials = (
+  distributions: Distribution[],
+  totalReceived: number,
+  traceability?: TraceabilityInfo,
+) =>
   pb.send('/backend/v1/materials/distribute', {
     method: 'POST',
-    body: JSON.stringify({ distributions, surplus }),
+    body: JSON.stringify({ distributions, total_received: totalReceived, traceability }),
     headers: { 'Content-Type': 'application/json' },
   })

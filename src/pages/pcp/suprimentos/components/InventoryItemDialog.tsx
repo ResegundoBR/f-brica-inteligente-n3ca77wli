@@ -23,7 +23,32 @@ import { Inventory, InventoryMovement } from '@/types'
 import { getMovementsByInventory, createMovement } from '@/services/inventory'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
-import { format } from 'date-fns'
+import { format, parseISO, isValid } from 'date-fns'
+
+function fmtDate(val?: string) {
+  if (!val) return '-'
+  try {
+    const d = parseISO(val)
+    return isValid(d) ? format(d, 'dd/MM/yy') : '-'
+  } catch {
+    return '-'
+  }
+}
+
+function fmtCurrency(val?: number) {
+  if (val == null || val === 0) return '-'
+  return `R$ ${Number(val).toFixed(2)}`
+}
+
+function fmtDateTime(val?: string) {
+  if (!val) return '-'
+  try {
+    const d = new Date(val)
+    return isValid(d) ? format(d, 'dd/MM/yy HH:mm') : '-'
+  } catch {
+    return '-'
+  }
+}
 
 export function InventoryItemDialog({
   item,
@@ -86,7 +111,7 @@ export function InventoryItemDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[780px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[1000px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{item.description}</DialogTitle>
         </DialogHeader>
@@ -131,63 +156,89 @@ export function InventoryItemDialog({
             </div>
           </div>
 
-          <div className="border rounded-md overflow-hidden max-h-[260px] overflow-y-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-xs">Data</TableHead>
-                  <TableHead className="text-xs">Tipo</TableHead>
-                  <TableHead className="text-xs text-right">Qtde</TableHead>
-                  <TableHead className="text-xs">Motivo</TableHead>
-                  <TableHead className="text-xs">Ordem</TableHead>
-                  <TableHead className="text-xs">Responsável</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {movements.length === 0 ? (
+          <div className="border rounded-md overflow-hidden">
+            <div className="overflow-x-auto max-h-[300px] overflow-y-auto">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell
-                      colSpan={6}
-                      className="text-center text-muted-foreground text-xs py-4"
-                    >
-                      Sem movimentações.
-                    </TableCell>
+                    <TableHead className="text-xs whitespace-nowrap">Data</TableHead>
+                    <TableHead className="text-xs">Tipo</TableHead>
+                    <TableHead className="text-xs text-right">Qtde</TableHead>
+                    <TableHead className="text-xs text-right">Saldo</TableHead>
+                    <TableHead className="text-xs whitespace-nowrap">Dt. Compra</TableHead>
+                    <TableHead className="text-xs whitespace-nowrap">Dt. Chegada</TableHead>
+                    <TableHead className="text-xs text-right">Vl. Unit.</TableHead>
+                    <TableHead className="text-xs text-right">Vl. Total</TableHead>
+                    <TableHead className="text-xs text-right">Frete</TableHead>
+                    <TableHead className="text-xs whitespace-nowrap">Dt. Saída</TableHead>
+                    <TableHead className="text-xs">OP</TableHead>
+                    <TableHead className="text-xs">Motivo</TableHead>
                   </TableRow>
-                ) : (
-                  movements.map((m) => (
-                    <TableRow key={m.id}>
-                      <TableCell className="text-xs whitespace-nowrap">
-                        {format(new Date(m.created), 'dd/MM/yy HH:mm')}
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <Badge
-                          variant={m.type === 'Entrada' ? 'secondary' : 'destructive'}
-                          className="text-[10px]"
-                        >
-                          {m.type}
-                        </Badge>
-                      </TableCell>
+                </TableHeader>
+                <TableBody>
+                  {movements.length === 0 ? (
+                    <TableRow>
                       <TableCell
-                        className={cn(
-                          'text-xs text-right font-semibold whitespace-nowrap',
-                          m.type === 'Entrada' ? 'text-green-600' : 'text-red-500',
-                        )}
+                        colSpan={12}
+                        className="text-center text-muted-foreground text-xs py-4"
                       >
-                        {m.type === 'Entrada' ? '+' : '-'}
-                        {m.quantity}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground max-w-[180px] truncate">
-                        {m.reason || '-'}
-                      </TableCell>
-                      <TableCell className="text-xs whitespace-nowrap">{orderLabel(m)}</TableCell>
-                      <TableCell className="text-xs whitespace-nowrap">
-                        {m.expand?.user_id?.name || '-'}
+                        Sem movimentações.
                       </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+                  ) : (
+                    movements.map((m) => (
+                      <TableRow key={m.id}>
+                        <TableCell className="text-xs whitespace-nowrap">
+                          {fmtDateTime(m.created)}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <Badge
+                            variant={m.type === 'Entrada' ? 'secondary' : 'destructive'}
+                            className="text-[10px]"
+                          >
+                            {m.type}
+                          </Badge>
+                        </TableCell>
+                        <TableCell
+                          className={cn(
+                            'text-xs text-right font-semibold whitespace-nowrap',
+                            m.type === 'Entrada' ? 'text-green-600' : 'text-red-500',
+                          )}
+                        >
+                          {m.type === 'Entrada' ? '+' : '-'}
+                          {m.quantity}
+                        </TableCell>
+                        <TableCell className="text-xs text-right font-semibold whitespace-nowrap">
+                          {m.balance_after != null ? m.balance_after : '-'}
+                        </TableCell>
+                        <TableCell className="text-xs whitespace-nowrap">
+                          {fmtDate(m.purchase_date)}
+                        </TableCell>
+                        <TableCell className="text-xs whitespace-nowrap">
+                          {fmtDate(m.arrival_date)}
+                        </TableCell>
+                        <TableCell className="text-xs text-right whitespace-nowrap">
+                          {fmtCurrency(m.unit_price)}
+                        </TableCell>
+                        <TableCell className="text-xs text-right whitespace-nowrap">
+                          {fmtCurrency(m.total_value)}
+                        </TableCell>
+                        <TableCell className="text-xs text-right whitespace-nowrap">
+                          {fmtCurrency(m.freight)}
+                        </TableCell>
+                        <TableCell className="text-xs whitespace-nowrap">
+                          {fmtDate(m.exit_date)}
+                        </TableCell>
+                        <TableCell className="text-xs whitespace-nowrap">{orderLabel(m)}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground max-w-[160px] truncate">
+                          {m.reason || '-'}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           </div>
 
           <div className="border-t pt-3 space-y-3">

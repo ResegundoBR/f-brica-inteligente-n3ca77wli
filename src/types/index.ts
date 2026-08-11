@@ -383,6 +383,13 @@ export interface InventoryMovement {
   type: 'Entrada' | 'Saída'
   reason?: string
   order_id?: string
+  purchase_date?: string
+  arrival_date?: string
+  unit_price?: number
+  total_value?: number
+  freight?: number
+  exit_date?: string
+  balance_after?: number
   created: string
   updated: string
   expand?: {

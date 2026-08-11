@@ -21,8 +21,9 @@ import {
 import { MaterialShortage } from '@/types'
 import { Loader2, Package, ArrowRight, Warehouse } from 'lucide-react'
 import pb from '@/lib/pocketbase/client'
-import { distributeMaterials } from '@/services/material-distribution'
+import { distributeMaterials, type TraceabilityInfo } from '@/services/material-distribution'
 import { useToast } from '@/hooks/use-toast'
+import { getErrorMessage } from '@/lib/pocketbase/errors'
 
 interface SmartReceiveDialogProps {
   item: MaterialShortage | null
@@ -42,6 +43,10 @@ export function SmartReceiveDialog({
   const [saving, setSaving] = useState(false)
   const [totalReceived, setTotalReceived] = useState('')
   const [distributions, setDistributions] = useState<Record<string, string>>({})
+  const [purchaseDate, setPurchaseDate] = useState('')
+  const [arrivalDate, setArrivalDate] = useState('')
+  const [unitPrice, setUnitPrice] = useState('')
+  const [freight, setFreight] = useState('')
   const { toast } = useToast()
 
   useEffect(() => {
@@ -49,6 +54,10 @@ export function SmartReceiveDialog({
     setLoading(true)
     setTotalReceived('')
     setDistributions({})
+    setPurchaseDate(item.purchase_date ? item.purchase_date.substring(0, 10) : '')
+    setArrivalDate(new Date().toISOString().split('T')[0])
+    setUnitPrice(item.unit_price ? String(item.unit_price) : '')
+    setFreight('')
     const fetchRelated = async () => {
       try {
         const code = (item.code || '').trim()
@@ -75,6 +84,12 @@ export function SmartReceiveDialog({
   const totalDistributed = Object.values(distributions).reduce((s, q) => s + (Number(q) || 0), 0)
   const surplus = Math.max(0, (Number(totalReceived) || 0) - totalDistributed)
 
+  const numUnitPrice = Number(unitPrice) || 0
+  const numFreight = Number(freight) || 0
+  const numTotalReceived = Number(totalReceived) || 0
+  const computedTotalValue =
+    numUnitPrice > 0 ? numUnitPrice * numTotalReceived + numFreight : numFreight
+
   const handleConfirm = async () => {
     const received = Number(totalReceived) || 0
     if (received <= 0) {
@@ -88,6 +103,7 @@ export function SmartReceiveDialog({
     const distArray = Object.entries(distributions)
       .filter(([, q]) => q && Number(q) > 0)
       .map(([sid, q]) => ({ shortage_id: sid, quantity: Number(q) }))
+
     if (distArray.length === 0 && surplus === 0) {
       toast({
         title: 'Erro',
@@ -96,23 +112,30 @@ export function SmartReceiveDialog({
       })
       return
     }
+
     setSaving(true)
     try {
-      const surplusInfo =
-        surplus > 0 && item
-          ? { code: item.code || '', description: item.description, quantity: surplus }
-          : undefined
-      await distributeMaterials(distArray, surplusInfo)
+      const traceabilityInfo: TraceabilityInfo = {
+        code: item?.code || '',
+        description: item?.description || '',
+        purchase_date: purchaseDate || undefined,
+        arrival_date: arrivalDate || undefined,
+        unit_price: numUnitPrice > 0 ? numUnitPrice : undefined,
+        freight: numFreight > 0 ? numFreight : undefined,
+      }
+      await distributeMaterials(distArray, received, traceabilityInfo)
       toast({
         title: 'Distribuição concluída',
-        description: `${received} unidade(s) distribuídas.`,
+        description: `${received} unidade(s) recebidas. ${totalDistributed} distribuídas. ${surplus} em estoque.`,
       })
       onUpdate()
       onOpenChange(false)
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errAny = err as { response?: { error?: string }; message?: string }
+      const msg = errAny?.response?.error || getErrorMessage(err)
       toast({
         title: 'Erro',
-        description: err.message || 'Falha na distribuição.',
+        description: msg || 'Falha na distribuição.',
         variant: 'destructive',
       })
     } finally {
@@ -164,6 +187,57 @@ export function SmartReceiveDialog({
                 value={totalReceived}
                 onChange={(e) => setTotalReceived(e.target.value)}
               />
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border">
+              <div className="space-y-1">
+                <Label className="text-xs">Data da Compra</Label>
+                <Input
+                  type="date"
+                  className="h-9 text-sm"
+                  value={purchaseDate}
+                  onChange={(e) => setPurchaseDate(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Data da Chegada</Label>
+                <Input
+                  type="date"
+                  className="h-9 text-sm"
+                  value={arrivalDate}
+                  onChange={(e) => setArrivalDate(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Valor Unitário (R$)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  className="h-9 text-sm"
+                  value={unitPrice}
+                  onChange={(e) => setUnitPrice(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Frete (R$)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  className="h-9 text-sm"
+                  value={freight}
+                  onChange={(e) => setFreight(e.target.value)}
+                />
+              </div>
+              {computedTotalValue > 0 && (
+                <div className="col-span-2 sm:col-span-4 text-xs text-muted-foreground">
+                  Valor total calculado:{' '}
+                  <strong className="text-foreground">R$ {computedTotalValue.toFixed(2)}</strong>
+                </div>
+              )}
             </div>
 
             <div className="border rounded-lg overflow-hidden">

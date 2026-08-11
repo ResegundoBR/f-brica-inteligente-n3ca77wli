@@ -8,47 +8,110 @@ interface FlowFunnelProps {
   orders: any[]
 }
 
-interface FunnelStageConfig {
-  name: string
-  macroGroup: string | null
-  color: string
-  isCompleted: boolean
+const FUNNEL_MACRO_GROUPS = ['Suprimentos', 'Fabricação', 'Acabamento', 'Montagem']
+
+const STAGE_COLORS: Record<string, string> = {
+  Pedidos: 'bg-blue-500',
+  OPs: 'bg-indigo-500',
+  Suprimentos: 'bg-cyan-500',
+  Fabricação: 'bg-orange-500',
+  Acabamento: 'bg-purple-500',
+  Montagem: 'bg-green-500',
 }
 
-const FUNNEL_STAGE_CONFIGS: FunnelStageConfig[] = [
-  { name: 'Pedidos', macroGroup: null, color: 'bg-blue-500', isCompleted: false },
-  { name: 'Suprimentos', macroGroup: 'Suprimentos', color: 'bg-cyan-500', isCompleted: false },
-  { name: 'Fabricação', macroGroup: 'Fabricação', color: 'bg-orange-500', isCompleted: false },
-  { name: 'Acabamento', macroGroup: 'Acabamento', color: 'bg-purple-500', isCompleted: false },
-  { name: 'Montagem', macroGroup: 'Montagem', color: 'bg-green-500', isCompleted: false },
-  { name: 'Concluídas', macroGroup: null, color: 'bg-emerald-600', isCompleted: true },
-]
+interface FunnelStageData {
+  name: string
+  count: number
+  percentage: number
+  color: string
+}
+
+function getStagesForMacroGroup(name: string): string[] {
+  return MACRO_GROUPS.find((g) => g.name === name)?.stages || []
+}
+
+function FunnelBars({ stages, maxCount }: { stages: FunnelStageData[]; maxCount: number }) {
+  return (
+    <div className="space-y-1.5">
+      {stages.map((stage) => {
+        const barWidth = (stage.count / maxCount) * 100
+        return (
+          <div key={stage.name} className="flex items-center gap-2">
+            <span className="text-xs font-medium w-20 md:w-28 text-right shrink-0">
+              {stage.name}
+            </span>
+            <div className="flex-1 h-7 rounded-md bg-slate-100 dark:bg-slate-800 overflow-hidden">
+              <div
+                className={cn(
+                  'h-full rounded-md transition-all flex items-center justify-end pr-2',
+                  stage.color,
+                )}
+                style={{ width: `${Math.max(barWidth, stage.count > 0 ? 12 : 0)}%` }}
+              >
+                {stage.count > 0 && (
+                  <span className="text-[10px] font-bold text-white whitespace-nowrap">
+                    {stage.count} · {stage.percentage.toFixed(0)}%
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 
 export function FlowFunnel({ orders }: FlowFunnelProps) {
-  const { stages, total } = useMemo(() => {
-    const total = orders.length
-    const computed = FUNNEL_STAGE_CONFIGS.map((stage) => {
-      let count: number
-      if (stage.isCompleted) {
-        count = orders.filter((o) => o.status === 'Concluído').length
-      } else if (stage.macroGroup) {
-        const macro = MACRO_GROUPS.find((g) => g.name === stage.macroGroup)
-        count = orders.filter(
-          (o) => o.status !== 'Concluído' && (macro?.stages || []).includes(o.stage),
-        ).length
-      } else {
-        count = total
-      }
-      return {
-        ...stage,
-        count,
-        percentage: total > 0 ? (count / total) * 100 : 0,
-      }
+  const { pedidosFunnel, opsFunnel, pedidosTotal, opsTotal } = useMemo(() => {
+    const activeOps = orders.filter((o) => o.status === 'Fila' || o.status === 'Em Andamento')
+    const nonConcludedOps = orders.filter((o) => o.status !== 'Concluído')
+
+    const ordersByNumber: Record<string, any[]> = {}
+    nonConcludedOps.forEach((o) => {
+      const key = o.order_number || o.id
+      if (!ordersByNumber[key]) ordersByNumber[key] = []
+      ordersByNumber[key].push(o)
     })
-    return { stages: computed, total }
+    const activeOrderNumbers = Object.keys(ordersByNumber)
+    const pedidosTotal = activeOrderNumbers.length
+    const opsTotal = activeOps.length
+
+    const pedidosFunnel: FunnelStageData[] = [
+      { name: 'Pedidos', count: pedidosTotal, percentage: 100, color: STAGE_COLORS.Pedidos },
+      ...FUNNEL_MACRO_GROUPS.map((macroName) => {
+        const stages = getStagesForMacroGroup(macroName)
+        const count = activeOrderNumbers.filter((on) =>
+          ordersByNumber[on].some((op) => stages.includes(op.stage)),
+        ).length
+        return {
+          name: macroName,
+          count,
+          percentage: pedidosTotal > 0 ? (count / pedidosTotal) * 100 : 0,
+          color: STAGE_COLORS[macroName],
+        }
+      }),
+    ]
+
+    const opsFunnel: FunnelStageData[] = [
+      { name: 'OPs', count: opsTotal, percentage: 100, color: STAGE_COLORS.OPs },
+      ...FUNNEL_MACRO_GROUPS.map((macroName) => {
+        const stages = getStagesForMacroGroup(macroName)
+        const count = activeOps.filter((op) => stages.includes(op.stage)).length
+        return {
+          name: macroName,
+          count,
+          percentage: opsTotal > 0 ? (count / opsTotal) * 100 : 0,
+          color: STAGE_COLORS[macroName],
+        }
+      }),
+    ]
+
+    return { pedidosFunnel, opsFunnel, pedidosTotal, opsTotal }
   }, [orders])
 
-  const maxCount = Math.max(...stages.map((s) => s.count), 1)
+  const pedidosMaxCount = Math.max(...pedidosFunnel.map((s) => s.count), 1)
+  const opsMaxCount = Math.max(...opsFunnel.map((s) => s.count), 1)
 
   return (
     <Card>
@@ -58,72 +121,23 @@ export function FlowFunnel({ orders }: FlowFunnelProps) {
           Funil de Fluxo
         </CardTitle>
         <CardDescription>
-          Distribuição de OPs: Pedidos → Suprimentos → Fabricação → Acabamento → Montagem →
-          Concluídas
+          Distribuição ativa: Pedidos ({pedidosTotal}) e OPs ({opsTotal}) — Suprimentos → Fabricação
+          → Acabamento → Montagem
         </CardDescription>
       </CardHeader>
-      <CardContent>
-        <div className="space-y-1.5">
-          {stages.map((stage) => {
-            const barWidth = (stage.count / maxCount) * 100
-            return (
-              <div key={stage.name} className="flex items-center gap-2">
-                <span className="text-xs font-medium w-20 md:w-28 text-right shrink-0">
-                  {stage.name}
-                </span>
-                <div className="flex-1 h-7 rounded-md bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                  <div
-                    className={cn(
-                      'h-full rounded-md transition-all flex items-center justify-end pr-2',
-                      stage.color,
-                    )}
-                    style={{
-                      width: `${Math.max(barWidth, stage.count > 0 ? 12 : 0)}%`,
-                    }}
-                  >
-                    {stage.count > 0 && (
-                      <span className="text-[10px] font-bold text-white whitespace-nowrap">
-                        {stage.count} · {stage.percentage.toFixed(0)}%
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )
-          })}
+      <CardContent className="space-y-6">
+        <div>
+          <p className="text-sm font-semibold mb-2">
+            Pedidos Ativos{' '}
+            <span className="text-muted-foreground font-normal">({pedidosTotal})</span>
+          </p>
+          <FunnelBars stages={pedidosFunnel} maxCount={pedidosMaxCount} />
         </div>
-
-        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
-          {stages
-            .filter((s) => s.count > 0 && s.macroGroup && s.count >= 3)
-            .map((stage) => {
-              const macro = MACRO_GROUPS.find((g) => g.name === stage.macroGroup)
-              const stageOrders = orders
-                .filter((o) => o.status !== 'Concluído' && (macro?.stages || []).includes(o.stage))
-                .slice(0, 4)
-              return (
-                <div key={stage.name} className="rounded-md border p-2">
-                  <p className="text-[10px] font-semibold mb-1">
-                    {stage.name} — OPs acumuladas ({stage.count})
-                  </p>
-                  <div className="space-y-0.5">
-                    {stageOrders.map((op) => (
-                      <p key={op.id} className="text-[9px] text-muted-foreground truncate">
-                        <span className="font-medium text-foreground">{op.order_number}</span>
-                        {' — '}
-                        {op.expand?.client_id?.name || op.client_name}
-                        {op.op_number && <span className="opacity-60"> · OP: {op.op_number}</span>}
-                      </p>
-                    ))}
-                    {stage.count > 4 && (
-                      <p className="text-[9px] text-muted-foreground italic">
-                        +{stage.count - 4} mais
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
+        <div>
+          <p className="text-sm font-semibold mb-2">
+            OPs Ativas <span className="text-muted-foreground font-normal">({opsTotal})</span>
+          </p>
+          <FunnelBars stages={opsFunnel} maxCount={opsMaxCount} />
         </div>
       </CardContent>
     </Card>

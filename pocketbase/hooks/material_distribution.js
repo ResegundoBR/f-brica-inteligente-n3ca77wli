@@ -96,7 +96,15 @@ routerAdd(
     }
     var shortageIdsStr = shortageIds.join(', ')
 
-    var movCol = $app.findCollectionByNameOrId('inventory_movements')
+    var movCol
+    try {
+      movCol = $app.findCollectionByNameOrId('inventory_movements')
+    } catch (err) {
+      return e.json(500, {
+        error:
+          'Erro ao carregar a coleção de movimentações de estoque: ' + String(err.message || err),
+      })
+    }
 
     try {
       var entrada = new Record(movCol)
@@ -111,7 +119,7 @@ routerAdd(
       if (totalValue > 0) entrada.set('total_value', totalValue)
       if (freight > 0) entrada.set('freight', freight)
       if (userId) entrada.set('user_id', userId)
-      $app.save(entrada)
+      $app.saveNoValidate(entrada)
       runningBalance = Number(runningBalance) + Number(totalReceived)
     } catch (err) {
       return e.json(500, {
@@ -176,7 +184,7 @@ routerAdd(
           if (orderId) saida.set('order_id', orderId)
           if (userId) saida.set('user_id', userId)
           if (unitPrice > 0) saida.set('unit_price', unitPrice)
-          $app.save(saida)
+          $app.saveNoValidate(saida)
           runningBalance = Number(runningBalance) - distQty
         } catch (err) {
           console.log('Error creating Saída movement:', err.message)
@@ -210,6 +218,13 @@ routerAdd(
           error: String(err.message || err),
         })
       }
+    }
+
+    try {
+      invRecord.set('quantity', Number(runningBalance))
+      $app.saveNoValidate(invRecord)
+    } catch (err) {
+      console.log('Error updating inventory quantity:', err.message)
     }
 
     return e.json(200, { results, inventory_id: invRecord.id, balance: runningBalance })

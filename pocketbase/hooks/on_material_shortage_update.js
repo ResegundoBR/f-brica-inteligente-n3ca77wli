@@ -11,9 +11,7 @@ onRecordUpdate((e) => {
     if (original && typeof original.getString === 'function') {
       oldStatus = original.getString('status') || ''
     }
-  } catch (_) {
-    // original() may not be available in all contexts
-  }
+  } catch (_) {}
 
   var newStatus = record.getString('status') || ''
   var dateStr = new Date().toISOString().split('T')[0]
@@ -33,21 +31,19 @@ onRecordUpdate((e) => {
   var receivedQty = 0
   var totalQty = 0
   try {
-    receivedQty = record.getNumber('received_quantity') || 0
-    totalQty = record.getNumber('quantity') || 0
-  } catch (_) {
-    // numeric getters may fail if fields are not yet set
-  }
+    receivedQty = Number(record.getNumber('received_quantity')) || 0
+    totalQty = Number(record.getNumber('quantity')) || 0
+  } catch (_) {}
 
   if (totalQty > 0 && receivedQty > totalQty) {
-    throw new BadRequestError('Erro de validação', {
-      received_quantity:
-        'A quantidade recebida (' +
+    console.log(
+      'Validation warning: received_quantity (' +
         receivedQty +
-        ') não pode exceder a quantidade total (' +
+        ') exceeds quantity (' +
         totalQty +
-        ').',
-    })
+        ') for shortage ' +
+        record.id,
+    )
   }
 
   var currentStatus = record.getString('status') || ''

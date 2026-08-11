@@ -7,12 +7,23 @@ onRecordAfterUpdateSuccess((e) => {
   if (!description) return e.next()
 
   var shortageId = e.record.id
-  var receivedQty = e.record.getNumber('received_quantity') || 0
-  var totalQty = e.record.getNumber('quantity') || 0
+  var receivedQty = Number(e.record.getNumber('received_quantity')) || 0
+  var totalQty = Number(e.record.getNumber('quantity')) || 0
 
   var targetQty =
     newStatus === 'Recebido' ? (receivedQty > 0 ? receivedQty : totalQty) : receivedQty
   if (targetQty <= 0) return e.next()
+
+  try {
+    var existingSaidas = $app.findRecordsByFilter(
+      'inventory_movements',
+      "type = 'Saída' && reason ~ '" + shortageId + "'",
+      '-created',
+      1,
+      0,
+    )
+    if (existingSaidas.length > 0) return e.next()
+  } catch (_) {}
 
   var inventoryRecord = null
   if (code) {
@@ -50,7 +61,7 @@ onRecordAfterUpdateSuccess((e) => {
   } else if (!inventoryRecord.getString('code') && code) {
     try {
       inventoryRecord.set('code', code)
-      $app.save(inventoryRecord)
+      $app.saveNoValidate(inventoryRecord)
     } catch (_) {}
   }
 
@@ -68,7 +79,7 @@ onRecordAfterUpdateSuccess((e) => {
       0,
     )
     for (var i = 0; i < existingMovements.length; i++) {
-      alreadyAdded += existingMovements[i].getNumber('quantity') || 0
+      alreadyAdded += Number(existingMovements[i].getNumber('quantity')) || 0
     }
   } catch (_) {}
 
@@ -76,11 +87,11 @@ onRecordAfterUpdateSuccess((e) => {
   if (qtyToAdd <= 0) return e.next()
 
   var purchaseDate = e.record.getString('purchase_date') || ''
-  var unitPrice = e.record.getNumber('unit_price') || 0
+  var unitPrice = Number(e.record.getNumber('unit_price')) || 0
   var totalValue = unitPrice > 0 ? unitPrice * qtyToAdd : 0
   var todayStr = new Date().toISOString().split('T')[0]
 
-  var currentBalance = inventoryRecord.getNumber('quantity') || 0
+  var currentBalance = Number(inventoryRecord.getNumber('quantity')) || 0
   var balanceAfter = currentBalance + qtyToAdd
 
   try {

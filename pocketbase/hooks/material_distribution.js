@@ -67,6 +67,8 @@ routerAdd(
         invRecord.set('unit', 'un')
         $app.saveNoValidate(invRecord)
         if (!code) code = finalCode
+        // Recarrega do banco para garantir que getNumber()/getString() estejam disponíveis
+        invRecord = $app.findRecordById('inventory', invRecord.id)
       } catch (err) {
         return e.json(500, {
           error: 'Erro ao criar item de estoque: ' + String(err.message || err),

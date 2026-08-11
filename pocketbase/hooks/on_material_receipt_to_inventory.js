@@ -42,7 +42,7 @@ onRecordAfterUpdateSuccess((e) => {
       inventoryRecord.set('quantity', 0)
       inventoryRecord.set('min_quantity', 0)
       inventoryRecord.set('unit', 'un')
-      $app.save(inventoryRecord)
+      $app.saveNoValidate(inventoryRecord)
     } catch (err) {
       console.log('Error creating inventory record:', err.message)
       return e.next()

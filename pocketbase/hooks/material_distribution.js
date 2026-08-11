@@ -59,12 +59,14 @@ routerAdd(
       try {
         var invCol = $app.findCollectionByNameOrId('inventory')
         invRecord = new Record(invCol)
-        invRecord.set('code', code || 'REF-' + $security.randomString(6).toUpperCase())
+        var finalCode = code || 'REF-' + $security.randomString(6).toUpperCase()
+        invRecord.set('code', finalCode)
         invRecord.set('description', description)
         invRecord.set('quantity', 0)
         invRecord.set('min_quantity', 0)
         invRecord.set('unit', 'un')
-        $app.save(invRecord)
+        $app.saveNoValidate(invRecord)
+        if (!code) code = finalCode
       } catch (err) {
         return e.json(500, {
           error: 'Erro ao criar item de estoque: ' + String(err.message || err),

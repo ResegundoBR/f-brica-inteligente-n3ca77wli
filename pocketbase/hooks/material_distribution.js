@@ -107,7 +107,7 @@ routerAdd(
       }
 
       var results = []
-      var runningBalance = Number(invRecord.getNumber('quantity')) || 0
+      var runningBalance = Number(invRecord.getInt('quantity')) || 0
       var todayStr = new Date().toISOString().split('T')[0]
       var purchaseDate = traceability.purchase_date || ''
       var arrivalDate = traceability.arrival_date || todayStr
@@ -173,8 +173,8 @@ routerAdd(
         )
 
         var shortage = $app.findRecordById('material_shortages', dist.shortage_id)
-        var sTotalQty = Number(shortage.getNumber('quantity')) || 0
-        var sCurrentReceived = Number(shortage.getNumber('received_quantity')) || 0
+        var sTotalQty = Number(shortage.getInt('quantity')) || 0
+        var sCurrentReceived = Number(shortage.getInt('received_quantity')) || 0
         var sNewReceived = sCurrentReceived + distQty
 
         if (sTotalQty > 0 && sNewReceived > sTotalQty) {

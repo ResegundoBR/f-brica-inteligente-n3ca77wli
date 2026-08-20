@@ -26,6 +26,7 @@ import {
   Warehouse,
   Truck,
   MapPin,
+  Lightbulb,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -102,6 +103,7 @@ const navItems = [
   { title: 'Portal do Operador', url: '/pcp/operador', icon: TabletSmartphone, group: 'PCP' },
   { title: 'Visão Comercial', url: '/pcp/comercial', icon: Eye, group: 'PCP' },
   { title: 'Relatório de Ocorrências', url: '/pcp/ocorrencias', icon: Activity, group: 'PCP' },
+  { title: 'Central de Melhorias', url: '/pcp/melhorias', icon: Lightbulb, group: 'PCP' },
   { title: 'Usuários', url: '/admin/usuarios', icon: Users, group: 'Administração' },
   { title: 'Funções', url: '/admin/funcoes', icon: Shield, group: 'Administração' },
   { title: 'Status dos Produtos', url: '/admin/status', icon: Settings, group: 'Administração' },
@@ -159,6 +161,7 @@ export function AppSidebar() {
       case 'Dashboard PCP':
       case 'Clientes':
       case 'Relatório de Ocorrências':
+      case 'Central de Melhorias':
         return !!role.access_pcp
       case 'Painel de Controle':
         return !!role.access_painel_controle || !!role.access_pcp

@@ -31,8 +31,8 @@ onRecordUpdate((e) => {
   var receivedQty = 0
   var totalQty = 0
   try {
-    receivedQty = Number(record.getNumber('received_quantity')) || 0
-    totalQty = Number(record.getNumber('quantity')) || 0
+    receivedQty = Number(record.getFloat('received_quantity')) || 0
+    totalQty = Number(record.getFloat('quantity')) || 0
   } catch (_) {}
 
   if (totalQty > 0 && receivedQty > totalQty) {

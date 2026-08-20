@@ -93,11 +93,11 @@ routerAdd(
         $app.save(invRecord)
         console.log('Inventory item created id=' + invRecord.id + ' code=' + finalCode)
         if (!code) code = finalCode
-        // Recarrega do banco para garantir que getNumber()/getString() estejam disponíveis
+        // Recarrega do banco para garantir que getFloat()/getString() estejam disponíveis
         invRecord = $app.findRecordById('inventory', invRecord.id)
       } else {
         console.log('Inventory item found id=' + invRecord.id)
-        // Recarrega do banco para garantir que getNumber()/getString() estejam disponíveis
+        // Recarrega do banco para garantir que getFloat()/getString() estejam disponíveis
         invRecord = $app.findRecordById('inventory', invRecord.id)
         if (!invRecord.getString('code') && code) {
           invRecord.set('code', code)

@@ -19,8 +19,8 @@ onRecordCreate((e) => {
   var receivedQty = 0
   var totalQty = 0
   try {
-    receivedQty = record.getNumber('received_quantity') || 0
-    totalQty = record.getNumber('quantity') || 0
+    receivedQty = record.getFloat('received_quantity') || 0
+    totalQty = record.getFloat('quantity') || 0
   } catch (_) {
     // numeric getters may fail if fields are not yet set
   }

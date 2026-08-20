@@ -1,13 +1,13 @@
 onRecordAfterCreateSuccess((e) => {
   var invId = e.record.getString('inventory_id')
-  var qty = e.record.getNumber('quantity') || 0
+  var qty = e.record.getFloat('quantity') || 0
   var type = e.record.getString('type')
 
   if (!invId || qty <= 0) return e.next()
 
   try {
     var invRecord = $app.findRecordById('inventory', invId)
-    var currentQty = invRecord.getNumber('quantity') || 0
+    var currentQty = invRecord.getFloat('quantity') || 0
     var newQty = currentQty
     if (type === 'Entrada') {
       newQty = currentQty + qty

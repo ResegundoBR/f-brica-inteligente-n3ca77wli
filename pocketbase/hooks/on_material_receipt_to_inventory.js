@@ -7,8 +7,8 @@ onRecordAfterUpdateSuccess((e) => {
   if (!description) return e.next()
 
   var shortageId = e.record.id
-  var receivedQty = Number(e.record.getNumber('received_quantity')) || 0
-  var totalQty = Number(e.record.getNumber('quantity')) || 0
+  var receivedQty = Number(e.record.getFloat('received_quantity')) || 0
+  var totalQty = Number(e.record.getFloat('quantity')) || 0
 
   var targetQty =
     newStatus === 'Recebido' ? (receivedQty > 0 ? receivedQty : totalQty) : receivedQty
@@ -79,7 +79,7 @@ onRecordAfterUpdateSuccess((e) => {
       0,
     )
     for (var i = 0; i < existingMovements.length; i++) {
-      alreadyAdded += Number(existingMovements[i].getNumber('quantity')) || 0
+      alreadyAdded += Number(existingMovements[i].getFloat('quantity')) || 0
     }
   } catch (_) {}
 
@@ -87,11 +87,11 @@ onRecordAfterUpdateSuccess((e) => {
   if (qtyToAdd <= 0) return e.next()
 
   var purchaseDate = e.record.getString('purchase_date') || ''
-  var unitPrice = Number(e.record.getNumber('unit_price')) || 0
+  var unitPrice = Number(e.record.getFloat('unit_price')) || 0
   var totalValue = unitPrice > 0 ? unitPrice * qtyToAdd : 0
   var todayStr = new Date().toISOString().split('T')[0]
 
-  var currentBalance = Number(inventoryRecord.getNumber('quantity')) || 0
+  var currentBalance = Number(inventoryRecord.getFloat('quantity')) || 0
   var balanceAfter = currentBalance + qtyToAdd
 
   try {

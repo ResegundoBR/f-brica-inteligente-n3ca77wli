@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-18T21:01:28.124Z",
+  "generatedAt": "2026-08-20T20:22:12.756Z",
   "collections": [
     {
       "name": "users",
@@ -1961,6 +1961,123 @@
       "indexes": [
         "CREATE INDEX idx_ordem_compra_itens_oc_id ON ordem_compra_itens (oc_id)",
         "CREATE INDEX idx_ordem_compra_itens_material_shortage_id ON ordem_compra_itens (material_shortage_id)"
+      ]
+    },
+    {
+      "name": "improvements",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != \"\"",
+        "view": "@request.auth.id != \"\"",
+        "create": "@request.auth.id != \"\"",
+        "update": "@request.auth.id != \"\"",
+        "delete": "@request.auth.id != \"\""
+      },
+      "fields": [
+        {
+          "name": "title",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "category",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["Operacional", "Processual", "Ferramental", "Infraestrutura", "Inovação"]
+        },
+        {
+          "name": "priority",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["Crítica", "Alta", "Média", "Baixa"]
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "root_cause",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "solution_idea",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "expected_impact",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": [
+            "Identificado",
+            "Em Análise",
+            "Planejado",
+            "Em Execução",
+            "Verificando",
+            "Concluído",
+            "Reaberto"
+          ]
+        },
+        {
+          "name": "ia_suggestions",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "actions_log",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created_by",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "assigned_to",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_improvements_status ON improvements (status)",
+        "CREATE INDEX idx_improvements_priority ON improvements (priority)",
+        "CREATE INDEX idx_improvements_created_by ON improvements (created_by)"
       ]
     }
   ]

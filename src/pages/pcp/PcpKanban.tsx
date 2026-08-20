@@ -33,7 +33,6 @@ import {
 import { OutsourcingPanel } from './components/OutsourcingPanel'
 import { PcpFilters } from './components/PcpFilters'
 import { MessageNotificationBell } from '@/components/MessageNotificationBell'
-import { KanbanCardHover } from './components/KanbanCardHover'
 import { Link } from 'react-router-dom'
 import { Package } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
@@ -487,7 +486,17 @@ export default function PcpKanban() {
                         onDrop={(e) => handleDropStage(e, stage)}
                         className="flex-1 flex flex-col min-w-0 min-h-0"
                       >
-                        <div className="h-28 w-full flex flex-col items-center justify-end pb-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 shrink-0">
+                        <div className="h-28 w-full flex flex-col items-center justify-between py-1.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 shrink-0">
+                          {stageOrders.length > 0 ? (
+                            <span
+                              className="w-4 h-4 rounded-full bg-red-600 text-white text-[9px] font-bold flex items-center justify-center shrink-0 shadow-sm"
+                              title={`${stageOrders.length} OP(s) nesta etapa`}
+                            >
+                              {stageOrders.length}
+                            </span>
+                          ) : (
+                            <div className="w-4 h-4 shrink-0" />
+                          )}
                           <div
                             className="rotate-180 text-xs md:text-sm leading-tight font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap overflow-hidden"
                             style={{ writingMode: 'vertical-rl' }}
@@ -1123,7 +1132,6 @@ export default function PcpKanban() {
 
 function KanbanCard({
   order,
-  observations = [],
   shortages = [],
   onDragStart,
   onClick,
@@ -1158,90 +1166,85 @@ function KanbanCard({
             : 'bg-card text-foreground'
 
   return (
-    <KanbanCardHover order={order} observations={observations} shortages={shortages}>
-      <Card
-        draggable
-        onDragStart={(e) => onDragStart(e, order.id)}
-        onClick={onClick}
-        className={cn(
-          'cursor-grab active:cursor-grabbing hover:shadow-md transition-all border-l-4 group',
-          borderClass,
-          cardBgClass,
-        )}
-      >
-        <CardContent className="p-3 flex flex-col gap-1">
-          <div className="flex items-start justify-between">
-            <span className="font-semibold text-sm flex items-center gap-1">
-              {isPrazoEspecial && <span title="Prazo Especial">⚡</span>}
-              {order.order_number}
-            </span>
-            <div className="flex items-center gap-1">
-              {messageState !== 'none' && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onMessageClick?.()
-                  }}
-                  className="inline-flex items-center"
-                >
-                  <OrderMessageBell state={messageState} size="sm" />
-                </button>
-              )}
-              {materialStatus !== 'none' && (
-                <span
-                  className={cn(
-                    'size-2 rounded-full',
-                    materialStatus === 'red' && 'bg-red-500',
-                    materialStatus === 'yellow' && 'bg-yellow-400',
-                    materialStatus === 'green' && 'bg-green-500',
-                  )}
-                  title={
-                    materialStatus === 'red'
-                      ? 'Materiais Pendentes'
-                      : materialStatus === 'yellow'
-                        ? 'Materiais Parciais'
-                        : 'Materiais OK'
-                  }
-                />
-              )}
-              {isEmergency && (
-                <span className="text-xs" title="Emergência">
-                  🚨
-                </span>
-              )}
-            </div>
-          </div>
-          <div
-            className={cn(
-              'text-xs line-clamp-1',
-              color === 'neon-orange' || color === 'yellow'
-                ? 'opacity-90'
-                : 'text-muted-foreground',
+    <Card
+      draggable
+      onDragStart={(e) => onDragStart(e, order.id)}
+      onClick={onClick}
+      className={cn(
+        'cursor-grab active:cursor-grabbing hover:shadow-md transition-all border-l-4 group',
+        borderClass,
+        cardBgClass,
+      )}
+    >
+      <CardContent className="p-3 flex flex-col gap-1">
+        <div className="flex items-start justify-between">
+          <span className="font-semibold text-sm flex items-center gap-1">
+            {isPrazoEspecial && <span title="Prazo Especial">⚡</span>}
+            {order.order_number}
+          </span>
+          <div className="flex items-center gap-1">
+            {messageState !== 'none' && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onMessageClick?.()
+                }}
+                className="inline-flex items-center"
+              >
+                <OrderMessageBell state={messageState} size="sm" />
+              </button>
             )}
-          >
-            {order.expand?.client_id?.name || order.client_name}
-          </div>
-          <div
-            className={cn(
-              'text-xs font-medium line-clamp-1',
-              color === 'neon-orange' || color === 'yellow' ? '' : 'text-foreground',
+            {materialStatus !== 'none' && (
+              <span
+                className={cn(
+                  'size-2 rounded-full',
+                  materialStatus === 'red' && 'bg-red-500',
+                  materialStatus === 'yellow' && 'bg-yellow-400',
+                  materialStatus === 'green' && 'bg-green-500',
+                )}
+                title={
+                  materialStatus === 'red'
+                    ? 'Materiais Pendentes'
+                    : materialStatus === 'yellow'
+                      ? 'Materiais Parciais'
+                      : 'Materiais OK'
+                }
+              />
             )}
-          >
-            {order.op_type === 'Assistência'
-              ? order.manual_product_name
-              : order.op_type === 'Especial'
-                ? order.manual_product_name || 'Produto Especial'
-                : order.expand?.product_id?.name || 'S/Produto'}
+            {isEmergency && (
+              <span className="text-xs" title="Emergência">
+                🚨
+              </span>
+            )}
           </div>
-        </CardContent>
-      </Card>
-    </KanbanCardHover>
+        </div>
+        <div
+          className={cn(
+            'text-xs line-clamp-1',
+            color === 'neon-orange' || color === 'yellow' ? 'opacity-90' : 'text-muted-foreground',
+          )}
+        >
+          {order.expand?.client_id?.name || order.client_name}
+        </div>
+        <div
+          className={cn(
+            'text-xs font-medium line-clamp-1',
+            color === 'neon-orange' || color === 'yellow' ? '' : 'text-foreground',
+          )}
+        >
+          {order.op_type === 'Assistência'
+            ? order.manual_product_name
+            : order.op_type === 'Especial'
+              ? order.manual_product_name || 'Produto Especial'
+              : order.expand?.product_id?.name || 'S/Produto'}
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 
 function CompactKanbanCard({
   order,
-  observations = [],
   shortages = [],
   onDragStart,
   onClick,
@@ -1267,62 +1270,60 @@ function CompactKanbanCard({
             : 'bg-blue-500 text-white'
 
   return (
-    <KanbanCardHover order={order} observations={observations} shortages={shortages}>
-      <div
-        draggable
-        onDragStart={(e) => onDragStart(e, order.id)}
-        onClick={onClick}
-        className={cn(
-          'text-[8px] md:text-[9px] font-bold p-0.5 md:p-1 rounded-sm w-full text-center flex flex-col items-center cursor-grab active:cursor-grabbing transition-all hover:opacity-80 shadow-sm border border-black/10 dark:border-white/10',
-          bgClass,
-        )}
-      >
-        <span className="block truncate w-full">
-          {isEmergency && <span className="text-[10px]">🚨</span>}
-          {order.stage === 'Expedição' && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onExpedition?.()
-              }}
-              className="inline-flex items-center"
-              title="Registrar Expedição"
-            >
-              <Truck className="size-2.5" />
-            </button>
-          )}{' '}
-          {messageState !== 'none' && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onMessageClick?.()
-              }}
-              className="inline-flex items-center"
-            >
-              <OrderMessageBell state={messageState} size="sm" />
-            </button>
-          )}{' '}
-          {materialStatus !== 'none' && (
-            <span className="text-[10px]">
-              {materialStatus === 'red' && '🔴'}
-              {materialStatus === 'yellow' && '🟡'}
-              {materialStatus === 'green' && '🟢'}
-            </span>
-          )}{' '}
-          {order.order_number}
-        </span>
-        <span className="block truncate w-full font-normal opacity-90 text-[7px]">
-          {order.expand?.client_id?.name || order.client_name}
-        </span>
-        <span className="block truncate w-full font-normal opacity-90 text-[7px]">
-          {order.op_type === 'Assistência'
-            ? order.manual_product_name
-            : order.op_type === 'Especial'
-              ? order.manual_product_name || 'Produto Especial'
-              : order.expand?.product_id?.name || 'S/Produto'}
-        </span>
-      </div>
-    </KanbanCardHover>
+    <div
+      draggable
+      onDragStart={(e) => onDragStart(e, order.id)}
+      onClick={onClick}
+      className={cn(
+        'text-[8px] md:text-[9px] font-bold p-0.5 md:p-1 rounded-sm w-full text-center flex flex-col items-center cursor-grab active:cursor-grabbing transition-all hover:opacity-80 shadow-sm border border-black/10 dark:border-white/10',
+        bgClass,
+      )}
+    >
+      <span className="block truncate w-full">
+        {isEmergency && <span className="text-[10px]">🚨</span>}
+        {order.stage === 'Expedição' && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onExpedition?.()
+            }}
+            className="inline-flex items-center"
+            title="Registrar Expedição"
+          >
+            <Truck className="size-2.5" />
+          </button>
+        )}{' '}
+        {messageState !== 'none' && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onMessageClick?.()
+            }}
+            className="inline-flex items-center"
+          >
+            <OrderMessageBell state={messageState} size="sm" />
+          </button>
+        )}{' '}
+        {materialStatus !== 'none' && (
+          <span className="text-[10px]">
+            {materialStatus === 'red' && '🔴'}
+            {materialStatus === 'yellow' && '🟡'}
+            {materialStatus === 'green' && '🟢'}
+          </span>
+        )}{' '}
+        {order.order_number}
+      </span>
+      <span className="block truncate w-full font-normal opacity-90 text-[7px]">
+        {order.expand?.client_id?.name || order.client_name}
+      </span>
+      <span className="block truncate w-full font-normal opacity-90 text-[7px]">
+        {order.op_type === 'Assistência'
+          ? order.manual_product_name
+          : order.op_type === 'Especial'
+            ? order.manual_product_name || 'Produto Especial'
+            : order.expand?.product_id?.name || 'S/Produto'}
+      </span>
+    </div>
   )
 }
 

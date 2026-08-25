@@ -1,5 +1,17 @@
 import pb from '@/lib/pocketbase/client'
 
+export const SECTORS = [
+  'Embalagem',
+  'Expedição',
+  'Montagem',
+  'Limpeza',
+  'Fabricação',
+  'Acabamento',
+  'Concreto',
+] as const
+
+export type ImprovementSector = (typeof SECTORS)[number]
+
 export type ImprovementCategory =
   | 'Operacional'
   | 'Processual'
@@ -28,6 +40,7 @@ export interface ActionLogEntry {
 export interface Improvement {
   id: string
   title: string
+  sector?: ImprovementSector
   category: ImprovementCategory
   priority: ImprovementPriority
   description: string
@@ -70,6 +83,16 @@ export const IMPROVEMENT_NEXT_STATUS: Record<ImprovementStatus, ImprovementStatu
   Verificando: 'Concluído',
   Concluído: null,
   Reaberto: 'Em Análise',
+}
+
+export const SECTOR_COLORS: Record<ImprovementSector, string> = {
+  Embalagem: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300',
+  Expedição: 'bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300',
+  Montagem: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
+  Limpeza: 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300',
+  Fabricação: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300',
+  Acabamento: 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300',
+  Concreto: 'bg-stone-200 text-stone-800 dark:bg-stone-800 dark:text-stone-300',
 }
 
 export const CATEGORY_COLORS: Record<ImprovementCategory, string> = {
@@ -128,6 +151,7 @@ export async function createImprovement(
 ): Promise<Improvement> {
   const payload: Record<string, unknown> = {
     title: data.title,
+    sector: data.sector,
     category: data.category,
     priority: data.priority,
     description: data.description,

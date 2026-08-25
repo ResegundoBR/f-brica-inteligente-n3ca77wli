@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-20T21:23:05.862Z",
+  "generatedAt": "2026-08-25T22:51:16.956Z",
   "collections": [
     {
       "name": "users",
@@ -2072,12 +2072,28 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "sector",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": [
+            "Embalagem",
+            "Expedição",
+            "Montagem",
+            "Limpeza",
+            "Fabricação",
+            "Acabamento",
+            "Concreto"
+          ]
         }
       ],
       "indexes": [
         "CREATE INDEX idx_improvements_status ON improvements (status)",
         "CREATE INDEX idx_improvements_priority ON improvements (priority)",
-        "CREATE INDEX idx_improvements_created_by ON improvements (created_by)"
+        "CREATE INDEX idx_improvements_created_by ON improvements (created_by)",
+        "CREATE INDEX `idx_improvements_sector` ON `improvements` (sector)"
       ]
     }
   ]

@@ -25,7 +25,9 @@ import {
   type Improvement,
   type ImprovementCategory,
   type ImprovementPriority,
+  type ImprovementSector,
   type AiStep,
+  SECTORS,
   fetchAiSuggestions,
   createImprovement,
 } from '@/services/improvements'
@@ -55,6 +57,7 @@ interface WizardProps {
 
 interface FormState {
   title: string
+  sector: ImprovementSector | ''
   category: ImprovementCategory | ''
   priority: ImprovementPriority | ''
   description: string
@@ -65,6 +68,7 @@ interface FormState {
 
 const EMPTY: FormState = {
   title: '',
+  sector: '',
   category: '',
   priority: '',
   description: '',
@@ -136,7 +140,13 @@ export function ImprovementWizard({ open, onOpenChange, user, onCreated }: Wizar
 
   const canNext = () => {
     if (step === 1)
-      return !!form.title.trim() && !!form.category && !!form.priority && !!form.description.trim()
+      return (
+        !!form.title.trim() &&
+        !!form.sector &&
+        !!form.category &&
+        !!form.priority &&
+        !!form.description.trim()
+      )
     if (step === 2) return !!form.root_cause.trim()
     if (step === 3) return true // opcional
     if (step === 4) return !!form.expected_impact.trim()
@@ -152,6 +162,7 @@ export function ImprovementWizard({ open, onOpenChange, user, onCreated }: Wizar
       const created = await createImprovement(
         {
           title: form.title.trim(),
+          sector: form.sector as ImprovementSector,
           category: form.category as ImprovementCategory,
           priority: form.priority as ImprovementPriority,
           description: form.description.trim(),
@@ -205,7 +216,24 @@ export function ImprovementWizard({ open, onOpenChange, user, onCreated }: Wizar
                   maxLength={200}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <Label>
+                    Setor <span className="text-destructive">*</span>
+                  </Label>
+                  <Select value={form.sector} onValueChange={(v) => update('sector', v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SECTORS.map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {s}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="space-y-1.5">
                   <Label>
                     Categoria <span className="text-destructive">*</span>

@@ -31,8 +31,11 @@ import {
   type Improvement,
   type ImprovementCategory,
   type ImprovementPriority,
+  type ImprovementSector,
   type ImprovementStatus,
   type AiStep,
+  SECTORS,
+  SECTOR_COLORS,
   IMPROVEMENT_NEXT_STATUS,
   CATEGORY_COLORS,
   PRIORITY_COLORS,
@@ -180,6 +183,7 @@ export function ImprovementDetail({
     try {
       const updated = await updateImprovement(improvement.id, {
         title: draft.title,
+        sector: draft.sector,
         category: draft.category,
         priority: draft.priority,
         description: draft.description,
@@ -210,6 +214,11 @@ export function ImprovementDetail({
             <span className="truncate">{improvement.title}</span>
           </DialogTitle>
           <div className="flex flex-wrap items-center gap-2 mt-1">
+            {improvement.sector && (
+              <Badge className={SECTOR_COLORS[improvement.sector]} variant="secondary">
+                {improvement.sector}
+              </Badge>
+            )}
             <Badge className={CATEGORY_COLORS[improvement.category]} variant="secondary">
               {improvement.category}
             </Badge>
@@ -262,7 +271,37 @@ export function ImprovementDetail({
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Setor</Label>
+                {editing ? (
+                  <Select
+                    value={draft.sector || ''}
+                    onValueChange={(v) => update('sector', v as ImprovementSector)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o setor" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SECTORS.map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {s}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div>
+                    {improvement.sector ? (
+                      <Badge className={SECTOR_COLORS[improvement.sector]} variant="secondary">
+                        {improvement.sector}
+                      </Badge>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">—</span>
+                    )}
+                  </div>
+                )}
+              </div>
               <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">Categoria</Label>
                 {editing ? (
@@ -282,9 +321,11 @@ export function ImprovementDetail({
                     </SelectContent>
                   </Select>
                 ) : (
-                  <Badge className={CATEGORY_COLORS[improvement.category]} variant="secondary">
-                    {improvement.category}
-                  </Badge>
+                  <div>
+                    <Badge className={CATEGORY_COLORS[improvement.category]} variant="secondary">
+                      {improvement.category}
+                    </Badge>
+                  </div>
                 )}
               </div>
               <div className="space-y-1.5">
@@ -306,9 +347,11 @@ export function ImprovementDetail({
                     </SelectContent>
                   </Select>
                 ) : (
-                  <Badge className={PRIORITY_COLORS[improvement.priority]}>
-                    {improvement.priority}
-                  </Badge>
+                  <div>
+                    <Badge className={PRIORITY_COLORS[improvement.priority]}>
+                      {improvement.priority}
+                    </Badge>
+                  </div>
                 )}
               </div>
             </div>

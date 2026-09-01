@@ -37,8 +37,9 @@ import {
 } from '@/lib/pcp-utils'
 import { getMaterialAvailabilityStatus } from '@/lib/material-status'
 import { isBefore, startOfDay, parseISO } from 'date-fns'
-import { Package, ChevronDown, ChevronUp, Circle, Search, X } from 'lucide-react'
+import { Package, ChevronDown, ChevronUp, Circle, Search, X, Boxes } from 'lucide-react'
 import { MaterialDescriptionAutocomplete } from '@/pages/pcp/components/MaterialDescriptionAutocomplete'
+import { SeparationMaterialsModal } from '@/pages/pcp/components/SeparationMaterialsModal'
 import { useOrderMessages } from '@/hooks/use-order-messages'
 import { OrderMessagesPanel } from '@/components/OrderMessagesPanel'
 import type { IndicatorState } from '@/lib/message-sector'
@@ -105,7 +106,7 @@ function getNextStageForOp(current: string, op: PcpOrder, processes: ProductProc
   const currentIdx = ALL_STAGES.indexOf(current)
   if (currentIdx === -1 || currentIdx === ALL_STAGES.length - 1) return null
 
-  const manualEstimates = op.outsourcing_data?.estimates || {}
+  const manualEstimates = (op.outsourcing_data as any)?.estimates || {}
   const opProcesses = op.product_id
     ? processes.filter((p) => p.product_id === op.product_id)
     : ALL_STAGES.map(
@@ -309,6 +310,7 @@ function OperatorCard({
   shortages,
   onForceStart,
   onReportMaterial,
+  onOpenSeparation,
   messageState = 'none',
   messageCount = 0,
   onMessageClick,
@@ -322,6 +324,7 @@ function OperatorCard({
   shortages?: MaterialShortage[]
   onForceStart: () => void
   onReportMaterial?: () => void
+  onOpenSeparation?: () => void
   messageState?: IndicatorState
   messageCount?: number
   onMessageClick?: () => void
@@ -392,7 +395,7 @@ function OperatorCard({
   }
   const remainingHours = estHours - elapsedHours
   const isRed = estHours > 0 && elapsedHours > estHours
-
+  const isSeparationStage = op.stage === 'Separação' || op.stage === 'Separação no estoque fisico'
   const formatTime = (hours: number) => {
     const h = Math.floor(Math.abs(hours))
     const m = Math.floor((Math.abs(hours) - h) * 60)
@@ -662,6 +665,16 @@ function OperatorCard({
         )}
       </CardContent>
       <CardFooter className="flex flex-col gap-3 pt-0">
+        {isSeparationStage && onOpenSeparation && (
+          <Button
+            size="lg"
+            className="w-full text-base h-12 bg-primary hover:bg-primary/90 text-primary-foreground font-black shadow-md border-2 border-primary/20"
+            onClick={onOpenSeparation}
+          >
+            <Boxes className="mr-2 size-5" /> Separar Materiais
+          </Button>
+        )}
+
         {onReportMaterial && (
           <Button
             size="lg"
@@ -884,6 +897,7 @@ export default function PcpOperator() {
   const [reqPriority, setReqPriority] = useState('Sem pressa')
   const [reqObs, setReqObs] = useState('')
   const [reqOrderId, setReqOrderId] = useState('none')
+  const [separationOp, setSeparationOp] = useState<PcpOrder | null>(null)
 
   const loadData = async () => {
     try {
@@ -1404,6 +1418,7 @@ export default function PcpOperator() {
                   shortages={shortagesByOrder[op.id] || []}
                   onForceStart={() => handleForceStart(op)}
                   onReportMaterial={() => handleReportMaterial(op)}
+                  onOpenSeparation={() => setSeparationOp(op)}
                   messageState={getOrderMessageInfo(op.id).indicatorState}
                   messageCount={getOrderMessageInfo(op.id).count}
                   onMessageClick={() =>
@@ -1450,6 +1465,7 @@ export default function PcpOperator() {
                   shortages={shortagesByOrder[op.id] || []}
                   onForceStart={() => handleForceStart(op)}
                   onReportMaterial={() => handleReportMaterial(op)}
+                  onOpenSeparation={() => setSeparationOp(op)}
                   messageState={getOrderMessageInfo(op.id).indicatorState}
                   messageCount={getOrderMessageInfo(op.id).count}
                   onMessageClick={() =>
@@ -1465,6 +1481,13 @@ export default function PcpOperator() {
           </div>
         </div>
       </div>
+      <SeparationMaterialsModal
+        op={separationOp}
+        open={!!separationOp}
+        onOpenChange={(open) => !open && setSeparationOp(null)}
+        onMaterialsChanged={loadData}
+      />
+
       <OrderMessagesPanel
         orderId={messageOrder?.id || null}
         orderNumber={messageOrder?.orderNumber || ''}

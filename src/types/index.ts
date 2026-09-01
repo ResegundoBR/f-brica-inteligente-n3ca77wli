@@ -238,10 +238,15 @@ export interface OutsourcingData {
 export interface PcpOrder {
   id: string
   order_number: string
+  op_number?: string
   client_name: string
   client_id?: string
   quantity: number
   product_id?: string
+  op_type?: 'Linha' | 'Especial' | 'Assistência'
+  manual_product_name?: string
+  special_deadline?: string
+  engineering_notes?: string
   is_special: boolean
   status: 'Fila' | 'Em Andamento' | 'Parado' | 'Concluído'
   stage:
@@ -271,7 +276,7 @@ export interface PcpOrder {
     | 'Acabamento'
     | 'Expedição'
   annex?: string
-  outsourcing_data?: OutsourcingData[]
+  outsourcing_data?: any
   bottleneck_reason: 'Nenhum' | 'Falta de Material' | 'Dúvida Técnica' | 'Sobrecarga'
   bottleneck_details?: string
   observations?: string
@@ -432,6 +437,8 @@ export interface OrdemCompra {
   }
 }
 
+export type UserRole = Role
+
 export interface OrdemCompraItem {
   id: string
   oc_id: string
@@ -446,5 +453,29 @@ export interface OrdemCompraItem {
   expand?: {
     oc_id?: OrdemCompra
     material_shortage_id?: MaterialShortage
+  }
+}
+
+export type PcpOrderMaterialSector = 'FABRICAÇÃO' | 'PREPARAÇÃO' | 'MONTAGEM' | 'EXPEDIÇÃO'
+export type PcpOrderMaterialStatus = 'Pendente' | 'Separado' | 'Falta'
+
+export interface PcpOrderMaterial {
+  id: string
+  order_id: string
+  sector: PcpOrderMaterialSector
+  code: string
+  description: string
+  quantity: number
+  unit?: string
+  status: PcpOrderMaterialStatus
+  measurements?: string
+  separated_by?: string
+  separated_at?: string
+  notes?: string
+  created: string
+  updated: string
+  expand?: {
+    order_id?: PcpOrder
+    separated_by?: User
   }
 }

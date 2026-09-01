@@ -34,10 +34,24 @@ import {
 } from '@/components/ui/command'
 import { useToast } from '@/components/ui/use-toast'
 import { format, parseISO } from 'date-fns'
-import { Plus, Trash, Check, ChevronsUpDown } from 'lucide-react'
+import { Plus, Trash, Check, ChevronsUpDown, FileUp, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getErrorMessage } from '@/lib/pocketbase/errors'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import {
+  extractTextFromPdfFile,
+  parseOpPdfDeterministic,
+  comparePdfWithCatalog,
+  type ExtractedOpHeader,
+  type ExtractedOpComponent,
+  type ComponentComparisonRow,
+} from '@/lib/op-pdf-parser'
+import { OpPdfReviewModal } from './OpPdfReviewModal'
+import {
+  createOrderMaterialsBatch,
+  deleteOrderMaterialsByOrder,
+} from '@/services/pcp-order-materials'
+import type { PcpOrderMaterialSector } from '@/types'
 
 const schema = z
   .object({
@@ -187,6 +201,21 @@ export function PcpOrderForm({
   } | null>(null)
   const [checkingProcesses, setCheckingProcesses] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [parsingPdf, setParsingPdf] = useState(false)
+  const [pdfReviewOpen, setPdfReviewOpen] = useState(false)
+  const [extractedPdfHeader, setExtractedPdfHeader] = useState<ExtractedOpHeader>({})
+  const [extractedPdfComponents, setExtractedPdfComponents] = useState<ExtractedOpComponent[]>([])
+  const [comparisonRows, setComparisonRows] = useState<ComponentComparisonRow[]>([])
+  const [pendingMaterialsToSave, setPendingMaterialsToSave] = useState<
+    Array<{
+      sector: PcpOrderMaterialSector
+      code: string
+      description: string
+      quantity: number
+      unit: string
+      measurements?: string
+    }>
+  >([])
   const { toast } = useToast()
 
   const form = useForm<z.infer<typeof schema>>({
@@ -301,6 +330,150 @@ export function PcpOrderForm({
   useRealtime('product_processes', () => {
     if (open) reloadProducts()
   })
+
+  const handlePdfImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setParsingPdf(true)
+    try {
+      const { pages } = await extractTextFromPdfFile(file)
+      const allLines = pages.flat()
+      const parsed = parseOpPdfDeterministic(allLines)
+
+      // Try to auto-detect matching product in catalog by code or name
+      let matchedProduct = null
+      if (parsed.header.product_code) {
+        const cleanCode = parsed.header.product_code.trim().replace(/^0+/, '').toLowerCase()
+        matchedProduct = products.find(
+          (p) =>
+            (p.code || '').trim().replace(/^0+/, '').toLowerCase() === cleanCode ||
+            (p.name || '')
+              .toLowerCase()
+              .includes(parsed.header.product_name?.toLowerCase() || '___'),
+        )
+      } else if (parsed.header.product_name) {
+        matchedProduct = products.find((p) =>
+          (p.name || '').toLowerCase().includes(parsed.header.product_name!.toLowerCase()),
+        )
+      }
+
+      // If form already had a selected product, prioritize that or the newly matched one
+      const currentProductId = form.getValues('product_id')
+      const targetProduct =
+        (currentProductId ? products.find((p) => p.id === currentProductId) : null) ||
+        matchedProduct
+
+      const compRows = comparePdfWithCatalog(parsed.components, targetProduct)
+
+      setExtractedPdfHeader(parsed.header)
+      setExtractedPdfComponents(parsed.components)
+      setComparisonRows(compRows)
+      setPdfReviewOpen(true)
+      toast({
+        title: 'PDF lido com sucesso!',
+        description: `${parsed.components.length} componentes extraídos do PDF.`,
+      })
+    } catch (err: any) {
+      console.error(err)
+      toast({
+        title: 'Erro ao processar PDF',
+        description: err.message || 'Não foi possível extrair os dados do arquivo.',
+        variant: 'destructive',
+      })
+    } finally {
+      setParsingPdf(false)
+      if (e.target) e.target.value = ''
+    }
+  }
+
+  const handleApplyPdfDecisions = async (decisions: {
+    header: ExtractedOpHeader
+    materialsForOp: Array<{
+      sector: PcpOrderMaterialSector
+      code: string
+      description: string
+      quantity: number
+      unit: string
+      measurements?: string
+    }>
+    catalogUpdates?: {
+      productId: string
+      newComposition: any[]
+    }
+  }) => {
+    // 1. Fill editable header fields into form:
+    // Número do Pedido, Número da OP, Data de entrega, Quantidade e Cliente
+    if (decisions.header.order_number) {
+      form.setValue('order_number', decisions.header.order_number)
+    }
+    if (decisions.header.op_number) {
+      form.setValue('op_number', decisions.header.op_number)
+    }
+    if (decisions.header.delivery_date) {
+      form.setValue('delivery_date', decisions.header.delivery_date)
+    }
+    if (decisions.header.quantity && decisions.header.quantity > 0) {
+      form.setValue('quantity', decisions.header.quantity)
+    }
+    if (decisions.header.client_name) {
+      const matchClient = clients.find(
+        (c) =>
+          c.name.toLowerCase().includes(decisions.header.client_name!.toLowerCase()) ||
+          decisions.header.client_name!.toLowerCase().includes(c.name.toLowerCase()),
+      )
+      if (matchClient) {
+        form.setValue('client_id', matchClient.id)
+      }
+    }
+
+    // Auto select product if found and not yet set
+    const currentProd = form.getValues('product_id')
+    if (!currentProd && decisions.header.product_code) {
+      const cleanCode = decisions.header.product_code.trim().replace(/^0+/, '').toLowerCase()
+      const p = products.find(
+        (prod) => (prod.code || '').trim().replace(/^0+/, '').toLowerCase() === cleanCode,
+      )
+      if (p) {
+        form.setValue('product_id', p.id)
+        form.setValue('op_type', 'Linha')
+      }
+    }
+
+    // Save pending materials to be inserted into pcp_order_materials on submit
+    setPendingMaterialsToSave(decisions.materialsForOp)
+
+    // 2. If catalog update was requested by user, update the product data in database
+    if (decisions.catalogUpdates) {
+      try {
+        const prod = products.find((p) => p.id === decisions.catalogUpdates!.productId)
+        if (prod) {
+          await pb.collection('products').update(prod.id, {
+            data: {
+              ...prod.data,
+              composition: decisions.catalogUpdates.newComposition,
+            },
+          })
+          toast({
+            title: 'Catálogo Atualizado',
+            description: 'A composição do produto foi atualizada conforme sua decisão.',
+          })
+          reloadProducts()
+        }
+      } catch (err: any) {
+        toast({
+          title: 'Erro ao atualizar catálogo',
+          description: err.message,
+          variant: 'destructive',
+        })
+      }
+    }
+
+    toast({
+      title: 'Dados importados com sucesso',
+      description: 'Campos preenchidos. Você pode editar qualquer informação antes de salvar.',
+    })
+  }
 
   const handleCreateClient = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -457,6 +630,21 @@ export function PcpOrderForm({
         }
       }
 
+      // Save extracted/selected materials to pcp_order_materials for this OP
+      if (pendingMaterialsToSave.length > 0) {
+        const matsToCreate = pendingMaterialsToSave.map((m) => ({
+          order_id: record.id,
+          sector: m.sector,
+          code: m.code,
+          description: m.description,
+          quantity: m.quantity,
+          unit: m.unit,
+          measurements: m.measurements,
+          status: 'Pendente' as const,
+        }))
+        await createOrderMaterialsBatch(matsToCreate)
+      }
+
       toast({ title: 'OP criada com sucesso!' })
       onSuccess?.()
       onOpenChange(false)
@@ -551,10 +739,45 @@ export function PcpOrderForm({
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
-              {editingOrder ? 'Editar Ordem de Produção' : 'Nova Ordem de Produção'}
-            </DialogTitle>
+          <DialogHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <DialogTitle>
+                {editingOrder ? 'Editar Ordem de Produção' : 'Nova Ordem de Produção'}
+              </DialogTitle>
+              <DialogDescription className="text-xs mt-0.5">
+                Preencha os dados da OP manualmente ou importe diretamente o PDF do ERP.
+              </DialogDescription>
+            </div>
+            {!editingOrder && (
+              <div>
+                <input
+                  type="file"
+                  id="pdf-op-upload"
+                  accept=".pdf"
+                  className="hidden"
+                  onChange={handlePdfImport}
+                  disabled={parsingPdf}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="border-primary text-primary hover:bg-primary/10 font-bold text-xs"
+                  onClick={() => document.getElementById('pdf-op-upload')?.click()}
+                  disabled={parsingPdf}
+                >
+                  {parsingPdf ? (
+                    <>
+                      <Loader2 className="size-3.5 mr-1.5 animate-spin" /> Lendo PDF...
+                    </>
+                  ) : (
+                    <>
+                      <FileUp className="size-3.5 mr-1.5" /> Importar PDF da OP
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
           </DialogHeader>
           <form
             onSubmit={form.handleSubmit(
@@ -927,6 +1150,16 @@ export function PcpOrderForm({
           </form>
         </DialogContent>
       </Dialog>
+
+      <OpPdfReviewModal
+        open={pdfReviewOpen}
+        onOpenChange={setPdfReviewOpen}
+        header={extractedPdfHeader}
+        rawComponents={extractedPdfComponents}
+        comparisonRows={comparisonRows}
+        selectedProduct={products.find((p) => p.id === form.watch('product_id'))}
+        onConfirm={handleApplyPdfDecisions}
+      />
 
       <ProductProcessesModal
         missingData={missingTimeProduct}

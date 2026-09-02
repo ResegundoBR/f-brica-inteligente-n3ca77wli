@@ -71,7 +71,6 @@ export function PcpOrderDetails({
       <SheetContent className="sm:max-w-md overflow-y-auto">
         <SheetHeader>
           <SheetTitle>Detalhes da OP</SheetTitle>
-          <SheetDescription>Pedido: {op?.order_number}</SheetDescription>
         </SheetHeader>
         {isAdmin && op && (
           <div className="flex gap-2 mt-2">
@@ -123,7 +122,11 @@ export function PcpOrderDetails({
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label className="text-muted-foreground">OP</Label>
+                <Label className="text-muted-foreground">Número do Pedido</Label>
+                <p className="font-medium text-sm mt-1">{op.order_number || '-'}</p>
+              </div>
+              <div>
+                <Label className="text-muted-foreground">Número da OP</Label>
                 <p className="font-medium text-sm mt-1">{op.op_number || '-'}</p>
               </div>
               <div>

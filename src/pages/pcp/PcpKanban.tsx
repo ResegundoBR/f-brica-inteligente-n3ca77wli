@@ -873,7 +873,7 @@ export default function PcpKanban() {
       <Dialog open={!!selectedOrder} onOpenChange={(v) => !v && setSelectedOrder(null)}>
         <DialogContent className="sm:max-w-[700px] h-[80vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>Detalhes da OP: {selectedOrder?.order_number}</DialogTitle>
+            <DialogTitle>Detalhes da OP</DialogTitle>
           </DialogHeader>
           {selectedOrder?.stage === 'Expedição' && (
             <Button
@@ -925,6 +925,14 @@ export default function PcpKanban() {
                 )}
 
                 <div className="grid grid-cols-2 gap-4 text-sm bg-slate-50 dark:bg-slate-900 p-4 rounded-lg border">
+                  <div>
+                    <span className="text-muted-foreground block text-xs">Número do Pedido</span>
+                    <span className="font-medium">{selectedOrder.order_number || '-'}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block text-xs">Número da OP</span>
+                    <span className="font-medium">{selectedOrder.op_number || '-'}</span>
+                  </div>
                   <div>
                     <span className="text-muted-foreground block text-xs">Tipo de OP</span>
                     <Badge

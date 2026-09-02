@@ -337,9 +337,10 @@ export function PcpOrderForm({
 
     setParsingPdf(true)
     try {
-      const { pages } = await extractTextFromPdfFile(file)
+      const { pages, positionedPages } = await extractTextFromPdfFile(file)
       const allLines = pages.flat()
-      const parsed = parseOpPdfDeterministic(allLines)
+      const allPositionedLines = positionedPages ? positionedPages.flat() : undefined
+      const parsed = parseOpPdfDeterministic(allLines, allPositionedLines)
 
       // Try to auto-detect matching product in catalog by code or name
       let matchedProduct = null

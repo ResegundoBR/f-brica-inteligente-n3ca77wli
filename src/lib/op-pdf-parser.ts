@@ -48,6 +48,27 @@ export interface ComponentComparisonRow {
   resolvedMeasurements?: string
 }
 
+export interface PdfPositionedToken {
+  str: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface PdfPositionedLine {
+  y: number
+  tokens: PdfPositionedToken[]
+  lineStr: string
+}
+
+export interface PdfExtractionResult {
+  text: string
+  pages: string[][]
+  pageCount: number
+  positionedPages?: PdfPositionedLine[][]
+}
+
 let pdfjsPromise: Promise<any> | null = null
 
 async function getPdfjs(): Promise<any> {
@@ -79,14 +100,13 @@ async function getPdfjs(): Promise<any> {
   return pdfjsPromise
 }
 
-export async function extractTextFromPdfFile(
-  file: File,
-): Promise<{ text: string; pages: string[][]; pageCount: number }> {
+export async function extractTextFromPdfFile(file: File): Promise<PdfExtractionResult> {
   const pdfjs = await getPdfjs()
   const arrayBuffer = await file.arrayBuffer()
   const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise
 
   const pagesText: string[][] = []
+  const positionedPages: PdfPositionedLine[][] = []
   let fullText = ''
 
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
@@ -104,6 +124,7 @@ export async function extractTextFromPdfFile(
     const Y_THRESHOLD = 3.5
 
     for (const item of items) {
+      if (!item.str && item.str !== ' ') continue
       const itemY = item.transform[5]
       let bucket = lineBuckets.find((b) => Math.abs(b.y - itemY) <= Y_THRESHOLD)
       if (!bucket) {
@@ -116,22 +137,41 @@ export async function extractTextFromPdfFile(
     lineBuckets.sort((a, b) => b.y - a.y)
 
     const pageLines: string[] = []
+    const pagePositionedLines: PdfPositionedLine[] = []
+
     for (const bucket of lineBuckets) {
       bucket.items.sort((a, b) => a.transform[4] - b.transform[4])
+      const tokens: PdfPositionedToken[] = bucket.items
+        .map((it) => ({
+          str: it.str.trim(),
+          x: it.transform[4],
+          y: it.transform[5],
+          width: it.width,
+          height: it.height,
+        }))
+        .filter((t) => t.str.length > 0)
+
       const lineStr = bucket.items
         .map((it) => it.str)
         .join(' ')
         .replace(/\s+/g, ' ')
         .trim()
+
       if (lineStr) {
         pageLines.push(lineStr)
         fullText += lineStr + '\n'
+        pagePositionedLines.push({
+          y: bucket.y,
+          tokens,
+          lineStr,
+        })
       }
     }
     pagesText.push(pageLines)
+    positionedPages.push(pagePositionedLines)
   }
 
-  return { text: fullText, pages: pagesText, pageCount: pdf.numPages }
+  return { text: fullText, pages: pagesText, pageCount: pdf.numPages, positionedPages }
 }
 
 function normalizeDate(raw: string): string | undefined {
@@ -155,7 +195,9 @@ function normalizeDate(raw: string): string | undefined {
 }
 
 export function parseQuantity(raw: string | number): number {
-  if (typeof raw === 'number') return Math.round(raw * 10000) / 10000
+  if (typeof raw === 'number') {
+    return Math.round(raw * 10000) / 10000
+  }
   if (!raw) return 0
   const clean = String(raw).trim()
   let parsed = 0
@@ -168,7 +210,6 @@ export function parseQuantity(raw: string | number): number {
     parsed = parseFloat(clean)
   }
   if (isNaN(parsed)) return 0
-  // If the parsed number is an integer or has trailing zeros (e.g. 2.0000 => 2), keep it clean
   return Math.round(parsed * 10000) / 10000
 }
 
@@ -242,14 +283,12 @@ function isIgnoredLine(line: string): boolean {
 
 function cleanClientName(raw: string, knownOrderNumber?: string): string {
   let cleaned = raw.trim()
-  // Remove leading numbers / order numbers like "00013935 " or "13935 "
   if (knownOrderNumber) {
     const rawNum = knownOrderNumber.replace(/^0+/, '')
     const fullPattern = new RegExp(`^(?:0*${rawNum}|${knownOrderNumber})\\s*`, 'i')
     cleaned = cleaned.replace(fullPattern, '').trim()
   }
   cleaned = cleaned.replace(/^\d{3,12}\s+/, '').trim()
-  // Cut off at trailing label keywords if any were swallowed
   cleaned = cleaned
     .split(
       /(?:CNPJ|CPF|Data\b|Datas\b|Entrega|OP\b|Pedido|Produto|C[oó]digo|Descri[çc][aã]o|Endere[çc]o|Qtd\b|Total\b|Solicita[çc][aã]o|Documento)/i,
@@ -264,7 +303,30 @@ function removeLeadingZeros(val: string): string {
   return stripped || (trimmed ? '0' : '')
 }
 
-export function parseOpPdfDeterministic(allLines: string[]): ParsedOpPdfResult {
+/**
+ * Find the closest token or span of tokens in a positioned line matching a target X range
+ */
+function findTokensAtX(
+  line: PdfPositionedLine,
+  targetMinX: number,
+  targetMaxX: number,
+  maxDistance = 50,
+): PdfPositionedToken[] {
+  return line.tokens.filter((t) => {
+    const tokenRight = t.x + (t.width || 0)
+    // Check overlap
+    if (t.x <= targetMaxX && tokenRight >= targetMinX) return true
+    // Check distance between center of token and center of target range
+    const targetCenterX = (targetMinX + targetMaxX) / 2
+    const tokenCenterX = t.x + (t.width || 0) / 2
+    return Math.abs(targetCenterX - tokenCenterX) <= maxDistance
+  })
+}
+
+export function parseOpPdfDeterministic(
+  allLines: string[],
+  positionedLines?: PdfPositionedLine[],
+): ParsedOpPdfResult {
   const header: ExtractedOpHeader = {}
   const components: ExtractedOpComponent[] = []
 
@@ -283,153 +345,322 @@ export function parseOpPdfDeterministic(allLines: string[]): ParsedOpPdfResult {
 
   const fullText = allLines.join('\n')
 
-  // Helper: extract column index of matching header label in a line
-  // e.g. "Pedido    Cliente" -> labels = ['Pedido', 'Cliente'], lineTokens
-  // This allows finding the corresponding token in the values line underneath.
-  const findColumnValueUnderLabel = (
-    labelPattern: RegExp,
-    labelFilterPredicate?: (token: string) => boolean,
-  ): string | undefined => {
+  // ----------------------------------------------------
+  // STEP A: Positional matching for Header fields (X-coordinate matching)
+  // ----------------------------------------------------
+  if (positionedLines && positionedLines.length > 0) {
+    // Search across positioned lines for label tokens and match by X in subsequent line
+    for (let i = 0; i < positionedLines.length; i++) {
+      const pLine = positionedLines[i]
+
+      // Identify label tokens on this line:
+      // 1. Pedido (usually X ≈ 0-60)
+      // 2. Cliente (usually X ≈ 40-100)
+      // 3. Datas / Data de Entrega (usually X ≈ 80-140)
+      // 4. Total de Peças (usually X ≈ 150-220)
+      // 5. OP (usually X ≈ 0-100)
+
+      interface FoundLabel {
+        type: 'pedido' | 'cliente' | 'data_entrega' | 'total_pecas' | 'op' | 'sku' | 'sku_desc'
+        minX: number
+        maxX: number
+        labelTokenIndices: number[]
+      }
+
+      const foundLabels: FoundLabel[] = []
+
+      for (let t = 0; t < pLine.tokens.length; t++) {
+        const token = pLine.tokens[t]
+        const str = token.str.toUpperCase()
+
+        // "Pedido"
+        if (/^PEDIDO\b|^N[º°]?\s*DO\s*PEDIDO|^P\.V\./i.test(str)) {
+          foundLabels.push({
+            type: 'pedido',
+            minX: token.x,
+            maxX: token.x + (token.width || 35),
+            labelTokenIndices: [t],
+          })
+        }
+        // "Cliente"
+        else if (/^CLIENTE\b|^RAZ[AÃ]O\s+SOCIAL\b|^DESTINAT[AÁ]RIO\b/i.test(str)) {
+          foundLabels.push({
+            type: 'cliente',
+            minX: token.x,
+            maxX: token.x + (token.width || 45),
+            labelTokenIndices: [t],
+          })
+        }
+        // "Datas de Entrega" or "Data de Entrega" or "Entrega"
+        else if (/^DATAS?\b|^ENTREGA\b/i.test(str)) {
+          // Check multi-word phrase e.g. "Datas" "de" "Entrega"
+          let combinedWidth = token.width || 30
+          let endIdx = t
+          if (t + 1 < pLine.tokens.length && /^(?:DE|ENTREGA)\b/i.test(pLine.tokens[t + 1].str)) {
+            endIdx = t + 1
+            combinedWidth += (pLine.tokens[t + 1].width || 30) + 5
+            if (t + 2 < pLine.tokens.length && /^ENTREGA\b/i.test(pLine.tokens[t + 2].str)) {
+              endIdx = t + 2
+              combinedWidth += (pLine.tokens[t + 2].width || 35) + 5
+            }
+          }
+          foundLabels.push({
+            type: 'data_entrega',
+            minX: token.x,
+            maxX: token.x + combinedWidth,
+            labelTokenIndices: Array.from({ length: endIdx - t + 1 }, (_, k) => t + k),
+          })
+        }
+        // "Total de Peças"
+        else if (/^TOTAL\b|^QUANTIDADE\b|^QTD\b/i.test(str)) {
+          let combinedWidth = token.width || 30
+          let endIdx = t
+          if (t + 1 < pLine.tokens.length && /^(?:DE|PE[ÇC]AS)\b/i.test(pLine.tokens[t + 1].str)) {
+            endIdx = t + 1
+            combinedWidth += (pLine.tokens[t + 1].width || 30) + 5
+            if (t + 2 < pLine.tokens.length && /^PE[ÇC]AS\b/i.test(pLine.tokens[t + 2].str)) {
+              endIdx = t + 2
+              combinedWidth += (pLine.tokens[t + 2].width || 35) + 5
+            }
+          }
+          foundLabels.push({
+            type: 'total_pecas',
+            minX: token.x,
+            maxX: token.x + combinedWidth,
+            labelTokenIndices: Array.from({ length: endIdx - t + 1 }, (_, k) => t + k),
+          })
+        }
+        // "OP" or "Número da OP"
+        else if (/^OP\b|^ORDEM\s+DE\s+PRODU[ÇC][AÃ]O\b|^N[º°]?\s*DA\s*OP\b/i.test(str)) {
+          foundLabels.push({
+            type: 'op',
+            minX: token.x,
+            maxX: token.x + (token.width || 25),
+            labelTokenIndices: [t],
+          })
+        }
+        // "Código (S.K.U)"
+        else if (/^C[ÓO]DIGO\s*\(?S\.?K\.?U\)?|^SKU\b/i.test(str)) {
+          foundLabels.push({
+            type: 'sku',
+            minX: token.x,
+            maxX: token.x + (token.width || 50),
+            labelTokenIndices: [t],
+          })
+        }
+        // "Descrição S.K.U"
+        else if (/^DESCRI[CÇ][AÃ]O\s*(?:DO)?\s*S\.?K\.?U/i.test(str)) {
+          foundLabels.push({
+            type: 'sku_desc',
+            minX: token.x,
+            maxX: token.x + (token.width || 70),
+            labelTokenIndices: [t],
+          })
+        }
+      }
+
+      // If we found labels on this line, calculate bounding column intervals between labels
+      // to cleanly isolate values in subsequent lines!
+      if (foundLabels.length > 0) {
+        // Sort labels by X position
+        foundLabels.sort((a, b) => a.minX - b.minX)
+
+        // Calculate column boundary for each label: from its minX to the next label's minX
+        const labelColumns = foundLabels.map((lbl, idx) => {
+          const nextLbl = foundLabels[idx + 1]
+          const leftBound =
+            idx === 0 ? Math.max(0, lbl.minX - 25) : (foundLabels[idx - 1].maxX + lbl.minX) / 2
+          const rightBound = nextLbl ? (lbl.maxX + nextLbl.minX) / 2 : lbl.maxX + 200
+          return {
+            ...lbl,
+            colMinX: leftBound,
+            colMaxX: rightBound,
+          }
+        })
+
+        // Look at the lines immediately below (1 to 4 lines down)
+        for (let j = i + 1; j < Math.min(positionedLines.length, i + 4); j++) {
+          const valLine = positionedLines[j]
+          if (!valLine.tokens.length || isIgnoredLine(valLine.lineStr)) continue
+
+          // For each label column, find the tokens in valLine falling into this column
+          for (const col of labelColumns) {
+            const matchedTokens = valLine.tokens.filter(
+              (tok) => tok.x >= col.colMinX - 10 && tok.x <= col.colMaxX + 10,
+            )
+            if (matchedTokens.length === 0) continue
+
+            const combinedStr = matchedTokens
+              .map((tok) => tok.str)
+              .join(' ')
+              .trim()
+            if (!combinedStr || isLabelWord(combinedStr)) continue
+
+            switch (col.type) {
+              case 'pedido': {
+                if (!header.order_number) {
+                  // Find first number token in the matched column tokens
+                  for (const tok of matchedTokens) {
+                    const numMatch = tok.str.match(/^[0-9A-Za-z\-./]{3,15}$/)
+                    if (numMatch && /[0-9]/.test(tok.str) && !isLabelWord(tok.str)) {
+                      header.order_number = removeLeadingZeros(tok.str)
+                      break
+                    }
+                  }
+                }
+                break
+              }
+              case 'cliente': {
+                if (!header.client_name) {
+                  const cleaned = cleanClientName(combinedStr, header.order_number)
+                  if (cleaned && cleaned.length > 1 && !isLabelWord(cleaned)) {
+                    header.client_name = cleaned
+                  }
+                }
+                break
+              }
+              case 'data_entrega': {
+                if (!header.delivery_date) {
+                  const dateMatch = combinedStr.match(
+                    /(\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}[./-]\d{1,2}[./-]\d{1,2})/,
+                  )
+                  if (dateMatch) {
+                    const d = normalizeDate(dateMatch[1])
+                    if (d) header.delivery_date = d
+                  }
+                }
+                break
+              }
+              case 'total_pecas': {
+                if (!header.quantity) {
+                  // Match quantity token in this column (e.g. 2,0000 or 2)
+                  for (const tok of matchedTokens) {
+                    const qMatch = tok.str.match(/^(\d+(?:[.,]\d+)?)$/)
+                    if (qMatch) {
+                      const q = parseQuantity(qMatch[1])
+                      if (q > 0) {
+                        header.quantity = q
+                        break
+                      }
+                    }
+                  }
+                }
+                break
+              }
+              case 'op': {
+                if (!header.op_number) {
+                  const opMatch = combinedStr.match(/^([A-Za-z0-9\-./]{3,20})$/)
+                  if (opMatch && !isLabelWord(opMatch[1])) {
+                    header.op_number = opMatch[1]
+                  }
+                }
+                break
+              }
+              case 'sku': {
+                if (!header.product_code) {
+                  const skuToken = matchedTokens[0]?.str
+                  if (skuToken && !isLabelWord(skuToken) && /^[A-Za-z0-9\-._/]+$/.test(skuToken)) {
+                    header.product_code = skuToken
+                  }
+                }
+                break
+              }
+              case 'sku_desc': {
+                if (!header.product_name) {
+                  const cleaned = cleanClientName(combinedStr, header.order_number)
+                  if (cleaned && cleaned.length > 2 && !isLabelWord(cleaned)) {
+                    header.product_name = cleaned
+                  }
+                }
+                break
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // ----------------------------------------------------
+  // STEP B: Fallbacks / Complementary extraction (regex & line splitting)
+  // ----------------------------------------------------
+
+  // 1. OP Number fallback
+  if (!header.op_number) {
+    const opMatch = fullText.match(
+      /(?:N[úu]mero\s+[Dd]a\s+OP|N[º°]?\s*da\s*OP|N[º°]?\s*OP|OP\s*N[º°]?|Ordem\s+de\s+Produ[çc][aã]o\s*(?:N[º°]?)?|OP)\s*[:.-]?\s*([A-Za-z0-9\-./]+)/i,
+    )
+    if (opMatch && opMatch[1] && !isLabelWord(opMatch[1])) {
+      header.op_number = opMatch[1].trim()
+    }
+  }
+
+  // 2. Order Number (Pedido) fallback - strip leading zeros (e.g. 00013935 -> 13935)
+  if (!header.order_number) {
     for (let i = 0; i < allLines.length; i++) {
       const line = allLines[i].trim()
-      if (!labelPattern.test(line)) continue
-
-      // Look at candidate label line
-      const labelTokens = line
-        .split(/\s{2,}|\t/)
-        .map((t) => t.trim())
-        .filter(Boolean)
-      const tokenMatchIdx = labelTokens.findIndex((t) => labelPattern.test(t))
-
-      // If we found a token matching labelPattern
-      if (tokenMatchIdx >= 0) {
-        for (let j = i + 1; j < Math.min(allLines.length, i + 4); j++) {
-          const nextLine = allLines[j].trim()
-          if (!nextLine || isIgnoredLine(nextLine)) continue
-
-          // Try multi-space column split first
-          let valueTokens = nextLine
-            .split(/\s{2,}|\t/)
-            .map((t) => t.trim())
-            .filter(Boolean)
-          if (valueTokens.length > tokenMatchIdx) {
-            const candidate = valueTokens[tokenMatchIdx]
-            if (candidate && !isLabelWord(candidate)) {
-              if (!labelFilterPredicate || labelFilterPredicate(candidate)) {
-                return candidate
-              }
-            }
-          }
-
-          // Fallback: simple whitespace split if columns weren't multi-spaced
-          const singleTokens = nextLine
-            .split(/\s+/)
-            .map((t) => t.trim())
-            .filter(Boolean)
-          if (singleTokens.length > tokenMatchIdx) {
-            const candidate = singleTokens[tokenMatchIdx]
-            if (candidate && !isLabelWord(candidate)) {
-              if (!labelFilterPredicate || labelFilterPredicate(candidate)) {
-                return candidate
-              }
-            }
-          }
-        }
-      }
-    }
-    return undefined
-  }
-
-  // 1. OP Number
-  const opMatch = fullText.match(
-    /(?:N[úu]mero\s+[Dd]a\s+OP|N[º°]?\s*da\s*OP|N[º°]?\s*OP|OP\s*N[º°]?|Ordem\s+de\s+Produ[çc][aã]o\s*(?:N[º°]?)?|OP)\s*[:.-]?\s*([A-Za-z0-9\-./]+)/i,
-  )
-  if (opMatch && opMatch[1] && !isLabelWord(opMatch[1])) {
-    header.op_number = opMatch[1].trim()
-  }
-
-  // 2. Order Number (Pedido) - strip leading zeros (e.g. 00013935 -> 13935)
-  // Step 2a: Multi-column positional matching
-  // When line A has "Pedido    Cliente", identify if Pedido is column 0 or 1, and grab the matching column below.
-  for (let i = 0; i < allLines.length; i++) {
-    const line = allLines[i].trim()
-    if (
-      /^(?:.*?\b)?(?:N[º°]?\s*do\s*Pedido|N[º°]?\s*Pedido|Pedido\s*N[º°]?|Pedido|P\.V\.|PV)\b/i.test(
-        line,
-      )
-    ) {
-      // 1. Check if value is inline on same line e.g. "Pedido: 00013935" or "Pedido 00013935"
-      const inlineMatch = line.match(
-        /^(?:N[º°]?\s*do\s*Pedido|N[º°]?\s*Pedido|Pedido\s*N[º°]?|Pedido|P\.V\.|PV)\s*[:.-]?\s*([0-9]{3,15}|[A-Za-z0-9\-./]{3,15})/i,
-      )
       if (
-        inlineMatch &&
-        inlineMatch[1] &&
-        /[0-9]/.test(inlineMatch[1]) &&
-        !isLabelWord(inlineMatch[1])
+        /^(?:.*?\b)?(?:N[º°]?\s*do\s*Pedido|N[º°]?\s*Pedido|Pedido\s*N[º°]?|Pedido|P\.V\.|PV)\b/i.test(
+          line,
+        )
       ) {
-        header.order_number = removeLeadingZeros(inlineMatch[1])
-        break
-      }
+        // Check inline match
+        const inlineMatch = line.match(
+          /^(?:N[º°]?\s*do\s*Pedido|N[º°]?\s*Pedido|Pedido\s*N[º°]?|Pedido|P\.V\.|PV)\s*[:.-]?\s*([0-9]{3,15}|[A-Za-z0-9\-./]{3,15})/i,
+        )
+        if (
+          inlineMatch &&
+          inlineMatch[1] &&
+          /[0-9]/.test(inlineMatch[1]) &&
+          !isLabelWord(inlineMatch[1])
+        ) {
+          header.order_number = removeLeadingZeros(inlineMatch[1])
+          break
+        }
 
-      // 2. Multi-column header detection
-      // Split label line by 2+ spaces or tabs
-      const labelCols = line
-        .split(/\s{2,}|\t/)
-        .map((c) => c.trim())
-        .filter(Boolean)
-      const pedidoColIdx = labelCols.findIndex((c) =>
-        /^(?:N[º°]?\s*do\s*Pedido|N[º°]?\s*Pedido|Pedido\s*N[º°]?|Pedido|P\.V\.|PV)\b/i.test(c),
-      )
+        // Multi-space column matching
+        const labelCols = line
+          .split(/\s{2,}|\t/)
+          .map((c) => c.trim())
+          .filter(Boolean)
+        const pedidoColIdx = labelCols.findIndex((c) =>
+          /^(?:N[º°]?\s*do\s*Pedido|N[º°]?\s*Pedido|Pedido\s*N[º°]?|Pedido|P\.V\.|PV)\b/i.test(c),
+        )
 
-      if (pedidoColIdx >= 0) {
-        // Look at next lines
-        for (let j = i + 1; j < Math.min(allLines.length, i + 4); j++) {
-          const nextLine = allLines[j].trim()
-          if (!nextLine || isIgnoredLine(nextLine)) continue
+        if (pedidoColIdx >= 0) {
+          for (let j = i + 1; j < Math.min(allLines.length, i + 4); j++) {
+            const nextLine = allLines[j].trim()
+            if (!nextLine || isIgnoredLine(nextLine)) continue
 
-          // Check multi-spaced columns
-          const valCols = nextLine
-            .split(/\s{2,}|\t/)
-            .map((c) => c.trim())
-            .filter(Boolean)
-          if (valCols.length > pedidoColIdx) {
-            const token = valCols[pedidoColIdx]
-            const firstNum = token.split(/\s+/)[0]
-            if (firstNum && /[0-9]/.test(firstNum) && !isLabelWord(firstNum)) {
-              header.order_number = removeLeadingZeros(firstNum)
-              break
+            const valCols = nextLine
+              .split(/\s{2,}|\t/)
+              .map((c) => c.trim())
+              .filter(Boolean)
+            if (valCols.length > pedidoColIdx) {
+              const token = valCols[pedidoColIdx]
+              const firstNum = token.split(/\s+/)[0]
+              if (firstNum && /[0-9]/.test(firstNum) && !isLabelWord(firstNum)) {
+                header.order_number = removeLeadingZeros(firstNum)
+                break
+              }
             }
-          }
 
-          // Check token split
-          const tokens = nextLine.split(/\s+/)
-          if (tokens.length > pedidoColIdx) {
-            const t = tokens[pedidoColIdx]
-            if (t && /[0-9]/.test(t) && !isLabelWord(t) && /^[0-9A-Za-z\-./]{3,15}$/.test(t)) {
-              header.order_number = removeLeadingZeros(t)
-              break
+            const tokens = nextLine.split(/\s+/)
+            if (tokens.length > pedidoColIdx) {
+              const t = tokens[pedidoColIdx]
+              if (t && /[0-9]/.test(t) && !isLabelWord(t) && /^[0-9A-Za-z\-./]{3,15}$/.test(t)) {
+                header.order_number = removeLeadingZeros(t)
+                break
+              }
             }
-          }
-
-          // Fallback search in line
-          const possibleOrder = tokens.find(
-            (t) =>
-              /^[0-9]{3,15}$/.test(t) ||
-              (/^[A-Za-z0-9\-_./]{3,15}$/.test(t) && /[0-9]/.test(t) && !isLabelWord(t)),
-          )
-          if (possibleOrder) {
-            header.order_number = removeLeadingZeros(possibleOrder)
-            break
           }
         }
+        if (header.order_number) break
       }
-
-      if (header.order_number) break
     }
   }
 
-  // Fallback for order_number in fullText if not yet captured
+  // Final regex fallback for order_number
   if (!header.order_number) {
     const pedidoMatch = fullText.match(
       /(?:N[º°]?\s*do\s*Pedido|N[º°]?\s*Pedido|Pedido\s*N[º°]?|Pedido|P\.V\.|PV|Order\s*N[º°]?)\s*[:.-]?\s*([0-9A-Za-z\-./]+)/i,
@@ -444,72 +675,70 @@ export function parseOpPdfDeterministic(allLines: string[]): ParsedOpPdfResult {
     }
   }
 
-  // 3. Delivery Date (Data / Datas de Entrega)
-  // Supports singular and plural: "Datas de Entrega", "Data de Entrega", etc.
-  // First check column-under-label
-  for (let i = 0; i < allLines.length; i++) {
-    const line = allLines[i].trim()
-    if (
-      /(?:Datas?\s+(?:de\s+)?Entrega|Dt\.?\s*Entrega|Previs[aã]o\s+(?:de\s+)?Entrega|Prazo\s+(?:de\s+)?Entrega)/i.test(
-        line,
-      )
-    ) {
-      // Check inline on same line
-      const inlineDateMatch = line.match(
-        /(\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}[./-]\d{1,2}[./-]\d{1,2})/,
-      )
-      if (inlineDateMatch) {
-        const d = normalizeDate(inlineDateMatch[1])
-        if (d) {
-          header.delivery_date = d
-          break
-        }
-      }
-
-      // Check positional / vertical underneath
-      const labelCols = line
-        .split(/\s{2,}|\t/)
-        .map((c) => c.trim())
-        .filter(Boolean)
-      const dateColIdx = labelCols.findIndex((c) =>
-        /(?:Datas?\s+(?:de\s+)?Entrega|Entrega)/i.test(c),
-      )
-
-      for (let j = i + 1; j < Math.min(allLines.length, i + 4); j++) {
-        const nextLine = allLines[j].trim()
-        if (!nextLine || isIgnoredLine(nextLine)) continue
-
-        if (dateColIdx >= 0) {
-          const valCols = nextLine
-            .split(/\s{2,}|\t/)
-            .map((c) => c.trim())
-            .filter(Boolean)
-          if (valCols.length > dateColIdx) {
-            const dateCandidate = valCols[dateColIdx].match(
-              /(\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}[./-]\d{1,2}[./-]\d{1,2})/,
-            )
-            if (dateCandidate) {
-              const d = normalizeDate(dateCandidate[1])
-              if (d) {
-                header.delivery_date = d
-                break
-              }
-            }
-          }
-        }
-
-        const dateMatch = nextLine.match(
+  // 3. Delivery Date (Data / Datas de Entrega) fallback
+  if (!header.delivery_date) {
+    for (let i = 0; i < allLines.length; i++) {
+      const line = allLines[i].trim()
+      if (
+        /(?:Datas?\s+(?:de\s+)?Entrega|Dt\.?\s*Entrega|Previs[aã]o\s+(?:de\s+)?Entrega|Prazo\s+(?:de\s+)?Entrega)/i.test(
+          line,
+        )
+      ) {
+        const inlineDateMatch = line.match(
           /(\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}[./-]\d{1,2}[./-]\d{1,2})/,
         )
-        if (dateMatch) {
-          const d = normalizeDate(dateMatch[1])
+        if (inlineDateMatch) {
+          const d = normalizeDate(inlineDateMatch[1])
           if (d) {
             header.delivery_date = d
             break
           }
         }
+
+        const labelCols = line
+          .split(/\s{2,}|\t/)
+          .map((c) => c.trim())
+          .filter(Boolean)
+        const dateColIdx = labelCols.findIndex((c) =>
+          /(?:Datas?\s+(?:de\s+)?Entrega|Entrega)/i.test(c),
+        )
+
+        for (let j = i + 1; j < Math.min(allLines.length, i + 4); j++) {
+          const nextLine = allLines[j].trim()
+          if (!nextLine || isIgnoredLine(nextLine)) continue
+
+          if (dateColIdx >= 0) {
+            const valCols = nextLine
+              .split(/\s{2,}|\t/)
+              .map((c) => c.trim())
+              .filter(Boolean)
+            if (valCols.length > dateColIdx) {
+              const dateCandidate = valCols[dateColIdx].match(
+                /(\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}[./-]\d{1,2}[./-]\d{1,2})/,
+              )
+              if (dateCandidate) {
+                const d = normalizeDate(dateCandidate[1])
+                if (d) {
+                  header.delivery_date = d
+                  break
+                }
+              }
+            }
+          }
+
+          const dateMatch = nextLine.match(
+            /(\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}[./-]\d{1,2}[./-]\d{1,2})/,
+          )
+          if (dateMatch) {
+            const d = normalizeDate(dateMatch[1])
+            if (d) {
+              header.delivery_date = d
+              break
+            }
+          }
+        }
+        if (header.delivery_date) break
       }
-      if (header.delivery_date) break
     }
   }
 
@@ -524,73 +753,71 @@ export function parseOpPdfDeterministic(allLines: string[]): ParsedOpPdfResult {
     }
   }
 
-  // 4. Quantity (Total de Peças / Quantidade)
-  // Specific instruction: "Total de Peças 2,0000" -> campo Quantidade deve puxar 2 (sem zeros/decimais)
-  // Ignorar número da "Solicitação de Materiais" que está ao lado
-  for (let i = 0; i < allLines.length; i++) {
-    const line = allLines[i].trim()
-    if (
-      /(?:Total\s+de\s+Pe[çc]as|Total\s+Pe[çc]as|Quantidade\s*(?:de\s*pe[çc]as)?|Qtd\.?\s*Pe[çc]as)/i.test(
-        line,
-      )
-    ) {
-      // Inline match
-      const inlineQtyMatch = line.match(
-        /(?:Total\s+de\s+Pe[çc]as|Total\s+Pe[çc]as|Quantidade\s*(?:de\s*pe[çc]as)?|Qtd\.?\s*Pe[çc]as)\s*[:.-]?\s*(\d+(?:[.,]\d+)?)/i,
-      )
-      if (inlineQtyMatch && inlineQtyMatch[1]) {
-        const q = parseQuantity(inlineQtyMatch[1])
-        if (q > 0) {
-          header.quantity = q
-          break
-        }
-      }
-
-      // Vertical / column match: find column index of "Total de Peças"
-      const labelCols = line
-        .split(/\s{2,}|\t/)
-        .map((c) => c.trim())
-        .filter(Boolean)
-      const totalColIdx = labelCols.findIndex((c) =>
-        /Total\s+de\s+Pe[çc]as|Total\s+Pe[çc]as/i.test(c),
-      )
-
-      for (let j = i + 1; j < Math.min(allLines.length, i + 3); j++) {
-        const nextLine = allLines[j].trim()
-        if (!nextLine || isIgnoredLine(nextLine)) continue
-
-        if (totalColIdx >= 0) {
-          const valCols = nextLine
-            .split(/\s{2,}|\t/)
-            .map((c) => c.trim())
-            .filter(Boolean)
-          if (valCols.length > totalColIdx) {
-            const candidate = valCols[totalColIdx].match(/^(\d+(?:[.,]\d+)?)/)
-            if (candidate) {
-              const q = parseQuantity(candidate[1])
-              if (q > 0) {
-                header.quantity = q
-                break
-              }
-            }
-          }
-        }
-
-        // Check if line starts with a quantity number (e.g. "2,0000   123456")
-        const numMatch = nextLine.match(/^(\d+(?:[.,]\d+)?)/)
-        if (numMatch) {
-          const q = parseQuantity(numMatch[1])
+  // 4. Quantity (Total de Peças / Quantidade) fallback
+  // Specific requirement: "Total de Peças" (X ≈ 160) -> 2,0000 -> 2
+  if (!header.quantity) {
+    for (let i = 0; i < allLines.length; i++) {
+      const line = allLines[i].trim()
+      if (
+        /(?:Total\s+de\s+Pe[çc]as|Total\s+Pe[çc]as|Quantidade\s*(?:de\s*pe[çc]as)?|Qtd\.?\s*Pe[çc]as)/i.test(
+          line,
+        )
+      ) {
+        const inlineQtyMatch = line.match(
+          /(?:Total\s+de\s+Pe[çc]as|Total\s+Pe[çc]as|Quantidade\s*(?:de\s*pe[çc]as)?|Qtd\.?\s*Pe[çc]as)\s*[:.-]?\s*(\d+(?:[.,]\d+)?)/i,
+        )
+        if (inlineQtyMatch && inlineQtyMatch[1]) {
+          const q = parseQuantity(inlineQtyMatch[1])
           if (q > 0) {
             header.quantity = q
             break
           }
         }
+
+        const labelCols = line
+          .split(/\s{2,}|\t/)
+          .map((c) => c.trim())
+          .filter(Boolean)
+        const totalColIdx = labelCols.findIndex((c) =>
+          /Total\s+de\s+Pe[çc]as|Total\s+Pe[çc]as/i.test(c),
+        )
+
+        for (let j = i + 1; j < Math.min(allLines.length, i + 3); j++) {
+          const nextLine = allLines[j].trim()
+          if (!nextLine || isIgnoredLine(nextLine)) continue
+
+          if (totalColIdx >= 0) {
+            const valCols = nextLine
+              .split(/\s{2,}|\t/)
+              .map((c) => c.trim())
+              .filter(Boolean)
+            if (valCols.length > totalColIdx) {
+              const candidate = valCols[totalColIdx].match(/^(\d+(?:[.,]\d+)?)/)
+              if (candidate) {
+                const q = parseQuantity(candidate[1])
+                if (q > 0) {
+                  header.quantity = q
+                  break
+                }
+              }
+            }
+          }
+
+          const numMatch = nextLine.match(/^(\d+(?:[.,]\d+)?)/)
+          if (numMatch) {
+            const q = parseQuantity(numMatch[1])
+            if (q > 0) {
+              header.quantity = q
+              break
+            }
+          }
+        }
+        if (header.quantity) break
       }
-      if (header.quantity) break
     }
   }
 
-  // Fallback for quantity in full text
+  // Regex fallback for quantity
   if (!header.quantity) {
     const qtyMatch = fullText.match(
       /(?:Total\s+de\s+Pe[çc]as|Quantidade\s*(?:de\s*pe[çc]as)?|Qtd\.?\s*(?:de\s*pe[çc]as|pe[çc]as)?|Quant\.?)\s*[:.-]?\s*(\d+(?:[.,]\d+)?)/i,
@@ -601,49 +828,27 @@ export function parseOpPdfDeterministic(allLines: string[]): ParsedOpPdfResult {
     }
   }
 
-  // 5. Client (Cliente / Razão Social)
-  // Column-aware matching: if "Pedido" is column 0 and "Cliente" is column 1 on line A,
-  // and line B is "00013935   EDILSON VIANA", column 1 is "EDILSON VIANA".
-  for (let i = 0; i < allLines.length; i++) {
-    const line = allLines[i].trim()
-    if (/(?:Cliente|Raz[aã]o\s+Social|Destinat[aá]rio)/i.test(line)) {
-      // 1. Multi-column label line (e.g. "Pedido   Cliente" or "Cliente   CNPJ")
-      const labelCols = line
-        .split(/\s{2,}|\t/)
-        .map((c) => c.trim())
-        .filter(Boolean)
-      const clientColIdx = labelCols.findIndex((c) =>
-        /(?:Cliente|Raz[aã]o\s+Social|Destinat[aá]rio)/i.test(c),
-      )
+  // 5. Client (Cliente / Razão Social) fallback
+  // Strip leading order numbers (e.g. "00013935 " or "13935 ")
+  if (!header.client_name) {
+    for (let i = 0; i < allLines.length; i++) {
+      const line = allLines[i].trim()
+      if (/(?:Cliente|Raz[aã]o\s+Social|Destinat[aá]rio)/i.test(line)) {
+        const labelCols = line
+          .split(/\s{2,}|\t/)
+          .map((c) => c.trim())
+          .filter(Boolean)
+        const clientColIdx = labelCols.findIndex((c) =>
+          /(?:Cliente|Raz[aã]o\s+Social|Destinat[aá]rio)/i.test(c),
+        )
 
-      // Check inline match first if single column
-      const clientMatch = line.match(
-        /(?:Cliente|Raz[aã]o\s+Social|Destinat[aá]rio)\s*[:.-]?\s*(.*)$/i,
-      )
-      if (clientMatch && clientMatch[1]) {
-        const rest = clientMatch[1].trim()
-        if (rest && !isLabelWord(rest)) {
-          const cleaned = cleanClientName(rest, header.order_number)
-          if (cleaned && cleaned.length > 1 && !isLabelWord(cleaned)) {
-            header.client_name = cleaned
-            break
-          }
-        }
-      }
-
-      // Check vertical values underneath
-      for (let j = i + 1; j < Math.min(allLines.length, i + 4); j++) {
-        const nextLine = allLines[j].trim()
-        if (!nextLine || isIgnoredLine(nextLine)) continue
-
-        if (clientColIdx >= 0) {
-          const valCols = nextLine
-            .split(/\s{2,}|\t/)
-            .map((c) => c.trim())
-            .filter(Boolean)
-          if (valCols.length > clientColIdx) {
-            const rawCol = valCols[clientColIdx]
-            const cleaned = cleanClientName(rawCol, header.order_number)
+        const clientMatch = line.match(
+          /(?:Cliente|Raz[aã]o\s+Social|Destinat[aá]rio)\s*[:.-]?\s*(.*)$/i,
+        )
+        if (clientMatch && clientMatch[1]) {
+          const rest = clientMatch[1].trim()
+          if (rest && !isLabelWord(rest)) {
+            const cleaned = cleanClientName(rest, header.order_number)
             if (cleaned && cleaned.length > 1 && !isLabelWord(cleaned)) {
               header.client_name = cleaned
               break
@@ -651,15 +856,33 @@ export function parseOpPdfDeterministic(allLines: string[]): ParsedOpPdfResult {
           }
         }
 
-        // Check if next line contains order number prefix followed by client name
-        // (e.g. "00013935 EDILSON VIANA" or "13935 EDILSON VIANA")
-        const cleanedLine = cleanClientName(nextLine, header.order_number)
-        if (cleanedLine && cleanedLine.length > 1 && !isLabelWord(cleanedLine)) {
-          header.client_name = cleanedLine
-          break
+        for (let j = i + 1; j < Math.min(allLines.length, i + 4); j++) {
+          const nextLine = allLines[j].trim()
+          if (!nextLine || isIgnoredLine(nextLine)) continue
+
+          if (clientColIdx >= 0) {
+            const valCols = nextLine
+              .split(/\s{2,}|\t/)
+              .map((c) => c.trim())
+              .filter(Boolean)
+            if (valCols.length > clientColIdx) {
+              const rawCol = valCols[clientColIdx]
+              const cleaned = cleanClientName(rawCol, header.order_number)
+              if (cleaned && cleaned.length > 1 && !isLabelWord(cleaned)) {
+                header.client_name = cleaned
+                break
+              }
+            }
+          }
+
+          const cleanedLine = cleanClientName(nextLine, header.order_number)
+          if (cleanedLine && cleanedLine.length > 1 && !isLabelWord(cleanedLine)) {
+            header.client_name = cleanedLine
+            break
+          }
         }
+        if (header.client_name) break
       }
-      if (header.client_name) break
     }
   }
 
@@ -675,66 +898,69 @@ export function parseOpPdfDeterministic(allLines: string[]): ParsedOpPdfResult {
     }
   }
 
-  // 6. SKU / Product Code
-  const skuMatch = fullText.match(
-    /(?:C[oó]digo\s*\(\s*S\.?K\.?U\s*\)|SKU|C[oó]digo\s+(?:do\s+)?Produto|C[oó]d\.?\s*Prod\.?)\s*[:.-]?\s*([A-Za-z0-9\-._/]+)/i,
-  )
-  if (skuMatch && skuMatch[1] && !isLabelWord(skuMatch[1])) {
-    header.product_code = skuMatch[1].trim()
-  } else {
-    // Check line under "Código(S.K.U)"
-    for (let i = 0; i < allLines.length; i++) {
-      const line = allLines[i].trim()
-      if (/C[oó]digo\s*\(\s*S\.?K\.?U\s*\)/i.test(line)) {
-        for (let j = i + 1; j < Math.min(allLines.length, i + 3); j++) {
-          const nextLine = allLines[j].trim()
-          const token = nextLine.split(/\s+/)[0]
-          if (token && !isLabelWord(token) && /^[A-Za-z0-9\-._/]+$/.test(token)) {
-            header.product_code = token
-            break
+  // 6. SKU / Product Code fallback
+  if (!header.product_code) {
+    const skuMatch = fullText.match(
+      /(?:C[oó]digo\s*\(\s*S\.?K\.?U\s*\)|SKU|C[oó]digo\s+(?:do\s+)?Produto|C[oó]d\.?\s*Prod\.?)\s*[:.-]?\s*([A-Za-z0-9\-._/]+)/i,
+    )
+    if (skuMatch && skuMatch[1] && !isLabelWord(skuMatch[1])) {
+      header.product_code = skuMatch[1].trim()
+    } else {
+      for (let i = 0; i < allLines.length; i++) {
+        const line = allLines[i].trim()
+        if (/C[oó]digo\s*\(\s*S\.?K\.?U\s*\)/i.test(line)) {
+          for (let j = i + 1; j < Math.min(allLines.length, i + 3); j++) {
+            const nextLine = allLines[j].trim()
+            const token = nextLine.split(/\s+/)[0]
+            if (token && !isLabelWord(token) && /^[A-Za-z0-9\-._/]+$/.test(token)) {
+              header.product_code = token
+              break
+            }
           }
+          if (header.product_code) break
         }
-        if (header.product_code) break
       }
     }
   }
 
-  // 7. Product Name (Descrição S.K.U / Produto)
-  const prodNameMatch = fullText.match(
-    /(?:Descri[çc][aã]o\s*(?:do\s+)?S\.?K\.?U\.?|Descri[çc][aã]o\s+(?:do\s+)?Produto|Item\s+Principal|Produto)\s*[:.-]?\s*([^\n\r;|]+)/i,
-  )
-  if (prodNameMatch && prodNameMatch[1]) {
-    const cleaned = prodNameMatch[1]
-      .split(
-        /(?:Total|Pe[çc]as|Qtd|Quantidade|Data|Datas|Entrega|Setor|Obs|Cliente|Solicita[çc][aã]o|Documento)/i,
-      )[0]
-      .trim()
-    if (cleaned && cleaned.length > 2 && !isLabelWord(cleaned)) {
-      header.product_name = cleaned
-    }
-  } else {
-    // Check line under "Descrição S.K.U"
-    for (let i = 0; i < allLines.length; i++) {
-      const line = allLines[i].trim()
-      if (/Descri[çc][aã]o\s*(?:do\s+)?S\.?K\.?U/i.test(line)) {
-        for (let j = i + 1; j < Math.min(allLines.length, i + 3); j++) {
-          const nextLine = allLines[j].trim()
-          if (!nextLine || isLabelWord(nextLine)) continue
-          const cleaned = nextLine
-            .split(/(?:Total|Pe[çc]as|Qtd|Quantidade|Data|Datas|Entrega|Setor|Obs|Cliente)/i)[0]
-            .trim()
-          if (cleaned.length > 2) {
-            header.product_name = cleaned
-            break
+  // 7. Product Name fallback
+  if (!header.product_name) {
+    const prodNameMatch = fullText.match(
+      /(?:Descri[çc][aã]o\s*(?:do\s+)?S\.?K\.?U\.?|Descri[çc][aã]o\s+(?:do\s+)?Produto|Item\s+Principal|Produto)\s*[:.-]?\s*([^\n\r;|]+)/i,
+    )
+    if (prodNameMatch && prodNameMatch[1]) {
+      const cleaned = prodNameMatch[1]
+        .split(
+          /(?:Total|Pe[çc]as|Qtd|Quantidade|Data|Datas|Entrega|Setor|Obs|Cliente|Solicita[çc][aã]o|Documento)/i,
+        )[0]
+        .trim()
+      if (cleaned && cleaned.length > 2 && !isLabelWord(cleaned)) {
+        header.product_name = cleaned
+      }
+    } else {
+      for (let i = 0; i < allLines.length; i++) {
+        const line = allLines[i].trim()
+        if (/Descri[çc][aã]o\s*(?:do\s+)?S\.?K\.?U/i.test(line)) {
+          for (let j = i + 1; j < Math.min(allLines.length, i + 3); j++) {
+            const nextLine = allLines[j].trim()
+            if (!nextLine || isLabelWord(nextLine)) continue
+            const cleaned = nextLine
+              .split(/(?:Total|Pe[çc]as|Qtd|Quantidade|Data|Datas|Entrega|Setor|Obs|Cliente)/i)[0]
+              .trim()
+            if (cleaned.length > 2) {
+              header.product_name = cleaned
+              break
+            }
           }
+          if (header.product_name) break
         }
-        if (header.product_name) break
       }
     }
   }
 
   // ----------------------------------------------------
   // Component Parsing (Multi-line and Single-line accumulator)
+  // Preserves multi-line descriptions and measurements (e.g. "Medida: MT...")
   // ----------------------------------------------------
   let inComponentSection = false
 
@@ -822,7 +1048,6 @@ export function parseOpPdfDeterministic(allLines: string[]): ParsedOpPdfResult {
 
     // If we have not yet entered components / operations section, check if line starts looking like an item
     if (!inComponentSection) {
-      // If we encounter a line with code + qty + unit or pipe/tab delimited, activate inComponentSection
       const startsLikeItem =
         /^([A-Za-z0-9\-_./]{3,20})\s+(\d+(?:[.,]\d+)?)\s*(?:UN|PC|PÇ|KG|M|MT|MM|CM|M2|M3|PAR|CJ|BARRA|ROLO|L|ML|RL)\b/i.test(
           line,
@@ -851,7 +1076,6 @@ export function parseOpPdfDeterministic(allLines: string[]): ParsedOpPdfResult {
       if (currentItem) {
         currentItem.measurementLines.push(val)
       } else if (components.length > 0) {
-        // Attach to previous completed component if currentItem was already flushed
         const lastComp = components[components.length - 1]
         lastComp.measurements = lastComp.measurements ? `${lastComp.measurements} ${val}` : val
       }
@@ -909,7 +1133,6 @@ export function parseOpPdfDeterministic(allLines: string[]): ParsedOpPdfResult {
     }
 
     // 6. Pattern A: Code + Quantity + Unit on the first line (e.g. "14010047  0.28 UN" or "05310219  4 PC")
-    // Note: description or measure follows on next lines!
     const codeQtyUnitMatch = line.match(
       /^([A-Za-z0-9\-_./]{3,20})\s+(\d+(?:[.,]\d+)?)\s*(UN|PC|PÇ|KG|M|MT|MM|CM|M2|M3|PAR|CJ|BARRA|ROLO|L|ML|RL)\b(?:\s*(.*))?$/i,
     )
@@ -991,7 +1214,6 @@ export function parseOpPdfDeterministic(allLines: string[]): ParsedOpPdfResult {
 
     // 9. If we have an active item accumulator and this line is NOT a new code/sector, accumulate it!
     if (currentItem) {
-      // Check if line looks like a measurement line
       if (
         /^(?:Medida|Dimens[oõ]es?|Comprimento|Espessura|Largura|Altura|Ø|MT\b|MM\b|CM\b|M2\b)/i.test(
           line,
@@ -1005,7 +1227,6 @@ export function parseOpPdfDeterministic(allLines: string[]): ParsedOpPdfResult {
     }
 
     // 10. Secondary accumulator: if no active currentItem but line is a continuation / description / measurement
-    // (e.g. "Medida: MT 2.50" or long description text after an item that had no inline unit/qty)
     const isContinuationLine =
       /^(?:Medida|Dimens[oõ]es?|Comprimento|Espessura|Largura|Altura|Ø|MT\b|MM\b|CM\b)/i.test(
         line,
@@ -1032,8 +1253,7 @@ export function parseOpPdfDeterministic(allLines: string[]): ParsedOpPdfResult {
       continue
     }
 
-    // 11. If not in currentItem, but previous line was just code and this line has desc + qty
-    // (e.g. Line 1: 05310219, Line 2: BUCHA EM AÇO... 4 PC)
+    // 11. Code on this line, desc + qty on next line
     const splitCodeMatch = line.match(/^([A-Za-z0-9\-_./]{3,20})$/)
     if (
       splitCodeMatch &&

@@ -93,19 +93,24 @@ interface OpPdfReviewModalProps {
 export function OpPdfReviewModal({
   open,
   onOpenChange,
-  header,
+  header: initialHeader,
   comparisonRows: initialRows,
   selectedProduct,
   onConfirm,
 }: OpPdfReviewModalProps) {
   const [rows, setRows] = useState<ComponentComparisonRow[]>(initialRows)
+  const [editableHeader, setEditableHeader] = useState<ExtractedOpHeader>(initialHeader)
   const [activeSectorTab, setActiveSectorTab] = useState<string>('ALL')
   const [statusFilter, setStatusFilter] = useState<string>('ALL')
 
-  // Keep rows updated if prop changes
+  // Keep state updated if props change
   useMemo(() => {
     setRows(initialRows)
   }, [initialRows])
+
+  useMemo(() => {
+    setEditableHeader(initialHeader)
+  }, [initialHeader])
 
   const stats = useMemo(() => {
     const total = rows.length
@@ -211,7 +216,7 @@ export function OpPdfReviewModal({
     }
 
     onConfirm({
-      header,
+      header: editableHeader,
       materialsForOp,
       catalogUpdates,
     })
@@ -365,27 +370,87 @@ export function OpPdfReviewModal({
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {/* Header Extracted Notice */}
-          <div className="p-3 bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded-lg text-xs space-y-1">
-            <div className="flex items-center gap-2 font-bold text-blue-900 dark:text-blue-200">
-              <Info className="size-4 text-blue-600 shrink-0" />
-              Cabeçalho do PDF lido automaticamente (editável no formulário):
+          {/* Header Extracted & Editable Fields */}
+          <div className="p-3 bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-lg text-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 font-bold text-blue-900 dark:text-blue-200">
+                <Info className="size-4 text-blue-600 shrink-0" />
+                Dados Principais da OP (Valores extraídos editáveis):
+              </div>
+              <span className="text-[11px] text-muted-foreground hidden sm:inline">
+                Ajuste qualquer campo antes de confirmar
+              </span>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-slate-700 dark:text-slate-300 pt-1">
-              <div>
-                <strong>Pedido:</strong> {header.order_number || '-'}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 pt-1">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                  Pedido *
+                </Label>
+                <Input
+                  value={editableHeader.order_number || ''}
+                  onChange={(e) =>
+                    setEditableHeader((prev) => ({ ...prev, order_number: e.target.value }))
+                  }
+                  placeholder="Ex: 13935"
+                  className="h-8 text-xs bg-white dark:bg-slate-900 font-semibold"
+                />
               </div>
-              <div>
-                <strong>OP:</strong> {header.op_number || '-'}
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                  Data de Entrega *
+                </Label>
+                <Input
+                  type="date"
+                  value={editableHeader.delivery_date || ''}
+                  onChange={(e) =>
+                    setEditableHeader((prev) => ({ ...prev, delivery_date: e.target.value }))
+                  }
+                  className="h-8 text-xs bg-white dark:bg-slate-900"
+                />
               </div>
-              <div>
-                <strong>Data Entrega:</strong> {header.delivery_date || '-'}
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                  Quantidade (peças) *
+                </Label>
+                <Input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={editableHeader.quantity ?? 1}
+                  onChange={(e) =>
+                    setEditableHeader((prev) => ({
+                      ...prev,
+                      quantity: Math.max(1, parseInt(e.target.value, 10) || 1),
+                    }))
+                  }
+                  className="h-8 text-xs bg-white dark:bg-slate-900 font-semibold"
+                />
               </div>
-              <div>
-                <strong>Quantidade:</strong> {header.quantity ?? 1} pçs
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                  Número da OP
+                </Label>
+                <Input
+                  value={editableHeader.op_number || ''}
+                  onChange={(e) =>
+                    setEditableHeader((prev) => ({ ...prev, op_number: e.target.value }))
+                  }
+                  placeholder="Ex: OP-01"
+                  className="h-8 text-xs bg-white dark:bg-slate-900"
+                />
               </div>
-              <div className="col-span-2 sm:col-span-1">
-                <strong>Cliente:</strong> {header.client_name || '-'}
+              <div className="space-y-1 col-span-2 sm:col-span-1">
+                <Label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                  Cliente
+                </Label>
+                <Input
+                  value={editableHeader.client_name || ''}
+                  onChange={(e) =>
+                    setEditableHeader((prev) => ({ ...prev, client_name: e.target.value }))
+                  }
+                  placeholder="Nome do cliente"
+                  className="h-8 text-xs bg-white dark:bg-slate-900"
+                />
               </div>
             </div>
           </div>

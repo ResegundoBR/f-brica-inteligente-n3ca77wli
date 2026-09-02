@@ -56,11 +56,11 @@ import type { PcpOrderMaterialSector } from '@/types'
 const schema = z
   .object({
     order_number: z.string().min(1, 'Número do Pedido é obrigatório'),
-    op_number: z.string().optional(),
+    op_number: z.string().optional().default(''),
     client_id: z.string().min(1, 'Cliente é obrigatório'),
     op_type: z.enum(['Linha', 'Especial', 'Assistência']),
-    product_id: z.string().optional(),
-    manual_product_name: z.string().optional(),
+    product_id: z.string().optional().default(''),
+    manual_product_name: z.string().optional().default(''),
     quantity: z.coerce.number().min(1, 'Quantidade deve ser maior que zero'),
     delivery_date: z.string().min(1, 'Data de entrega é obrigatória'),
     manual_priority: z.number().default(0),

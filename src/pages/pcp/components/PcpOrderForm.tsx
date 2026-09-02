@@ -64,7 +64,7 @@ const schema = z
     quantity: z.coerce.number().min(1, 'Quantidade deve ser maior que zero'),
     delivery_date: z.string().min(1, 'Data de entrega é obrigatória'),
     manual_priority: z.number().default(0),
-    estimates: z.record(z.any()).optional(),
+    estimates: z.record(z.string(), z.any()).optional(),
     observations: z
       .array(
         z.object({

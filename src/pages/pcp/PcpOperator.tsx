@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import pb from '@/lib/pocketbase/client'
 import { PcpOrder, ProductProcessModel, MaterialShortage } from '@/types'
 import { useRealtime } from '@/hooks/use-realtime'
@@ -16,7 +16,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
-import { Trash, Plus, ShoppingCart } from 'lucide-react'
+import { Trash, Plus, ShoppingCart, Volume2, VolumeX } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/select'
 import { useAuth } from '@/hooks/use-auth'
 import { Badge } from '@/components/ui/badge'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Play, CheckCircle, AlertTriangle, FastForward } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
@@ -139,19 +140,20 @@ function OperatorMessageBadge({ state, onClick }: { state: IndicatorState; onCli
     none: {
       label: 'MENSAGEM',
       className:
-        'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700',
+        'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-600',
     },
     green: {
       label: 'NOVA MENSAGEM',
-      className: 'bg-green-500 text-white animate-pulse hover:bg-green-600',
+      className: 'bg-green-600 text-white animate-pulse hover:bg-green-500',
     },
     blue: {
       label: 'AGUARDANDO',
-      className: 'bg-blue-500 text-white hover:bg-blue-600',
+      className: 'bg-blue-600 text-white hover:bg-blue-500',
     },
     gray: {
       label: 'RESPONDIDO',
-      className: 'bg-gray-400 text-white dark:bg-gray-600 hover:bg-gray-500 dark:hover:bg-gray-500',
+      className:
+        'bg-gray-400 text-white dark:bg-gray-600 dark:text-gray-100 hover:bg-gray-500 dark:hover:bg-gray-500',
     },
   }
   const c = config[state]
@@ -370,21 +372,22 @@ function OperatorCard({
   const stageDelay = getStageDelay(op, displayProcess)
 
   let headerClass = 'bg-blue-500'
-  let borderClass = 'border-blue-200 dark:border-blue-900 shadow-md shadow-blue-500/5'
+  let borderClass =
+    'border-blue-200 dark:border-blue-700 dark:bg-slate-900 shadow-md shadow-blue-500/5'
   let bgClass = 'bg-white dark:bg-slate-900'
 
   if (isEmergency) {
     headerClass = 'bg-red-600 animate-pulse'
     borderClass =
-      'is-emergency-card border-red-600 shadow-lg shadow-red-500/30 ring-2 ring-red-500/50'
-    bgClass = 'bg-red-50/50 dark:bg-red-950/20'
+      'is-emergency-card border-red-600 dark:border-red-500 shadow-lg shadow-red-500/30 ring-2 ring-red-500/50'
+    bgClass = 'bg-red-50/50 dark:bg-red-950/40'
   } else if (isLocked) {
     headerClass = 'bg-[#ff5e00]'
     borderClass = 'border-[#ff5e00] shadow-[0_0_10px_rgba(255,94,0,0.2)]'
     bgClass = 'bg-white dark:bg-slate-900'
   } else if (isDelayed) {
     headerClass = 'bg-purple-600'
-    borderClass = 'border-purple-500 shadow-lg shadow-purple-500/10'
+    borderClass = 'border-purple-500 dark:border-purple-400 shadow-lg shadow-purple-500/10'
     bgClass = 'bg-white dark:bg-slate-900'
   }
 
@@ -430,18 +433,20 @@ function OperatorCard({
   return (
     <Card className={cn('overflow-hidden border-2 transition-all', bgClass, borderClass)}>
       <div className={cn('h-3 w-full', headerClass)} />
-      <CardHeader className="pb-3">
-        <div className="flex justify-between items-start gap-2">
-          <div>
-            <CardTitle className="text-2xl font-black">{formatOpIdentifier(op)}</CardTitle>
-            <p className="text-lg font-medium text-slate-600 dark:text-slate-400 mt-1">
+      <CardHeader className="pb-3 px-4 sm:px-6">
+        <div className="flex flex-wrap justify-between items-start gap-2">
+          <div className="min-w-0 flex-1 basis-40">
+            <CardTitle className="text-xl sm:text-2xl font-black break-words">
+              {formatOpIdentifier(op)}
+            </CardTitle>
+            <p className="text-base sm:text-lg font-medium text-slate-600 dark:text-slate-300 mt-1 break-words">
               {op.client_name}
             </p>
           </div>
-          <div className="flex flex-col items-end gap-1">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col items-start sm:items-end gap-1 max-w-full">
+            <div className="flex items-center gap-2 flex-wrap">
               <Badge
-                className="text-lg px-3 py-1 bg-slate-100 text-slate-800 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200"
+                className="text-sm sm:text-lg px-2.5 sm:px-3 py-1 bg-slate-100 text-slate-800 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-100 max-w-full truncate"
                 variant="secondary"
               >
                 {op.stage}
@@ -466,10 +471,10 @@ function OperatorCard({
             {op.delivery_date && (
               <span
                 className={cn(
-                  'text-xs font-bold uppercase tracking-wider mt-1',
+                  'text-xs font-bold uppercase tracking-wider mt-1 whitespace-nowrap max-w-full truncate',
                   isDelayed
-                    ? 'text-purple-600 dark:text-purple-400'
-                    : 'text-slate-500 dark:text-slate-400',
+                    ? 'text-purple-700 dark:text-purple-300'
+                    : 'text-slate-500 dark:text-slate-300',
                 )}
               >
                 Entrega:{' '}
@@ -477,21 +482,22 @@ function OperatorCard({
               </span>
             )}
             {materialStatus !== 'none' && (
-              <div className="mt-1 flex flex-col items-end gap-0.5">
+              <div className="mt-1 flex flex-col items-start sm:items-end gap-0.5 max-w-full">
                 <Badge
                   className={cn(
-                    'text-[10px] px-1.5 py-0 font-bold',
-                    materialStatus === 'red' && 'bg-red-500 text-white',
-                    materialStatus === 'yellow' && 'bg-yellow-400 text-slate-900',
-                    materialStatus === 'green' && 'bg-green-500 text-white',
+                    'text-[10px] px-1.5 py-0 font-bold whitespace-nowrap max-w-full truncate',
+                    materialStatus === 'red' && 'bg-red-600 text-white',
+                    materialStatus === 'yellow' &&
+                      'bg-yellow-300 text-yellow-950 dark:bg-yellow-400 dark:text-yellow-950',
+                    materialStatus === 'green' && 'bg-green-600 text-white',
                   )}
                 >
-                  {materialStatus === 'red' && '🔴 Materiais Pendentes'}
-                  {materialStatus === 'yellow' && '🟡 Materiais Parciais'}
-                  {materialStatus === 'green' && '🟢 Materiais OK'}
+                  {materialStatus === 'red' && 'Materiais Pendentes'}
+                  {materialStatus === 'yellow' && 'Materiais Parciais'}
+                  {materialStatus === 'green' && 'Materiais OK'}
                 </Badge>
                 {receivedQty > 0 && (
-                  <span className="text-[9px] text-muted-foreground font-medium whitespace-nowrap">
+                  <span className="text-[9px] text-muted-foreground font-medium whitespace-nowrap max-w-full truncate">
                     {receivedQty} un · {materialSectors.join(', ')}
                   </span>
                 )}
@@ -500,8 +506,8 @@ function OperatorCard({
           </div>
         </div>
       </CardHeader>
-      <CardContent className="pb-4">
-        <div className="text-xl mb-4 font-semibold flex flex-col gap-2 items-start">
+      <CardContent className="pb-4 px-4 sm:px-6">
+        <div className="text-lg sm:text-xl mb-4 font-semibold flex flex-col gap-2 items-start min-w-0">
           <div className="flex gap-2 items-center flex-wrap">
             <Badge
               variant="outline"
@@ -515,7 +521,7 @@ function OperatorCard({
               {op.op_type}
             </Badge>
           </div>
-          <span>
+          <span className="w-full break-words">
             {op.op_type === 'Assistência'
               ? op.manual_product_name
               : op.op_type === 'Especial'
@@ -532,14 +538,14 @@ function OperatorCard({
                 {stageProcesses.length > 1 && (
                   <Badge
                     variant="outline"
-                    className="text-[10px] border-blue-300 text-blue-600 dark:text-blue-400"
+                    className="text-[10px] border-blue-300 text-blue-600 dark:border-blue-700 dark:text-blue-300"
                   >
                     Passo {currentStepIndex + 1}/{stageProcesses.length}
                   </Badge>
                 )}
               </div>
               {displayProcess.description && (
-                <p className="text-sm text-blue-600 dark:text-blue-400 whitespace-pre-wrap">
+                <p className="text-sm text-blue-600 dark:text-blue-300 whitespace-pre-wrap">
                   {displayProcess.description}
                 </p>
               )}
@@ -551,8 +557,8 @@ function OperatorCard({
               className={cn(
                 'flex items-center gap-2 mt-1 font-bold px-2.5 py-1.5 rounded-md text-sm border shadow-sm w-fit',
                 isRed
-                  ? 'bg-red-50 border-red-200 text-red-700 dark:bg-red-900/30 dark:border-red-800 dark:text-red-400'
-                  : 'bg-green-50 border-green-200 text-green-700 dark:bg-green-900/30 dark:border-green-800 dark:text-green-400',
+                  ? 'bg-red-50 border-red-200 text-red-700 dark:bg-red-900/50 dark:border-red-700 dark:text-red-300'
+                  : 'bg-green-50 border-green-200 text-green-700 dark:bg-green-900/50 dark:border-green-700 dark:text-green-300',
               )}
             >
               <div
@@ -573,7 +579,7 @@ function OperatorCard({
             <div
               className={cn(
                 'flex items-center gap-2 mt-1 font-bold px-2.5 py-1.5 rounded-md text-sm border shadow-sm w-fit',
-                'bg-orange-50 border-orange-200 text-orange-700 dark:bg-orange-900/30 dark:border-orange-800 dark:text-orange-400',
+                'bg-orange-50 border-orange-200 text-orange-700 dark:bg-orange-900/50 dark:border-orange-700 dark:text-orange-300',
               )}
             >
               <div className="size-2.5 rounded-full shadow-inner shrink-0 bg-orange-500 animate-pulse"></div>
@@ -587,8 +593,8 @@ function OperatorCard({
             className={cn(
               'p-3 rounded-lg text-sm border mb-4 whitespace-pre-wrap',
               shouldHighlightObservation(op.stage, op.observation_sector)
-                ? 'bg-yellow-100 border-yellow-400 text-yellow-900 dark:bg-yellow-900/40 dark:border-yellow-600 dark:text-yellow-200 font-semibold shadow-sm'
-                : 'bg-slate-100 border-slate-200 text-slate-700 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300',
+                ? 'bg-yellow-100 border-yellow-400 text-yellow-900 dark:bg-yellow-900/50 dark:border-yellow-500 dark:text-yellow-100 font-semibold shadow-sm'
+                : 'bg-slate-100 border-slate-200 text-slate-700 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-200',
             )}
           >
             <div className="text-xs uppercase tracking-wider mb-1 opacity-70 font-bold">
@@ -651,7 +657,7 @@ function OperatorCard({
         )}
 
         {isLocked && (
-          <div className="bg-red-50 text-red-900 border border-red-200 p-3 rounded-lg font-bold flex flex-col mb-4 text-lg dark:bg-red-900/30 dark:border-red-900/50 dark:text-red-200">
+          <div className="bg-red-50 text-red-900 border border-red-200 p-3 rounded-lg font-bold flex flex-col mb-4 text-lg dark:bg-red-900/50 dark:border-red-700 dark:text-red-200">
             <div className="flex items-center">
               <AlertTriangle className="mr-2 size-6 shrink-0" />
               Travado: {op.bottleneck_reason}
@@ -664,7 +670,7 @@ function OperatorCard({
           </div>
         )}
       </CardContent>
-      <CardFooter className="flex flex-col gap-3 pt-0">
+      <CardFooter className="flex flex-col gap-3 pt-0 px-4 sm:px-6">
         {isSeparationStage && onOpenSeparation && (
           <Button
             size="lg"
@@ -1218,16 +1224,82 @@ export default function PcpOperator() {
   const sortedFila = sortOrders(filaOrders)
   const sortedExecucao = sortOrders(execucaoOrders)
 
+  const [soundAlertsOn, setSoundAlertsOn] = useState(() => {
+    if (typeof window === 'undefined') return true
+    return window.localStorage.getItem('pcp-operator-sound-alerts') !== 'off'
+  })
+  const filaIdsRef = useRef<Set<string>>(new Set())
+  const filaInitRef = useRef(false)
+
+  const playNewOpAlert = useCallback(() => {
+    try {
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+      if (!AudioCtx) return
+      const ctx = new AudioCtx()
+      const beep = (startAt: number, freq: number) => {
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.type = 'sine'
+        osc.frequency.value = freq
+        gain.gain.setValueAtTime(0.0001, startAt)
+        gain.gain.exponentialRampToValueAtTime(0.4, startAt + 0.02)
+        gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.22)
+        osc.connect(gain)
+        gain.connect(ctx.destination)
+        osc.start(startAt)
+        osc.stop(startAt + 0.25)
+      }
+      const t0 = ctx.currentTime
+      beep(t0, 880)
+      beep(t0 + 0.28, 1174.7)
+      window.setTimeout(() => void ctx.close(), 1200)
+    } catch {
+      /* áudio indisponível neste dispositivo */
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!soundAlertsOn) {
+      filaInitRef.current = false
+      filaIdsRef.current = new Set()
+      return
+    }
+    const currentIds = new Set(sortedFila.map((o) => o.id))
+    if (!filaInitRef.current) {
+      filaIdsRef.current = currentIds
+      filaInitRef.current = true
+      return
+    }
+    const newCount = [...currentIds].filter((id) => !filaIdsRef.current.has(id)).length
+    if (newCount > 0) {
+      playNewOpAlert()
+      toast({
+        title: 'Nova OP na fila',
+        description: `${newCount > 1 ? `${newCount} novas OPs` : 'Uma nova OP'} aguardando início no setor ${selectedSector}.`,
+      })
+    }
+    filaIdsRef.current = currentIds
+  }, [sortedFila, soundAlertsOn, playNewOpAlert, toast, selectedSector])
+
+  const toggleSoundAlerts = () =>
+    setSoundAlertsOn((prev) => {
+      const next = !prev
+      window.localStorage.setItem('pcp-operator-sound-alerts', next ? 'on' : 'off')
+      return next
+    })
+
   const selectedOp = orders.find((o) => o.id === reqOrderId)
 
   return (
-    <div className="flex flex-col gap-6 p-4 md:p-8 bg-slate-50 min-h-[calc(100vh-4rem)] dark:bg-slate-950">
-      <div className="mb-2 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-black tracking-tight text-slate-900 dark:text-slate-100">
+    <div className="flex flex-col gap-6 p-4 md:p-8 bg-slate-50 min-h-[calc(100vh-4rem)] dark:bg-slate-950 max-w-full overflow-x-hidden">
+      <div className="mb-2 flex flex-col md:flex-row md:items-center justify-between gap-4 min-w-0">
+        <div className="min-w-0">
+          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 dark:text-slate-100">
             Portal do Operador
           </h1>
-          <p className="text-lg text-slate-600 dark:text-slate-400">
+          <p className="text-base sm:text-lg text-slate-600 dark:text-slate-300">
             Selecione seu setor e gerencie as Ordens de Produção.
           </p>
         </div>
@@ -1236,7 +1308,7 @@ export default function PcpOperator() {
           <DialogTrigger asChild>
             <Button
               size="lg"
-              className="bg-blue-600 hover:bg-blue-700 text-white font-bold h-12 shadow-sm whitespace-nowrap"
+              className="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold h-12 shadow-sm whitespace-nowrap"
             >
               <ShoppingCart className="mr-2 size-5" /> Solicitar Compra / Insumo
             </Button>
@@ -1249,7 +1321,7 @@ export default function PcpOperator() {
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="req-code">Código</Label>
                   <Input
@@ -1271,7 +1343,7 @@ export default function PcpOperator() {
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Quantidade</Label>
                   <Input
@@ -1350,14 +1422,14 @@ export default function PcpOperator() {
         </Dialog>
       </div>
 
-      <div className="flex overflow-x-auto pb-2 gap-2 mb-2 no-scrollbar">
+      <div className="flex flex-wrap pb-2 gap-2 mb-2">
         {(Object.keys(SECTORS) as SectorName[]).map((sector) => (
           <Button
             key={sector}
             variant={selectedSector === sector ? 'default' : 'outline'}
             onClick={() => setSelectedSector(sector)}
             className={cn(
-              'text-base md:text-lg px-6 h-12 rounded-full font-bold transition-all whitespace-nowrap border-2',
+              'text-sm md:text-lg px-4 md:px-6 h-10 md:h-12 rounded-full font-bold transition-all whitespace-nowrap border-2',
               selectedSector === sector &&
                 'shadow-md ring-2 ring-primary/20 bg-slate-900 dark:bg-slate-100',
             )}
@@ -1365,6 +1437,23 @@ export default function PcpOperator() {
             {sector}
           </Button>
         ))}
+        <Button
+          variant="outline"
+          onClick={toggleSoundAlerts}
+          title={
+            soundAlertsOn
+              ? 'Alerta sonoro ativo: clique para desativar'
+              : 'Alerta sonoro desativado: clique para ativar'
+          }
+          className="ml-auto text-xs sm:text-sm md:text-base h-10 md:h-12 px-3 md:px-4 rounded-full font-bold border-2 gap-2 whitespace-nowrap"
+        >
+          {soundAlertsOn ? (
+            <Volume2 className="size-4 md:size-5 text-green-600 dark:text-green-400" />
+          ) : (
+            <VolumeX className="size-4 md:size-5 text-slate-400" />
+          )}
+          {soundAlertsOn ? 'Alerta: ON' : 'Alerta: OFF'}
+        </Button>
       </div>
 
       <div className="relative mb-4">
@@ -1386,17 +1475,36 @@ export default function PcpOperator() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 items-start">
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
-            <h2 className="text-2xl font-bold flex items-center gap-2 text-slate-800 dark:text-slate-200">
-              Fila para Iniciar
-            </h2>
-            <Badge variant="secondary" className="text-lg px-3">
-              {sortedFila.length}
-            </Badge>
-          </div>
-          <div className="flex flex-col gap-4">
+      <Tabs defaultValue="fila">
+        <TabsList className="lg:hidden w-full mb-4 h-12 grid grid-cols-2 bg-slate-200/80 dark:bg-slate-900 border border-slate-300 dark:border-slate-700">
+          <TabsTrigger
+            value="fila"
+            className="text-sm sm:text-base font-bold data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 dark:text-slate-300 dark:data-[state=active]:text-slate-100"
+          >
+            Fila ({sortedFila.length})
+          </TabsTrigger>
+          <TabsTrigger
+            value="execucao"
+            className="text-sm sm:text-base font-bold data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 dark:text-slate-300 dark:data-[state=active]:text-slate-100"
+          >
+            Em Execução ({sortedExecucao.length})
+          </TabsTrigger>
+        </TabsList>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+          <TabsContent
+            value="fila"
+            forceMount
+            className="flex flex-col gap-4 data-[state=inactive]:hidden lg:data-[state=inactive]:flex mt-0"
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-2">
+              <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2 text-slate-800 dark:text-slate-100">
+                Fila para Iniciar
+              </h2>
+              <Badge variant="secondary" className="text-lg px-3">
+                {sortedFila.length}
+              </Badge>
+            </div>
             {sortedFila.length === 0 ? (
               <div className="p-8 text-center border-2 border-dashed rounded-xl border-slate-200 dark:border-slate-800 text-slate-400 font-medium">
                 Nenhuma OP na fila deste setor.
@@ -1431,19 +1539,21 @@ export default function PcpOperator() {
                 />
               ))
             )}
-          </div>
-        </div>
+          </TabsContent>
 
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
-            <h2 className="text-2xl font-bold flex items-center gap-2 text-slate-800 dark:text-slate-200">
-              Em Execução
-            </h2>
-            <Badge variant="default" className="text-lg px-3 bg-blue-600 hover:bg-blue-600">
-              {sortedExecucao.length}
-            </Badge>
-          </div>
-          <div className="flex flex-col gap-4">
+          <TabsContent
+            value="execucao"
+            forceMount
+            className="flex flex-col gap-4 data-[state=inactive]:hidden lg:data-[state=inactive]:flex mt-0"
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-2">
+              <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2 text-slate-800 dark:text-slate-100">
+                Em Execução
+              </h2>
+              <Badge variant="default" className="text-lg px-3 bg-blue-600 hover:bg-blue-600">
+                {sortedExecucao.length}
+              </Badge>
+            </div>
             {sortedExecucao.length === 0 ? (
               <div className="p-8 text-center border-2 border-dashed rounded-xl border-slate-200 dark:border-slate-800 text-slate-400 font-medium">
                 Nenhuma OP em execução no momento.
@@ -1478,9 +1588,9 @@ export default function PcpOperator() {
                 />
               ))
             )}
-          </div>
+          </TabsContent>
         </div>
-      </div>
+      </Tabs>
       <SeparationMaterialsModal
         op={separationOp}
         open={!!separationOp}

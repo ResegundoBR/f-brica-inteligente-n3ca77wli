@@ -155,20 +155,21 @@ function normalizeDate(raw: string): string | undefined {
 }
 
 export function parseQuantity(raw: string | number): number {
-  if (typeof raw === 'number') return raw
+  if (typeof raw === 'number') return Math.round(raw * 10000) / 10000
   if (!raw) return 0
   const clean = String(raw).trim()
+  let parsed = 0
   if (clean.includes(',') && clean.includes('.')) {
     const standard = clean.replace(/\./g, '').replace(',', '.')
-    const parsed = parseFloat(standard)
-    return isNaN(parsed) ? 0 : parsed
+    parsed = parseFloat(standard)
+  } else if (clean.includes(',')) {
+    parsed = parseFloat(clean.replace(',', '.'))
+  } else {
+    parsed = parseFloat(clean)
   }
-  if (clean.includes(',')) {
-    const parsed = parseFloat(clean.replace(',', '.'))
-    return isNaN(parsed) ? 0 : parsed
-  }
-  const parsed = parseFloat(clean)
-  return isNaN(parsed) ? 0 : parsed
+  if (isNaN(parsed)) return 0
+  // If the parsed number is an integer or has trailing zeros (e.g. 2.0000 => 2), keep it clean
+  return Math.round(parsed * 10000) / 10000
 }
 
 export function normalizeSector(rawSector: string): PcpOrderMaterialSector {
@@ -229,20 +230,38 @@ function isLabelWord(word: string): boolean {
   return KNOWN_HEADER_LABEL_WORDS.has(normalized)
 }
 
+function isIgnoredLine(line: string): boolean {
+  return (
+    /^(?:P[áa]gina\s+\d+|Emiss[aã]o:|Data\/Hora\s+Emiss[aã]o|Obs:|Solicita[çc][aã]o\s+de\s+Materiais|Documento\s+de\s+Estoque)/i.test(
+      line,
+    ) ||
+    /^_{3,}/.test(line) ||
+    /^-{3,}/.test(line)
+  )
+}
+
 function cleanClientName(raw: string, knownOrderNumber?: string): string {
   let cleaned = raw.trim()
-  if (knownOrderNumber && cleaned.startsWith(knownOrderNumber)) {
-    cleaned = cleaned.substring(knownOrderNumber.length).trim()
+  // Remove leading numbers / order numbers like "00013935 " or "13935 "
+  if (knownOrderNumber) {
+    const rawNum = knownOrderNumber.replace(/^0+/, '')
+    const fullPattern = new RegExp(`^(?:0*${rawNum}|${knownOrderNumber})\\s*`, 'i')
+    cleaned = cleaned.replace(fullPattern, '').trim()
   }
-  // Remove leading numbers / order numbers like "00013935 "
-  cleaned = cleaned.replace(/^\d{4,12}\s+/, '')
+  cleaned = cleaned.replace(/^\d{3,12}\s+/, '').trim()
   // Cut off at trailing label keywords if any were swallowed
   cleaned = cleaned
     .split(
-      /(?:CNPJ|CPF|Data|Datas|OP|Pedido|Produto|C[oó]digo|Descri[çc][aã]o|Endere[çc]o|Qtd|Total|Solicita[çc][aã]o|Documento)/i,
+      /(?:CNPJ|CPF|Data\b|Datas\b|Entrega|OP\b|Pedido|Produto|C[oó]digo|Descri[çc][aã]o|Endere[çc]o|Qtd\b|Total\b|Solicita[çc][aã]o|Documento)/i,
     )[0]
     .trim()
   return cleaned
+}
+
+function removeLeadingZeros(val: string): string {
+  const trimmed = (val || '').trim()
+  const stripped = trimmed.replace(/^0+/, '')
+  return stripped || (trimmed ? '0' : '')
 }
 
 export function parseOpPdfDeterministic(allLines: string[]): ParsedOpPdfResult {
@@ -264,6 +283,63 @@ export function parseOpPdfDeterministic(allLines: string[]): ParsedOpPdfResult {
 
   const fullText = allLines.join('\n')
 
+  // Helper: extract column index of matching header label in a line
+  // e.g. "Pedido    Cliente" -> labels = ['Pedido', 'Cliente'], lineTokens
+  // This allows finding the corresponding token in the values line underneath.
+  const findColumnValueUnderLabel = (
+    labelPattern: RegExp,
+    labelFilterPredicate?: (token: string) => boolean,
+  ): string | undefined => {
+    for (let i = 0; i < allLines.length; i++) {
+      const line = allLines[i].trim()
+      if (!labelPattern.test(line)) continue
+
+      // Look at candidate label line
+      const labelTokens = line
+        .split(/\s{2,}|\t/)
+        .map((t) => t.trim())
+        .filter(Boolean)
+      const tokenMatchIdx = labelTokens.findIndex((t) => labelPattern.test(t))
+
+      // If we found a token matching labelPattern
+      if (tokenMatchIdx >= 0) {
+        for (let j = i + 1; j < Math.min(allLines.length, i + 4); j++) {
+          const nextLine = allLines[j].trim()
+          if (!nextLine || isIgnoredLine(nextLine)) continue
+
+          // Try multi-space column split first
+          let valueTokens = nextLine
+            .split(/\s{2,}|\t/)
+            .map((t) => t.trim())
+            .filter(Boolean)
+          if (valueTokens.length > tokenMatchIdx) {
+            const candidate = valueTokens[tokenMatchIdx]
+            if (candidate && !isLabelWord(candidate)) {
+              if (!labelFilterPredicate || labelFilterPredicate(candidate)) {
+                return candidate
+              }
+            }
+          }
+
+          // Fallback: simple whitespace split if columns weren't multi-spaced
+          const singleTokens = nextLine
+            .split(/\s+/)
+            .map((t) => t.trim())
+            .filter(Boolean)
+          if (singleTokens.length > tokenMatchIdx) {
+            const candidate = singleTokens[tokenMatchIdx]
+            if (candidate && !isLabelWord(candidate)) {
+              if (!labelFilterPredicate || labelFilterPredicate(candidate)) {
+                return candidate
+              }
+            }
+          }
+        }
+      }
+    }
+    return undefined
+  }
+
   // 1. OP Number
   const opMatch = fullText.match(
     /(?:N[úu]mero\s+[Dd]a\s+OP|N[º°]?\s*da\s*OP|N[º°]?\s*OP|OP\s*N[º°]?|Ordem\s+de\s+Produ[çc][aã]o\s*(?:N[º°]?)?|OP)\s*[:.-]?\s*([A-Za-z0-9\-./]+)/i,
@@ -272,35 +348,83 @@ export function parseOpPdfDeterministic(allLines: string[]): ParsedOpPdfResult {
     header.op_number = opMatch[1].trim()
   }
 
-  // 2. Order Number (Pedido)
-  // Look for inline label: "Pedido: 00013935" or "Pedido\n00013935" or multi-column "Pedido  Cliente\n00013935  EDILSON VIANA"
+  // 2. Order Number (Pedido) - strip leading zeros (e.g. 00013935 -> 13935)
+  // Step 2a: Multi-column positional matching
+  // When line A has "Pedido    Cliente", identify if Pedido is column 0 or 1, and grab the matching column below.
   for (let i = 0; i < allLines.length; i++) {
     const line = allLines[i].trim()
-    const match = line.match(
-      /^(?:N[º°]?\s*do\s*Pedido|N[º°]?\s*Pedido|Pedido\s*N[º°]?|Pedido|P\.V\.|PV|Order\s*N[º°]?)\s*[:.-]?\s*(.*)$/i,
-    )
-    if (match) {
-      const rest = match[1].trim()
-      const firstToken = rest.split(/\s+/)[0]
-      if (firstToken && !isLabelWord(firstToken) && /[0-9]/.test(firstToken)) {
-        header.order_number = firstToken
+    if (
+      /^(?:.*?\b)?(?:N[º°]?\s*do\s*Pedido|N[º°]?\s*Pedido|Pedido\s*N[º°]?|Pedido|P\.V\.|PV)\b/i.test(
+        line,
+      )
+    ) {
+      // 1. Check if value is inline on same line e.g. "Pedido: 00013935" or "Pedido 00013935"
+      const inlineMatch = line.match(
+        /^(?:N[º°]?\s*do\s*Pedido|N[º°]?\s*Pedido|Pedido\s*N[º°]?|Pedido|P\.V\.|PV)\s*[:.-]?\s*([0-9]{3,15}|[A-Za-z0-9\-./]{3,15})/i,
+      )
+      if (
+        inlineMatch &&
+        inlineMatch[1] &&
+        /[0-9]/.test(inlineMatch[1]) &&
+        !isLabelWord(inlineMatch[1])
+      ) {
+        header.order_number = removeLeadingZeros(inlineMatch[1])
         break
       }
 
-      // If rest is just label or empty, check the next line(s)
-      for (let j = i + 1; j < Math.min(allLines.length, i + 4); j++) {
-        const nextLine = allLines[j].trim()
-        if (!nextLine) continue
-        const tokens = nextLine.split(/\s+/)
-        // Find first token that is numeric or looks like an order code (and not a label)
-        const possibleOrder = tokens.find(
-          (t) => /^[A-Za-z0-9\-_./]{3,15}$/.test(t) && /[0-9]/.test(t) && !isLabelWord(t),
-        )
-        if (possibleOrder) {
-          header.order_number = possibleOrder
-          break
+      // 2. Multi-column header detection
+      // Split label line by 2+ spaces or tabs
+      const labelCols = line
+        .split(/\s{2,}|\t/)
+        .map((c) => c.trim())
+        .filter(Boolean)
+      const pedidoColIdx = labelCols.findIndex((c) =>
+        /^(?:N[º°]?\s*do\s*Pedido|N[º°]?\s*Pedido|Pedido\s*N[º°]?|Pedido|P\.V\.|PV)\b/i.test(c),
+      )
+
+      if (pedidoColIdx >= 0) {
+        // Look at next lines
+        for (let j = i + 1; j < Math.min(allLines.length, i + 4); j++) {
+          const nextLine = allLines[j].trim()
+          if (!nextLine || isIgnoredLine(nextLine)) continue
+
+          // Check multi-spaced columns
+          const valCols = nextLine
+            .split(/\s{2,}|\t/)
+            .map((c) => c.trim())
+            .filter(Boolean)
+          if (valCols.length > pedidoColIdx) {
+            const token = valCols[pedidoColIdx]
+            const firstNum = token.split(/\s+/)[0]
+            if (firstNum && /[0-9]/.test(firstNum) && !isLabelWord(firstNum)) {
+              header.order_number = removeLeadingZeros(firstNum)
+              break
+            }
+          }
+
+          // Check token split
+          const tokens = nextLine.split(/\s+/)
+          if (tokens.length > pedidoColIdx) {
+            const t = tokens[pedidoColIdx]
+            if (t && /[0-9]/.test(t) && !isLabelWord(t) && /^[0-9A-Za-z\-./]{3,15}$/.test(t)) {
+              header.order_number = removeLeadingZeros(t)
+              break
+            }
+          }
+
+          // Fallback search in line
+          const possibleOrder = tokens.find(
+            (t) =>
+              /^[0-9]{3,15}$/.test(t) ||
+              (/^[A-Za-z0-9\-_./]{3,15}$/.test(t) && /[0-9]/.test(t) && !isLabelWord(t)),
+          )
+          if (possibleOrder) {
+            header.order_number = removeLeadingZeros(possibleOrder)
+            break
+          }
         }
       }
+
       if (header.order_number) break
     }
   }
@@ -310,94 +434,228 @@ export function parseOpPdfDeterministic(allLines: string[]): ParsedOpPdfResult {
     const pedidoMatch = fullText.match(
       /(?:N[º°]?\s*do\s*Pedido|N[º°]?\s*Pedido|Pedido\s*N[º°]?|Pedido|P\.V\.|PV|Order\s*N[º°]?)\s*[:.-]?\s*([0-9A-Za-z\-./]+)/i,
     )
-    if (pedidoMatch && pedidoMatch[1] && !isLabelWord(pedidoMatch[1])) {
-      header.order_number = pedidoMatch[1].trim()
+    if (
+      pedidoMatch &&
+      pedidoMatch[1] &&
+      !isLabelWord(pedidoMatch[1]) &&
+      /[0-9]/.test(pedidoMatch[1])
+    ) {
+      header.order_number = removeLeadingZeros(pedidoMatch[1])
     }
   }
 
   // 3. Delivery Date (Data / Datas de Entrega)
-  const deliveryMatch = fullText.match(
-    /(?:Datas?\s+(?:de\s+)?Entrega|Dt\.?\s*Entrega|Previs[aã]o\s+(?:de\s+)?Entrega|Prazo\s+(?:de\s+)?Entrega|Entrega)\s*[:.-]?\s*(\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}[./-]\d{1,2}[./-]\d{1,2})/i,
-  )
-  if (deliveryMatch && deliveryMatch[1]) {
-    const d = normalizeDate(deliveryMatch[1])
-    if (d) header.delivery_date = d
-  } else {
-    // Check line under "Datas de Entrega"
-    for (let i = 0; i < allLines.length; i++) {
-      const line = allLines[i].trim()
-      if (/Datas?\s+(?:de\s+)?Entrega/i.test(line)) {
-        for (let j = i + 1; j < Math.min(allLines.length, i + 4); j++) {
-          const nextLine = allLines[j].trim()
-          const dateMatch = nextLine.match(
-            /(\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}[./-]\d{1,2}[./-]\d{1,2})/,
-          )
-          if (dateMatch) {
-            const d = normalizeDate(dateMatch[1])
-            if (d) {
-              header.delivery_date = d
-              break
-            }
-          }
-        }
-        if (header.delivery_date) break
-      }
-    }
-  }
-
-  // 4. Quantity (Total de Peças / Quantidade)
-  const qtyMatch = fullText.match(
-    /(?:Total\s+de\s+Pe[çc]as|Quantidade\s*(?:de\s*pe[çc]as)?|Qtd\.?\s*(?:de\s*pe[çc]as|pe[çc]as)?|Quant\.?)\s*[:.-]?\s*(\d+(?:[.,]\d+)?)/i,
-  )
-  if (qtyMatch && qtyMatch[1]) {
-    const q = parseQuantity(qtyMatch[1])
-    if (q > 0) header.quantity = q
-  } else {
-    // Check next line after "Total de Peças"
-    for (let i = 0; i < allLines.length; i++) {
-      const line = allLines[i].trim()
-      if (/Total\s+de\s+Pe[çc]as/i.test(line)) {
-        for (let j = i + 1; j < Math.min(allLines.length, i + 3); j++) {
-          const nextLine = allLines[j].trim()
-          const numMatch = nextLine.match(/^(\d+(?:[.,]\d+)?)/)
-          if (numMatch) {
-            const q = parseQuantity(numMatch[1])
-            if (q > 0) {
-              header.quantity = q
-              break
-            }
-          }
-        }
-        if (header.quantity) break
-      }
-    }
-  }
-
-  // 5. Client (Cliente / Razão Social)
-  // Handle layout where "Pedido   Cliente" are on line A and "00013935   EDILSON VIANA" on line B
+  // Supports singular and plural: "Datas de Entrega", "Data de Entrega", etc.
+  // First check column-under-label
   for (let i = 0; i < allLines.length; i++) {
     const line = allLines[i].trim()
-    const clientMatch = line.match(
-      /(?:Cliente|Raz[aã]o\s+Social|Destinat[aá]rio)\s*[:.-]?\s*(.*)$/i,
-    )
-    if (clientMatch) {
-      const rest = clientMatch[1].trim()
-      if (rest && !isLabelWord(rest)) {
-        const cleaned = cleanClientName(rest, header.order_number)
-        if (cleaned && cleaned.length > 1) {
-          header.client_name = cleaned
+    if (
+      /(?:Datas?\s+(?:de\s+)?Entrega|Dt\.?\s*Entrega|Previs[aã]o\s+(?:de\s+)?Entrega|Prazo\s+(?:de\s+)?Entrega)/i.test(
+        line,
+      )
+    ) {
+      // Check inline on same line
+      const inlineDateMatch = line.match(
+        /(\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}[./-]\d{1,2}[./-]\d{1,2})/,
+      )
+      if (inlineDateMatch) {
+        const d = normalizeDate(inlineDateMatch[1])
+        if (d) {
+          header.delivery_date = d
           break
         }
       }
 
-      // If inline was empty or another label, look at next line
+      // Check positional / vertical underneath
+      const labelCols = line
+        .split(/\s{2,}|\t/)
+        .map((c) => c.trim())
+        .filter(Boolean)
+      const dateColIdx = labelCols.findIndex((c) =>
+        /(?:Datas?\s+(?:de\s+)?Entrega|Entrega)/i.test(c),
+      )
+
       for (let j = i + 1; j < Math.min(allLines.length, i + 4); j++) {
         const nextLine = allLines[j].trim()
-        if (!nextLine) continue
-        // If the next line has order number and name (e.g. "00013935 EDILSON VIANA")
-        const cleaned = cleanClientName(nextLine, header.order_number)
-        if (cleaned && cleaned.length > 1 && !isLabelWord(cleaned)) {
-          header.client_name = cleaned
+        if (!nextLine || isIgnoredLine(nextLine)) continue
+
+        if (dateColIdx >= 0) {
+          const valCols = nextLine
+            .split(/\s{2,}|\t/)
+            .map((c) => c.trim())
+            .filter(Boolean)
+          if (valCols.length > dateColIdx) {
+            const dateCandidate = valCols[dateColIdx].match(
+              /(\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}[./-]\d{1,2}[./-]\d{1,2})/,
+            )
+            if (dateCandidate) {
+              const d = normalizeDate(dateCandidate[1])
+              if (d) {
+                header.delivery_date = d
+                break
+              }
+            }
+          }
+        }
+
+        const dateMatch = nextLine.match(
+          /(\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}[./-]\d{1,2}[./-]\d{1,2})/,
+        )
+        if (dateMatch) {
+          const d = normalizeDate(dateMatch[1])
+          if (d) {
+            header.delivery_date = d
+            break
+          }
+        }
+      }
+      if (header.delivery_date) break
+    }
+  }
+
+  // Delivery date regex fallback
+  if (!header.delivery_date) {
+    const deliveryMatch = fullText.match(
+      /(?:Datas?\s+(?:de\s+)?Entrega|Dt\.?\s*Entrega|Previs[aã]o\s+(?:de\s+)?Entrega|Prazo\s+(?:de\s+)?Entrega|Entrega)\s*[:.-]?\s*(\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}[./-]\d{1,2}[./-]\d{1,2})/i,
+    )
+    if (deliveryMatch && deliveryMatch[1]) {
+      const d = normalizeDate(deliveryMatch[1])
+      if (d) header.delivery_date = d
+    }
+  }
+
+  // 4. Quantity (Total de Peças / Quantidade)
+  // Specific instruction: "Total de Peças 2,0000" -> campo Quantidade deve puxar 2 (sem zeros/decimais)
+  // Ignorar número da "Solicitação de Materiais" que está ao lado
+  for (let i = 0; i < allLines.length; i++) {
+    const line = allLines[i].trim()
+    if (
+      /(?:Total\s+de\s+Pe[çc]as|Total\s+Pe[çc]as|Quantidade\s*(?:de\s*pe[çc]as)?|Qtd\.?\s*Pe[çc]as)/i.test(
+        line,
+      )
+    ) {
+      // Inline match
+      const inlineQtyMatch = line.match(
+        /(?:Total\s+de\s+Pe[çc]as|Total\s+Pe[çc]as|Quantidade\s*(?:de\s*pe[çc]as)?|Qtd\.?\s*Pe[çc]as)\s*[:.-]?\s*(\d+(?:[.,]\d+)?)/i,
+      )
+      if (inlineQtyMatch && inlineQtyMatch[1]) {
+        const q = parseQuantity(inlineQtyMatch[1])
+        if (q > 0) {
+          header.quantity = q
+          break
+        }
+      }
+
+      // Vertical / column match: find column index of "Total de Peças"
+      const labelCols = line
+        .split(/\s{2,}|\t/)
+        .map((c) => c.trim())
+        .filter(Boolean)
+      const totalColIdx = labelCols.findIndex((c) =>
+        /Total\s+de\s+Pe[çc]as|Total\s+Pe[çc]as/i.test(c),
+      )
+
+      for (let j = i + 1; j < Math.min(allLines.length, i + 3); j++) {
+        const nextLine = allLines[j].trim()
+        if (!nextLine || isIgnoredLine(nextLine)) continue
+
+        if (totalColIdx >= 0) {
+          const valCols = nextLine
+            .split(/\s{2,}|\t/)
+            .map((c) => c.trim())
+            .filter(Boolean)
+          if (valCols.length > totalColIdx) {
+            const candidate = valCols[totalColIdx].match(/^(\d+(?:[.,]\d+)?)/)
+            if (candidate) {
+              const q = parseQuantity(candidate[1])
+              if (q > 0) {
+                header.quantity = q
+                break
+              }
+            }
+          }
+        }
+
+        // Check if line starts with a quantity number (e.g. "2,0000   123456")
+        const numMatch = nextLine.match(/^(\d+(?:[.,]\d+)?)/)
+        if (numMatch) {
+          const q = parseQuantity(numMatch[1])
+          if (q > 0) {
+            header.quantity = q
+            break
+          }
+        }
+      }
+      if (header.quantity) break
+    }
+  }
+
+  // Fallback for quantity in full text
+  if (!header.quantity) {
+    const qtyMatch = fullText.match(
+      /(?:Total\s+de\s+Pe[çc]as|Quantidade\s*(?:de\s*pe[çc]as)?|Qtd\.?\s*(?:de\s*pe[çc]as|pe[çc]as)?|Quant\.?)\s*[:.-]?\s*(\d+(?:[.,]\d+)?)/i,
+    )
+    if (qtyMatch && qtyMatch[1]) {
+      const q = parseQuantity(qtyMatch[1])
+      if (q > 0) header.quantity = q
+    }
+  }
+
+  // 5. Client (Cliente / Razão Social)
+  // Column-aware matching: if "Pedido" is column 0 and "Cliente" is column 1 on line A,
+  // and line B is "00013935   EDILSON VIANA", column 1 is "EDILSON VIANA".
+  for (let i = 0; i < allLines.length; i++) {
+    const line = allLines[i].trim()
+    if (/(?:Cliente|Raz[aã]o\s+Social|Destinat[aá]rio)/i.test(line)) {
+      // 1. Multi-column label line (e.g. "Pedido   Cliente" or "Cliente   CNPJ")
+      const labelCols = line
+        .split(/\s{2,}|\t/)
+        .map((c) => c.trim())
+        .filter(Boolean)
+      const clientColIdx = labelCols.findIndex((c) =>
+        /(?:Cliente|Raz[aã]o\s+Social|Destinat[aá]rio)/i.test(c),
+      )
+
+      // Check inline match first if single column
+      const clientMatch = line.match(
+        /(?:Cliente|Raz[aã]o\s+Social|Destinat[aá]rio)\s*[:.-]?\s*(.*)$/i,
+      )
+      if (clientMatch && clientMatch[1]) {
+        const rest = clientMatch[1].trim()
+        if (rest && !isLabelWord(rest)) {
+          const cleaned = cleanClientName(rest, header.order_number)
+          if (cleaned && cleaned.length > 1 && !isLabelWord(cleaned)) {
+            header.client_name = cleaned
+            break
+          }
+        }
+      }
+
+      // Check vertical values underneath
+      for (let j = i + 1; j < Math.min(allLines.length, i + 4); j++) {
+        const nextLine = allLines[j].trim()
+        if (!nextLine || isIgnoredLine(nextLine)) continue
+
+        if (clientColIdx >= 0) {
+          const valCols = nextLine
+            .split(/\s{2,}|\t/)
+            .map((c) => c.trim())
+            .filter(Boolean)
+          if (valCols.length > clientColIdx) {
+            const rawCol = valCols[clientColIdx]
+            const cleaned = cleanClientName(rawCol, header.order_number)
+            if (cleaned && cleaned.length > 1 && !isLabelWord(cleaned)) {
+              header.client_name = cleaned
+              break
+            }
+          }
+        }
+
+        // Check if next line contains order number prefix followed by client name
+        // (e.g. "00013935 EDILSON VIANA" or "13935 EDILSON VIANA")
+        const cleanedLine = cleanClientName(nextLine, header.order_number)
+        if (cleanedLine && cleanedLine.length > 1 && !isLabelWord(cleanedLine)) {
+          header.client_name = cleanedLine
           break
         }
       }
@@ -536,16 +794,6 @@ export function parseOpPdfDeterministic(allLines: string[]): ParsedOpPdfResult {
     )
   }
 
-  const isIgnoredLine = (line: string): boolean => {
-    return (
-      /^(?:P[áa]gina\s+\d+|Emiss[aã]o:|Data\/Hora\s+Emiss[aã]o|Obs:|Solicita[çc][aã]o\s+de\s+Materiais|Documento\s+de\s+Estoque)/i.test(
-        line,
-      ) ||
-      /^_{3,}/.test(line) ||
-      /^-{3,}/.test(line)
-    )
-  }
-
   for (let i = 0; i < allLines.length; i++) {
     const line = allLines[i].trim()
     if (!line) continue
@@ -594,9 +842,9 @@ export function parseOpPdfDeterministic(allLines: string[]): ParsedOpPdfResult {
       continue
     }
 
-    // 4. Handle "Medida: ..." or "Medida ..." lines
+    // 4. Handle "Medida: ..." or "Medida ..." or "Medida: MT ..." lines
     const medidaMatch = line.match(
-      /^(?:Medida|Dimens[oõ]es?|Comprimento|Espessura)\s*[:.-]?\s*(.*)$/i,
+      /^(?:Medida|Dimens[oõ]es?|Comprimento|Espessura|Largura|Altura|Di[aâ]metro)\s*[:.-]?\s*(.*)$/i,
     )
     if (medidaMatch) {
       const val = medidaMatch[1].trim() || line
@@ -744,7 +992,11 @@ export function parseOpPdfDeterministic(allLines: string[]): ParsedOpPdfResult {
     // 9. If we have an active item accumulator and this line is NOT a new code/sector, accumulate it!
     if (currentItem) {
       // Check if line looks like a measurement line
-      if (/^(?:Medida|Dimens[oõ]es?|Comprimento|Espessura|Ø|MT|MM|CM)\b/i.test(line)) {
+      if (
+        /^(?:Medida|Dimens[oõ]es?|Comprimento|Espessura|Largura|Altura|Ø|MT\b|MM\b|CM\b|M2\b)/i.test(
+          line,
+        )
+      ) {
         currentItem.measurementLines.push(line)
       } else {
         currentItem.descriptionLines.push(line)
@@ -752,10 +1004,42 @@ export function parseOpPdfDeterministic(allLines: string[]): ParsedOpPdfResult {
       continue
     }
 
-    // 10. If not in currentItem, but previous line was just code and this line has desc + qty
+    // 10. Secondary accumulator: if no active currentItem but line is a continuation / description / measurement
+    // (e.g. "Medida: MT 2.50" or long description text after an item that had no inline unit/qty)
+    const isContinuationLine =
+      /^(?:Medida|Dimens[oõ]es?|Comprimento|Espessura|Largura|Altura|Ø|MT\b|MM\b|CM\b)/i.test(
+        line,
+      ) ||
+      (!/^[0-9A-Za-z\-./]{3,20}\s+\d+/i.test(line) &&
+        !/^\d{4,15}$/.test(line) &&
+        !isLabelWord(line.split(/\s+/)[0]))
+
+    if (
+      components.length > 0 &&
+      isContinuationLine &&
+      !/^(?:SETOR|ETAPA|FASE|TOTAL|SUBTOTAL|EMISSAO|PAGINA)\b/i.test(line)
+    ) {
+      const lastComp = components[components.length - 1]
+      if (
+        /^(?:Medida|Dimens[oõ]es?|Comprimento|Espessura|Largura|Altura|Ø|MT\b|MM\b|CM\b)/i.test(
+          line,
+        )
+      ) {
+        lastComp.measurements = lastComp.measurements ? `${lastComp.measurements} ${line}` : line
+      } else if (!/^(?:DATA|PEDIDO|CLIENTE|SOLICITACAO|DOCUMENTO)/i.test(line)) {
+        lastComp.description = `${lastComp.description} ${line}`.replace(/\s+/g, ' ').trim()
+      }
+      continue
+    }
+
+    // 11. If not in currentItem, but previous line was just code and this line has desc + qty
     // (e.g. Line 1: 05310219, Line 2: BUCHA EM AÇO... 4 PC)
     const splitCodeMatch = line.match(/^([A-Za-z0-9\-_./]{3,20})$/)
-    if (splitCodeMatch && !isLabelWord(splitCodeMatch[1])) {
+    if (
+      splitCodeMatch &&
+      !isLabelWord(splitCodeMatch[1]) &&
+      !/^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/.test(splitCodeMatch[1])
+    ) {
       flushCurrentItem()
       currentItem = {
         code: splitCodeMatch[1].trim(),

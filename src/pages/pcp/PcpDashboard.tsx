@@ -61,11 +61,11 @@ export default function PcpDashboard() {
           pb.collection('inventory').getFullList({ sort: 'description' }),
         ],
       )
-      setOrders(ordersData)
-      setLogs(logsData)
-      setShortages(shortagesData)
-      setProcesses(processesData)
-      setInventory(inventoryData)
+      setOrders(ordersData as any)
+      setLogs(logsData as any)
+      setShortages(shortagesData as any)
+      setProcesses(processesData as any)
+      setInventory(inventoryData as any)
     } catch (err) {
       console.error('Failed to fetch dashboard data', err)
     } finally {

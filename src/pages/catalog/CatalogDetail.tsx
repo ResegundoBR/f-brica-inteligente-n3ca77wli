@@ -73,7 +73,7 @@ export default function CatalogDetail() {
       setProduct((prev) => {
         return {
           ...found,
-          data: found.data || {},
+          data: (found.data || {}) as any,
         }
       })
 

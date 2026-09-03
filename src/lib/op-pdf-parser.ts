@@ -202,8 +202,18 @@ export function parseQuantity(raw: string | number): number {
   const clean = String(raw).trim()
   let parsed = 0
   if (clean.includes(',') && clean.includes('.')) {
-    const standard = clean.replace(/\./g, '').replace(',', '.')
-    parsed = parseFloat(standard)
+    // Determine whether comma or dot is the decimal separator
+    const lastComma = clean.lastIndexOf(',')
+    const lastDot = clean.lastIndexOf('.')
+    if (lastComma > lastDot) {
+      // e.g. 1.000,50 -> comma is decimal
+      const standard = clean.replace(/\./g, '').replace(',', '.')
+      parsed = parseFloat(standard)
+    } else {
+      // e.g. 1,000.50 -> dot is decimal
+      const standard = clean.replace(/,/g, '')
+      parsed = parseFloat(standard)
+    }
   } else if (clean.includes(',')) {
     parsed = parseFloat(clean.replace(',', '.'))
   } else {
@@ -959,43 +969,12 @@ export function parseOpPdfDeterministic(
   }
 
   // ----------------------------------------------------
-  // Component Parsing (Multi-line and Single-line accumulator)
-  // Preserves multi-line descriptions and measurements (e.g. "Medida: MT...")
+  // Component Parsing
+  // Primary Strategy: Positional X-coordinate extraction (handles multi-line descriptions and numbers like "REF 4360")
+  // Secondary Strategy: Text-line heuristic accumulator fallback (when positionedLines is unavailable)
   // ----------------------------------------------------
-  let inComponentSection = false
-
   const unitRegexStr = '(?:UN|PC|PÇ|KG|M|MT|MM|CM|M2|M3|PAR|CJ|BARRA|ROLO|L|ML|RL)'
   const unitRegex = new RegExp(`^${unitRegexStr}$`, 'i')
-
-  interface ItemAccumulator {
-    code: string
-    quantity: number
-    unit: string
-    descriptionLines: string[]
-    measurementLines: string[]
-    sector: PcpOrderMaterialSector
-  }
-
-  let currentItem: ItemAccumulator | null = null
-
-  const flushCurrentItem = () => {
-    if (!currentItem) return
-    const desc = currentItem.descriptionLines.join(' ').replace(/\s+/g, ' ').trim()
-    const measurements = currentItem.measurementLines.join(' ').replace(/\s+/g, ' ').trim()
-
-    if (desc || currentItem.code) {
-      components.push({
-        id: `comp_${Date.now()}_${components.length}`,
-        sector: currentItem.sector,
-        code: currentItem.code,
-        description: desc || currentItem.code,
-        quantity: currentItem.quantity || 1,
-        unit: currentItem.unit || 'UN',
-        measurements: measurements || undefined,
-      })
-    }
-    currentItem = null
-  }
 
   const isSectorHeader = (line: string): PcpOrderMaterialSector | null => {
     for (const s of sectorKeywords) {
@@ -1008,7 +987,7 @@ export function parseOpPdfDeterministic(
 
   const isTableColumnHeader = (line: string): boolean => {
     return (
-      /^(?:#|ITEM|N[º°]|C[ÓO]D|C[ÓO]DIGO)\s+/i.test(line) &&
+      /^(?:#|ITEM|N[º°]|C[ÓO]D|C[ÓO]DIGO)\b/i.test(line) &&
       /DESCRI[CÇ][AÃ]O/i.test(line) &&
       /(?:QTD|QUANTIDADE)/i.test(line)
     )
@@ -1020,261 +999,642 @@ export function parseOpPdfDeterministic(
     )
   }
 
-  for (let i = 0; i < allLines.length; i++) {
-    const line = allLines[i].trim()
-    if (!line) continue
+  interface TableBounds {
+    codMinX: number
+    codMaxX: number
+    descMinX: number
+    descMaxX: number
+    qtdMinX: number
+    qtdMaxX: number
+    unMinX: number
+    unMaxX: number
+  }
 
-    // 1. Check Section Marker
-    if (isSectionMarker(line)) {
-      inComponentSection = true
-      continue
+  let tableBounds: TableBounds | null = null
+
+  // Check if positionedLines has header line: CÓD PRODUTO | DESCRIÇÃO PRODUTO | QTD | UN
+  let tableHeaderY: number | null = null
+
+  if (positionedLines && positionedLines.length > 0) {
+    for (const pLine of positionedLines) {
+      if (!pLine.tokens || pLine.tokens.length === 0) continue
+
+      let codToken: PdfPositionedToken | null = null
+      let descToken: PdfPositionedToken | null = null
+      let qtdToken: PdfPositionedToken | null = null
+      let unToken: PdfPositionedToken | null = null
+
+      for (const tok of pLine.tokens) {
+        const str = tok.str
+          .toUpperCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+        if (/^C[OÓ]D|^ITEM\b/.test(str) && !codToken) {
+          codToken = tok
+        } else if (/^DESCRI/.test(str) && !descToken) {
+          descToken = tok
+        } else if (/^QTD|^QUANT/.test(str) && !qtdToken) {
+          qtdToken = tok
+        } else if (/^UN\b|^UNIDADE\b/.test(str) && !unToken) {
+          unToken = tok
+        }
+      }
+
+      if (descToken && qtdToken) {
+        tableHeaderY = pLine.y
+        const codX = codToken ? codToken.x : 0
+        const descX = descToken.x
+        const qtdX = qtdToken.x
+        const unX = unToken ? unToken.x : qtdX + 60
+
+        // Column dividers:
+        // codEnd: boundary between CÓD PRODUTO and DESCRIÇÃO PRODUTO
+        // In OP 457, CÓD PRODUTO is around X ≈ 20..100, DESCRIÇÃO starts around X ≈ 120..140
+        const codEnd = codToken
+          ? Math.max(codToken.x + (codToken.width || 50), (codX + descX) / 2)
+          : descX - 10
+        // descEnd: boundary between DESCRIÇÃO PRODUTO and QTD
+        // QTD column header is at qtdX (e.g. ≈ 600..650 in a standard page width 800+ or ≈ 480..520)
+        // Everything before qtdX - 15 belongs to DESCRIÇÃO PRODUTO
+        const descEnd = qtdX - 15
+        // qtdEnd: boundary between QTD and UN
+        const qtdEnd = unToken ? (qtdX + unX) / 2 : qtdX + 50
+        // unEnd: right boundary of UN
+        const unEnd = unToken ? unX + (unToken.width || 30) + 30 : qtdEnd + 60
+
+        tableBounds = {
+          codMinX: Math.max(0, codX - 30),
+          codMaxX: codEnd,
+          descMinX: codEnd,
+          descMaxX: descEnd,
+          qtdMinX: descEnd,
+          qtdMaxX: qtdEnd,
+          unMinX: qtdEnd,
+          unMaxX: unEnd,
+        }
+        break
+      }
+    }
+  }
+
+  // --- PRIMARY STRATEGY: Coordinate-based extraction ---
+  let parsedWithPositions = false
+
+  if (positionedLines && positionedLines.length > 0) {
+    interface PosAccumulator {
+      sector: PcpOrderMaterialSector
+      code: string
+      descTokens: { x: number; y: number; str: string }[]
+      qty: number
+      unit: string
+      measurementTokens: string[]
+      lastY: number
     }
 
-    // 2. Check Sector Change (e.g. FABRICAÇÃO, PREPARAÇÃO, MONTAGEM, EXPEDIÇÃO)
-    const matchedSector = isSectorHeader(line)
-    if (matchedSector) {
-      flushCurrentItem()
-      currentSector = matchedSector
-      inComponentSection = true
-      continue
+    let activeComp: PosAccumulator | null = null
+    let inPosComponentSection = false
+
+    const flushPosItem = () => {
+      if (!activeComp) return
+
+      // Sort desc tokens primarily by Y descending (top to bottom), then X ascending (left to right)
+      const descTokens = [...activeComp.descTokens]
+      descTokens.sort((a, b) => {
+        if (Math.abs(a.y - b.y) > 2) {
+          return b.y - a.y
+        }
+        return a.x - b.x
+      })
+
+      const rawDesc = descTokens
+        .map((t) => t.str)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+      const measurements = activeComp.measurementTokens.join(' ').replace(/\s+/g, ' ').trim()
+
+      if (rawDesc || activeComp.code) {
+        components.push({
+          id: `comp_${Date.now()}_${components.length}`,
+          sector: activeComp.sector,
+          code: activeComp.code,
+          description: rawDesc || activeComp.code,
+          quantity: activeComp.qty || 1,
+          unit: activeComp.unit || 'UN',
+          measurements: measurements || undefined,
+        })
+      }
+      activeComp = null
     }
 
-    // 3. Check Table column headers (CÓDIGO DESCRIÇÃO QTD UN...)
-    if (isTableColumnHeader(line)) {
-      flushCurrentItem()
-      inComponentSection = true
-      continue
+    // Default bounds if header wasn't found explicitly
+    const bounds: TableBounds = tableBounds || {
+      codMinX: 0,
+      codMaxX: 120,
+      descMinX: 120,
+      descMaxX: 520,
+      qtdMinX: 520,
+      qtdMaxX: 620,
+      unMinX: 620,
+      unMaxX: 720,
     }
 
-    // If we have not yet entered components / operations section, check if line starts looking like an item
-    if (!inComponentSection) {
-      const startsLikeItem =
-        /^([A-Za-z0-9\-_./]{3,20})\s+(\d+(?:[.,]\d+)?)\s*(?:UN|PC|PÇ|KG|M|MT|MM|CM|M2|M3|PAR|CJ|BARRA|ROLO|L|ML|RL)\b/i.test(
-          line,
-        ) ||
-        /^([A-Za-z0-9\-_./]{3,20})\s+(.+?)\s+(\d+(?:[.,]\d+)?)\s*(?:UN|PC|PÇ|KG|M|MT|MM|CM|M2|M3|PAR|CJ|BARRA|ROLO|L|ML|RL)?$/i.test(
-          line,
-        )
-      if (startsLikeItem && !isLabelWord(line.split(/\s+/)[0])) {
-        inComponentSection = true
-      } else {
+    for (let i = 0; i < positionedLines.length; i++) {
+      const pLine = positionedLines[i]
+      const lineStr = pLine.lineStr.trim()
+      if (!lineStr || isIgnoredLine(lineStr)) continue
+
+      // If we know the table header Y, any line strictly below (or equal to) the header
+      // is candidate for components section
+      if (tableHeaderY !== null && pLine.y < tableHeaderY && !inPosComponentSection) {
+        inPosComponentSection = true
+      }
+
+      // Sector change
+      const matchedSector = isSectorHeader(lineStr)
+      if (matchedSector) {
+        flushPosItem()
+        currentSector = matchedSector
+        inPosComponentSection = true
         continue
       }
-    }
 
-    // Skip footer / page / header repeat lines
-    if (isIgnoredLine(line)) {
-      continue
-    }
-
-    // 4. Handle "Medida: ..." or "Medida ..." or "Medida: MT ..." lines
-    const medidaMatch = line.match(
-      /^(?:Medida|Dimens[oõ]es?|Comprimento|Espessura|Largura|Altura|Di[aâ]metro)\s*[:.-]?\s*(.*)$/i,
-    )
-    if (medidaMatch) {
-      const val = medidaMatch[1].trim() || line
-      if (currentItem) {
-        currentItem.measurementLines.push(val)
-      } else if (components.length > 0) {
-        const lastComp = components[components.length - 1]
-        lastComp.measurements = lastComp.measurements ? `${lastComp.measurements} ${val}` : val
+      // Section marker
+      if (isSectionMarker(lineStr)) {
+        inPosComponentSection = true
+        continue
       }
-      continue
-    }
 
-    // 5. Delimited line (| or ; or tab)
-    if (line.includes('|') || line.includes(';') || line.includes('\t')) {
-      flushCurrentItem()
-      const sep = line.includes('|') ? '|' : line.includes(';') ? ';' : '\t'
-      const cols = line
-        .split(sep)
-        .map((c) => c.trim())
-        .filter(Boolean)
-      if (cols.length >= 2) {
-        let code = ''
-        let desc = ''
-        let qty = 0
-        let unit = 'UN'
-        let measurements = ''
+      // Column header line
+      if (isTableColumnHeader(lineStr)) {
+        flushPosItem()
+        inPosComponentSection = true
+        continue
+      }
 
-        let colStart = 0
-        if (/^\d+$/.test(cols[0]) && cols.length >= 3) {
-          colStart = 1
+      if (!inPosComponentSection) {
+        // If not in component section yet, check if line starts with product code
+        const startsWithCode = pLine.tokens.some((tok) => {
+          return (
+            tok.x <= bounds.codMaxX + 20 &&
+            /^[A-Za-z0-9\-_./]{4,20}$/.test(tok.str) &&
+            !isLabelWord(tok.str)
+          )
+        })
+        if (startsWithCode) {
+          inPosComponentSection = true
+        } else {
+          continue
         }
+      }
 
-        code = cols[colStart] || ''
-        desc = cols[colStart + 1] || ''
+      // Check footer/stop lines
+      if (/^(?:TOTAL\s+GERAL|ASSINATURA\s+RESPONS[AÁ]VEL)\b/i.test(lineStr)) {
+        flushPosItem()
+        break
+      }
 
-        for (let c = colStart + 2; c < cols.length; c++) {
-          const colVal = cols[c]
-          const parsedQ = parseQuantity(colVal)
-          if (parsedQ > 0 && qty === 0 && /^[\d.,]+$/.test(colVal.replace(/[a-zA-Z]/g, ''))) {
-            qty = parsedQ
-          } else if (unitRegex.test(colVal)) {
-            unit = colVal.toUpperCase()
-          } else if (colVal) {
-            measurements = colVal
+      // Classify tokens in this positioned line according to bounds
+      const codTokens = pLine.tokens.filter(
+        (t) => t.x >= bounds.codMinX - 10 && t.x <= bounds.codMaxX,
+      )
+      const descTokens = pLine.tokens.filter((t) => t.x > bounds.codMaxX && t.x <= bounds.descMaxX)
+      const qtdTokens = pLine.tokens.filter((t) => t.x > bounds.descMaxX && t.x <= bounds.qtdMaxX)
+      const unTokens = pLine.tokens.filter((t) => t.x > bounds.qtdMaxX && t.x <= bounds.unMaxX + 40)
+
+      // Check if line contains a measurement directive ("Medida: ...")
+      const medidaMatch = lineStr.match(
+        /^(?:Medida|Dimens[oõ]es?|Comprimento|Espessura|Largura|Altura|Di[aâ]metro)\s*[:.-]?\s*(.*)$/i,
+      )
+      if (medidaMatch) {
+        const val = medidaMatch[1].trim() || lineStr
+        if (activeComp) {
+          activeComp.measurementTokens.push(val)
+        } else if (components.length > 0) {
+          const lastComp = components[components.length - 1]
+          lastComp.measurements = lastComp.measurements ? `${lastComp.measurements} ${val}` : val
+        }
+        continue
+      }
+
+      // Does this line start a NEW item?
+      // A new item has:
+      // (a) token in COD PRODUTO column matching code pattern (e.g. 11120026) OR
+      // (b) token in QTD column with numeric quantity AND descTokens present AND no activeComp
+      const codCandidate = codTokens
+        .map((t) => t.str)
+        .join('')
+        .trim()
+      const isCodValid =
+        codCandidate.length >= 3 &&
+        /^[A-Za-z0-9\-_./]{3,20}$/.test(codCandidate) &&
+        !isLabelWord(codCandidate) &&
+        !/^(?:DATA|EMISSAO|PAGINA|TOTAL|ORDEM|CLIENTE|PEDIDO|ENTREGA|RESPONSAVEL|SEPARACAO|PRODUCAO)$/i.test(
+          codCandidate,
+        )
+
+      // Qty extracted specifically from QTD column tokens:
+      let qtdValue = 0
+      for (const tok of qtdTokens) {
+        const cleanTok = tok.str.replace(/[^\d.,]/g, '')
+        if (cleanTok && /^\d+(?:[.,]\d+)?$/.test(cleanTok)) {
+          const parsed = parseQuantity(cleanTok)
+          if (parsed > 0) {
+            qtdValue = parsed
+            break
           }
         }
+      }
 
-        if (desc && (code || qty > 0)) {
-          components.push({
-            id: `comp_${Date.now()}_${components.length}`,
-            sector: currentSector,
-            code: code.replace(/^#\s*/, ''),
-            description: desc,
-            quantity: qty || 1,
-            unit,
-            measurements: measurements || undefined,
-          })
+      // Unit from UN column
+      let unitValue = ''
+      for (const tok of unTokens) {
+        const clean = tok.str.toUpperCase().trim()
+        if (unitRegex.test(clean)) {
+          unitValue = clean
+          break
+        }
+      }
+
+      // Check if we start a new component
+      if (isCodValid || (qtdValue > 0 && descTokens.length > 0 && !activeComp)) {
+        flushPosItem()
+
+        activeComp = {
+          sector: currentSector,
+          code: isCodValid ? codCandidate : '',
+          descTokens: [...descTokens],
+          qty: qtdValue || 1,
+          unit: unitValue || 'UN',
+          measurementTokens: [],
+          lastY: pLine.y,
+        }
+        continue
+      }
+
+      // If we already have an active component:
+      if (activeComp) {
+        // Update quantity/unit if not yet set and found on this continuation line
+        if (activeComp.qty <= 1 && qtdValue > 0) {
+          activeComp.qty = qtdValue
+        }
+        if (activeComp.unit === 'UN' && unitValue) {
+          activeComp.unit = unitValue
+        }
+
+        // Check if there are description tokens on this line (wrapping lines of description)
+        if (descTokens.length > 0) {
+          activeComp.descTokens.push(...descTokens)
+          activeComp.lastY = pLine.y
+          continue
+        }
+
+        // If this line only has tokens in the description horizontal area, treat as continuation
+        const onlyTokensInDescArea = pLine.tokens.every(
+          (t) => t.x >= bounds.codMaxX && t.x <= bounds.descMaxX + 50,
+        )
+        if (onlyTokensInDescArea && pLine.tokens.length > 0) {
+          activeComp.descTokens.push(...pLine.tokens)
+          activeComp.lastY = pLine.y
           continue
         }
       }
     }
 
-    // 6. Pattern A: Code + Quantity + Unit on the first line (e.g. "14010047  0.28 UN" or "05310219  4 PC")
-    const codeQtyUnitMatch = line.match(
-      /^([A-Za-z0-9\-_./]{3,20})\s+(\d+(?:[.,]\d+)?)\s*(UN|PC|PÇ|KG|M|MT|MM|CM|M2|M3|PAR|CJ|BARRA|ROLO|L|ML|RL)\b(?:\s*(.*))?$/i,
-    )
-    if (codeQtyUnitMatch && !isLabelWord(codeQtyUnitMatch[1])) {
-      flushCurrentItem()
-      const code = codeQtyUnitMatch[1].trim()
-      const qty = parseQuantity(codeQtyUnitMatch[2])
-      const unit = codeQtyUnitMatch[3].toUpperCase()
-      const inlineTail = codeQtyUnitMatch[4]?.trim()
+    flushPosItem()
 
-      currentItem = {
-        code,
-        quantity: qty,
-        unit,
-        descriptionLines: inlineTail ? [inlineTail] : [],
-        measurementLines: [],
-        sector: currentSector,
-      }
-      continue
-    }
-
-    // 7. Pattern B: Full single-line item: Code + Description + Quantity (+ Unit) (+ Measurements)
-    const singleLineMatch = line.match(
-      /^(?:(\d{1,3})\s+)?([A-Za-z0-9\-_./]{3,20})\s+(.+?)\s+(\d+(?:[.,]\d+)?)\s*(UN|PC|PÇ|KG|M|MT|MM|CM|M2|M3|PAR|CJ|BARRA|ROLO|L|ML|RL)?(?:\s+(.+))?$/i,
-    )
-    if (
-      singleLineMatch &&
-      !isLabelWord(singleLineMatch[2]) &&
-      !/^(?:DATA|EMISSAO|PAGINA|TOTAL|ORDEM|CLIENTE|PEDIDO|ENTREGA|RESPONSAVEL)$/i.test(
-        singleLineMatch[2],
-      )
-    ) {
-      const code = singleLineMatch[2].trim()
-      const desc = singleLineMatch[3].trim()
-      const qty = parseQuantity(singleLineMatch[4])
-      const unit = (singleLineMatch[5] || 'UN').toUpperCase()
-      const measurements = singleLineMatch[6]?.trim() || ''
-
-      if (desc.length >= 2 && qty > 0) {
-        flushCurrentItem()
-        components.push({
-          id: `comp_${Date.now()}_${components.length}`,
-          sector: currentSector,
-          code,
-          description: desc,
-          quantity: qty,
-          unit,
-          measurements: measurements || undefined,
-        })
-        continue
-      }
-    }
-
-    // 8. Pattern C: Fallback Code + Description + Qty (no unit, or numeric code)
-    const fallbackMatch = line.match(
-      /^([A-Za-z0-9\-_./]{3,15})\s+([A-Za-zÀ-ÿ0-9\s/.,\-Ø#()]+?)\s+(\d+(?:[.,]\d+)?)\s*$/i,
-    )
-    if (
-      fallbackMatch &&
-      !isLabelWord(fallbackMatch[1]) &&
-      !/^(?:TOTAL|SUBTOTAL|VALOR)$/i.test(fallbackMatch[1])
-    ) {
-      const code = fallbackMatch[1].trim()
-      const desc = fallbackMatch[2].trim()
-      const qty = parseQuantity(fallbackMatch[3])
-      if (desc.length > 2 && qty > 0) {
-        flushCurrentItem()
-        components.push({
-          id: `comp_${Date.now()}_${components.length}`,
-          sector: currentSector,
-          code,
-          description: desc,
-          quantity: qty,
-          unit: 'UN',
-        })
-        continue
-      }
-    }
-
-    // 9. If we have an active item accumulator and this line is NOT a new code/sector, accumulate it!
-    if (currentItem) {
-      if (
-        /^(?:Medida|Dimens[oõ]es?|Comprimento|Espessura|Largura|Altura|Ø|MT\b|MM\b|CM\b|M2\b)/i.test(
-          line,
-        )
-      ) {
-        currentItem.measurementLines.push(line)
-      } else {
-        currentItem.descriptionLines.push(line)
-      }
-      continue
-    }
-
-    // 10. Secondary accumulator: if no active currentItem but line is a continuation / description / measurement
-    const isContinuationLine =
-      /^(?:Medida|Dimens[oõ]es?|Comprimento|Espessura|Largura|Altura|Ø|MT\b|MM\b|CM\b)/i.test(
-        line,
-      ) ||
-      (!/^[0-9A-Za-z\-./]{3,20}\s+\d+/i.test(line) &&
-        !/^\d{4,15}$/.test(line) &&
-        !isLabelWord(line.split(/\s+/)[0]))
-
-    if (
-      components.length > 0 &&
-      isContinuationLine &&
-      !/^(?:SETOR|ETAPA|FASE|TOTAL|SUBTOTAL|EMISSAO|PAGINA)\b/i.test(line)
-    ) {
-      const lastComp = components[components.length - 1]
-      if (
-        /^(?:Medida|Dimens[oõ]es?|Comprimento|Espessura|Largura|Altura|Ø|MT\b|MM\b|CM\b)/i.test(
-          line,
-        )
-      ) {
-        lastComp.measurements = lastComp.measurements ? `${lastComp.measurements} ${line}` : line
-      } else if (!/^(?:DATA|PEDIDO|CLIENTE|SOLICITACAO|DOCUMENTO)/i.test(line)) {
-        lastComp.description = `${lastComp.description} ${line}`.replace(/\s+/g, ' ').trim()
-      }
-      continue
-    }
-
-    // 11. Code on this line, desc + qty on next line
-    const splitCodeMatch = line.match(/^([A-Za-z0-9\-_./]{3,20})$/)
-    if (
-      splitCodeMatch &&
-      !isLabelWord(splitCodeMatch[1]) &&
-      !/^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/.test(splitCodeMatch[1])
-    ) {
-      flushCurrentItem()
-      currentItem = {
-        code: splitCodeMatch[1].trim(),
-        quantity: 1,
-        unit: 'UN',
-        descriptionLines: [],
-        measurementLines: [],
-        sector: currentSector,
-      }
-      continue
+    if (components.length > 0) {
+      parsedWithPositions = true
     }
   }
 
-  // Flush any lingering item
-  flushCurrentItem()
+  // --- SECONDARY STRATEGY: Text line accumulator fallback ---
+  if (!parsedWithPositions) {
+    let inComponentSection = false
+
+    interface ItemAccumulator {
+      code: string
+      quantity: number
+      unit: string
+      descriptionLines: string[]
+      measurementLines: string[]
+      sector: PcpOrderMaterialSector
+    }
+
+    let currentItem: ItemAccumulator | null = null
+
+    const flushCurrentItem = () => {
+      if (!currentItem) return
+      const desc = currentItem.descriptionLines.join(' ').replace(/\s+/g, ' ').trim()
+      const measurements = currentItem.measurementLines.join(' ').replace(/\s+/g, ' ').trim()
+
+      if (desc || currentItem.code) {
+        components.push({
+          id: `comp_${Date.now()}_${components.length}`,
+          sector: currentItem.sector,
+          code: currentItem.code,
+          description: desc || currentItem.code,
+          quantity: currentItem.quantity || 1,
+          unit: currentItem.unit || 'UN',
+          measurements: measurements || undefined,
+        })
+      }
+      currentItem = null
+    }
+
+    for (let i = 0; i < allLines.length; i++) {
+      const line = allLines[i].trim()
+      if (!line) continue
+
+      // 1. Check Section Marker
+      if (isSectionMarker(line)) {
+        inComponentSection = true
+        continue
+      }
+
+      // 2. Check Sector Change
+      const matchedSector = isSectorHeader(line)
+      if (matchedSector) {
+        flushCurrentItem()
+        currentSector = matchedSector
+        inComponentSection = true
+        continue
+      }
+
+      // 3. Check Table column headers
+      if (isTableColumnHeader(line)) {
+        flushCurrentItem()
+        inComponentSection = true
+        continue
+      }
+
+      // If we have not yet entered components / operations section, check if line starts looking like an item
+      if (!inComponentSection) {
+        const startsLikeItem =
+          /^([A-Za-z0-9\-_./]{3,20})\s+(\d+(?:[.,]\d+)?)\s*(?:UN|PC|PÇ|KG|M|MT|MM|CM|M2|M3|PAR|CJ|BARRA|ROLO|L|ML|RL)\b/i.test(
+            line,
+          ) ||
+          /^([A-Za-z0-9\-_./]{3,20})\s+(.+?)\s+(\d+(?:[.,]\d+)?)\s*(?:UN|PC|PÇ|KG|M|MT|MM|CM|M2|M3|PAR|CJ|BARRA|ROLO|L|ML|RL)?$/i.test(
+            line,
+          )
+        if (startsLikeItem && !isLabelWord(line.split(/\s+/)[0])) {
+          inComponentSection = true
+        } else {
+          continue
+        }
+      }
+
+      // Skip footer / page / header repeat lines
+      if (isIgnoredLine(line)) {
+        continue
+      }
+
+      // 4. Handle "Medida: ..." lines
+      const medidaMatch = line.match(
+        /^(?:Medida|Dimens[oõ]es?|Comprimento|Espessura|Largura|Altura|Di[aâ]metro)\s*[:.-]?\s*(.*)$/i,
+      )
+      if (medidaMatch) {
+        const val = medidaMatch[1].trim() || line
+        if (currentItem) {
+          currentItem.measurementLines.push(val)
+        } else if (components.length > 0) {
+          const lastComp = components[components.length - 1]
+          lastComp.measurements = lastComp.measurements ? `${lastComp.measurements} ${val}` : val
+        }
+        continue
+      }
+
+      // 5. Delimited line (| or ; or tab)
+      if (line.includes('|') || line.includes(';') || line.includes('\t')) {
+        flushCurrentItem()
+        const sep = line.includes('|') ? '|' : line.includes(';') ? ';' : '\t'
+        const cols = line
+          .split(sep)
+          .map((c) => c.trim())
+          .filter(Boolean)
+        if (cols.length >= 2) {
+          let code = ''
+          let desc = ''
+          let qty = 0
+          let unit = 'UN'
+          let measurements = ''
+
+          let colStart = 0
+          if (/^\d+$/.test(cols[0]) && cols.length >= 3) {
+            colStart = 1
+          }
+
+          code = cols[colStart] || ''
+          desc = cols[colStart + 1] || ''
+
+          for (let c = colStart + 2; c < cols.length; c++) {
+            const colVal = cols[c]
+            const parsedQ = parseQuantity(colVal)
+            if (parsedQ > 0 && qty === 0 && /^[\d.,]+$/.test(colVal.replace(/[a-zA-Z]/g, ''))) {
+              qty = parsedQ
+            } else if (unitRegex.test(colVal)) {
+              unit = colVal.toUpperCase()
+            } else if (colVal) {
+              measurements = colVal
+            }
+          }
+
+          if (desc && (code || qty > 0)) {
+            components.push({
+              id: `comp_${Date.now()}_${components.length}`,
+              sector: currentSector,
+              code: code.replace(/^#\s*/, ''),
+              description: desc,
+              quantity: qty || 1,
+              unit,
+              measurements: measurements || undefined,
+            })
+            continue
+          }
+        }
+      }
+
+      // 6. Multi-space column line (common in plain text dumps from PDFs)
+      // When 2 or more consecutive spaces separate code, description, qty and unit
+      const multiSpaceCols = line
+        .split(/\s{2,}|\t/)
+        .map((c) => c.trim())
+        .filter(Boolean)
+      if (multiSpaceCols.length >= 3) {
+        const firstCol = multiSpaceCols[0]
+        const lastCol = multiSpaceCols[multiSpaceCols.length - 1]
+        const secondLastCol = multiSpaceCols[multiSpaceCols.length - 2]
+
+        if (/^[A-Za-z0-9\-_./]{3,20}$/.test(firstCol) && !isLabelWord(firstCol)) {
+          let colQty = 0
+          let colUnit = 'UN'
+          let descTokens = multiSpaceCols.slice(1, -2)
+
+          if (unitRegex.test(lastCol) && /^\d+(?:[.,]\d+)?$/.test(secondLastCol)) {
+            colQty = parseQuantity(secondLastCol)
+            colUnit = lastCol.toUpperCase()
+          } else if (/^\d+(?:[.,]\d+)?$/.test(lastCol)) {
+            colQty = parseQuantity(lastCol)
+            descTokens = multiSpaceCols.slice(1, -1)
+          }
+
+          if (colQty > 0) {
+            flushCurrentItem()
+            components.push({
+              id: `comp_${Date.now()}_${components.length}`,
+              sector: currentSector,
+              code: firstCol,
+              description: descTokens.join(' ').trim() || firstCol,
+              quantity: colQty,
+              unit: colUnit,
+            })
+            continue
+          }
+        }
+      }
+
+      // 7. Pattern A: Code + Quantity + Unit on the first line (e.g. "14010047  0.28 UN")
+      const codeQtyUnitMatch = line.match(
+        /^([A-Za-z0-9\-_./]{3,20})\s+(\d+(?:[.,]\d+)?)\s*(UN|PC|PÇ|KG|M|MT|MM|CM|M2|M3|PAR|CJ|BARRA|ROLO|L|ML|RL)\b(?:\s*(.*))?$/i,
+      )
+      if (codeQtyUnitMatch && !isLabelWord(codeQtyUnitMatch[1])) {
+        flushCurrentItem()
+        const code = codeQtyUnitMatch[1].trim()
+        const qty = parseQuantity(codeQtyUnitMatch[2])
+        const unit = codeQtyUnitMatch[3].toUpperCase()
+        const inlineTail = codeQtyUnitMatch[4]?.trim()
+
+        currentItem = {
+          code,
+          quantity: qty,
+          unit,
+          descriptionLines: inlineTail ? [inlineTail] : [],
+          measurementLines: [],
+          sector: currentSector,
+        }
+        continue
+      }
+
+      // 8. Pattern B: Full single-line item: Code + Description + Quantity (+ Unit)
+      // Anchored strictly at end of line so numbers inside description (like REF 4360) are not matched as quantity
+      const singleLineMatch = line.match(
+        /^(?:(\d{1,3})\s+)?([A-Za-z0-9\-_./]{3,20})\s+(.+?)\s+(\d+(?:[.,]\d+)?)\s*(UN|PC|PÇ|KG|M|MT|MM|CM|M2|M3|PAR|CJ|BARRA|ROLO|L|ML|RL)\s*$/i,
+      )
+      if (
+        singleLineMatch &&
+        !isLabelWord(singleLineMatch[2]) &&
+        !/^(?:DATA|EMISSAO|PAGINA|TOTAL|ORDEM|CLIENTE|PEDIDO|ENTREGA|RESPONSAVEL)$/i.test(
+          singleLineMatch[2],
+        )
+      ) {
+        const code = singleLineMatch[2].trim()
+        const desc = singleLineMatch[3].trim()
+        const qty = parseQuantity(singleLineMatch[4])
+        const unit = (singleLineMatch[5] || 'UN').toUpperCase()
+
+        if (desc.length >= 2 && qty > 0) {
+          flushCurrentItem()
+          components.push({
+            id: `comp_${Date.now()}_${components.length}`,
+            sector: currentSector,
+            code,
+            description: desc,
+            quantity: qty,
+            unit,
+          })
+          continue
+        }
+      }
+
+      // 9. Pattern C: Fallback Code + Description + Qty at exact end of line
+      const fallbackMatch = line.match(
+        /^([A-Za-z0-9\-_./]{3,15})\s+([A-Za-zÀ-ÿ0-9\s/.,\-Ø#()]+?)\s+(\d+(?:[.,]\d+)?)\s*$/i,
+      )
+      if (
+        fallbackMatch &&
+        !isLabelWord(fallbackMatch[1]) &&
+        !/^(?:TOTAL|SUBTOTAL|VALOR)$/i.test(fallbackMatch[1])
+      ) {
+        const code = fallbackMatch[1].trim()
+        const desc = fallbackMatch[2].trim()
+        const qty = parseQuantity(fallbackMatch[3])
+        if (desc.length > 2 && qty > 0) {
+          flushCurrentItem()
+          components.push({
+            id: `comp_${Date.now()}_${components.length}`,
+            sector: currentSector,
+            code,
+            description: desc,
+            quantity: qty,
+            unit: 'UN',
+          })
+          continue
+        }
+      }
+
+      // 10. If we have an active item accumulator and this line is NOT a new code/sector, accumulate it!
+      if (currentItem) {
+        if (
+          /^(?:Medida|Dimens[oõ]es?|Comprimento|Espessura|Largura|Altura|Ø|MT\b|MM\b|CM\b|M2\b)/i.test(
+            line,
+          )
+        ) {
+          currentItem.measurementLines.push(line)
+        } else {
+          currentItem.descriptionLines.push(line)
+        }
+        continue
+      }
+
+      // 11. Secondary accumulator: if no active currentItem but line is a continuation
+      const isContinuationLine =
+        /^(?:Medida|Dimens[oõ]es?|Comprimento|Espessura|Largura|Altura|Ø|MT\b|MM\b|CM\b)/i.test(
+          line,
+        ) ||
+        (!/^[0-9A-Za-z\-./]{3,20}\s+\d+/i.test(line) &&
+          !/^\d{4,15}$/.test(line) &&
+          !isLabelWord(line.split(/\s+/)[0]))
+
+      if (
+        components.length > 0 &&
+        isContinuationLine &&
+        !/^(?:SETOR|ETAPA|FASE|TOTAL|SUBTOTAL|EMISSAO|PAGINA)\b/i.test(line)
+      ) {
+        const lastComp = components[components.length - 1]
+        if (
+          /^(?:Medida|Dimens[oõ]es?|Comprimento|Espessura|Largura|Altura|Ø|MT\b|MM\b|CM\b)/i.test(
+            line,
+          )
+        ) {
+          lastComp.measurements = lastComp.measurements ? `${lastComp.measurements} ${line}` : line
+        } else if (!/^(?:DATA|PEDIDO|CLIENTE|SOLICITACAO|DOCUMENTO)/i.test(line)) {
+          lastComp.description = `${lastComp.description} ${line}`.replace(/\s+/g, ' ').trim()
+        }
+        continue
+      }
+
+      // 12. Code on this line, desc + qty on next line
+      const splitCodeMatch = line.match(/^([A-Za-z0-9\-_./]{3,20})$/)
+      if (
+        splitCodeMatch &&
+        !isLabelWord(splitCodeMatch[1]) &&
+        !/^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/.test(splitCodeMatch[1])
+      ) {
+        flushCurrentItem()
+        currentItem = {
+          code: splitCodeMatch[1].trim(),
+          quantity: 1,
+          unit: 'UN',
+          descriptionLines: [],
+          measurementLines: [],
+          sector: currentSector,
+        }
+        continue
+      }
+    }
+
+    flushCurrentItem()
+  }
 
   return {
     header,

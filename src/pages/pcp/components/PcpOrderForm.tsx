@@ -219,7 +219,7 @@ export function PcpOrderForm({
   const { toast } = useToast()
 
   const form = useForm<z.infer<typeof schema>>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(schema) as any,
     defaultValues: {
       order_number: '',
       op_number: '',
@@ -569,6 +569,7 @@ export function PcpOrderForm({
       setMissingTimeProduct({
         product,
         processesToDefine: processesToFill,
+        isUpdate: !!editingOrder,
         pendingFormData: data,
         fabricationProcesses,
       })
@@ -782,7 +783,7 @@ export function PcpOrderForm({
           </DialogHeader>
           <form
             onSubmit={form.handleSubmit(
-              async (data) => {
+              async (data: any) => {
                 try {
                   setSubmitError(null)
                   await onSubmit(data)

@@ -17,9 +17,15 @@ interface SupplierFormDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onCreated?: (name: string) => void
+  onSaved?: (supplier: any) => void
 }
 
-export function SupplierFormDialog({ open, onOpenChange, onCreated }: SupplierFormDialogProps) {
+export function SupplierFormDialog({
+  open,
+  onOpenChange,
+  onCreated,
+  onSaved,
+}: SupplierFormDialogProps) {
   const [form, setForm] = useState({
     name: '',
     contact_name: '',
@@ -36,9 +42,10 @@ export function SupplierFormDialog({ open, onOpenChange, onCreated }: SupplierFo
     }
     setSaving(true)
     try {
-      await createSupplier(form)
+      const created = await createSupplier(form)
       toast.success('Fornecedor cadastrado')
       onCreated?.(form.name)
+      onSaved?.(created)
       setForm({ name: '', contact_name: '', email: '', phone: '', whatsapp: '' })
       onOpenChange(false)
     } catch {

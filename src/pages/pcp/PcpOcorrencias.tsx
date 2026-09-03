@@ -415,11 +415,16 @@ export default function PcpOcorrencias() {
         </TabsContent>
       </Tabs>
 
-      <PcpOrderDetails
-        op={selectedOp}
-        observations={observations}
-        onClose={() => setSelectedOp(null)}
-      />
+      {selectedOp && (
+        <PcpOrderDetails
+          op={selectedOp}
+          observations={observations}
+          onClose={() => setSelectedOp(null)}
+          onEdit={() => {}}
+          onDelete={() => {}}
+          isAdmin={false}
+        />
+      )}
     </div>
   )
 }

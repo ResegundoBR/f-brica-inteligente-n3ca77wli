@@ -382,7 +382,7 @@ function ShortageDetailsModal({
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="space-y-1.5">
             <Label>Prioridade</Label>
-            <Select value={priority} onValueChange={setPriority}>
+            <Select value={priority} onValueChange={(val: any) => setPriority(val)}>
               <SelectTrigger className="bg-white dark:bg-slate-950">
                 <SelectValue />
               </SelectTrigger>

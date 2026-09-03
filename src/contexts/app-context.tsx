@@ -24,7 +24,7 @@ const mockUsers: User[] = [
   { id: '3', name: 'Maria Revisora', email: 'maria@fabrica.com', role: 'Revisador', active: true },
 ]
 
-const mockProducts: Product[] = [
+const mockProducts: any[] = [
   {
     id: 'P001',
     name: 'Válvula de Pressão X1',
@@ -65,7 +65,7 @@ const mockProducts: Product[] = [
   },
 ]
 
-const mockLearning: LearningRecord[] = [
+const mockLearning: any[] = [
   {
     id: 'L1',
     date: '2023-10-08',
@@ -91,7 +91,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [users] = useState<User[]>(mockUsers)
   const [products, setProducts] = useState<Product[]>(mockProducts)
   const [learningRecords] = useState<LearningRecord[]>(mockLearning)
-  const [logs, setLogs] = useState<Log[]>([
+  const [logs, setLogs] = useState<any[]>([
     {
       id: '1',
       timestamp: '2023-10-10 08:00',

@@ -50,6 +50,7 @@ export default function AdminRoles() {
     access_visao_comercial: false,
     access_painel_controle: false,
     access_produto_processos: false,
+    access_catalog_consultation: false,
   })
 
   const loadRoles = async () => {

@@ -71,7 +71,10 @@ export function PcpFilters({
   const [clients, setClients] = useState<Client[]>([])
 
   useEffect(() => {
-    pb.collection('clients').getFullList({ sort: 'name' }).then(setClients).catch(console.error)
+    pb.collection('clients')
+      .getFullList({ sort: 'name' })
+      .then((records) => setClients(records as any))
+      .catch(console.error)
   }, [])
 
   return (

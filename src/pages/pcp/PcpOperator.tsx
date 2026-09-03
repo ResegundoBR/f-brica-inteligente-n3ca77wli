@@ -398,7 +398,8 @@ function OperatorCard({
   }
   const remainingHours = estHours - elapsedHours
   const isRed = estHours > 0 && elapsedHours > estHours
-  const isSeparationStage = op.stage === 'Separação' || op.stage === 'Separação no estoque fisico'
+  const isSeparationStage =
+    (op.stage as string) === 'Separação' || (op.stage as string) === 'Separação no estoque fisico'
   const formatTime = (hours: number) => {
     const h = Math.floor(Math.abs(hours))
     const m = Math.floor((Math.abs(hours) - h) * 60)
@@ -1004,14 +1005,14 @@ export default function PcpOperator() {
       setOrders((prev) =>
         prev.map((o) =>
           o.id === op.id
-            ? {
+            ? ({
                 ...o,
                 status: 'Fila',
-                stage: nextStage,
+                stage: nextStage as any,
                 started_at: '',
                 bottleneck_reason: 'Nenhum',
                 bottleneck_details: '',
-              }
+              } as PcpOrder)
             : o,
         ),
       )
@@ -1058,7 +1059,12 @@ export default function PcpOperator() {
     setOrders((prev) =>
       prev.map((o) =>
         o.id === op.id
-          ? { ...o, status: newStatus, bottleneck_reason: reason, bottleneck_details: details }
+          ? ({
+              ...o,
+              status: newStatus,
+              bottleneck_reason: reason as any,
+              bottleneck_details: details,
+            } as PcpOrder)
           : o,
       ),
     )

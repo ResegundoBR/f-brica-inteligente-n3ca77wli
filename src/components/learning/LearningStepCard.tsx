@@ -177,7 +177,7 @@ export function LearningStepCard({ step, idx, isFirst, isLast, onMove }: Props) 
                 <div key={c.id} className="flex gap-2">
                   <Avatar className="w-6 h-6 mt-0.5">
                     <AvatarImage
-                      src={pb.files.getUrl(c.expand?.user_id, c.expand?.user_id?.avatar)}
+                      src={pb.files.getUrl(c.expand?.user_id, (c.expand?.user_id as any)?.avatar)}
                     />
                     <AvatarFallback className="text-[10px]">
                       {c.expand?.user_id?.name?.charAt(0) || 'U'}

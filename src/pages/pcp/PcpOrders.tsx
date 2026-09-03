@@ -63,6 +63,7 @@ export default function PcpOrders() {
   const [deadlineFilter, setDeadlineFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [stageFilter, setStageFilter] = useState('all')
+  const [showConcluded, setShowConcluded] = useState(false)
   const [selectedOp, setSelectedOp] = useState<PcpOrder | null>(null)
   const [search, setSearch] = useState('')
   const [messageOrder, setMessageOrder] = useState<{
@@ -172,6 +173,14 @@ export default function PcpOrders() {
 
   const groupedOrders = useMemo(() => {
     const filteredByCustom = filteredOrders.filter((op) => {
+      // Regra de visualização: padrão mostra apenas ordens em aberto (não concluídas).
+      // Ao ativar showConcluded, mostra apenas as concluídas.
+      if (showConcluded) {
+        if (op.status !== 'Concluído') return false
+      } else {
+        if (op.status === 'Concluído') return false
+      }
+
       if (opTypeFilter !== 'all' && op.op_type !== opTypeFilter) return false
       if (clientFilter !== 'all' && op.client_id !== clientFilter) return false
       if (clientTypeFilter !== 'all' && op.expand?.client_id?.type !== clientTypeFilter)
@@ -220,6 +229,7 @@ export default function PcpOrders() {
     return groups
   }, [
     filteredOrders,
+    showConcluded,
     opTypeFilter,
     clientFilter,
     clientTypeFilter,
@@ -331,6 +341,14 @@ export default function PcpOrders() {
             stage={stageFilter}
             setStage={setStageFilter}
           />
+          <Button
+            variant={showConcluded ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setShowConcluded(!showConcluded)}
+            className="gap-2"
+          >
+            {showConcluded ? 'Em aberto' : 'Concluídas'}
+          </Button>
           <Button
             variant={prazoEspecialOnly ? 'default' : 'outline'}
             size="sm"

@@ -252,8 +252,11 @@ const KNOWN_HEADER_LABEL_WORDS = new Set([
   'NUMERO',
   'NÚMERO',
   'SKU',
+  'COD',
+  'CÓD',
   'CODIGO',
   'CÓDIGO',
+  'PRODUTO',
   'DESCRICAO',
   'DESCRIÇÃO',
   'SOLICITACAO',
@@ -261,17 +264,27 @@ const KNOWN_HEADER_LABEL_WORDS = new Set([
   'DOCUMENTO',
   'ESTOQUE',
   'MATERIAIS',
+  'MATERIAL',
   'PECA',
   'PEÇAS',
   'PECAS',
   'TOTAL',
   'QUANTIDADE',
   'QTD',
+  'UN',
+  'UNIDADE',
+  'SEPARACAO',
+  'SEPARAÇÃO',
+  'RESPONSAVEL',
+  'RESPONSÁVEL',
   'OBS',
   'OBSERVACOES',
   'OBSERVAÇÕES',
+  'OPERACAO',
+  'OPERAÇÃO',
+  'OPERACOES',
+  'OPERAÇÕES',
 ])
-
 function isLabelWord(word: string): boolean {
   const normalized = word
     .toUpperCase()
@@ -284,11 +297,65 @@ function isLabelWord(word: string): boolean {
 function isIgnoredLine(line: string): boolean {
   return (
     /^(?:P[áa]gina\s+\d+|Emiss[aã]o:|Data\/Hora\s+Emiss[aã]o|Obs:|Solicita[çc][aã]o\s+de\s+Materiais|Documento\s+de\s+Estoque)/i.test(
-      line,
+      line.trim(),
     ) ||
-    /^_{3,}/.test(line) ||
-    /^-{3,}/.test(line)
+    /^_{3,}/.test(line.trim()) ||
+    /^-{3,}/.test(line.trim())
   )
+}
+
+/**
+ * Double-layer guard: Check if a text line or token is a column header, label row, or date row
+ * that should NEVER be accepted as a component.
+ */
+export function isInvalidComponentCandidate(text: string): boolean {
+  const clean = (text || '').trim()
+  if (!clean || clean.length < 2) return true
+
+  const norm = clean
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+
+  // 1. Column header labels (e.g. "PRODUTO / DESCRIÇÃO PRODUTO", "COD PRODUTO", "QTD UN SEPARACAO PRODUCAO")
+  if (
+    /(?:^|\b)(?:COD\s+PRODUTO|DESCRICAO\s+PRODUTO|PRODUTO\s*\/\s*DESCRICAO|TOTAL\s+DE\s+PECAS|SOLICITACAO\s+DE\s+MATERIAIS|DOCUMENTO\s+DE\s+ESTOQUE|DATA\/HORA\s+EMISSAO|DATAS\s+DE\s+ENTREGA|OPERACOES\s+E\s+SEUS\s+MATERIAIS|RESPONSAVEL|SEPARACAO|PRODUCAO)(?:\b|$)/i.test(
+      norm,
+    )
+  ) {
+    return true
+  }
+
+  // If text is composed ONLY of table header / system words
+  const words = norm
+    .replace(/[^A-Z0-9\s/]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+  if (
+    words.length > 0 &&
+    words.every((w) => KNOWN_HEADER_LABEL_WORDS.has(w) || /^(?:DE|E|DO|DA|DOS|DAS|\/)$/.test(w))
+  ) {
+    return true
+  }
+
+  // 2. Dates pattern: dd/mm/aaaa, e.g. "14/08/2026 22 / 09 / 2026 Total de Peças"
+  if (/^\s*\d{1,2}\s*[/.-]\s*\d{1,2}\s*[/.-]\s*\d{4}/.test(clean)) {
+    return true
+  }
+
+  // 3. Document numbers from header: "Solicitação de Materiais" / "Documento de Estoque"
+  if (/^(?:SOLICITA[CÇ][AÃ]O|DOCUMENTO|PEDIDO|ENTREGA|EMISS[AÃ]O|ESTOQUE)\b/i.test(clean)) {
+    return true
+  }
+
+  // 4. Standalone pure digit number strings with leading zeros (e.g. "00030252", "00013984")
+  // In ERP headers, "00030252" is the "Solicitação de Materiais" box. Real product codes typically have description or start with non-zeros / are part of a product row.
+  // Moreover, if clean is pure digits with 3 or more leading zeros without description:
+  if (/^000\d+$/.test(clean)) {
+    return true
+  }
+
+  return false
 }
 
 function cleanClientName(raw: string, knownOrderNumber?: string): string {
@@ -986,16 +1053,19 @@ export function parseOpPdfDeterministic(
   }
 
   const isTableColumnHeader = (line: string): boolean => {
-    return (
-      /^(?:#|ITEM|N[º°]|C[ÓO]D|C[ÓO]DIGO)\b/i.test(line) &&
-      /DESCRI[CÇ][AÃ]O/i.test(line) &&
-      /(?:QTD|QUANTIDADE)/i.test(line)
-    )
+    const norm = (line || '')
+      .toUpperCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+    const hasCod = /\b(?:COD|CODIGO|ITEM)\b/.test(norm)
+    const hasDesc = /\b(?:DESC|DESCRICAO)\b/.test(norm)
+    const hasQtdOrUn = /\b(?:QTD|QUANTIDADE|UN|UNIDADE)\b/.test(norm)
+    return (hasCod && hasDesc) || (hasCod && hasQtdOrUn) || (hasDesc && hasQtdOrUn)
   }
 
   const isSectionMarker = (line: string): boolean => {
     return /^(?:OPERA[CÇ][OÕ]ES\s+E\s+SEUS\s+MATERIAIS|MATERIAIS|COMPONENTES|ESTRUTURA|LISTA\s+DE\s+MATERIAIS)/i.test(
-      line,
+      line.trim(),
     )
   }
 
@@ -1014,10 +1084,32 @@ export function parseOpPdfDeterministic(
 
   // Check if positionedLines has header line: CÓD PRODUTO | DESCRIÇÃO PRODUTO | QTD | UN
   let tableHeaderY: number | null = null
+  let tableHeaderLineIndex: number = -1
+
+  // Look for the "OPERAÇÕES E SEUS MATERIAIS" section marker line index/Y first
+  let operacoesLineIndex = -1
+  let operacoesLineY: number | null = null
 
   if (positionedLines && positionedLines.length > 0) {
-    for (const pLine of positionedLines) {
+    for (let idx = 0; idx < positionedLines.length; idx++) {
+      const pLine = positionedLines[idx]
+      if (isSectionMarker(pLine.lineStr)) {
+        operacoesLineIndex = idx
+        operacoesLineY = pLine.y
+        break
+      }
+    }
+
+    // Now look for the materials table column header ("CÓD PRODUTO", "DESCRIÇÃO PRODUTO", "QTD", "UN")
+    // If "OPERAÇÕES E SEUS MATERIAIS" was found, the header MUST be at or below it (pLine.y <= operacoesLineY).
+    for (let idx = 0; idx < positionedLines.length; idx++) {
+      const pLine = positionedLines[idx]
       if (!pLine.tokens || pLine.tokens.length === 0) continue
+
+      if (operacoesLineY !== null && pLine.y > operacoesLineY + 1) {
+        // Skip anything physically above the "OPERAÇÕES E SEUS MATERIAIS" marker
+        continue
+      }
 
       let codToken: PdfPositionedToken | null = null
       let descToken: PdfPositionedToken | null = null
@@ -1040,11 +1132,19 @@ export function parseOpPdfDeterministic(
         }
       }
 
-      if (descToken && qtdToken) {
+      // Strong requirement: must have CÓD (or ITEM), DESCRIÇÃO and QTD/UN on the same line to be the true table header!
+      // This prevents matching top-level headers like "Total de Peças" / "Quantidade" or standalone labels.
+      const hasCod = !!codToken || /C[OÓ]D\s+PRODUTO/i.test(pLine.lineStr)
+      const hasDesc = !!descToken || /DESCRI[CÇ][AÃ]O/i.test(pLine.lineStr)
+      const hasQtdOrUn = !!qtdToken || !!unToken || /\bQTD\b|\bUN\b/i.test(pLine.lineStr)
+
+      // Must have CÓD PRODUTO and at least DESCRIÇÃO or QTD
+      if (hasCod && (hasDesc || hasQtdOrUn)) {
         tableHeaderY = pLine.y
+        tableHeaderLineIndex = idx
         const codX = codToken ? codToken.x : 0
-        const descX = descToken.x
-        const qtdX = qtdToken.x
+        const descX = descToken ? descToken.x : codX + 70
+        const qtdX = qtdToken ? qtdToken.x : descX + 250
         const unX = unToken ? unToken.x : qtdX + 60
 
         // Column dividers based on detected positions:
@@ -1119,7 +1219,13 @@ export function parseOpPdfDeterministic(
         .trim()
       const measurements = activeComp.measurementTokens.join(' ').replace(/\s+/g, ' ').trim()
 
-      if (rawDesc || activeComp.code) {
+      const fullCandidateText = `${activeComp.code} ${rawDesc}`.trim()
+      if (
+        (rawDesc || activeComp.code) &&
+        !isInvalidComponentCandidate(fullCandidateText) &&
+        !isInvalidComponentCandidate(activeComp.code) &&
+        !isInvalidComponentCandidate(rawDesc)
+      ) {
         components.push({
           id: `comp_${Date.now()}_${components.length}`,
           sector: activeComp.sector,
@@ -1145,12 +1251,44 @@ export function parseOpPdfDeterministic(
       unMaxX: 720,
     }
 
-    for (let i = 0; i < positionedLines.length; i++) {
+    // If we have a detected table header, ONLY start reading strictly from the lines after the header!
+    // In PDF coordinates, lines further down have y < tableHeaderY (or index > tableHeaderLineIndex).
+    let startLineIdx = 0
+    if (tableHeaderLineIndex >= 0) {
+      startLineIdx = tableHeaderLineIndex + 1
+    } else if (operacoesLineIndex >= 0) {
+      startLineIdx = operacoesLineIndex + 1
+    }
+
+    for (let i = startLineIdx; i < positionedLines.length; i++) {
       const pLine = positionedLines[i]
       const lineStr = pLine.lineStr.trim()
       if (!lineStr || isIgnoredLine(lineStr)) continue
 
-      // If we know the table header Y, any line strictly below the header is candidate
+      // If tableHeaderY was found, enforce strictly that line Y is below the header Y:
+      // In PDF coordinate space, lower down on the page means y < tableHeaderY - 0.5.
+      if (tableHeaderY !== null && pLine.y >= tableHeaderY - 0.5) {
+        continue
+      }
+
+      // If operacoesLineY was found, anything at or above it is also header/top section
+      if (operacoesLineY !== null && pLine.y >= operacoesLineY - 0.5) {
+        continue
+      }
+
+      // If the line IS the table column header itself, skip it!
+      if (isTableColumnHeader(lineStr)) {
+        flushPosItem()
+        inPosComponentSection = true
+        continue
+      }
+
+      // Double-layer protection: ignore lines that are headers, column labels or dates
+      if (isInvalidComponentCandidate(lineStr)) {
+        continue
+      }
+
+      // If we know the table header Y, any line strictly below the header is in the component section
       if (tableHeaderY !== null && pLine.y < tableHeaderY && !inPosComponentSection) {
         inPosComponentSection = true
       }
@@ -1178,18 +1316,24 @@ export function parseOpPdfDeterministic(
       }
 
       if (!inPosComponentSection) {
-        // If not in component section yet, check if line starts with product code in CÓD column
-        const startsWithCode = pLine.tokens.some((tok) => {
-          return (
-            tok.x <= bounds.codMaxX + 20 &&
-            /^[A-Za-z0-9\-_./]{4,20}$/.test(tok.str) &&
-            !isLabelWord(tok.str)
-          )
-        })
-        if (startsWithCode) {
+        // If not in component section yet and no explicit tableHeaderY, check if line starts with product code in CÓD column
+        if (tableHeaderY !== null) {
+          // If we had a tableHeaderY, being past it already sets inPosComponentSection
           inPosComponentSection = true
         } else {
-          continue
+          const startsWithCode = pLine.tokens.some((tok) => {
+            return (
+              tok.x <= bounds.codMaxX + 20 &&
+              /^[A-Za-z0-9\-_./]{4,20}$/.test(tok.str) &&
+              !isLabelWord(tok.str) &&
+              !isInvalidComponentCandidate(tok.str)
+            )
+          })
+          if (startsWithCode) {
+            inPosComponentSection = true
+          } else {
+            continue
+          }
         }
       }
 
@@ -1222,6 +1366,11 @@ export function parseOpPdfDeterministic(
         continue
       }
 
+      // If line is just "Obs: ..." or bar code text (e.g. asterisks or numeric strings without qty), ignore
+      if (/^Obs:/i.test(lineStr) || /^\*\s*$/.test(lineStr)) {
+        continue
+      }
+
       // Candidate product code from CÓD PRODUTO column
       const codCandidate = codTokens
         .map((t) => t.str)
@@ -1231,6 +1380,7 @@ export function parseOpPdfDeterministic(
         codCandidate.length >= 3 &&
         /^[A-Za-z0-9\-_./]{3,20}$/.test(codCandidate) &&
         !isLabelWord(codCandidate) &&
+        !isInvalidComponentCandidate(codCandidate) &&
         !/^(?:DATA|EMISSAO|PAGINA|TOTAL|ORDEM|CLIENTE|PEDIDO|ENTREGA|RESPONSAVEL|SEPARACAO|PRODUCAO)$/i.test(
           codCandidate,
         )
@@ -1260,7 +1410,17 @@ export function parseOpPdfDeterministic(
 
       // Does this line start a NEW component row?
       // A new component row has a valid code in CÓD column, OR a valid quantity in QTD column when no component is active.
-      if (isCodValid || (qtdValue > 0 && descTokens.length > 0 && !activeComp)) {
+      const rawCandidateDesc = descTokens
+        .map((t) => t.str)
+        .join(' ')
+        .trim()
+      const isDescValid =
+        rawCandidateDesc.length > 0 && !isInvalidComponentCandidate(rawCandidateDesc)
+
+      if (
+        (isCodValid && !isInvalidComponentCandidate(codCandidate)) ||
+        (qtdValue > 0 && isDescValid && !activeComp)
+      ) {
         flushPosItem()
 
         activeComp = {
@@ -1331,7 +1491,13 @@ export function parseOpPdfDeterministic(
       const desc = currentItem.descriptionLines.join(' ').replace(/\s+/g, ' ').trim()
       const measurements = currentItem.measurementLines.join(' ').replace(/\s+/g, ' ').trim()
 
-      if (desc || currentItem.code) {
+      const fullCandidate = `${currentItem.code} ${desc}`.trim()
+      if (
+        (desc || currentItem.code) &&
+        !isInvalidComponentCandidate(fullCandidate) &&
+        !isInvalidComponentCandidate(currentItem.code) &&
+        !isInvalidComponentCandidate(desc)
+      ) {
         components.push({
           id: `comp_${Date.now()}_${components.length}`,
           sector: currentItem.sector,
@@ -1345,12 +1511,17 @@ export function parseOpPdfDeterministic(
       currentItem = null
     }
 
-    for (let i = 0; i < allLines.length; i++) {
+    // Find if there is an explicit section marker in the text
+    const operacoesLineIdxFallback = allLines.findIndex((l) => isSectionMarker(l.trim()))
+    const fallbackStartIdx = operacoesLineIdxFallback >= 0 ? operacoesLineIdxFallback + 1 : 0
+
+    for (let i = fallbackStartIdx; i < allLines.length; i++) {
       const line = allLines[i].trim()
       if (!line) continue
 
       // 1. Check Section Marker
       if (isSectionMarker(line)) {
+        flushCurrentItem()
         inComponentSection = true
         continue
       }
@@ -1371,6 +1542,11 @@ export function parseOpPdfDeterministic(
         continue
       }
 
+      // Skip if line is an invalid component candidate (dates, headers, labels)
+      if (isInvalidComponentCandidate(line)) {
+        continue
+      }
+
       // If we have not yet entered components / operations section, check if line starts looking like an item
       if (!inComponentSection) {
         const startsLikeItem =
@@ -1380,7 +1556,11 @@ export function parseOpPdfDeterministic(
           /^([A-Za-z0-9\-_./]{3,20})\s+(.+?)\s+(\d+(?:[.,]\d+)?)\s*(?:UN|PC|PÇ|KG|M|MT|MM|CM|M2|M3|PAR|CJ|BARRA|ROLO|L|ML|RL)?$/i.test(
             line,
           )
-        if (startsLikeItem && !isLabelWord(line.split(/\s+/)[0])) {
+        if (
+          startsLikeItem &&
+          !isLabelWord(line.split(/\s+/)[0]) &&
+          !isInvalidComponentCandidate(line.split(/\s+/)[0])
+        ) {
           inComponentSection = true
         } else {
           continue
@@ -1662,6 +1842,14 @@ export function comparePdfWithCatalog(
   const catalogMatched = new Set<string>()
 
   for (const pdfItem of pdfComponents) {
+    // Safety check: skip any residual invalid candidates (headers, dates, labels)
+    if (
+      isInvalidComponentCandidate(pdfItem.code) &&
+      isInvalidComponentCandidate(pdfItem.description)
+    ) {
+      continue
+    }
+
     const pdfCode = cleanCode(pdfItem.code)
     const pdfDesc = cleanDesc(pdfItem.description)
 

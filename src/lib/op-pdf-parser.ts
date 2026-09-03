@@ -1047,20 +1047,19 @@ export function parseOpPdfDeterministic(
         const qtdX = qtdToken.x
         const unX = unToken ? unToken.x : qtdX + 60
 
-        // Column dividers:
-        // codEnd: boundary between CÓD PRODUTO and DESCRIÇÃO PRODUTO
-        // In OP 457, CÓD PRODUTO is around X ≈ 20..100, DESCRIÇÃO starts around X ≈ 120..140
+        // Column dividers based on detected positions:
+        // CÓD PRODUTO column: from codX (or 0) up to just before DESCRIÇÃO
         const codEnd = codToken
           ? Math.max(codToken.x + (codToken.width || 50), (codX + descX) / 2)
           : descX - 10
-        // descEnd: boundary between DESCRIÇÃO PRODUTO and QTD
-        // QTD column header is at qtdX (e.g. ≈ 600..650 in a standard page width 800+ or ≈ 480..520)
-        // Everything before qtdX - 15 belongs to DESCRIÇÃO PRODUTO
-        const descEnd = qtdX - 15
-        // qtdEnd: boundary between QTD and UN
-        const qtdEnd = unToken ? (qtdX + unX) / 2 : qtdX + 50
-        // unEnd: right boundary of UN
-        const unEnd = unToken ? unX + (unToken.width || 30) + 30 : qtdEnd + 60
+        // DESCRIÇÃO PRODUTO column ends strictly before the QTD column starts.
+        // Any token strictly to the left of (qtdX - 8) is part of description,
+        // even if it contains numbers like "REF 4360".
+        const descEnd = qtdX - 8
+        // QTD column ends before UN column begins:
+        const qtdEnd = unToken ? Math.min(unX - 5, (qtdX + unX) / 2) : qtdX + 60
+        // UN column ends after the UN token:
+        const unEnd = unToken ? unX + (unToken.width || 35) + 35 : qtdEnd + 60
 
         tableBounds = {
           codMinX: Math.max(0, codX - 30),
@@ -1077,7 +1076,12 @@ export function parseOpPdfDeterministic(
     }
   }
 
-  // --- PRIMARY STRATEGY: Coordinate-based extraction ---
+  // --- PRIMARY STRATEGY: Strict Coordinate-based extraction ---
+  // Using column X bounds (CÓD PRODUTO, DESCRIÇÃO, QTD, UN) guarantees that
+  // any number located horizontally inside the DESCRIÇÃO column (such as "4360" in "REF 4360")
+  // is strictly treated as description text and NEVER mistaken for quantity.
+  // The quantity is read strictly from the QTD column coordinates (where "1.0000" is),
+  // and the unit is read from the UN column coordinates (where "PC" is).
   let parsedWithPositions = false
 
   if (positionedLines && positionedLines.length > 0) {
@@ -1097,7 +1101,8 @@ export function parseOpPdfDeterministic(
     const flushPosItem = () => {
       if (!activeComp) return
 
-      // Sort desc tokens primarily by Y descending (top to bottom), then X ascending (left to right)
+      // Sort desc tokens primarily by line Y descending (top to bottom in PDF coordinate system),
+      // then by X ascending (left to right)
       const descTokens = [...activeComp.descTokens]
       descTokens.sort((a, b) => {
         if (Math.abs(a.y - b.y) > 2) {
@@ -1106,6 +1111,7 @@ export function parseOpPdfDeterministic(
         return a.x - b.x
       })
 
+      // Unify full multi-line description into a single string
       const rawDesc = descTokens
         .map((t) => t.str)
         .join(' ')
@@ -1144,13 +1150,12 @@ export function parseOpPdfDeterministic(
       const lineStr = pLine.lineStr.trim()
       if (!lineStr || isIgnoredLine(lineStr)) continue
 
-      // If we know the table header Y, any line strictly below (or equal to) the header
-      // is candidate for components section
+      // If we know the table header Y, any line strictly below the header is candidate
       if (tableHeaderY !== null && pLine.y < tableHeaderY && !inPosComponentSection) {
         inPosComponentSection = true
       }
 
-      // Sector change
+      // Sector change header (e.g. "FABRICAÇÃO", "MONTAGEM")
       const matchedSector = isSectorHeader(lineStr)
       if (matchedSector) {
         flushPosItem()
@@ -1165,7 +1170,7 @@ export function parseOpPdfDeterministic(
         continue
       }
 
-      // Column header line
+      // Column header line (CÓD PRODUTO | DESCRIÇÃO | QTD | UN)
       if (isTableColumnHeader(lineStr)) {
         flushPosItem()
         inPosComponentSection = true
@@ -1173,7 +1178,7 @@ export function parseOpPdfDeterministic(
       }
 
       if (!inPosComponentSection) {
-        // If not in component section yet, check if line starts with product code
+        // If not in component section yet, check if line starts with product code in CÓD column
         const startsWithCode = pLine.tokens.some((tok) => {
           return (
             tok.x <= bounds.codMaxX + 20 &&
@@ -1194,7 +1199,7 @@ export function parseOpPdfDeterministic(
         break
       }
 
-      // Classify tokens in this positioned line according to bounds
+      // Classify tokens strictly according to horizontal column bounds (X coordinates)
       const codTokens = pLine.tokens.filter(
         (t) => t.x >= bounds.codMinX - 10 && t.x <= bounds.codMaxX,
       )
@@ -1217,10 +1222,7 @@ export function parseOpPdfDeterministic(
         continue
       }
 
-      // Does this line start a NEW item?
-      // A new item has:
-      // (a) token in COD PRODUTO column matching code pattern (e.g. 11120026) OR
-      // (b) token in QTD column with numeric quantity AND descTokens present AND no activeComp
+      // Candidate product code from CÓD PRODUTO column
       const codCandidate = codTokens
         .map((t) => t.str)
         .join('')
@@ -1233,7 +1235,7 @@ export function parseOpPdfDeterministic(
           codCandidate,
         )
 
-      // Qty extracted specifically from QTD column tokens:
+      // Qty extracted STRICTLY from the QTD column coordinates (e.g. 1.0000 -> 1)
       let qtdValue = 0
       for (const tok of qtdTokens) {
         const cleanTok = tok.str.replace(/[^\d.,]/g, '')
@@ -1246,7 +1248,7 @@ export function parseOpPdfDeterministic(
         }
       }
 
-      // Unit from UN column
+      // Unit extracted STRICTLY from the UN column coordinates (e.g. PC, UN)
       let unitValue = ''
       for (const tok of unTokens) {
         const clean = tok.str.toUpperCase().trim()
@@ -1256,7 +1258,8 @@ export function parseOpPdfDeterministic(
         }
       }
 
-      // Check if we start a new component
+      // Does this line start a NEW component row?
+      // A new component row has a valid code in CÓD column, OR a valid quantity in QTD column when no component is active.
       if (isCodValid || (qtdValue > 0 && descTokens.length > 0 && !activeComp)) {
         flushPosItem()
 
@@ -1274,7 +1277,7 @@ export function parseOpPdfDeterministic(
 
       // If we already have an active component:
       if (activeComp) {
-        // Update quantity/unit if not yet set and found on this continuation line
+        // If this continuation line provides quantity or unit that was missing or default
         if (activeComp.qty <= 1 && qtdValue > 0) {
           activeComp.qty = qtdValue
         }
@@ -1282,14 +1285,14 @@ export function parseOpPdfDeterministic(
           activeComp.unit = unitValue
         }
 
-        // Check if there are description tokens on this line (wrapping lines of description)
+        // Wrap-around description tokens on this line (e.g. "FURO 12mm" on the line below)
         if (descTokens.length > 0) {
           activeComp.descTokens.push(...descTokens)
           activeComp.lastY = pLine.y
           continue
         }
 
-        // If this line only has tokens in the description horizontal area, treat as continuation
+        // Continuation line that falls entirely in the description horizontal span
         const onlyTokensInDescArea = pLine.tokens.every(
           (t) => t.x >= bounds.codMaxX && t.x <= bounds.descMaxX + 50,
         )
@@ -1516,7 +1519,8 @@ export function parseOpPdfDeterministic(
       }
 
       // 8. Pattern B: Full single-line item: Code + Description + Quantity (+ Unit)
-      // Anchored strictly at end of line so numbers inside description (like REF 4360) are not matched as quantity
+      // Anchored strictly at end of line so numbers inside description (like REF 4360) are not matched as quantity.
+      // We look for trailing quantity + unit at the end of the line: e.g. " 1.0000 PC"
       const singleLineMatch = line.match(
         /^(?:(\d{1,3})\s+)?([A-Za-z0-9\-_./]{3,20})\s+(.+?)\s+(\d+(?:[.,]\d+)?)\s*(UN|PC|PÇ|KG|M|MT|MM|CM|M2|M3|PAR|CJ|BARRA|ROLO|L|ML|RL)\s*$/i,
       )
@@ -1534,14 +1538,15 @@ export function parseOpPdfDeterministic(
 
         if (desc.length >= 2 && qty > 0) {
           flushCurrentItem()
-          components.push({
-            id: `comp_${Date.now()}_${components.length}`,
-            sector: currentSector,
+          // Start an accumulator in case the description continues on subsequent line (e.g. "FURO 12mm")
+          currentItem = {
             code,
-            description: desc,
             quantity: qty,
             unit,
-          })
+            descriptionLines: [desc],
+            measurementLines: [],
+            sector: currentSector,
+          }
           continue
         }
       }

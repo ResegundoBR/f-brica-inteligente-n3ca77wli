@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -104,11 +104,11 @@ export function OpPdfReviewModal({
   const [statusFilter, setStatusFilter] = useState<string>('ALL')
 
   // Keep state updated if props change
-  useMemo(() => {
+  useEffect(() => {
     setRows(initialRows)
   }, [initialRows])
 
-  useMemo(() => {
+  useEffect(() => {
     setEditableHeader(initialHeader)
   }, [initialHeader])
 

@@ -60,6 +60,7 @@ export interface PdfPositionedLine {
   y: number
   tokens: PdfPositionedToken[]
   lineStr: string
+  pageIndex?: number
 }
 
 export interface PdfExtractionResult {
@@ -164,6 +165,7 @@ export async function extractTextFromPdfFile(file: File): Promise<PdfExtractionR
           y: bucket.y,
           tokens,
           lineStr,
+          pageIndex: pageNum - 1,
         })
       }
     }
@@ -409,16 +411,50 @@ export function parseOpPdfDeterministic(
 
   let currentSector: PcpOrderMaterialSector = 'FABRICAÇÃO'
   const sectorKeywords: { regex: RegExp; sector: PcpOrderMaterialSector }[] = [
-    { regex: /^(?:SETOR|ETAPA|FASE)?\s*(?:[-:]\s*)?FABRICA[CÇ][AÃ]O/i, sector: 'FABRICAÇÃO' },
     {
-      regex: /^(?:SETOR|ETAPA|FASE)?\s*(?:[-:]\s*)?PREPARA[CÇ][AÃ]O(?:\s*\(ACABAMENTO\))?/i,
+      regex: /(?:^|\b)(?:SETOR|ETAPA|FASE\s+DE\s+|FASE\s+)?(?:[-:]\s*)?FABRICACAO\b/i,
+      sector: 'FABRICAÇÃO',
+    },
+    {
+      regex:
+        /(?:^|\b)(?:SETOR|ETAPA|FASE\s+DE\s+|FASE\s+)?(?:[-:]\s*)?PREPARACAO(?:\s*\(ACABAMENTO\))?\b/i,
       sector: 'PREPARAÇÃO',
     },
-    { regex: /^(?:SETOR|ETAPA|FASE)?\s*(?:[-:]\s*)?ACABAMENTO/i, sector: 'PREPARAÇÃO' },
-    { regex: /^(?:SETOR|ETAPA|FASE)?\s*(?:[-:]\s*)?MONTAGEM/i, sector: 'MONTAGEM' },
-    { regex: /^(?:SETOR|ETAPA|FASE)?\s*(?:[-:]\s*)?EXPEDI[CÇ][AÃ]O/i, sector: 'EXPEDIÇÃO' },
-    { regex: /^(?:SETOR|ETAPA|FASE)?\s*(?:[-:]\s*)?EMBALAGEM/i, sector: 'EXPEDIÇÃO' },
+    {
+      regex: /(?:^|\b)(?:SETOR|ETAPA|FASE\s+DE\s+|FASE\s+)?(?:[-:]\s*)?ACABAMENTO\b/i,
+      sector: 'PREPARAÇÃO',
+    },
+    {
+      regex: /(?:^|\b)(?:SETOR|ETAPA|FASE\s+DE\s+|FASE\s+)?(?:[-:]\s*)?PINTURA\b/i,
+      sector: 'PREPARAÇÃO',
+    },
+    {
+      regex: /(?:^|\b)(?:SETOR|ETAPA|FASE\s+DE\s+|FASE\s+)?(?:[-:]\s*)?MONTAGEM\b/i,
+      sector: 'MONTAGEM',
+    },
+    {
+      regex: /(?:^|\b)(?:SETOR|ETAPA|FASE\s+DE\s+|FASE\s+)?(?:[-:]\s*)?EXPEDICAO\b/i,
+      sector: 'EXPEDIÇÃO',
+    },
+    {
+      regex: /(?:^|\b)(?:SETOR|ETAPA|FASE\s+DE\s+|FASE\s+)?(?:[-:]\s*)?EMBALAGEM\b/i,
+      sector: 'EXPEDIÇÃO',
+    },
   ]
+
+  const matchSectorInText = (text: string): PcpOrderMaterialSector | null => {
+    if (!text) return null
+    const norm = text
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+    for (const s of sectorKeywords) {
+      if (s.regex.test(norm)) {
+        return s.sector
+      }
+    }
+    return null
+  }
 
   const fullText = allLines.join('\n')
 
@@ -1044,12 +1080,7 @@ export function parseOpPdfDeterministic(
   const unitRegex = new RegExp(`^${unitRegexStr}$`, 'i')
 
   const isSectorHeader = (line: string): PcpOrderMaterialSector | null => {
-    for (const s of sectorKeywords) {
-      if (s.regex.test(line)) {
-        return s.sector
-      }
-    }
-    return null
+    return matchSectorInText(line)
   }
 
   const isTableColumnHeader = (line: string): boolean => {
@@ -1082,13 +1113,73 @@ export function parseOpPdfDeterministic(
 
   let tableBounds: TableBounds | null = null
 
+  // Helper to extract table bounds from a candidate table header line
+  const extractTableBoundsFromLine = (
+    pLine: PdfPositionedLine,
+  ): { bounds: TableBounds; hasCod: boolean; hasDescOrQtd: boolean } => {
+    let codToken: PdfPositionedToken | null = null
+    let descToken: PdfPositionedToken | null = null
+    let qtdToken: PdfPositionedToken | null = null
+    let unToken: PdfPositionedToken | null = null
+
+    for (const tok of pLine.tokens) {
+      const str = tok.str
+        .toUpperCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+      if (/^C[OÓ]D|^ITEM\b/.test(str) && !codToken) {
+        codToken = tok
+      } else if (/^DESCRI/.test(str) && !descToken) {
+        descToken = tok
+      } else if (/^QTD|^QUANT/.test(str) && !qtdToken) {
+        qtdToken = tok
+      } else if (/^UN\b|^UNIDADE\b/.test(str) && !unToken) {
+        unToken = tok
+      }
+    }
+
+    const hasCod = !!codToken || /C[OÓ]D\s+PRODUTO/i.test(pLine.lineStr)
+    const hasDesc = !!descToken || /DESCRI[CÇ][AÃ]O/i.test(pLine.lineStr)
+    const hasQtdOrUn = !!qtdToken || !!unToken || /\bQTD\b|\bUN\b/i.test(pLine.lineStr)
+
+    const codX = codToken ? codToken.x : 0
+    const descX = descToken ? descToken.x : codX + 70
+    const qtdX = qtdToken ? qtdToken.x : descX + 250
+    const unX = unToken ? unToken.x : qtdX + 60
+
+    const codEnd = codToken
+      ? Math.max(codToken.x + (codToken.width || 50), (codX + descX) / 2)
+      : descX - 10
+    const descEnd = qtdX - 8
+    const qtdEnd = unToken ? Math.min(unX - 5, (qtdX + unX) / 2) : qtdX + 60
+    const unEnd = unToken ? unX + (unToken.width || 35) + 35 : qtdEnd + 60
+
+    return {
+      bounds: {
+        codMinX: Math.max(0, codX - 30),
+        codMaxX: codEnd,
+        descMinX: codEnd,
+        descMaxX: descEnd,
+        qtdMinX: descEnd,
+        qtdMaxX: qtdEnd,
+        unMinX: qtdEnd,
+        unMaxX: unEnd,
+      },
+      hasCod,
+      hasDescOrQtd: hasDesc || hasQtdOrUn,
+    }
+  }
+
   // Check if positionedLines has header line: CÓD PRODUTO | DESCRIÇÃO PRODUTO | QTD | UN
-  let tableHeaderY: number | null = null
-  let tableHeaderLineIndex: number = -1
+  // Per-page map of header Y coordinate and line index
+  const pageHeaderYMap = new Map<number, number>()
+  let firstPageTableHeaderY: number | null = null
+  let firstPageTableHeaderLineIndex: number = -1
 
   // Look for the "OPERAÇÕES E SEUS MATERIAIS" section marker line index/Y first
   let operacoesLineIndex = -1
   let operacoesLineY: number | null = null
+  let operacoesPageIndex: number = 0
 
   if (positionedLines && positionedLines.length > 0) {
     for (let idx = 0; idx < positionedLines.length; idx++) {
@@ -1096,82 +1187,39 @@ export function parseOpPdfDeterministic(
       if (isSectionMarker(pLine.lineStr)) {
         operacoesLineIndex = idx
         operacoesLineY = pLine.y
+        operacoesPageIndex = pLine.pageIndex ?? 0
         break
       }
     }
 
-    // Now look for the materials table column header ("CÓD PRODUTO", "DESCRIÇÃO PRODUTO", "QTD", "UN")
-    // If "OPERAÇÕES E SEUS MATERIAIS" was found, the header MUST be at or below it (pLine.y <= operacoesLineY).
+    // Scan for materials table column headers per page
     for (let idx = 0; idx < positionedLines.length; idx++) {
       const pLine = positionedLines[idx]
       if (!pLine.tokens || pLine.tokens.length === 0) continue
 
-      if (operacoesLineY !== null && pLine.y > operacoesLineY + 1) {
-        // Skip anything physically above the "OPERAÇÕES E SEUS MATERIAIS" marker
+      const pPageIndex = pLine.pageIndex ?? 0
+
+      // For page containing OPERAÇÕES marker, skip anything above the marker
+      if (
+        pPageIndex === operacoesPageIndex &&
+        operacoesLineY !== null &&
+        pLine.y > operacoesLineY + 1
+      ) {
         continue
       }
 
-      let codToken: PdfPositionedToken | null = null
-      let descToken: PdfPositionedToken | null = null
-      let qtdToken: PdfPositionedToken | null = null
-      let unToken: PdfPositionedToken | null = null
-
-      for (const tok of pLine.tokens) {
-        const str = tok.str
-          .toUpperCase()
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
-        if (/^C[OÓ]D|^ITEM\b/.test(str) && !codToken) {
-          codToken = tok
-        } else if (/^DESCRI/.test(str) && !descToken) {
-          descToken = tok
-        } else if (/^QTD|^QUANT/.test(str) && !qtdToken) {
-          qtdToken = tok
-        } else if (/^UN\b|^UNIDADE\b/.test(str) && !unToken) {
-          unToken = tok
-        }
-      }
-
-      // Strong requirement: must have CÓD (or ITEM), DESCRIÇÃO and QTD/UN on the same line to be the true table header!
-      // This prevents matching top-level headers like "Total de Peças" / "Quantidade" or standalone labels.
-      const hasCod = !!codToken || /C[OÓ]D\s+PRODUTO/i.test(pLine.lineStr)
-      const hasDesc = !!descToken || /DESCRI[CÇ][AÃ]O/i.test(pLine.lineStr)
-      const hasQtdOrUn = !!qtdToken || !!unToken || /\bQTD\b|\bUN\b/i.test(pLine.lineStr)
+      const { bounds, hasCod, hasDescOrQtd } = extractTableBoundsFromLine(pLine)
 
       // Must have CÓD PRODUTO and at least DESCRIÇÃO or QTD
-      if (hasCod && (hasDesc || hasQtdOrUn)) {
-        tableHeaderY = pLine.y
-        tableHeaderLineIndex = idx
-        const codX = codToken ? codToken.x : 0
-        const descX = descToken ? descToken.x : codX + 70
-        const qtdX = qtdToken ? qtdToken.x : descX + 250
-        const unX = unToken ? unToken.x : qtdX + 60
-
-        // Column dividers based on detected positions:
-        // CÓD PRODUTO column: from codX (or 0) up to just before DESCRIÇÃO
-        const codEnd = codToken
-          ? Math.max(codToken.x + (codToken.width || 50), (codX + descX) / 2)
-          : descX - 10
-        // DESCRIÇÃO PRODUTO column ends strictly before the QTD column starts.
-        // Any token strictly to the left of (qtdX - 8) is part of description,
-        // even if it contains numbers like "REF 4360".
-        const descEnd = qtdX - 8
-        // QTD column ends before UN column begins:
-        const qtdEnd = unToken ? Math.min(unX - 5, (qtdX + unX) / 2) : qtdX + 60
-        // UN column ends after the UN token:
-        const unEnd = unToken ? unX + (unToken.width || 35) + 35 : qtdEnd + 60
-
-        tableBounds = {
-          codMinX: Math.max(0, codX - 30),
-          codMaxX: codEnd,
-          descMinX: codEnd,
-          descMaxX: descEnd,
-          qtdMinX: descEnd,
-          qtdMaxX: qtdEnd,
-          unMinX: qtdEnd,
-          unMaxX: unEnd,
+      if (hasCod && hasDescOrQtd) {
+        if (!pageHeaderYMap.has(pPageIndex)) {
+          pageHeaderYMap.set(pPageIndex, pLine.y)
         }
-        break
+        if (firstPageTableHeaderY === null) {
+          firstPageTableHeaderY = pLine.y
+          firstPageTableHeaderLineIndex = idx
+          tableBounds = bounds
+        }
       }
     }
   }
@@ -1251,89 +1299,120 @@ export function parseOpPdfDeterministic(
       unMaxX: 720,
     }
 
-    // If we have a detected table header, ONLY start reading strictly from the lines after the header!
+    // If we have a detected table header on the first page, ONLY start reading strictly from lines after the header!
     // In PDF coordinates, lines further down have y < tableHeaderY (or index > tableHeaderLineIndex).
     let startLineIdx = 0
-    if (tableHeaderLineIndex >= 0) {
-      startLineIdx = tableHeaderLineIndex + 1
+    if (firstPageTableHeaderLineIndex >= 0) {
+      startLineIdx = firstPageTableHeaderLineIndex + 1
     } else if (operacoesLineIndex >= 0) {
       startLineIdx = operacoesLineIndex + 1
     }
+
+    let currentPageIdx = positionedLines[startLineIdx]?.pageIndex ?? 0
 
     for (let i = startLineIdx; i < positionedLines.length; i++) {
       const pLine = positionedLines[i]
       const lineStr = pLine.lineStr.trim()
       if (!lineStr || isIgnoredLine(lineStr)) continue
 
-      // If tableHeaderY was found, enforce strictly that line Y is below the header Y:
-      // In PDF coordinate space, lower down on the page means y < tableHeaderY - 0.5.
-      if (tableHeaderY !== null && pLine.y >= tableHeaderY - 0.5) {
+      const thisPageIndex = pLine.pageIndex ?? 0
+      if (thisPageIndex !== currentPageIdx) {
+        // Page changed: flush pending item, reset current page index
+        flushPosItem()
+        currentPageIdx = thisPageIndex
+      }
+
+      // Determine page-specific header Y anchor
+      const pageAnchorY = pageHeaderYMap.get(thisPageIndex) ?? null
+
+      // If pageAnchorY was found on THIS page, enforce strictly that line Y is below the header Y of this page:
+      // In PDF coordinate space, lower down on the page means y < pageAnchorY - 0.5.
+      if (pageAnchorY !== null && pLine.y >= pageAnchorY - 0.5) {
+        // On the header line itself, check if a sector is present or merged
+        const sectorInHeader = matchSectorInText(lineStr)
+        if (sectorInHeader && sectorInHeader !== currentSector) {
+          flushPosItem()
+          currentSector = sectorInHeader
+          inPosComponentSection = true
+        }
         continue
       }
 
-      // If operacoesLineY was found, anything at or above it is also header/top section
-      if (operacoesLineY !== null && pLine.y >= operacoesLineY - 0.5) {
+      // If on the operations marker page, anything physically above or at the marker is header/top section
+      if (
+        thisPageIndex === operacoesPageIndex &&
+        operacoesLineY !== null &&
+        pLine.y >= operacoesLineY - 0.5
+      ) {
         continue
       }
 
-      // If the line IS the table column header itself, skip it!
+      // 1. CHECK SECTOR FIRST!
+      // Sector change header (e.g. standalone "MONTAGEM" or merged "MONTAGEM CÓD PRODUTO | DESCRIÇÃO...")
+      // Crucial: check sector BEFORE isTableColumnHeader / isInvalidComponentCandidate,
+      // so merged lines update currentSector immediately.
+      const matchedSector = matchSectorInText(lineStr)
+      if (matchedSector) {
+        if (matchedSector !== currentSector) {
+          flushPosItem()
+          currentSector = matchedSector
+        }
+        inPosComponentSection = true
+
+        // If the line is purely a sector header (e.g. "MONTAGEM", "SETOR MONTAGEM", barcode row with sector),
+        // we can safely advance to next line.
+        if (!isTableColumnHeader(lineStr) && isSectorHeader(lineStr)) {
+          continue
+        }
+      }
+
+      // 2. Table column header line (CÓD PRODUTO | DESCRIÇÃO | QTD | UN)
       if (isTableColumnHeader(lineStr)) {
         flushPosItem()
         inPosComponentSection = true
+        // If this page didn't have an anchor registered, update it now
+        if (!pageHeaderYMap.has(thisPageIndex)) {
+          pageHeaderYMap.set(thisPageIndex, pLine.y)
+        }
         continue
       }
 
-      // Double-layer protection: ignore lines that are headers, column labels or dates
-      if (isInvalidComponentCandidate(lineStr)) {
-        continue
-      }
-
-      // If we know the table header Y, any line strictly below the header is in the component section
-      if (tableHeaderY !== null && pLine.y < tableHeaderY && !inPosComponentSection) {
-        inPosComponentSection = true
-      }
-
-      // Sector change header (e.g. "FABRICAÇÃO", "MONTAGEM")
-      const matchedSector = isSectorHeader(lineStr)
-      if (matchedSector) {
-        flushPosItem()
-        currentSector = matchedSector
-        inPosComponentSection = true
-        continue
-      }
-
-      // Section marker
+      // 3. Section marker
       if (isSectionMarker(lineStr)) {
         inPosComponentSection = true
         continue
       }
 
-      // Column header line (CÓD PRODUTO | DESCRIÇÃO | QTD | UN)
-      if (isTableColumnHeader(lineStr)) {
-        flushPosItem()
-        inPosComponentSection = true
+      // 4. Double-layer protection: ignore lines that are headers, column labels or dates
+      if (isInvalidComponentCandidate(lineStr)) {
         continue
       }
 
+      // If we know the table header Y for this page, any line strictly below the header is in the component section
+      if (pageAnchorY !== null && pLine.y < pageAnchorY && !inPosComponentSection) {
+        inPosComponentSection = true
+      }
+
+      // On pages after page 1, if we already passed the header or are below top margin (e.g. Y < 750),
+      // we are in component section
+      if (thisPageIndex > 0 && !inPosComponentSection) {
+        inPosComponentSection = true
+      }
+
       if (!inPosComponentSection) {
-        // If not in component section yet and no explicit tableHeaderY, check if line starts with product code in CÓD column
-        if (tableHeaderY !== null) {
-          // If we had a tableHeaderY, being past it already sets inPosComponentSection
+        // If not in component section yet and no explicit table header anchor, check if line starts with product code in CÓD column
+        const startsWithCode = pLine.tokens.some((tok) => {
+          return (
+            tok.x <= bounds.codMaxX + 20 &&
+            /^[A-Za-z0-9\-_./]{4,20}$/.test(tok.str) &&
+            !isLabelWord(tok.str) &&
+            !isInvalidComponentCandidate(tok.str)
+          )
+        })
+        if (startsWithCode) {
           inPosComponentSection = true
         } else {
-          const startsWithCode = pLine.tokens.some((tok) => {
-            return (
-              tok.x <= bounds.codMaxX + 20 &&
-              /^[A-Za-z0-9\-_./]{4,20}$/.test(tok.str) &&
-              !isLabelWord(tok.str) &&
-              !isInvalidComponentCandidate(tok.str)
-            )
-          })
-          if (startsWithCode) {
-            inPosComponentSection = true
-          } else {
-            continue
-          }
+          continue
         }
       }
 
@@ -1519,18 +1598,22 @@ export function parseOpPdfDeterministic(
       const line = allLines[i].trim()
       if (!line) continue
 
-      // 1. Check Section Marker
-      if (isSectionMarker(line)) {
-        flushCurrentItem()
+      // 1. Check Sector Change FIRST (including merged sector + header e.g. "MONTAGEM CÓD PRODUTO...")
+      const matchedSector = matchSectorInText(line)
+      if (matchedSector) {
+        if (matchedSector !== currentSector) {
+          flushCurrentItem()
+          currentSector = matchedSector
+        }
         inComponentSection = true
-        continue
+        if (!isTableColumnHeader(line) && isSectorHeader(line)) {
+          continue
+        }
       }
 
-      // 2. Check Sector Change
-      const matchedSector = isSectorHeader(line)
-      if (matchedSector) {
+      // 2. Check Section Marker
+      if (isSectionMarker(line)) {
         flushCurrentItem()
-        currentSector = matchedSector
         inComponentSection = true
         continue
       }

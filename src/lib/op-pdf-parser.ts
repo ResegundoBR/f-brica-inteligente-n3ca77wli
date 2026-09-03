@@ -1350,19 +1350,58 @@ export function parseOpPdfDeterministic(
       // 1. CHECK SECTOR FIRST!
       // Sector change header (e.g. standalone "MONTAGEM" or merged "MONTAGEM CÓD PRODUTO | DESCRIÇÃO...")
       // Crucial: check sector BEFORE isTableColumnHeader / isInvalidComponentCandidate,
-      // so merged lines update currentSector immediately.
+      // but ONLY treat as sector change/banner if it is NOT a valid component line!
+      // If a line is a product line whose description happens to contain sector words
+      // (e.g. "05200191 TAMPÃO ACABAMENTO Ø22X6MM FURO 7MM 4.0000 PC"), it must be processed
+      // as a component and must NOT change the current sector or be skipped.
       const matchedSector = matchSectorInText(lineStr)
       if (matchedSector) {
-        if (matchedSector !== currentSector) {
-          flushPosItem()
-          currentSector = matchedSector
-        }
-        inPosComponentSection = true
+        // Inspect whether this line has valid component signals in table columns
+        const lineCodTokens = pLine.tokens.filter(
+          (t) => t.x >= bounds.codMinX - 10 && t.x <= bounds.codMaxX,
+        )
+        const lineCodCandidate = lineCodTokens
+          .map((t) => t.str)
+          .join('')
+          .trim()
+        const lineHasValidCod =
+          lineCodCandidate.length >= 3 &&
+          /^[A-Za-z0-9\-_./]{3,20}$/.test(lineCodCandidate) &&
+          !isLabelWord(lineCodCandidate) &&
+          !isInvalidComponentCandidate(lineCodCandidate) &&
+          !/^(?:DATA|EMISSAO|PAGINA|TOTAL|ORDEM|CLIENTE|PEDIDO|ENTREGA|RESPONSAVEL|SEPARACAO|PRODUCAO)$/i.test(
+            lineCodCandidate,
+          )
 
-        // If the line is purely a sector header (e.g. "MONTAGEM", "SETOR MONTAGEM", barcode row with sector),
-        // we can safely advance to next line.
-        if (!isTableColumnHeader(lineStr) && isSectorHeader(lineStr)) {
-          continue
+        const lineQtdTokens = pLine.tokens.filter(
+          (t) => t.x > bounds.descMaxX && t.x <= bounds.qtdMaxX,
+        )
+        let lineHasValidQtd = false
+        for (const tok of lineQtdTokens) {
+          const cleanTok = tok.str.replace(/[^\d.,]/g, '')
+          if (cleanTok && /^\d+(?:[.,]\d+)?$/.test(cleanTok)) {
+            if (parseQuantity(cleanTok) > 0) {
+              lineHasValidQtd = true
+              break
+            }
+          }
+        }
+
+        const isComponentLine = lineHasValidCod || lineHasValidQtd
+
+        if (!isComponentLine) {
+          // Genuine sector banner or header line
+          if (matchedSector !== currentSector) {
+            flushPosItem()
+            currentSector = matchedSector
+          }
+          inPosComponentSection = true
+
+          // If the line is purely a sector header (e.g. "MONTAGEM", "SETOR MONTAGEM", barcode row with sector),
+          // we can safely advance to next line.
+          if (!isTableColumnHeader(lineStr) && isSectorHeader(lineStr)) {
+            continue
+          }
         }
       }
 
@@ -1599,15 +1638,80 @@ export function parseOpPdfDeterministic(
       if (!line) continue
 
       // 1. Check Sector Change FIRST (including merged sector + header e.g. "MONTAGEM CÓD PRODUTO...")
+      // But verify whether this line is actually a valid component candidate rather than a sector banner!
       const matchedSector = matchSectorInText(line)
       if (matchedSector) {
-        if (matchedSector !== currentSector) {
-          flushCurrentItem()
-          currentSector = matchedSector
+        let isTextComponentLine = false
+
+        // Check delimited line
+        if (line.includes('|') || line.includes(';') || line.includes('\t')) {
+          const sep = line.includes('|') ? '|' : line.includes(';') ? ';' : '\t'
+          const cols = line
+            .split(sep)
+            .map((c) => c.trim())
+            .filter(Boolean)
+          if (cols.length >= 3) {
+            const possibleCode = /^\d+$/.test(cols[0]) && cols.length >= 4 ? cols[1] : cols[0]
+            if (
+              /^[A-Za-z0-9\-_./]{3,20}$/.test(possibleCode) &&
+              !isLabelWord(possibleCode) &&
+              !isInvalidComponentCandidate(possibleCode)
+            ) {
+              isTextComponentLine = true
+            }
+          }
         }
-        inComponentSection = true
-        if (!isTableColumnHeader(line) && isSectorHeader(line)) {
-          continue
+
+        // Check multi-space column line
+        if (!isTextComponentLine) {
+          const mCols = line
+            .split(/\s{2,}|\t/)
+            .map((c) => c.trim())
+            .filter(Boolean)
+          if (mCols.length >= 3) {
+            const firstC = mCols[0]
+            const lastC = mCols[mCols.length - 1]
+            const secondLastC = mCols[mCols.length - 2]
+            const hasQty =
+              (/^\d+(?:[.,]\d+)?$/.test(secondLastC) && unitRegex.test(lastC)) ||
+              /^\d+(?:[.,]\d+)?$/.test(lastC)
+            if (
+              hasQty &&
+              /^[A-Za-z0-9\-_./]{3,20}$/.test(firstC) &&
+              !isLabelWord(firstC) &&
+              !isInvalidComponentCandidate(firstC)
+            ) {
+              isTextComponentLine = true
+            }
+          }
+        }
+
+        // Check regex patterns A and B (Code + Quantity + Unit or Code + Desc + Quantity + Unit)
+        if (!isTextComponentLine) {
+          const patternMatch =
+            /^([A-Za-z0-9\-_./]{3,20})\s+(\d+(?:[.,]\d+)?)\s*(?:UN|PC|PÇ|KG|M|MT|MM|CM|M2|M3|PAR|CJ|BARRA|ROLO|L|ML|RL)\b/i.test(
+              line,
+            ) ||
+            /^(?:(\d{1,3})\s+)?([A-Za-z0-9\-_./]{3,20})\s+(.+?)\s+(\d+(?:[.,]\d+)?)\s*(?:UN|PC|PÇ|KG|M|MT|MM|CM|M2|M3|PAR|CJ|BARRA|ROLO|L|ML|RL)\s*$/i.test(
+              line,
+            )
+          if (patternMatch) {
+            const firstToken = line.split(/\s+/)[0]
+            if (!isLabelWord(firstToken) && !isInvalidComponentCandidate(firstToken)) {
+              isTextComponentLine = true
+            }
+          }
+        }
+
+        if (!isTextComponentLine) {
+          if (matchedSector !== currentSector) {
+            flushCurrentItem()
+            currentSector = matchedSector
+          }
+          inComponentSection = true
+          if (!isTableColumnHeader(line) && isSectorHeader(line)) {
+            continue
+          }
         }
       }
 

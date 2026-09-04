@@ -26,6 +26,7 @@ import {
   Check,
   PackageCheck,
   PackageOpen,
+  MessageSquareWarning,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/use-toast'
@@ -86,6 +87,9 @@ export function SeparationMaterialsModal({
   const [partialTarget, setPartialTarget] = useState<PcpOrderMaterial | null>(null)
   const [foundQtyInput, setFoundQtyInput] = useState('')
   const [confirmLoading, setConfirmLoading] = useState(false)
+  const [sectorObservations, setSectorObservations] = useState<
+    Array<{ id: string; sector: string; content: string }>
+  >([])
   const { user } = useAuth()
   const { toast } = useToast()
   const isMobile = useIsMobile()
@@ -145,6 +149,15 @@ export function SeparationMaterialsModal({
   useEffect(() => {
     if (open && op) {
       loadMaterials()
+      pb.collection('pcp_order_observations')
+        .getFullList<{ id: string; sector: string; content: string }>({
+          filter: `order_id = "${op.id}"`,
+          sort: 'created',
+        })
+        .then((records) => setSectorObservations(records || []))
+        .catch(() => setSectorObservations([]))
+    } else {
+      setSectorObservations([])
     }
   }, [open, op])
 
@@ -176,6 +189,34 @@ export function SeparationMaterialsModal({
     const parcial = materials.filter((m) => getPartialInfo(m) !== null).length
     return { total, separated, falta, pendente, parcial }
   }, [materials])
+
+  /**
+   * Consolida observações da OP: tanto as observações gerais de `pcp_orders` (campos observations /
+   * observation_sector) quanto as observações por setor de `pcp_order_observations` vinculadas a esta OP.
+   */
+  const opObservationsList = useMemo(() => {
+    const list: Array<{ id: string; sector?: string; content: string }> = []
+
+    if (op?.observations && op.observations.trim()) {
+      list.push({
+        id: `op-main-${op.id}`,
+        sector: op.observation_sector || undefined,
+        content: op.observations.trim(),
+      })
+    }
+
+    sectorObservations.forEach((obs) => {
+      if (obs.content && obs.content.trim()) {
+        list.push({
+          id: obs.id,
+          sector: obs.sector,
+          content: obs.content.trim(),
+        })
+      }
+    })
+
+    return list
+  }, [op, sectorObservations])
 
   /** Localiza o item no estoque por código ou descrição (sem lançar erro). */
   const findInventoryItem = async (mat: PcpOrderMaterial) => {
@@ -477,6 +518,47 @@ export function SeparationMaterialsModal({
             </div>
           </div>
         </DialogHeader>
+
+        {/* ---------- Bloco de destaque para Observações da OP ---------- */}
+        {opObservationsList.length > 0 && (
+          <div className="px-4 pt-3 pb-0 sm:px-6">
+            <div className="rounded-lg border border-amber-300 dark:border-amber-700/60 bg-amber-50/90 dark:bg-amber-950/30 p-3 shadow-xs">
+              <div className="flex items-start gap-2.5">
+                <div className="p-1 rounded-md bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 shrink-0 mt-0.5">
+                  <MessageSquareWarning className="size-4.5" />
+                </div>
+                <div className="flex-1 min-w-0 space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold uppercase tracking-wider text-amber-900 dark:text-amber-200">
+                      Observações da OP
+                    </span>
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] px-1.5 py-0 h-4 border-amber-400 dark:border-amber-700 text-amber-800 dark:text-amber-300 font-semibold"
+                    >
+                      Importante na separação
+                    </Badge>
+                  </div>
+                  <div className="space-y-1.5">
+                    {opObservationsList.map((obs) => (
+                      <div
+                        key={obs.id}
+                        className="text-xs sm:text-sm text-amber-950 dark:text-amber-100 leading-relaxed break-words whitespace-pre-wrap font-medium"
+                      >
+                        {obs.sector && (
+                          <span className="inline-block font-bold text-amber-900 dark:text-amber-300 mr-1.5 bg-amber-200/70 dark:bg-amber-900/60 px-1.5 py-0.2 rounded text-[11px] align-baseline">
+                            [{obs.sector}]
+                          </span>
+                        )}
+                        <span>{obs.content}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-6">
           {loading ? (

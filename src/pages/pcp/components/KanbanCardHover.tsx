@@ -104,14 +104,18 @@ export function KanbanCardHover({
               <p className="font-medium">{order.op_type}</p>
             </div>
             <div>
-              <span className="text-muted-foreground">Entrega</span>
-              <p className={cn('font-medium', overdue && 'text-red-500')}>
-                {order.delivery_date ? format(parseISO(order.delivery_date), 'dd/MM/yyyy') : '-'}
+              <span className="text-muted-foreground">Quantidade</span>
+              <p className="font-medium">
+                {order.quantity} un.
                 <span className="ml-1 text-[10px]">
                   ({formatDeadline(order.delivery_date, order.status)})
                 </span>
               </p>
-            </div>
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                Expedido {order.delivered_quantity || 0}/{order.quantity} — pendente{' '}
+                {Math.max(0, order.quantity - (order.delivered_quantity || 0))}
+              </p>
+            </div>{' '}
             <div>
               <span className="text-muted-foreground">Etapa</span>
               <p className="font-medium">{order.stage}</p>

@@ -519,7 +519,26 @@ export default function PcpOrders() {
                         )}
                       </div>
                     </TableCell>
-                    <TableCell className="py-1">{op.quantity}</TableCell>
+                    <TableCell className="py-1">
+                      <div className="flex flex-col">
+                        <span className="font-medium">{op.quantity}</span>
+                        {(op.delivered_quantity || 0) > 0 && (
+                          <span
+                            className={cn(
+                              'text-[10px] whitespace-nowrap font-medium',
+                              getOrderColor(op) === 'lime' ||
+                                getOrderColor(op) === 'neon-orange' ||
+                                getOrderColor(op) === 'yellow'
+                                ? 'opacity-90'
+                                : 'text-blue-600 dark:text-blue-400',
+                            )}
+                          >
+                            Exp. {op.delivered_quantity}/{op.quantity} (pend{' '}
+                            {Math.max(0, op.quantity - (op.delivered_quantity || 0))})
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell className="py-1">
                       <div className="flex items-center gap-2">
                         {op.delivery_date && !isNaN(parseISO(op.delivery_date).getTime())

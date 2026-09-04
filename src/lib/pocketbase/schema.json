@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-03T21:38:52.173Z",
+  "generatedAt": "2026-09-04T16:33:47.481Z",
   "collections": [
     {
       "name": "users",
@@ -1132,6 +1132,12 @@
           "type": "date",
           "required": false,
           "system": false
+        },
+        {
+          "name": "delivered_quantity",
+          "type": "number",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
@@ -2196,6 +2202,81 @@
         "CREATE INDEX idx_pcp_order_materials_order ON pcp_order_materials (order_id)",
         "CREATE INDEX idx_pcp_order_materials_status ON pcp_order_materials (status)",
         "CREATE INDEX idx_pcp_order_materials_code ON pcp_order_materials (code)"
+      ]
+    },
+    {
+      "name": "pcp_order_deliveries",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "order_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "pcp_orders"
+        },
+        {
+          "name": "quantity",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "nf",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "transportadora",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "data_saida",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created_by",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_pcp_order_deliveries_order ON pcp_order_deliveries (order_id)",
+        "CREATE INDEX idx_pcp_order_deliveries_created ON pcp_order_deliveries (created)"
       ]
     }
   ]

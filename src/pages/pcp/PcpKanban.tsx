@@ -891,8 +891,9 @@ export default function PcpKanban() {
           )}
           {selectedOrder && (
             <Tabs defaultValue="detalhes" className="flex-1 flex flex-col overflow-hidden">
-              <TabsList className="grid w-full grid-cols-2 shrink-0">
+              <TabsList className="grid w-full grid-cols-3 shrink-0">
                 <TabsTrigger value="detalhes">Detalhes</TabsTrigger>
+                <TabsTrigger value="entregas">Entregas / Expedição</TabsTrigger>
                 <TabsTrigger value="historico">Log / Histórico</TabsTrigger>
               </TabsList>
               <TabsContent value="detalhes" className="flex-1 overflow-y-auto pt-4 space-y-4">
@@ -966,27 +967,45 @@ export default function PcpKanban() {
                   </div>
                   <div>
                     <span className="text-muted-foreground block text-xs">Quantidade e Prazo</span>
-                    <span className="font-medium flex items-center gap-2">
-                      {selectedOrder.quantity}
-                      <span
+                    <div className="font-medium flex flex-col gap-1">
+                      <div className="flex items-center gap-2">
+                        <span>{selectedOrder.quantity} un</span>
+                        <span
+                          className={cn(
+                            'text-xs font-semibold px-1.5 py-0.5 rounded',
+                            (() => {
+                              if (selectedOrder.status === 'Concluído')
+                                return 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                              const overdue = isOrderOverdue(
+                                selectedOrder.delivery_date,
+                                selectedOrder.status,
+                              )
+                              if (overdue)
+                                return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                              return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                            })(),
+                          )}
+                        >
+                          {formatDeadline(selectedOrder.delivery_date, selectedOrder.status)}
+                        </span>
+                      </div>
+                      <Badge
+                        variant="secondary"
                         className={cn(
-                          'text-xs font-semibold px-1.5 py-0.5 rounded',
-                          (() => {
-                            if (selectedOrder.status === 'Concluído')
-                              return 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
-                            const overdue = isOrderOverdue(
-                              selectedOrder.delivery_date,
-                              selectedOrder.status,
-                            )
-                            if (overdue)
-                              return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
-                            return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
-                          })(),
+                          'text-[10px] w-fit font-semibold',
+                          (selectedOrder.delivered_quantity || 0) > 0
+                            ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'
+                            : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
                         )}
                       >
-                        {formatDeadline(selectedOrder.delivery_date, selectedOrder.status)}
-                      </span>
-                    </span>
+                        Expedido {selectedOrder.delivered_quantity || 0}/{selectedOrder.quantity} —
+                        pendente{' '}
+                        {Math.max(
+                          0,
+                          selectedOrder.quantity - (selectedOrder.delivered_quantity || 0),
+                        )}
+                      </Badge>
+                    </div>
                   </div>
                   <div>
                     <span className="text-muted-foreground block text-xs">Status Atual</span>
@@ -1112,6 +1131,9 @@ export default function PcpKanban() {
                       </div>
                     </div>
                   )}
+              </TabsContent>
+              <TabsContent value="entregas" className="flex-1 overflow-y-auto pt-4">
+                <OrderDeliveriesList order={selectedOrder} />
               </TabsContent>
               <TabsContent value="historico" className="flex-1 overflow-y-auto pt-4">
                 <OrderLogsList orderId={selectedOrder.id} />
@@ -1246,6 +1268,21 @@ function KanbanCard({
               ? order.manual_product_name || 'Produto Especial'
               : order.expand?.product_id?.name || 'S/Produto'}
         </div>
+        {(order.delivered_quantity || 0) > 0 && (
+          <div className="mt-0.5">
+            <span
+              className={cn(
+                'text-[10px] px-1 py-0.5 rounded font-medium inline-block',
+                color === 'neon-orange' || color === 'yellow'
+                  ? 'bg-black/15 text-inherit'
+                  : 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300',
+              )}
+            >
+              Expedido {order.delivered_quantity}/{order.quantity} — pendente{' '}
+              {Math.max(0, order.quantity - (order.delivered_quantity || 0))}
+            </span>
+          </div>
+        )}
       </CardContent>
     </Card>
   )
@@ -1331,6 +1368,125 @@ function CompactKanbanCard({
             ? order.manual_product_name || 'Produto Especial'
             : order.expand?.product_id?.name || 'S/Produto'}
       </span>
+      {(order.delivered_quantity || 0) > 0 && (
+        <span className="block truncate w-full font-bold opacity-95 text-[6.5px] bg-black/20 px-0.5 rounded mt-0.5">
+          {order.delivered_quantity}/{order.quantity} (pend{' '}
+          {Math.max(0, order.quantity - (order.delivered_quantity || 0))})
+        </span>
+      )}
+    </div>
+  )
+}
+
+function OrderDeliveriesList({ order }: { order: any }) {
+  const [deliveries, setDeliveries] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const fetchDeliveries = async () => {
+    try {
+      const res = await pb.collection('pcp_order_deliveries').getFullList({
+        filter: `order_id="${order.id}"`,
+        sort: '-created',
+        expand: 'created_by',
+      })
+      setDeliveries(res)
+    } catch (e) {
+      console.error('Erro ao buscar entregas', e)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchDeliveries()
+  }, [order.id])
+
+  const total = order.quantity || 0
+  const delivered = order.delivered_quantity || 0
+  const pending = Math.max(0, total - delivered)
+
+  return (
+    <div className="space-y-4 pr-2">
+      <div className="p-3 rounded-lg border bg-slate-50 dark:bg-slate-900 flex items-center justify-between">
+        <div>
+          <span className="text-xs text-muted-foreground block">Status de Expedição</span>
+          <span className="text-sm font-semibold">
+            Expedido {delivered}/{total} — pendente {pending}
+          </span>
+        </div>
+        <Badge
+          variant={pending === 0 ? 'default' : 'outline'}
+          className={cn(
+            'text-xs',
+            pending === 0
+              ? 'bg-green-600 text-white'
+              : delivered > 0
+                ? 'border-blue-500 text-blue-600'
+                : 'text-muted-foreground',
+          )}
+        >
+          {pending === 0
+            ? 'Total Concluído'
+            : delivered > 0
+              ? 'Parcialmente Expedido'
+              : 'Não Expedido'}
+        </Badge>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-6 text-muted-foreground text-sm">Carregando entregas...</div>
+      ) : deliveries.length === 0 ? (
+        <div className="text-center py-6 text-muted-foreground text-sm">
+          Nenhuma entrega registrada para esta OP até o momento.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
+            Histórico de Entregas ({deliveries.length})
+          </span>
+          <div className="space-y-2">
+            {deliveries.map((deliv) => (
+              <div
+                key={deliv.id}
+                className="p-3 border rounded-lg bg-card text-card-foreground shadow-sm space-y-1.5"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Truck className="size-4 text-teal-600" />
+                    <span className="font-semibold text-sm">{deliv.quantity} un entregue(s)</span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {deliv.data_saida
+                      ? format(new Date(deliv.data_saida), 'dd/MM/yyyy')
+                      : format(new Date(deliv.created), 'dd/MM/yyyy HH:mm')}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground pt-1 border-t">
+                  <div>
+                    <span className="font-medium text-foreground">NF: </span>
+                    {deliv.nf || '-'}
+                  </div>
+                  <div>
+                    <span className="font-medium text-foreground">Transportadora: </span>
+                    {deliv.transportadora || '-'}
+                  </div>
+                  {deliv.notes && (
+                    <div className="col-span-2">
+                      <span className="font-medium text-foreground">Obs: </span>
+                      {deliv.notes}
+                    </div>
+                  )}
+                  {deliv.expand?.created_by?.name && (
+                    <div className="col-span-2 text-[11px] text-muted-foreground/80">
+                      Registrado por: {deliv.expand.created_by.name}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

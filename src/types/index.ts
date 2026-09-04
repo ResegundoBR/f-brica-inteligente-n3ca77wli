@@ -260,12 +260,33 @@ export interface PcpOrder {
   started_at?: string
   finished_at?: string
   operator_id?: string
+  nf?: string
+  transportadora?: string
+  data_saida?: string
+  delivered_quantity?: number
   created: string
   updated: string
   expand?: {
     product_id?: Product
     operator_id?: User
     client_id?: Client
+  }
+}
+
+export interface PcpOrderDelivery {
+  id: string
+  order_id: string
+  quantity: number
+  nf?: string
+  transportadora?: string
+  data_saida?: string
+  created_by?: string
+  notes?: string
+  created: string
+  updated: string
+  expand?: {
+    order_id?: PcpOrder
+    created_by?: User
   }
 }
 

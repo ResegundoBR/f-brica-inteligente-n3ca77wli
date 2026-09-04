@@ -8,13 +8,15 @@ import {
 } from '@/components/ui/sheet'
 import { Label } from '@/components/ui/label'
 import { format, parseISO, isBefore, startOfDay, isValid } from 'date-fns'
-import { Paperclip, AlertCircle, Clock, Pencil, Trash2 } from 'lucide-react'
+import { Paperclip, AlertCircle, Clock, Pencil, Trash2, Truck } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import pb from '@/lib/pocketbase/client'
 import { cn } from '@/lib/utils'
 import { OutsourcingPanel } from './OutsourcingPanel'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { useState, useEffect } from 'react'
+import { PcpOrderDelivery } from '@/types'
 
 export function PcpOrderDetails({
   op,
@@ -32,6 +34,7 @@ export function PcpOrderDetails({
   isAdmin: boolean
 }) {
   const [logs, setLogs] = useState<any[]>([])
+  const [deliveries, setDeliveries] = useState<PcpOrderDelivery[]>([])
 
   useEffect(() => {
     if (op) {
@@ -43,8 +46,18 @@ export function PcpOrderDetails({
         })
         .then(setLogs)
         .catch(console.error)
+
+      pb.collection('pcp_order_deliveries')
+        .getFullList<PcpOrderDelivery>({
+          filter: `order_id="${op.id}"`,
+          sort: '-created',
+          expand: 'created_by',
+        })
+        .then(setDeliveries)
+        .catch(console.error)
     } else {
       setLogs([])
+      setDeliveries([])
     }
   }, [op])
 
@@ -147,7 +160,11 @@ export function PcpOrderDetails({
               </div>
               <div>
                 <Label className="text-muted-foreground">Quantidade</Label>
-                <p className="font-medium text-sm mt-1">{op.quantity}</p>
+                <p className="font-medium text-sm mt-1">{op.quantity} un</p>
+                <p className="text-xs text-muted-foreground mt-0.5 font-medium">
+                  Expedido {op.delivered_quantity || 0}/{op.quantity} — pendente{' '}
+                  {Math.max(0, op.quantity - (op.delivered_quantity || 0))}
+                </p>
               </div>
               <div>
                 <Label className="text-muted-foreground">Data de Entrega</Label>
@@ -253,6 +270,72 @@ export function PcpOrderDetails({
                     )}
                   </div>
                 </div>
+              </div>
+
+              {/* Seção de Entregas / Expedição Parcial */}
+              <div className="col-span-2 mt-2 space-y-3 p-3 border rounded-lg bg-slate-50/70 dark:bg-slate-900/40">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Truck className="size-4 text-teal-600" />
+                    <Label className="font-semibold text-foreground">Expedição e Entregas</Label>
+                  </div>
+                  <Badge
+                    variant={(op.delivered_quantity || 0) >= op.quantity ? 'default' : 'outline'}
+                    className={cn(
+                      'text-xs',
+                      (op.delivered_quantity || 0) >= op.quantity
+                        ? 'bg-green-600 text-white'
+                        : (op.delivered_quantity || 0) > 0
+                          ? 'border-blue-500 text-blue-600'
+                          : 'text-muted-foreground',
+                    )}
+                  >
+                    Expedido {op.delivered_quantity || 0}/{op.quantity} — pendente{' '}
+                    {Math.max(0, op.quantity - (op.delivered_quantity || 0))}
+                  </Badge>
+                </div>
+
+                {deliveries.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Nenhuma entrega ou expedição registrada ainda.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {deliveries.map((deliv) => (
+                      <div
+                        key={deliv.id}
+                        className="p-2.5 rounded border bg-background text-xs space-y-1 shadow-sm"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-foreground">
+                            {deliv.quantity} un expedida(s)
+                          </span>
+                          <span className="text-muted-foreground text-[11px]">
+                            {deliv.data_saida
+                              ? format(new Date(deliv.data_saida), 'dd/MM/yyyy')
+                              : format(new Date(deliv.created), 'dd/MM/yyyy HH:mm')}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-muted-foreground pt-1 border-t text-[11px]">
+                          <div>
+                            <span className="font-medium text-foreground">NF: </span>
+                            {deliv.nf || '-'}
+                          </div>
+                          <div>
+                            <span className="font-medium text-foreground">Transportadora: </span>
+                            {deliv.transportadora || '-'}
+                          </div>
+                          {deliv.notes && (
+                            <div className="col-span-2">
+                              <span className="font-medium text-foreground">Obs: </span>
+                              {deliv.notes}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <OutsourcingPanel op={op} />

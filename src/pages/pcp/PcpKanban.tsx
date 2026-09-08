@@ -73,7 +73,7 @@ const MACRO_GROUPS = [
     name: 'Acabamento',
     color: 'bg-purple-100/50 dark:bg-purple-900/20 text-purple-800 dark:text-purple-300',
     borderColor: 'border-purple-200 dark:border-purple-800',
-    stages: ['Preparação', 'Pintura', 'Verniz', 'Retoques'],
+    stages: ['Preparação', 'Pintura', 'Verniz', 'Retoques', 'Retoque'],
   },
   {
     name: 'Montagem',

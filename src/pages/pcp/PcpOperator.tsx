@@ -65,9 +65,21 @@ const SECTORS = {
     'Rosca',
     'Concreto',
   ],
-  Acabamento: ['Preparação', 'Pintura', 'Verniz', 'Retoques'],
-  Montagem: ['Montagem', 'Qualidade'],
+  Acabamento: ['Preparação', 'Pintura', 'Verniz', 'Retoques', 'Retoque'],
+  Montagem: ['Montagem', 'Qualidade', 'Retoque'],
   Expedição: ['Embalagem', 'Expedição'],
+  Fabricação: [
+    'Separação',
+    'Corte',
+    'Dobra',
+    'Calandra',
+    'Solda',
+    'Acab. Solda',
+    'Furação',
+    'Rosca',
+    'Concreto',
+    'Retoque',
+  ],
 } as const
 
 type SectorName = keyof typeof SECTORS
@@ -92,6 +104,7 @@ const ALL_STAGES = [
   'Pintura',
   'Verniz',
   'Retoques',
+  'Retoque',
   'Montagem',
   'Qualidade',
   'Embalagem',
@@ -623,7 +636,7 @@ function OperatorCard({
           <div
             className={cn(
               'p-3 rounded-lg text-sm border mb-4 whitespace-pre-wrap',
-              shouldHighlightObservation(op.stage, op.observation_sector)
+              shouldHighlightObservation(op, op.stage)
                 ? 'bg-yellow-100 border-yellow-400 text-yellow-900 dark:bg-yellow-900/50 dark:border-yellow-500 dark:text-yellow-100 font-semibold shadow-sm'
                 : 'bg-slate-100 border-slate-200 text-slate-700 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-200',
             )}

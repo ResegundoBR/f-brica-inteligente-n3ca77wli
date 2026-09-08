@@ -95,6 +95,7 @@ export const STAGE_THRESHOLDS: Record<string, number> = {
   Pintura: 48,
   Verniz: 24,
   Retoques: 24,
+  Retoque: 24,
   Montagem: 48,
   Qualidade: 24,
   Embalagem: 24,
@@ -126,7 +127,7 @@ const fabricacaoStages = [
   'Terceirização',
 ]
 
-const acabamentoStages = ['Preparação', 'Pintura', 'Verniz', 'Retoques', 'Acabamento']
+const acabamentoStages = ['Preparação', 'Pintura', 'Verniz', 'Retoques', 'Retoque', 'Acabamento']
 
 const montagemStages = ['Montagem']
 

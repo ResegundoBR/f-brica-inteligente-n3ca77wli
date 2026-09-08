@@ -16,7 +16,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
-import { Trash, Plus, ShoppingCart, Volume2, VolumeX, MessageSquare } from 'lucide-react'
+import { Trash, Plus, ShoppingCart, Volume2, VolumeX, MessageSquare, RotateCcw } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import {
   Select,
@@ -29,6 +29,12 @@ import { useAuth } from '@/hooks/use-auth'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Play, CheckCircle, AlertTriangle, FastForward } from 'lucide-react'
+import {
+  createRework,
+  getActiveReworkForOrder,
+  startRework,
+  finishRework,
+} from '@/services/pcp-reworks'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import {
@@ -319,9 +325,11 @@ function OperatorCard({
   op,
   process,
   allProcesses,
+  selectedSector,
   onStart,
   onFinishConfirm,
   onBottleneck,
+  onReworkSubmit,
   shortages,
   onForceStart,
   onReportMaterial,
@@ -334,9 +342,11 @@ function OperatorCard({
   op: PcpOrder
   process?: ProductProcessModel
   allProcesses: ProductProcessModel[]
+  selectedSector: SectorName
   onStart: () => void
   onFinishConfirm: (nextStage: string | null) => void
   onBottleneck: (reason: string, details: string, missingItems?: any[]) => void
+  onReworkSubmit: (targetSector: string, description: string) => void
   shortages?: MaterialShortage[]
   onForceStart: () => void
   onReportMaterial?: () => void
@@ -425,6 +435,10 @@ function OperatorCard({
   const [openBottleneck, setOpenBottleneck] = useState(false)
   const [reason, setReason] = useState('')
   const [details, setDetails] = useState('')
+  const [reworkTargetSector, setReworkTargetSector] = useState<
+    'Fabricação' | 'Acabamento' | 'Montagem'
+  >('Fabricação')
+  const [reworkDescription, setReworkDescription] = useState('')
   const [missingItems, setMissingItems] = useState<
     { description: string; code: string; quantity: number }[]
   >([])
@@ -434,11 +448,18 @@ function OperatorCard({
     if (!isOpen) {
       setReason('')
       setDetails('')
+      setReworkDescription('')
+      setReworkTargetSector('Fabricação')
       setMissingItems([])
     }
   }
 
   const handleBottleneckSubmit = () => {
+    if (reason === 'Retrabalho') {
+      onReworkSubmit(reworkTargetSector, reworkDescription)
+      setOpenBottleneck(false)
+      return
+    }
     onBottleneck(reason, details, missingItems)
     setOpenBottleneck(false)
   }
@@ -768,17 +789,92 @@ function OperatorCard({
             <div className="grid gap-4 py-4">
               {!reason ? (
                 <>
-                  {['Falta de Material', 'Dúvida Técnica', 'Sobrecarga'].map((r) => (
+                  {['Falta de Material', 'Dúvida Técnica', 'Sobrecarga', 'Retrabalho'].map((r) => (
                     <Button
                       key={r}
                       variant="outline"
-                      className="h-16 text-xl border-2 hover:bg-red-50 hover:text-red-700 hover:border-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-300 dark:hover:border-red-700"
+                      className={cn(
+                        'h-16 text-xl border-2 transition-colors',
+                        r === 'Retrabalho'
+                          ? 'border-amber-500 hover:bg-amber-50 hover:text-amber-800 hover:border-amber-600 dark:hover:bg-amber-950/40 dark:hover:text-amber-300 dark:hover:border-amber-600 font-bold'
+                          : 'hover:bg-red-50 hover:text-red-700 hover:border-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-300 dark:hover:border-red-700',
+                      )}
                       onClick={() => setReason(r)}
                     >
+                      {r === 'Retrabalho' && (
+                        <RotateCcw className="mr-2 size-5 text-amber-600 dark:text-amber-400" />
+                      )}
                       {r}
                     </Button>
                   ))}
                 </>
+              ) : reason === 'Retrabalho' ? (
+                <div className="flex flex-col gap-4 animate-in fade-in zoom-in duration-200">
+                  <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 p-3 rounded-md text-sm font-medium flex items-center justify-between">
+                    <span>
+                      Motivo:{' '}
+                      <span className="text-amber-700 dark:text-amber-300 font-bold">
+                        Retrabalho
+                      </span>
+                    </span>
+                    <Badge
+                      variant="outline"
+                      className="border-amber-400 text-amber-700 dark:text-amber-300"
+                    >
+                      Envia para Retoque
+                    </Badge>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-base font-semibold">Setor de Destino da Correção</Label>
+                    <Select
+                      value={reworkTargetSector}
+                      onValueChange={(val: any) => setReworkTargetSector(val)}
+                    >
+                      <SelectTrigger className="h-12 text-base font-medium">
+                        <SelectValue placeholder="Selecione o setor de destino" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Fabricação">Fabricação</SelectItem>
+                        <SelectItem value="Acabamento">Acabamento</SelectItem>
+                        <SelectItem value="Montagem">Montagem</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Setor responsável por executar a correção do defeito/não-conformidade.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="rework-desc" className="text-base font-semibold">
+                      Descrição do que houve *
+                    </Label>
+                    <Textarea
+                      id="rework-desc"
+                      placeholder="Ex: Risco na pintura, solda desalinhada, rebarba..."
+                      value={reworkDescription}
+                      onChange={(e) => setReworkDescription(e.target.value)}
+                      className="min-h-[110px] text-base"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Descreva o motivo do retrabalho com detalhes para o setor executor.
+                    </p>
+                  </div>
+
+                  <DialogFooter className="mt-2">
+                    <Button variant="outline" onClick={() => setReason('')}>
+                      Voltar
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      className="bg-amber-600 hover:bg-amber-700 text-white font-bold"
+                      onClick={handleBottleneckSubmit}
+                      disabled={!reworkDescription.trim()}
+                    >
+                      <RotateCcw className="mr-2 size-4" /> Confirmar Retrabalho
+                    </Button>
+                  </DialogFooter>
+                </div>
               ) : (
                 <div className="flex flex-col gap-4 animate-in fade-in zoom-in duration-200">
                   <div className="bg-slate-100 dark:bg-slate-900 p-3 rounded-md text-sm font-medium">
@@ -1029,6 +1125,12 @@ export default function PcpOperator() {
       ),
     )
     try {
+      // Se houver retrabalho ativo para esta OP, registrar início do retrabalho
+      const activeRework = await getActiveReworkForOrder(op.id)
+      if (activeRework) {
+        await startRework(activeRework.id, user?.id)
+      }
+
       await pb.collection('pcp_orders').update(op.id, {
         status: 'Em Andamento',
         started_at: new Date().toISOString(),
@@ -1042,37 +1144,84 @@ export default function PcpOperator() {
   }
 
   const handleFinishConfirm = async (op: PcpOrder, nextStage: string | null) => {
-    if (!nextStage) {
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === op.id
-            ? {
-                ...o,
-                status: 'Concluído',
-                finished_at: new Date().toISOString(),
-                bottleneck_reason: 'Nenhum',
-                bottleneck_details: '',
-              }
-            : o,
-        ),
-      )
-    } else {
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === op.id
-            ? ({
-                ...o,
-                status: 'Fila',
-                stage: nextStage as any,
-                started_at: '',
-                bottleneck_reason: 'Nenhum',
-                bottleneck_details: '',
-              } as PcpOrder)
-            : o,
-        ),
-      )
-    }
     try {
+      // Verificar se a OP estava em Retrabalho ativo
+      const activeRework = await getActiveReworkForOrder(op.id)
+
+      if (activeRework) {
+        // Conclui o retrabalho e restaura a OP para a etapa de origem
+        await finishRework(activeRework.id, user?.id)
+        const targetStage = activeRework.origin_stage || 'Preparação'
+
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.id === op.id
+              ? ({
+                  ...o,
+                  status: 'Fila',
+                  stage: targetStage as any,
+                  started_at: '',
+                  bottleneck_reason: 'Nenhum',
+                  bottleneck_details: '',
+                } as PcpOrder)
+              : o,
+          ),
+        )
+
+        await pb.collection('pcp_orders').update(op.id, {
+          status: 'Fila',
+          stage: targetStage,
+          started_at: '',
+          bottleneck_reason: 'Nenhum',
+          bottleneck_details: '',
+        })
+
+        await pb.collection('pcp_order_logs').create({
+          order_id: op.id,
+          user_id: user?.id,
+          stage: op.stage,
+          action: 'Retrabalho Concluído',
+          details: `Retrabalho finalizado por ${user?.name || 'Operador'}. OP retornou para a etapa de origem: ${targetStage}`,
+        })
+
+        toast({
+          title: 'Retrabalho Concluído',
+          description: `A OP retornou para a etapa de origem (${targetStage}) na Fila.`,
+        })
+        return
+      }
+
+      if (!nextStage) {
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.id === op.id
+              ? {
+                  ...o,
+                  status: 'Concluído',
+                  finished_at: new Date().toISOString(),
+                  bottleneck_reason: 'Nenhum',
+                  bottleneck_details: '',
+                }
+              : o,
+          ),
+        )
+      } else {
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.id === op.id
+              ? ({
+                  ...o,
+                  status: 'Fila',
+                  stage: nextStage as any,
+                  started_at: '',
+                  bottleneck_reason: 'Nenhum',
+                  bottleneck_details: '',
+                } as PcpOrder)
+              : o,
+          ),
+        )
+      }
+
       if (!nextStage) {
         await pb.collection('pcp_orders').update(op.id, {
           status: 'Concluído',
@@ -1100,6 +1249,69 @@ export default function PcpOperator() {
       toast({ title: 'Etapa Concluída', description: `A OP avançou com sucesso.` })
     } catch (err: any) {
       toast({ title: 'Erro', description: err.message, variant: 'destructive' })
+      loadData()
+    }
+  }
+
+  const handleReworkSubmit = async (op: PcpOrder, targetSector: string, description: string) => {
+    const originSector = selectedSector
+    const originStage = op.stage
+
+    // Atualização otimista: stage='Retoque', status='Fila'
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === op.id
+          ? ({
+              ...o,
+              status: 'Fila',
+              stage: 'Retoque' as any,
+              started_at: '',
+              bottleneck_reason: 'Retrabalho',
+              bottleneck_details: description,
+            } as PcpOrder)
+          : o,
+      ),
+    )
+
+    try {
+      // 1. Criar registro do retrabalho
+      await createRework({
+        order_id: op.id,
+        origin_sector: originSector,
+        origin_stage: originStage,
+        target_sector: targetSector,
+        description,
+        signaled_by: user?.id,
+      })
+
+      // 2. Atualizar OP para Retoque na Fila
+      await pb.collection('pcp_orders').update(op.id, {
+        stage: 'Retoque',
+        status: 'Fila',
+        started_at: '',
+        bottleneck_reason: 'Retrabalho',
+        bottleneck_details: description,
+      })
+
+      // 3. Registrar no log de auditoria da OP
+      await pb.collection('pcp_order_logs').create({
+        order_id: op.id,
+        user_id: user?.id,
+        stage: originStage,
+        action: 'Retrabalho Sinalizado',
+        details: `Enviado para ${targetSector} (Retoque). Motivo: ${description}`,
+      })
+
+      toast({
+        title: 'Retrabalho Sinalizado',
+        description: `OP enviada para Retoque (${targetSector}). Retornará automaticamente para ${originStage} ao ser concluída.`,
+      })
+    } catch (err: any) {
+      toast({
+        title: 'Erro ao sinalizar retrabalho',
+        description: err.message,
+        variant: 'destructive',
+      })
       loadData()
     }
   }
@@ -1590,10 +1802,14 @@ export default function PcpOperator() {
                     (p) => p.product_id === op.product_id && p.kanban_stage === op.stage,
                   )}
                   allProcesses={processes}
+                  selectedSector={selectedSector}
                   onStart={() => handleStart(op)}
                   onFinishConfirm={(ns) => handleFinishConfirm(op, ns)}
                   onBottleneck={(reason, details, items) =>
                     handleBottleneck(op, reason, details, items)
+                  }
+                  onReworkSubmit={(targetSector, description) =>
+                    handleReworkSubmit(op, targetSector, description)
                   }
                   shortages={shortagesByOrder[op.id] || []}
                   onForceStart={() => handleForceStart(op)}
@@ -1640,10 +1856,14 @@ export default function PcpOperator() {
                     (p) => p.product_id === op.product_id && p.kanban_stage === op.stage,
                   )}
                   allProcesses={processes}
+                  selectedSector={selectedSector}
                   onStart={() => handleStart(op)}
                   onFinishConfirm={(ns) => handleFinishConfirm(op, ns)}
                   onBottleneck={(reason, details, items) =>
                     handleBottleneck(op, reason, details, items)
+                  }
+                  onReworkSubmit={(targetSector, description) =>
+                    handleReworkSubmit(op, targetSector, description)
                   }
                   shortages={shortagesByOrder[op.id] || []}
                   onForceStart={() => handleForceStart(op)}

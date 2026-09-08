@@ -24,7 +24,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { parseISO, startOfDay, isBefore } from 'date-fns'
-import { PcpOrder, MaterialShortage, ProductProcessModel, Inventory } from '@/types'
+import { PcpOrder, MaterialShortage, ProductProcessModel, Inventory, PcpRework } from '@/types'
 import { Loader2, BrainCircuit } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
@@ -37,6 +37,8 @@ import { WorkloadByMacroGroup } from './components/WorkloadByMacroGroup'
 import { FlowFunnel } from './components/FlowFunnel'
 import { ProductivityByMacroGroup } from './components/ProductivityByMacroGroup'
 import { TemporalTrends } from './components/TemporalTrends'
+import { ReworkManagementPanel } from './components/ReworkManagementPanel'
+import { getAllReworks } from '@/services/pcp-reworks'
 
 export default function PcpDashboard() {
   const [orders, setOrders] = useState<any[]>([])
@@ -44,14 +46,15 @@ export default function PcpDashboard() {
   const [shortages, setShortages] = useState<MaterialShortage[]>([])
   const [processes, setProcesses] = useState<ProductProcessModel[]>([])
   const [inventory, setInventory] = useState<Inventory[]>([])
+  const [reworks, setReworks] = useState<PcpRework[]>([])
   const [dismissedSuggestions, setDismissedSuggestions] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const { toast } = useToast()
 
   const fetchData = async () => {
     try {
-      const [ordersData, logsData, shortagesData, processesData, inventoryData] = await Promise.all(
-        [
+      const [ordersData, logsData, shortagesData, processesData, inventoryData, reworksData] =
+        await Promise.all([
           pb
             .collection('pcp_orders')
             .getFullList({ sort: '-created', expand: 'product_id,client_id' }),
@@ -59,13 +62,14 @@ export default function PcpDashboard() {
           pb.collection('material_shortages').getFullList({ sort: '-created' }),
           pb.collection('product_processes').getFullList(),
           pb.collection('inventory').getFullList({ sort: 'description' }),
-        ],
-      )
+          getAllReworks(),
+        ])
       setOrders(ordersData as any)
       setLogs(logsData as any)
       setShortages(shortagesData as any)
       setProcesses(processesData as any)
       setInventory(inventoryData as any)
+      setReworks(reworksData)
     } catch (err) {
       console.error('Failed to fetch dashboard data', err)
     } finally {
@@ -81,6 +85,7 @@ export default function PcpDashboard() {
   useRealtime('pcp_order_logs', () => fetchData())
   useRealtime('material_shortages', () => fetchData())
   useRealtime('inventory', () => fetchData())
+  useRealtime('pcp_reworks', () => fetchData())
 
   const handleUpdateEstimate = async (procId: string, newEstimate: number) => {
     try {
@@ -595,6 +600,9 @@ export default function PcpDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Painel Gestão de Retrabalhos (adicionado de forma puramente aditiva ao final) */}
+      <ReworkManagementPanel reworks={reworks} />
     </div>
   )
 }

@@ -13,90 +13,59 @@ import pb from '@/lib/pocketbase/client'
  * `useRealtime<MyRecord>(...)` to get a typed subscription payload
  * instead of `unknown`.
  */
-export interface UseRealtimeOptions {
-  enabled?: boolean
-  onReconnect?: () => void
-}
-
 export function useRealtime<TRecord extends RecordModel = RecordModel>(
   collectionName: string,
   callback: (data: RecordSubscription<TRecord>) => void,
-  optionsOrEnabled: boolean | UseRealtimeOptions = true,
+  enabled: boolean = true,
 ) {
-  const options: UseRealtimeOptions =
-    typeof optionsOrEnabled === 'boolean' ? { enabled: optionsOrEnabled } : optionsOrEnabled
-
-  const { enabled = true, onReconnect } = options
-
   const callbackRef = useRef(callback)
   callbackRef.current = callback
-
-  const onReconnectRef = useRef(onReconnect)
-  onReconnectRef.current = onReconnect
-
-  const hasSubscribedOnceRef = useRef(false)
-  const currentAuthIdRef = useRef<string | null>(pb.authStore.record?.id ?? null)
 
   useEffect(() => {
     if (!enabled) return
 
     let unsubscribeFn: (() => Promise<void>) | undefined
+    let retryTimeoutId: ReturnType<typeof setTimeout> | undefined
     let cancelled = false
+    let retryCount = 0
+    const retryDelays = [5000, 15000, 30000]
+    const maxRetries = 3
 
-    // Monitora troca real de autenticação
-    const unsubscribeAuth = pb.authStore.onChange((_token, record) => {
-      const nextId = record?.id ?? null
-      if (currentAuthIdRef.current !== nextId) {
-        currentAuthIdRef.current = nextId
-        // Troca real de conta: dispara onReconnect se já tínhamos uma inscrição
-        if (hasSubscribedOnceRef.current && onReconnectRef.current) {
-          try {
-            onReconnectRef.current()
-          } catch (err) {
-            console.error('[useRealtime] Erro em onReconnect na troca de conta:', err)
+    function subscribeWithBackoff() {
+      if (cancelled) return
+
+      pb.collection<TRecord>(collectionName)
+        .subscribe('*', (e) => {
+          callbackRef.current(e)
+        })
+        .then((fn) => {
+          if (cancelled) {
+            fn().catch(() => {})
+          } else {
+            unsubscribeFn = fn
+            retryCount = 0
           }
-        }
-      }
-    })
+        })
+        .catch((err: any) => {
+          if (cancelled) return
+          const status = err?.status || err?.statusCode || err?.response?.status
+          const msg = String(err?.message || '')
+          const is429 = status === 429 || /too many requests/i.test(msg)
 
-    // Monitora queda e retorno real de conexão da rede/navegador
-    const handleOnline = () => {
-      if (hasSubscribedOnceRef.current && onReconnectRef.current) {
-        try {
-          onReconnectRef.current()
-        } catch (err) {
-          console.error('[useRealtime] Erro em onReconnect no evento online:', err)
-        }
-      }
+          if (is429 && retryCount < maxRetries) {
+            const delay = retryDelays[retryCount] || 30000
+            retryCount += 1
+            retryTimeoutId = setTimeout(subscribeWithBackoff, delay)
+          }
+        })
     }
 
-    if (typeof window !== 'undefined') {
-      window.addEventListener('online', handleOnline)
-    }
-
-    pb.collection<TRecord>(collectionName)
-      .subscribe('*', (e) => {
-        callbackRef.current(e)
-      })
-      .then((fn) => {
-        if (cancelled) {
-          fn().catch(() => {})
-        } else {
-          unsubscribeFn = fn
-          // Marcar que a primeira inscrição foi concluída com sucesso.
-          // NOTA: NÃO chamar onReconnect na primeira inscrição!
-          hasSubscribedOnceRef.current = true
-        }
-      })
-      .catch((err) => {
-        console.warn(`[useRealtime] Erro ao assinar ${collectionName}:`, err)
-      })
+    subscribeWithBackoff()
 
     return () => {
       cancelled = true
-      unsubscribeAuth()
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('online', handleOnline)
+      if (retryTimeoutId) {
+        clearTimeout(retryTimeoutId)
       }
       if (unsubscribeFn) {
         unsubscribeFn().catch(() => {})

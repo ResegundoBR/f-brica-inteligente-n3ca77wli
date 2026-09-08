@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import pb from '@/lib/pocketbase/client'
 import { useAuth } from '@/hooks/use-auth'
-import { useRealtime } from '@/hooks/use-realtime'
 import type { PcpOrderMessage, MessageSector, MessageType, MessageStatus } from '@/types'
+import { subscribeToSharedMessages } from '@/services/pcp-order-messages-store'
 import {
   Sheet,
   SheetContent,
@@ -151,23 +151,28 @@ export function OrderMessagesPanel({
     }
   }, [open, orderId, loadMessages, markAsRead])
 
-  useRealtime(
-    'pcp_order_messages',
-    () => {
-      if (open && orderId) {
-        loadMessages()
-        markAsRead()
-      }
-    },
-    {
-      onReconnect: () => {
-        if (open && orderId) {
-          loadMessages()
-          markAsRead()
-        }
-      },
-    },
-  )
+  // Escuta a fonte compartilhada de mensagens (pcp-order-messages-store)
+  // em vez de criar uma assinatura realtime separada do PocketBase.
+  useEffect(() => {
+    if (!open || !orderId) return
+    const unsub = subscribeToSharedMessages((allSharedMessages) => {
+      // Quando novas mensagens chegarem via store compartilhado, atualiza a lista local do painel
+      const orderMsgs = allSharedMessages.filter((m) => m.order_id === orderId)
+      const visible = orderMsgs.filter((m) => {
+        if (userIsPcp) return true
+        if (!userChannel) return true
+        if (!m.sector) return true
+        return m.sector === userChannel
+      })
+      // Ordena por data de criação crescente
+      visible.sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime())
+      setMessages(visible)
+      markAsRead()
+    })
+    return () => {
+      unsub()
+    }
+  }, [open, orderId, userIsPcp, userChannel, markAsRead])
 
   useEffect(() => {
     if (scrollRef.current) {

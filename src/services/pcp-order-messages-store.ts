@@ -1,4 +1,4 @@
-import pb from '@/lib/pocketbase/client'
+import pb, { teardownRealtimeClient } from '@/lib/pocketbase/client'
 import type { PcpOrderMessage } from '@/types'
 
 type Listener = (messages: PcpOrderMessage[]) => void
@@ -20,6 +20,14 @@ let debounceTimer: ReturnType<typeof setTimeout> | null = null
 let pendingReload = false
 let activeFetchPromise: Promise<PcpOrderMessage[]> | null = null
 
+// Controle de backoff para 429 Too Many Requests
+// Delays crescentes especificados: 5s -> 15s -> 30s com limite de 3 tentativas
+const RATE_LIMIT_DELAYS = [5000, 15000, 30000]
+const MAX_RATE_LIMIT_RETRIES = 3
+let rateLimitRetryCount = 0
+let rateLimitBlockedUntil = 0
+let rateLimitTimer: ReturnType<typeof setTimeout> | null = null
+
 const state: SharedMessagesState = {
   messages: [],
   loading: false,
@@ -29,6 +37,7 @@ const state: SharedMessagesState = {
 
 const listeners = new Set<Listener>()
 let realtimeUnsubscribe: (() => Promise<void>) | null = null
+let isSubscribing = false
 let currentAuthUserId: string | null = pb.authStore.record?.id ?? null
 
 function notifyListeners() {
@@ -43,6 +52,17 @@ function notifyListeners() {
 }
 
 /**
+ * Helper para verificar se um erro é 429 (Too Many Requests)
+ */
+function isRateLimitError(err: any): boolean {
+  if (!err) return false
+  const status = err?.status || err?.statusCode || err?.response?.status
+  if (status === 429) return true
+  const msg = String(err?.message || err?.error || '')
+  return msg.includes('429') || /too many requests/i.test(msg)
+}
+
+/**
  * Busca todas as mensagens de pcp_order_messages no PocketBase
  */
 export async function fetchAllOrderMessages(force: boolean = false): Promise<PcpOrderMessage[]> {
@@ -54,6 +74,14 @@ export async function fetchAllOrderMessages(force: boolean = false): Promise<Pcp
     state.initialized = true
     notifyListeners()
     return []
+  }
+
+  // Se estivermos dentro da janela de espera de rate-limit (429), bloqueia novas chamadas imediatas
+  const now = Date.now()
+  if (now < rateLimitBlockedUntil && !force) {
+    const remainingSec = Math.ceil((rateLimitBlockedUntil - now) / 1000)
+    console.warn(`[pcpOrderMessagesShared] Bloqueio por 429 ativo. Aguarde ${remainingSec}s...`)
+    return state.messages
   }
 
   // Se já há uma requisição em voo, reaproveita a mesma Promise para evitar tempestade
@@ -73,12 +101,38 @@ export async function fetchAllOrderMessages(force: boolean = false): Promise<Pcp
       state.messages = records
       state.initialized = true
       state.error = null
+      // Sucesso: reseta contador de 429
+      rateLimitRetryCount = 0
+      rateLimitBlockedUntil = 0
       notifyListeners()
       return records
     } catch (err: any) {
       console.error('[pcpOrderMessagesShared] Erro ao carregar mensagens:', err)
-      state.error = err?.message || 'Falha ao sincronizar mensagens'
-      notifyListeners()
+
+      if (isRateLimitError(err)) {
+        if (rateLimitRetryCount < MAX_RATE_LIMIT_RETRIES) {
+          const delay = RATE_LIMIT_DELAYS[rateLimitRetryCount] || 30000
+          rateLimitRetryCount += 1
+          rateLimitBlockedUntil = Date.now() + delay
+          const seconds = Math.round(delay / 1000)
+          state.error = `Limite de requisições excedido. Nova tentativa em ${seconds}s (tentativa ${rateLimitRetryCount}/${MAX_RATE_LIMIT_RETRIES})...`
+          notifyListeners()
+
+          if (rateLimitTimer) clearTimeout(rateLimitTimer)
+          rateLimitTimer = setTimeout(() => {
+            rateLimitTimer = null
+            fetchAllOrderMessages(true).catch(() => {})
+          }, delay)
+        } else {
+          state.error =
+            'Muitas requisições ao servidor. Aguarde alguns instantes antes de atualizar.'
+          notifyListeners()
+        }
+      } else {
+        state.error = err?.message || 'Falha ao sincronizar mensagens'
+        notifyListeners()
+      }
+
       throw err
     } finally {
       state.loading = false
@@ -93,6 +147,11 @@ export async function fetchAllOrderMessages(force: boolean = false): Promise<Pcp
  * Agenda uma recarga com debounce (300ms) para agrupar rajadas de eventos
  */
 export function scheduleDebouncedReload(delayMs: number = 300) {
+  // Se estiver em backoff de 429, respeita a espera
+  if (Date.now() < rateLimitBlockedUntil) {
+    return
+  }
+
   pendingReload = true
   if (debounceTimer) {
     clearTimeout(debounceTimer)
@@ -189,37 +248,95 @@ function handleRealtimeEvent(e: { action: string; record: PcpOrderMessage }) {
 /**
  * Inicializa a assinatura singleton do PocketBase para pcp_order_messages
  */
-function ensureRealtimeSubscription() {
-  if (realtimeUnsubscribe) return
+async function ensureRealtimeSubscription() {
+  if (realtimeUnsubscribe || isSubscribing) return
+  if (!pb.authStore.isValid && !pb.authStore.record) return
 
-  pb.collection<PcpOrderMessage>('pcp_order_messages')
-    .subscribe('*', (e) => {
+  isSubscribing = true
+  try {
+    const unsub = await pb.collection<PcpOrderMessage>('pcp_order_messages').subscribe('*', (e) => {
       handleRealtimeEvent(e as any)
     })
-    .then((unsub) => {
-      realtimeUnsubscribe = unsub
-    })
-    .catch((err) => {
-      console.warn('[pcpOrderMessagesShared] Erro na assinatura realtime:', err)
-    })
+    realtimeUnsubscribe = unsub
+  } catch (err: any) {
+    console.warn('[pcpOrderMessagesShared] Erro na assinatura realtime:', err)
+    if (isRateLimitError(err)) {
+      if (rateLimitRetryCount < MAX_RATE_LIMIT_RETRIES) {
+        const delay = RATE_LIMIT_DELAYS[rateLimitRetryCount] || 30000
+        rateLimitRetryCount += 1
+        rateLimitBlockedUntil = Date.now() + delay
+        if (rateLimitTimer) clearTimeout(rateLimitTimer)
+        rateLimitTimer = setTimeout(() => {
+          rateLimitTimer = null
+          ensureRealtimeSubscription().catch(() => {})
+        }, delay)
+      }
+    }
+  } finally {
+    isSubscribing = false
+  }
+}
+
+/**
+ * Desmonta completamente a assinatura realtime do store compartilhado
+ */
+export async function teardownSharedRealtimeSubscription(): Promise<void> {
+  if (rateLimitTimer) {
+    clearTimeout(rateLimitTimer)
+    rateLimitTimer = null
+  }
+  if (debounceTimer) {
+    clearTimeout(debounceTimer)
+    debounceTimer = null
+  }
+  pendingReload = false
+
+  if (realtimeUnsubscribe) {
+    const fn = realtimeUnsubscribe
+    realtimeUnsubscribe = null
+    try {
+      await fn()
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // Desmonta conexão SSE geral do cliente para garantir novo client id
+  await teardownRealtimeClient()
 }
 
 // Monitora alterações de autenticação (troca de conta ou logout)
 if (typeof window !== 'undefined') {
-  pb.authStore.onChange((_token, record) => {
+  pb.authStore.onChange(async (_token, record) => {
     const nextId = record?.id ?? null
     if (currentAuthUserId !== nextId) {
       currentAuthUserId = nextId
-      // Troca de conta ou login/logout: limpa cache e recarrega
+      // 1. Desmonta completamente a assinatura e conexão realtime antiga antes de qualquer coisa
+      await teardownSharedRealtimeSubscription()
+
+      // 2. Limpa cache e estado anterior
       state.initialized = false
       state.messages = []
+      state.error = null
       locallyMarkedReadIds.clear()
-      fetchAllOrderMessages(true).catch(() => {})
+      rateLimitRetryCount = 0
+      rateLimitBlockedUntil = 0
+
+      // 3. Se houver usuário logado e subscribers ativos, recria conexão e recarrega dados
+      if (nextId && listeners.size > 0) {
+        await ensureRealtimeSubscription()
+        fetchAllOrderMessages(true).catch(() => {})
+      } else {
+        notifyListeners()
+      }
     }
   })
 
   // Ao reconectar rede online após queda real
   window.addEventListener('online', () => {
+    rateLimitRetryCount = 0
+    rateLimitBlockedUntil = 0
+    ensureRealtimeSubscription().catch(() => {})
     fetchAllOrderMessages(true).catch(() => {})
   })
 }
@@ -230,7 +347,7 @@ if (typeof window !== 'undefined') {
  */
 export function subscribeToSharedMessages(listener: Listener): () => void {
   listeners.add(listener)
-  ensureRealtimeSubscription()
+  ensureRealtimeSubscription().catch(() => {})
 
   // Se já temos dados carregados ou inicializados, notifica imediatamente
   if (state.initialized) {

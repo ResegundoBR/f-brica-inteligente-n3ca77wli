@@ -31,6 +31,8 @@ export function MessageNotificationBell({ className }: { className?: string }) {
     totalBadgeCount,
     recentMessages,
     hasNewMessage,
+    loading: unreadLoading,
+    error: unreadError,
     setHasNewMessage,
     markAllRead,
     markOrderAsRead: markOrderUnreadAsRead,
@@ -151,7 +153,24 @@ export function MessageNotificationBell({ className }: { className?: string }) {
           )}
 
           <div className="max-h-[340px] overflow-y-auto divide-y">
-            {recentMessages.length === 0 ? (
+            {unreadError ? (
+              <div className="p-4 text-center space-y-2">
+                <p className="text-xs text-destructive font-medium">{unreadError}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => refresh()}
+                  className="text-xs h-7"
+                >
+                  Tentar novamente
+                </Button>
+              </div>
+            ) : unreadLoading && recentMessages.length === 0 ? (
+              <div className="p-6 text-sm text-center text-muted-foreground flex items-center justify-center gap-2">
+                <div className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                <span>Carregando mensagens...</span>
+              </div>
+            ) : recentMessages.length === 0 ? (
               <div className="p-6 text-sm text-center text-muted-foreground space-y-1">
                 <p>Nenhuma mensagem nova ou pendência.</p>
                 <p className="text-xs">Tudo atualizado!</p>

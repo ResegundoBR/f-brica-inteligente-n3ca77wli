@@ -35,6 +35,7 @@ export function CommunicationPendingBanner() {
 
   const [messages, setMessages] = useState<PcpOrderMessage[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [dismissedKey, setDismissedKey] = useState<string | null>(null)
 
   const storageKey = useMemo(() => {
@@ -57,15 +58,22 @@ export function CommunicationPendingBanner() {
   )
 
   const loadData = useCallback(async () => {
-    if (!user) return
+    if (!pb.authStore.isValid && !user) {
+      setMessages([])
+      setLoading(false)
+      setError(null)
+      return
+    }
+    setError(null)
     try {
       const records = await pb.collection('pcp_order_messages').getFullList<PcpOrderMessage>({
         sort: '-created',
         expand: 'user_id.role,order_id.client_id',
       })
       setMessages(records)
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao carregar mensagens para banner de comunicação', err)
+      setError(err?.message || 'Falha ao sincronizar mensagens.')
     } finally {
       setLoading(false)
     }
@@ -75,9 +83,17 @@ export function CommunicationPendingBanner() {
     loadData()
   }, [loadData])
 
-  useRealtime('pcp_order_messages', () => {
-    loadData()
-  })
+  useRealtime(
+    'pcp_order_messages',
+    () => {
+      loadData()
+    },
+    {
+      onReconnect: () => {
+        loadData()
+      },
+    },
+  )
 
   // Calcula pendências e novidades
   const summary = useMemo(() => {
@@ -230,6 +246,28 @@ export function CommunicationPendingBanner() {
     } else {
       navigate('/pcp/comunicacoes')
     }
+  }
+
+  // Se houver erro de carga na comunicação, exibe um alerta sutil com botão de tentar novamente
+  if (error && !summary.hasPendencies) {
+    return (
+      <aside
+        aria-label="Erro na sincronização da Central de Comunicações"
+        className="w-full bg-destructive text-destructive-foreground shadow-sm px-4 py-2 text-xs flex items-center justify-between gap-2"
+      >
+        <span>
+          Não foi possível sincronizar as notificações da Central de Comunicações: {error}
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={loadData}
+          className="h-6 text-xs bg-white/20 hover:bg-white/30 text-white border-0"
+        >
+          Tentar novamente
+        </Button>
+      </aside>
+    )
   }
 
   if (loading || !summary.hasPendencies || isSeenOrDismissed) {

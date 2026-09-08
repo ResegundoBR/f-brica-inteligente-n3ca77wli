@@ -18,8 +18,20 @@ export function useUnreadMessages() {
   const [hasNewMessage, setHasNewMessage] = useState(false)
   const allUnreadRef = useRef<UnreadMessage[]>([])
 
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
   const loadMessages = useCallback(async () => {
-    if (!user) return
+    if (!pb.authStore.isValid && !user) {
+      setUnreadCount(0)
+      setPendingQuestionsCount(0)
+      setRecentMessages([])
+      setError(null)
+      return
+    }
+
+    setLoading(true)
+    setError(null)
     try {
       // Carrega mensagens recentes
       const allMessages = await pb.collection('pcp_order_messages').getFullList<UnreadMessage>({
@@ -35,12 +47,12 @@ export function useUnreadMessages() {
       // - Não lidas: mensagens não lidas do PCP para o setor do usuário
       // - Pendências: perguntas direcionadas ao setor que ainda aguardam resposta
       const unread = isPcp
-        ? allMessages.filter((m) => !isPcpSender(m) && m.user_id !== user.id && !m.read)
+        ? allMessages.filter((m) => !isPcpSender(m) && m.user_id !== user?.id && !m.read)
         : allMessages.filter(
             (m) =>
-              (!m.sector || m.sector === userChannel) &&
+              (!m.sector || !userChannel || m.sector === userChannel) &&
               isPcpSender(m) &&
-              m.user_id !== user.id &&
+              m.user_id !== user?.id &&
               !m.read,
           )
 
@@ -52,7 +64,7 @@ export function useUnreadMessages() {
             (m) =>
               m.type === 'Pergunta' &&
               m.status === 'Pendente' &&
-              (!m.sector || m.sector === userChannel),
+              (!m.sector || !userChannel || m.sector === userChannel),
           )
 
       allUnreadRef.current = unread
@@ -66,8 +78,11 @@ export function useUnreadMessages() {
       ].slice(0, 10)
 
       setRecentMessages(priorityList)
-    } catch {
-      /* collection might not exist yet */
+    } catch (err: any) {
+      console.error('[useUnreadMessages] Erro ao carregar mensagens:', err)
+      setError(err?.message || 'Erro ao carregar mensagens')
+    } finally {
+      setLoading(false)
     }
   }, [user, isPcp, userChannel])
 
@@ -75,12 +90,20 @@ export function useUnreadMessages() {
     loadMessages()
   }, [loadMessages])
 
-  useRealtime('pcp_order_messages', (e) => {
-    loadMessages()
-    if (e.action === 'create' && e.record.user_id !== user?.id) {
-      setHasNewMessage(true)
-    }
-  })
+  useRealtime(
+    'pcp_order_messages',
+    (e) => {
+      loadMessages()
+      if (e.action === 'create' && e.record.user_id !== user?.id) {
+        setHasNewMessage(true)
+      }
+    },
+    {
+      onReconnect: () => {
+        loadMessages()
+      },
+    },
+  )
 
   const markAllRead = useCallback(() => {
     allUnreadRef.current.forEach((m) => {
@@ -107,6 +130,8 @@ export function useUnreadMessages() {
     totalBadgeCount: pendingQuestionsCount > 0 ? pendingQuestionsCount : unreadCount,
     recentMessages,
     hasNewMessage,
+    loading,
+    error,
     setHasNewMessage,
     markAllRead,
     markOrderAsRead,

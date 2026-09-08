@@ -151,12 +151,23 @@ export function OrderMessagesPanel({
     }
   }, [open, orderId, loadMessages, markAsRead])
 
-  useRealtime('pcp_order_messages', () => {
-    if (open && orderId) {
-      loadMessages()
-      markAsRead()
-    }
-  })
+  useRealtime(
+    'pcp_order_messages',
+    () => {
+      if (open && orderId) {
+        loadMessages()
+        markAsRead()
+      }
+    },
+    {
+      onReconnect: () => {
+        if (open && orderId) {
+          loadMessages()
+          markAsRead()
+        }
+      },
+    },
+  )
 
   useEffect(() => {
     if (scrollRef.current) {

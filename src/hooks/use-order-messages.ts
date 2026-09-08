@@ -26,7 +26,16 @@ export function useOrderMessages(channel?: MessageChannel) {
   const userChannel = getUserChannel(user)
   const effectiveChannel = channel ?? (isPcp ? undefined : (userChannel ?? undefined))
 
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
   const loadMessages = useCallback(async () => {
+    if (!pb.authStore.isValid && !user) {
+      setMessages([])
+      return
+    }
+    setLoading(true)
+    setError(null)
     try {
       const res = await pb.collection('pcp_order_messages').getFullList<PcpOrderMessage>({
         sort: 'created',
@@ -34,16 +43,23 @@ export function useOrderMessages(channel?: MessageChannel) {
       })
       const filtered = effectiveChannel ? res.filter((m) => m.sector === effectiveChannel) : res
       setMessages(filtered)
-    } catch {
-      /* intentionally ignored */
+    } catch (err: any) {
+      console.error('[useOrderMessages] Erro ao carregar mensagens:', err)
+      setError(err?.message || 'Erro ao carregar mensagens da OP')
+    } finally {
+      setLoading(false)
     }
-  }, [effectiveChannel])
+  }, [effectiveChannel, user])
 
   useEffect(() => {
     loadMessages()
   }, [loadMessages])
 
-  useRealtime('pcp_order_messages', loadMessages)
+  useRealtime('pcp_order_messages', loadMessages, {
+    onReconnect: () => {
+      loadMessages()
+    },
+  })
 
   const messagesRef = useRef(messages)
   messagesRef.current = messages
@@ -153,5 +169,12 @@ export function useOrderMessages(channel?: MessageChannel) {
     [messagesByOrder, user],
   )
 
-  return { messagesByOrder, getOrderMessageInfo, markOrderAsRead }
+  return {
+    messagesByOrder,
+    getOrderMessageInfo,
+    markOrderAsRead,
+    loading,
+    error,
+    refresh: loadMessages,
+  }
 }

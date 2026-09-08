@@ -2,8 +2,13 @@ import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import pb from '@/lib/pocketbase/client'
 import { useAuth } from '@/hooks/use-auth'
-import { useRealtime } from '@/hooks/use-realtime'
 import type { PcpOrderMessage, MessageSector } from '@/types'
+import {
+  subscribeToSharedMessages,
+  fetchAllOrderMessages,
+  markMessagesAsReadLocallyAndRemote,
+  getSharedMessagesSnapshot,
+} from '@/services/pcp-order-messages-store'
 import {
   isPcpSender,
   isPcpManager,
@@ -59,9 +64,10 @@ export function PcpInbox() {
   const [searchParams, setSearchParams] = useSearchParams()
   const targetOrderId = searchParams.get('orderId')
 
-  const [messages, setMessages] = useState<PcpOrderMessage[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const initialSnapshot = getSharedMessagesSnapshot()
+  const [messages, setMessages] = useState<PcpOrderMessage[]>(initialSnapshot.messages)
+  const [loading, setLoading] = useState(initialSnapshot.loading)
+  const [error, setError] = useState<string | null>(initialSnapshot.error)
   const [search, setSearch] = useState('')
   const [sectorFilter, setSectorFilter] = useState<string>(isPcp ? 'all' : userChannel || 'all')
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'unread'>('all')
@@ -80,15 +86,25 @@ export function PcpInbox() {
     }
   }, [isPcp, userChannel])
 
+  // Assina a fonte centralizada compartilhada
+  useEffect(() => {
+    const unsub = subscribeToSharedMessages((msgs) => {
+      const snap = getSharedMessagesSnapshot()
+      setMessages(msgs)
+      setLoading(snap.loading)
+      setError(snap.error)
+    })
+
+    return () => {
+      unsub()
+    }
+  }, [])
+
   const loadData = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const all = await pb.collection('pcp_order_messages').getFullList<PcpOrderMessage>({
-        sort: '-created',
-        expand: 'user_id.role,order_id.client_id,reply_to.user_id',
-      })
-      setMessages(all)
+      await fetchAllOrderMessages(true)
     } catch (err: any) {
       console.error('Erro ao carregar mensagens da caixa de entrada', err)
       setError(err?.message || 'Falha ao carregar mensagens da Central de Comunicações.')
@@ -96,22 +112,6 @@ export function PcpInbox() {
       setLoading(false)
     }
   }, [])
-
-  useEffect(() => {
-    loadData()
-  }, [loadData])
-
-  useRealtime(
-    'pcp_order_messages',
-    () => {
-      loadData()
-    },
-    {
-      onReconnect: () => {
-        loadData()
-      },
-    },
-  )
 
   // Agrupa mensagens por OP + Setor
   const conversationGroups = useMemo(() => {
@@ -337,16 +337,7 @@ export function PcpInbox() {
 
     if (unreadMsgs.length === 0) return
 
-    setMessages((prev) => {
-      const ids = new Set(unreadMsgs.map((m) => m.id))
-      return prev.map((m) => (ids.has(m.id) ? { ...m, read: true } : m))
-    })
-
-    unreadMsgs.forEach((m) => {
-      pb.collection('pcp_order_messages')
-        .update(m.id, { read: true })
-        .catch(() => {})
-    })
+    await markMessagesAsReadLocallyAndRemote(unreadMsgs.map((m) => m.id))
   }
 
   return (

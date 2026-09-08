@@ -46,6 +46,11 @@ export const updateOrderMessage = (id: string, data: Partial<PcpOrderMessage>) =
  * - Para PCP: mensagens não lidas enviadas por outros (não PCP).
  * - Para Setor: mensagens não lidas do PCP para o setor do usuário (ou sem setor específico).
  */
+import {
+  markMessagesAsReadLocallyAndRemote,
+  getSharedMessagesSnapshot,
+} from './pcp-order-messages-store'
+
 export const markOrderMessagesAsRead = async (
   orderId: string,
   currentUser: { id: string; role?: string; expand?: any; email?: string } | null | undefined,
@@ -54,10 +59,17 @@ export const markOrderMessagesAsRead = async (
 ) => {
   if (!orderId || !currentUser) return []
   try {
-    const list = await pb.collection('pcp_order_messages').getFullList<PcpOrderMessage>({
-      filter: `order_id="${orderId}" && read=false`,
-      expand: 'user_id.role',
-    })
+    // Tenta primeiro utilizar as mensagens já em cache no store compartilhado
+    const snapshot = getSharedMessagesSnapshot()
+    let list = snapshot.messages.filter((m) => m.order_id === orderId && !m.read)
+
+    // Se o store compartilhado ainda não estiver inicializado, busca pontualmente
+    if (list.length === 0 && !snapshot.initialized) {
+      list = await pb.collection('pcp_order_messages').getFullList<PcpOrderMessage>({
+        filter: `order_id="${orderId}" && read=false`,
+        expand: 'user_id.role',
+      })
+    }
 
     const toMark = list.filter((m) => {
       if (m.user_id === currentUser.id) return false
@@ -71,9 +83,7 @@ export const markOrderMessagesAsRead = async (
     })
 
     if (toMark.length > 0) {
-      await Promise.allSettled(
-        toMark.map((m) => pb.collection('pcp_order_messages').update(m.id, { read: true })),
-      )
+      await markMessagesAsReadLocallyAndRemote(toMark.map((m) => m.id))
     }
 
     return toMark

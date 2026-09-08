@@ -1,28 +1,29 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
-import { useRealtime } from '@/hooks/use-realtime'
-import pb from '@/lib/pocketbase/client'
 import type { PcpOrderMessage, MessageSector } from '@/types'
 import {
   isPcpSender,
   isPcpManager,
   getUserChannel,
   getUserSector,
-  SECTOR_OPTIONS,
   SECTOR_VISUALS,
 } from '@/lib/message-sector'
+import {
+  subscribeToSharedMessages,
+  fetchAllOrderMessages,
+  getSharedMessagesSnapshot,
+} from '@/services/pcp-order-messages-store'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Clock, MessageSquare, ArrowRight, X, CheckCircle2, Sparkles } from 'lucide-react'
-import { cn } from '@/lib/utils'
 
 interface SectorBreakdown {
   sector: MessageSector
   count: number
 }
 
-const STORAGE_KEY_PREFIX = 'pcp_comm_banner_last_seen'
+const STORAGE_DISMISSED_KEY_PREFIX = 'pcp_comm_banner_dismissed'
 
 export function CommunicationPendingBanner() {
   const { user } = useAuth()
@@ -33,69 +34,63 @@ export function CommunicationPendingBanner() {
   const detectedSector = getUserSector(user)
   const userChannel = getUserChannel(user) || (detectedSector !== 'pcp' ? detectedSector : null)
 
-  const [messages, setMessages] = useState<PcpOrderMessage[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [dismissedKey, setDismissedKey] = useState<string | null>(null)
+  const initialSnapshot = getSharedMessagesSnapshot()
+  const [messages, setMessages] = useState<PcpOrderMessage[]>(initialSnapshot.messages)
+  const [loading, setLoading] = useState(initialSnapshot.loading)
+  const [error, setError] = useState<string | null>(initialSnapshot.error)
+  const [dismissedFingerprint, setDismissedFingerprint] = useState<string | null>(null)
 
   const storageKey = useMemo(() => {
     if (!user) return null
-    return `${STORAGE_KEY_PREFIX}_${user.id}`
+    return `${STORAGE_DISMISSED_KEY_PREFIX}_${user.id}`
   }, [user])
 
-  const getLastSeen = useCallback((): number => {
-    if (!storageKey || typeof window === 'undefined') return 0
-    const raw = window.localStorage.getItem(storageKey)
-    return raw ? Number(raw) || 0 : 0
+  // Obtém fingerprint dispensado do sessionStorage (válido apenas para a sessão atual)
+  useEffect(() => {
+    if (!storageKey || typeof window === 'undefined') return
+    const stored = window.sessionStorage.getItem(storageKey)
+    if (stored) {
+      setDismissedFingerprint(stored)
+    }
   }, [storageKey])
 
-  const setLastSeen = useCallback(
-    (timestamp: number) => {
-      if (!storageKey || typeof window === 'undefined') return
-      window.localStorage.setItem(storageKey, String(timestamp))
+  const setDismissed = useCallback(
+    (fingerprint: string) => {
+      setDismissedFingerprint(fingerprint)
+      if (storageKey && typeof window !== 'undefined') {
+        window.sessionStorage.setItem(storageKey, fingerprint)
+      }
     },
     [storageKey],
   )
 
-  const loadData = useCallback(async () => {
-    if (!pb.authStore.isValid && !user) {
-      setMessages([])
-      setLoading(false)
-      setError(null)
-      return
+  // Assina a fonte centralizada compartilhada de mensagens
+  useEffect(() => {
+    const unsub = subscribeToSharedMessages((msgs) => {
+      const snap = getSharedMessagesSnapshot()
+      setMessages(msgs)
+      setLoading(snap.loading)
+      setError(snap.error)
+    })
+
+    return () => {
+      unsub()
     }
-    setError(null)
+  }, [])
+
+  const reloadData = useCallback(async () => {
+    setLoading(true)
     try {
-      const records = await pb.collection('pcp_order_messages').getFullList<PcpOrderMessage>({
-        sort: '-created',
-        expand: 'user_id.role,order_id.client_id',
-      })
-      setMessages(records)
+      await fetchAllOrderMessages(true)
+      setError(null)
     } catch (err: any) {
-      console.error('Erro ao carregar mensagens para banner de comunicação', err)
       setError(err?.message || 'Falha ao sincronizar mensagens.')
     } finally {
       setLoading(false)
     }
-  }, [user])
+  }, [])
 
-  useEffect(() => {
-    loadData()
-  }, [loadData])
-
-  useRealtime(
-    'pcp_order_messages',
-    () => {
-      loadData()
-    },
-    {
-      onReconnect: () => {
-        loadData()
-      },
-    },
-  )
-
-  // Calcula pendências e novidades
+  // Calcula pendências e novidades diretamente das mensagens
   const summary = useMemo(() => {
     if (!user) {
       return {
@@ -148,7 +143,7 @@ export function CommunicationPendingBanner() {
       }
     } else {
       // VISÃO DOS SETORES (Comercial, Acabamento, Fabricação, Montagem, Expedição, Operador):
-      // Vê respostas do PCP no canal dele e novidades das perguntas
+      // Vê respostas e mensagens do PCP no seu canal e status das perguntas
       for (const msg of messages) {
         const time = new Date(msg.created).getTime()
         if (time > latestCreatedTime) latestCreatedTime = time
@@ -196,51 +191,31 @@ export function CommunicationPendingBanner() {
     }
   }, [messages, user, isPcp, userChannel])
 
-  // Identificador da versão atual de pendências (combina total + timestamp da mais recente)
+  // Identificador do estado atual de pendências
+  // Se o número de pendências/não lidas mudar ou se novas mensagens chegarem, cria uma nova chave
   const currentFingerprint = useMemo(() => {
-    return `${summary.totalItems}_${summary.latestCreatedTime}`
-  }, [summary.totalItems, summary.latestCreatedTime])
+    return `${summary.unreadCount}_${summary.pendingCount}_${summary.latestCreatedTime}`
+  }, [summary.unreadCount, summary.pendingCount, summary.latestCreatedTime])
 
-  // Verifica se o usuário já viu esta versão ou se dispensou
-  const isSeenOrDismissed = useMemo(() => {
+  // Verifica se o usuário dispensou especificamente este estado atual
+  const isDismissed = useMemo(() => {
     if (!summary.hasPendencies) return true
-    if (dismissedKey === currentFingerprint) return true
-
-    const lastSeen = getLastSeen()
-    // Se a mensagem mais recente for anterior ou igual ao lastSeen, considera visto
-    if (lastSeen && summary.latestCreatedTime > 0 && summary.latestCreatedTime <= lastSeen) {
-      return true
-    }
-
+    if (dismissedFingerprint === currentFingerprint) return true
     return false
-  }, [
-    summary.hasPendencies,
-    summary.latestCreatedTime,
-    dismissedKey,
-    currentFingerprint,
-    getLastSeen,
-  ])
+  }, [summary.hasPendencies, dismissedFingerprint, currentFingerprint])
 
-  // Se estiver na própria página de comunicações, marca como visto e não exibe o banner
-  useEffect(() => {
-    if (location.pathname === '/pcp/comunicacoes' && summary.latestCreatedTime > 0) {
-      setLastSeen(summary.latestCreatedTime || Date.now())
-      setDismissedKey(currentFingerprint)
-    }
-  }, [location.pathname, summary.latestCreatedTime, currentFingerprint, setLastSeen])
+  // Se estiver na própria página de comunicações, suprime o banner nesta tela
+  const isInsideCommsPage = location.pathname === '/pcp/comunicacoes'
 
-  // Dismiss manual
+  // Dismiss manual pelo botão X
   const handleDismiss = (e: React.MouseEvent) => {
     e.stopPropagation()
-    setLastSeen(summary.latestCreatedTime || Date.now())
-    setDismissedKey(currentFingerprint)
+    setDismissed(currentFingerprint)
   }
 
   // Clique no banner para ir direto à conversa/central
   const handleNavigate = () => {
-    setLastSeen(summary.latestCreatedTime || Date.now())
-    setDismissedKey(currentFingerprint)
-
+    setDismissed(currentFingerprint)
     if (summary.firstPendingOrderId) {
       navigate(`/pcp/comunicacoes?orderId=${summary.firstPendingOrderId}`)
     } else {
@@ -248,7 +223,7 @@ export function CommunicationPendingBanner() {
     }
   }
 
-  // Se houver erro de carga na comunicação, exibe um alerta sutil com botão de tentar novamente
+  // Se houver erro de carga na comunicação e não houver itens para exibir, exibe alerta com retry
   if (error && !summary.hasPendencies) {
     return (
       <aside
@@ -261,7 +236,7 @@ export function CommunicationPendingBanner() {
         <Button
           variant="outline"
           size="sm"
-          onClick={loadData}
+          onClick={reloadData}
           className="h-6 text-xs bg-white/20 hover:bg-white/30 text-white border-0"
         >
           Tentar novamente
@@ -270,7 +245,7 @@ export function CommunicationPendingBanner() {
     )
   }
 
-  if (loading || !summary.hasPendencies || isSeenOrDismissed) {
+  if (loading || !summary.hasPendencies || isDismissed || isInsideCommsPage) {
     return null
   }
 
@@ -390,7 +365,7 @@ export function CommunicationPendingBanner() {
             size="icon"
             onClick={handleDismiss}
             className="h-7 w-7 text-white/80 hover:text-white hover:bg-white/20 rounded-md shrink-0"
-            title="Dispensar aviso (reaparece apenas se houver novidades)"
+            title="Dispensar aviso nesta sessão"
           >
             <X className="size-4" />
           </Button>

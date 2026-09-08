@@ -1,8 +1,6 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import pb from '@/lib/pocketbase/client'
-import { useRealtime } from '@/hooks/use-realtime'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useAuth } from '@/hooks/use-auth'
-import type { PcpOrderMessage, MessageSector } from '@/types'
+import type { PcpOrderMessage } from '@/types'
 import {
   type MessageChannel,
   type IndicatorState,
@@ -10,6 +8,12 @@ import {
   isPcpManager,
   getUserChannel,
 } from '@/lib/message-sector'
+import {
+  subscribeToSharedMessages,
+  fetchAllOrderMessages,
+  markMessagesAsReadLocallyAndRemote,
+  getSharedMessagesSnapshot,
+} from '@/services/pcp-order-messages-store'
 
 export interface OrderMessageInfo {
   count: number
@@ -20,57 +24,41 @@ export interface OrderMessageInfo {
 
 export function useOrderMessages(channel?: MessageChannel) {
   const { user } = useAuth()
-  const [messages, setMessages] = useState<PcpOrderMessage[]>([])
+  const initialSnapshot = getSharedMessagesSnapshot()
+  const [allMessages, setAllMessages] = useState<PcpOrderMessage[]>(initialSnapshot.messages)
+  const [loading, setLoading] = useState(initialSnapshot.loading)
+  const [error, setError] = useState<string | null>(initialSnapshot.error)
 
   const isPcp = isPcpManager(user)
   const userChannel = getUserChannel(user)
   const effectiveChannel = channel ?? (isPcp ? undefined : (userChannel ?? undefined))
 
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const loadMessages = useCallback(async () => {
-    if (!pb.authStore.isValid && !user) {
-      setMessages([])
-      return
-    }
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await pb.collection('pcp_order_messages').getFullList<PcpOrderMessage>({
-        sort: 'created',
-        expand: 'user_id.role,reply_to.user_id',
-      })
-      const filtered = effectiveChannel ? res.filter((m) => m.sector === effectiveChannel) : res
-      setMessages(filtered)
-    } catch (err: any) {
-      console.error('[useOrderMessages] Erro ao carregar mensagens:', err)
-      setError(err?.message || 'Erro ao carregar mensagens da OP')
-    } finally {
-      setLoading(false)
-    }
-  }, [effectiveChannel, user])
-
   useEffect(() => {
-    loadMessages()
-  }, [loadMessages])
+    const unsub = subscribeToSharedMessages((msgs) => {
+      const snap = getSharedMessagesSnapshot()
+      setAllMessages(msgs)
+      setLoading(snap.loading)
+      setError(snap.error)
+    })
 
-  useRealtime('pcp_order_messages', loadMessages, {
-    onReconnect: () => {
-      loadMessages()
-    },
-  })
+    return () => {
+      unsub()
+    }
+  }, [])
 
-  const messagesRef = useRef(messages)
-  messagesRef.current = messages
+  const messages = useMemo(() => {
+    if (!effectiveChannel) return allMessages
+    return allMessages.filter((m) => m.sector === effectiveChannel)
+  }, [allMessages, effectiveChannel])
 
   const markOrderAsRead = useCallback(
-    (orderId: string) => {
+    async (orderId: string) => {
+      if (!user) return
       const userIsPcp = isPcpManager(user)
       const currentChannel = getUserChannel(user)
-      const messagesToMark = messagesRef.current.filter((m) => {
+      const messagesToMark = allMessages.filter((m) => {
         if (m.order_id !== orderId || m.read) return false
-        if (m.user_id === user?.id) return false
+        if (m.user_id === user.id) return false
         const senderIsPcp = isPcpSender(m)
         if (userIsPcp) {
           return !senderIsPcp
@@ -80,16 +68,10 @@ export function useOrderMessages(channel?: MessageChannel) {
         }
       })
       if (messagesToMark.length > 0) {
-        const markIds = new Set(messagesToMark.map((m) => m.id))
-        setMessages((prev) => prev.map((m) => (markIds.has(m.id) ? { ...m, read: true } : m)))
-        messagesToMark.forEach((m) => {
-          pb.collection('pcp_order_messages')
-            .update(m.id, { read: true })
-            .catch(() => {})
-        })
+        await markMessagesAsReadLocallyAndRemote(messagesToMark.map((m) => m.id))
       }
     },
-    [user],
+    [allMessages, user],
   )
 
   const messagesByOrder = useMemo(() => {
@@ -169,12 +151,24 @@ export function useOrderMessages(channel?: MessageChannel) {
     [messagesByOrder, user],
   )
 
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    try {
+      await fetchAllOrderMessages(true)
+      setError(null)
+    } catch (err: any) {
+      setError(err?.message || 'Erro ao carregar mensagens da OP')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
   return {
     messagesByOrder,
     getOrderMessageInfo,
     markOrderAsRead,
     loading,
     error,
-    refresh: loadMessages,
+    refresh,
   }
 }

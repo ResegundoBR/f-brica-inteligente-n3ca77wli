@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import type { RecordModel, RecordSubscription } from 'pocketbase'
 
 import pb from '@/lib/pocketbase/client'
@@ -15,23 +15,18 @@ import pb from '@/lib/pocketbase/client'
  */
 export interface UseRealtimeOptions {
   enabled?: boolean
-  /**
-   * Chamado quando a assinatura em tempo real é estabelecida ou restabelecida com sucesso,
-   * permitindo recarregar os dados para sincronizar com eventuais eventos perdidos.
-   */
   onReconnect?: () => void
 }
 
 export function useRealtime<TRecord extends RecordModel = RecordModel>(
   collectionName: string,
   callback: (data: RecordSubscription<TRecord>) => void,
-  enabledOrOptions: boolean | UseRealtimeOptions = true,
+  optionsOrEnabled: boolean | UseRealtimeOptions = true,
 ) {
   const options: UseRealtimeOptions =
-    typeof enabledOrOptions === 'boolean' ? { enabled: enabledOrOptions } : enabledOrOptions
+    typeof optionsOrEnabled === 'boolean' ? { enabled: optionsOrEnabled } : optionsOrEnabled
 
-  const enabled = options.enabled ?? true
-  const onReconnect = options.onReconnect
+  const { enabled = true, onReconnect } = options
 
   const callbackRef = useRef(callback)
   callbackRef.current = callback
@@ -39,84 +34,75 @@ export function useRealtime<TRecord extends RecordModel = RecordModel>(
   const onReconnectRef = useRef(onReconnect)
   onReconnectRef.current = onReconnect
 
-  // Monitora alterações de autenticação (token / usuário) para forçar resubscribe
-  const [authKey, setAuthKey] = useState<string>(() => {
-    return `${pb.authStore.token}_${pb.authStore.record?.id ?? 'guest'}`
-  })
-
-  useEffect(() => {
-    const unsubAuth = pb.authStore.onChange((token, record) => {
-      setAuthKey(`${token}_${record?.id ?? 'guest'}`)
-    })
-    return () => {
-      unsubAuth()
-    }
-  }, [])
+  const hasSubscribedOnceRef = useRef(false)
+  const currentAuthIdRef = useRef<string | null>(pb.authStore.record?.id ?? null)
 
   useEffect(() => {
     if (!enabled) return
 
     let unsubscribeFn: (() => Promise<void>) | undefined
     let cancelled = false
-    let retryTimer: ReturnType<typeof setTimeout> | undefined
-    let retryCount = 0
-    let hasSubscribedOnce = false
 
-    const subscribeWithRetry = () => {
-      if (cancelled) return
-
-      pb.collection<TRecord>(collectionName)
-        .subscribe('*', (e) => {
-          callbackRef.current(e)
-        })
-        .then((fn) => {
-          if (cancelled) {
-            fn().catch(() => {})
-          } else {
-            unsubscribeFn = fn
-            retryCount = 0
-            // Se já tínhamos tentado antes ou reconectamos após troca de auth / queda,
-            // dispara onReconnect para recarregar os dados
-            if (hasSubscribedOnce || authKey) {
-              try {
-                onReconnectRef.current?.()
-              } catch (err) {
-                console.error(`[useRealtime] Erro no onReconnect de '${collectionName}':`, err)
-              }
-            }
-            hasSubscribedOnce = true
+    // Monitora troca real de autenticação
+    const unsubscribeAuth = pb.authStore.onChange((_token, record) => {
+      const nextId = record?.id ?? null
+      if (currentAuthIdRef.current !== nextId) {
+        currentAuthIdRef.current = nextId
+        // Troca real de conta: dispara onReconnect se já tínhamos uma inscrição
+        if (hasSubscribedOnceRef.current && onReconnectRef.current) {
+          try {
+            onReconnectRef.current()
+          } catch (err) {
+            console.error('[useRealtime] Erro em onReconnect na troca de conta:', err)
           }
-        })
-        .catch((err) => {
-          console.error(
-            `[useRealtime] Erro ao assinar a coleção '${collectionName}' (tentativa ${retryCount + 1}):`,
-            err,
-          )
-          if (cancelled) return
+        }
+      }
+    })
 
-          // Backoff exponencial simples: 1s, 2s, 4s, até máx 10s
-          const delay = Math.min(1000 * Math.pow(2, retryCount), 10000)
-          retryCount++
-          retryTimer = setTimeout(() => {
-            subscribeWithRetry()
-          }, delay)
-        })
+    // Monitora queda e retorno real de conexão da rede/navegador
+    const handleOnline = () => {
+      if (hasSubscribedOnceRef.current && onReconnectRef.current) {
+        try {
+          onReconnectRef.current()
+        } catch (err) {
+          console.error('[useRealtime] Erro em onReconnect no evento online:', err)
+        }
+      }
     }
 
-    subscribeWithRetry()
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', handleOnline)
+    }
+
+    pb.collection<TRecord>(collectionName)
+      .subscribe('*', (e) => {
+        callbackRef.current(e)
+      })
+      .then((fn) => {
+        if (cancelled) {
+          fn().catch(() => {})
+        } else {
+          unsubscribeFn = fn
+          // Marcar que a primeira inscrição foi concluída com sucesso.
+          // NOTA: NÃO chamar onReconnect na primeira inscrição!
+          hasSubscribedOnceRef.current = true
+        }
+      })
+      .catch((err) => {
+        console.warn(`[useRealtime] Erro ao assinar ${collectionName}:`, err)
+      })
 
     return () => {
       cancelled = true
-      if (retryTimer) {
-        clearTimeout(retryTimer)
+      unsubscribeAuth()
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('online', handleOnline)
       }
       if (unsubscribeFn) {
-        unsubscribeFn().catch((err) => {
-          console.warn(`[useRealtime] Aviso ao desinscrever de '${collectionName}':`, err)
-        })
+        unsubscribeFn().catch(() => {})
       }
     }
-  }, [collectionName, enabled, authKey])
+  }, [collectionName, enabled])
 }
 
 export default useRealtime

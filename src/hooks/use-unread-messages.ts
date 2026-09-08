@@ -1,9 +1,13 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
-import pb from '@/lib/pocketbase/client'
-import { useRealtime } from '@/hooks/use-realtime'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useAuth } from '@/hooks/use-auth'
-import type { Role, PcpOrderMessage, MessageSector } from '@/types'
+import type { PcpOrderMessage } from '@/types'
 import { isPcpSender, isPcpManager, getUserChannel } from '@/lib/message-sector'
+import {
+  subscribeToSharedMessages,
+  fetchAllOrderMessages,
+  markMessagesAsReadLocallyAndRemote,
+  getSharedMessagesSnapshot,
+} from '@/services/pcp-order-messages-store'
 
 export type UnreadMessage = PcpOrderMessage
 
@@ -12,116 +16,118 @@ export function useUnreadMessages() {
   const isPcp = isPcpManager(user)
   const userChannel = getUserChannel(user)
 
-  const [unreadCount, setUnreadCount] = useState(0)
-  const [pendingQuestionsCount, setPendingQuestionsCount] = useState(0)
-  const [recentMessages, setRecentMessages] = useState<UnreadMessage[]>([])
+  const initialSnapshot = getSharedMessagesSnapshot()
+  const [allMessages, setAllMessages] = useState<UnreadMessage[]>(initialSnapshot.messages)
+  const [loading, setLoading] = useState(initialSnapshot.loading)
+  const [error, setError] = useState<string | null>(initialSnapshot.error)
   const [hasNewMessage, setHasNewMessage] = useState(false)
-  const allUnreadRef = useRef<UnreadMessage[]>([])
+  const prevMessagesCountRef = useRef(initialSnapshot.messages.length)
 
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  // Assina a fonte centralizada compartilhada
+  useEffect(() => {
+    const unsub = subscribeToSharedMessages((msgs) => {
+      const snap = getSharedMessagesSnapshot()
+      // Detecta se uma nova mensagem foi criada por outro usuário
+      if (msgs.length > prevMessagesCountRef.current && prevMessagesCountRef.current > 0) {
+        const newest = msgs[0]
+        if (newest && newest.user_id !== user?.id) {
+          setHasNewMessage(true)
+        }
+      }
+      prevMessagesCountRef.current = msgs.length
+      setAllMessages(msgs)
+      setLoading(snap.loading)
+      setError(snap.error)
+    })
 
-  const loadMessages = useCallback(async () => {
-    if (!pb.authStore.isValid && !user) {
-      setUnreadCount(0)
-      setPendingQuestionsCount(0)
-      setRecentMessages([])
-      setError(null)
-      return
+    return () => {
+      unsub()
+    }
+  }, [user?.id])
+
+  // Regra de não lidas e pendências calculadas de forma memoizada a partir do pool compartilhado
+  const { unread, pendingQuestions, recentMessages } = useMemo(() => {
+    if (!user) {
+      return {
+        unread: [] as UnreadMessage[],
+        pendingQuestions: [] as UnreadMessage[],
+        recentMessages: [] as UnreadMessage[],
+      }
     }
 
+    // Regra de não lidas e pendências:
+    // Se for PCP:
+    // - Não lidas: mensagens não lidas de outros
+    // - Pendências: perguntas de status 'Pendente' feitas por outros
+    // Se for setor:
+    // - Não lidas: mensagens não lidas do PCP para o setor do usuário
+    // - Pendências: perguntas direcionadas ao setor que ainda aguardam resposta
+    const unreadMsgs = isPcp
+      ? allMessages.filter((m) => !isPcpSender(m) && m.user_id !== user.id && !m.read)
+      : allMessages.filter(
+          (m) =>
+            (!m.sector || !userChannel || m.sector === userChannel) &&
+            isPcpSender(m) &&
+            m.user_id !== user.id &&
+            !m.read,
+        )
+
+    const pending = isPcp
+      ? allMessages.filter(
+          (m) => m.type === 'Pergunta' && m.status === 'Pendente' && !isPcpSender(m),
+        )
+      : allMessages.filter(
+          (m) =>
+            m.type === 'Pergunta' &&
+            m.status === 'Pendente' &&
+            (!m.sector || !userChannel || m.sector === userChannel),
+        )
+
+    const priorityList = [
+      ...pending,
+      ...unreadMsgs.filter((u) => !pending.some((p) => p.id === u.id)),
+    ].slice(0, 10)
+
+    return {
+      unread: unreadMsgs,
+      pendingQuestions: pending,
+      recentMessages: priorityList,
+    }
+  }, [allMessages, user, isPcp, userChannel])
+
+  const unreadCount = unread.length
+  const pendingQuestionsCount = pendingQuestions.length
+
+  const markAllRead = useCallback(async () => {
+    if (unread.length === 0) return
+    const ids = unread.map((m) => m.id)
+    await markMessagesAsReadLocallyAndRemote(ids)
+    setHasNewMessage(false)
+  }, [unread])
+
+  const markOrderAsRead = useCallback(
+    async (orderId: string) => {
+      const orderUnread = unread.filter((m) => m.order_id === orderId)
+      if (orderUnread.length > 0) {
+        await markMessagesAsReadLocallyAndRemote(orderUnread.map((m) => m.id))
+      }
+      if (unread.length <= orderUnread.length) {
+        setHasNewMessage(false)
+      }
+    },
+    [unread],
+  )
+
+  const refresh = useCallback(async () => {
     setLoading(true)
-    setError(null)
     try {
-      // Carrega mensagens recentes
-      const allMessages = await pb.collection('pcp_order_messages').getFullList<UnreadMessage>({
-        sort: '-created',
-        expand: 'user_id.role,order_id.client_id,reply_to.user_id',
-      })
-
-      // Regra de não lidas e pendências:
-      // Se for PCP:
-      // - Não lidas: mensagens não lidas de outros
-      // - Pendências: perguntas de status 'Pendente' feitas por outros
-      // Se for setor:
-      // - Não lidas: mensagens não lidas do PCP para o setor do usuário
-      // - Pendências: perguntas direcionadas ao setor que ainda aguardam resposta
-      const unread = isPcp
-        ? allMessages.filter((m) => !isPcpSender(m) && m.user_id !== user?.id && !m.read)
-        : allMessages.filter(
-            (m) =>
-              (!m.sector || !userChannel || m.sector === userChannel) &&
-              isPcpSender(m) &&
-              m.user_id !== user?.id &&
-              !m.read,
-          )
-
-      const pendingQuestions = isPcp
-        ? allMessages.filter(
-            (m) => m.type === 'Pergunta' && m.status === 'Pendente' && !isPcpSender(m),
-          )
-        : allMessages.filter(
-            (m) =>
-              m.type === 'Pergunta' &&
-              m.status === 'Pendente' &&
-              (!m.sector || !userChannel || m.sector === userChannel),
-          )
-
-      allUnreadRef.current = unread
-      setUnreadCount(unread.length)
-      setPendingQuestionsCount(pendingQuestions.length)
-
-      // Mostra as mais prioritárias (perguntas pendentes primeiro, depois mensagens não lidas)
-      const priorityList = [
-        ...pendingQuestions,
-        ...unread.filter((u) => !pendingQuestions.some((p) => p.id === u.id)),
-      ].slice(0, 10)
-
-      setRecentMessages(priorityList)
+      await fetchAllOrderMessages(true)
+      setError(null)
     } catch (err: any) {
-      console.error('[useUnreadMessages] Erro ao carregar mensagens:', err)
       setError(err?.message || 'Erro ao carregar mensagens')
     } finally {
       setLoading(false)
     }
-  }, [user, isPcp, userChannel])
-
-  useEffect(() => {
-    loadMessages()
-  }, [loadMessages])
-
-  useRealtime(
-    'pcp_order_messages',
-    (e) => {
-      loadMessages()
-      if (e.action === 'create' && e.record.user_id !== user?.id) {
-        setHasNewMessage(true)
-      }
-    },
-    {
-      onReconnect: () => {
-        loadMessages()
-      },
-    },
-  )
-
-  const markAllRead = useCallback(() => {
-    allUnreadRef.current.forEach((m) => {
-      pb.collection('pcp_order_messages')
-        .update(m.id, { read: true })
-        .catch(() => {})
-    })
-    allUnreadRef.current = []
-    setUnreadCount(0)
-    setHasNewMessage(false)
-  }, [])
-
-  const markOrderAsRead = useCallback((orderId: string) => {
-    const remaining = allUnreadRef.current.filter((m) => m.order_id !== orderId)
-    allUnreadRef.current = remaining
-    setUnreadCount(remaining.length)
-    setRecentMessages((prev) => prev.filter((m) => m.order_id !== orderId || m.type === 'Pergunta'))
-    if (remaining.length === 0) setHasNewMessage(false)
   }, [])
 
   return {
@@ -135,6 +141,6 @@ export function useUnreadMessages() {
     setHasNewMessage,
     markAllRead,
     markOrderAsRead,
-    refresh: loadMessages,
+    refresh,
   }
 }

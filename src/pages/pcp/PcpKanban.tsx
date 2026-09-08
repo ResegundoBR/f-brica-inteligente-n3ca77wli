@@ -17,8 +17,15 @@ import {
   XCircle,
   CircleDot,
   Circle,
-  Bell,
   Truck,
+  SlidersHorizontal,
+  ChevronDown,
+  ChevronUp,
+  X,
+  RotateCcw,
+  Hourglass,
+  Clock,
+  Sparkles,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
@@ -33,8 +40,6 @@ import {
 import { OutsourcingPanel } from './components/OutsourcingPanel'
 import { PcpFilters } from './components/PcpFilters'
 import { MessageNotificationBell } from '@/components/MessageNotificationBell'
-import { Link } from 'react-router-dom'
-import { Package } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { MaterialShortage } from '@/types'
 import { getMaterialAvailabilityStatus } from '@/lib/material-status'
@@ -136,10 +141,16 @@ export default function PcpKanban() {
     orderNumber: string
     opNumber: string
   } | null>(null)
-  const [pendingOnly, setPendingOnly] = useState(false)
   const [hideConcluded, setHideConcluded] = useState(true)
   const [expeditionModalOpen, setExpeditionModalOpen] = useState(false)
   const [expeditionOrderNumber, setExpeditionOrderNumber] = useState('')
+
+  // Filtros rápidos
+  const [quickFiltersOpen, setQuickFiltersOpen] = useState(false)
+  const [itemCountFilter, setItemCountFilter] = useState<'all' | '1' | '2' | '3+'>('all')
+  const [topDelayedOnly, setTopDelayedOnly] = useState(false)
+  const [reworkOnly, setReworkOnly] = useState(false)
+  const [stagnantOnly, setStagnantOnly] = useState(false)
 
   const fetchOrders = async () => {
     const res = await pb.collection('pcp_orders').getFullList({
@@ -220,48 +231,94 @@ export default function PcpKanban() {
     }
   }
 
-  const filteredOrders = useMemo(
-    () =>
-      orders.filter((o) => {
-        if (hideConcluded && o.status === 'Concluído') return false
-        if (opTypeFilter !== 'all' && o.op_type !== opTypeFilter) return false
-        if (clientFilter !== 'all' && o.client_id !== clientFilter) return false
-        if (clientTypeFilter !== 'all' && o.expand?.client_id?.type !== clientTypeFilter)
-          return false
-        if (!filterByDeadline(o.delivery_date, deadlineFilter)) return false
-        if (pendingOnly) {
-          const msgState = getOrderMessageInfo(o.id).indicatorState
-          if (msgState !== 'green') return false
-        }
+  // Mapa de contagem de itens por pedido para o filtro rápido de itens
+  const orderItemsCountMap = useMemo(() => {
+    const map = new Map<string, number>()
+    orders.forEach((op) => {
+      const normalized = (op.order_number || '').replace(/[.\-\s]/g, '').replace(/^0+/, '') || '0'
+      map.set(normalized, (map.get(normalized) || 0) + 1)
+    })
+    return map
+  }, [orders])
 
-        if (!searchQuery) return true
-        const q = normalizeSearchText(searchQuery)
-        if (!q) return true
-        const clientName = o.expand?.client_id?.name || o.client_name || ''
-        const productName =
-          o.op_type === 'Assistência'
-            ? o.manual_product_name || ''
-            : o.expand?.product_id?.name || ''
-        const date = o.delivery_date ? format(parseISO(o.delivery_date), 'dd/MM/yyyy') : ''
-        const orderNum = o.order_number || ''
-        const opNum = o.op_number || ''
-        const obsSector = o.observation_sector || ''
+  const filteredOrders = useMemo(() => {
+    // 1. Filtragem base
+    let list = orders.filter((o) => {
+      if (hideConcluded && o.status === 'Concluído') return false
+      if (opTypeFilter !== 'all' && o.op_type !== opTypeFilter) return false
+      if (clientFilter !== 'all' && o.client_id !== clientFilter) return false
+      if (clientTypeFilter !== 'all' && o.expand?.client_id?.type !== clientTypeFilter) return false
+      if (!filterByDeadline(o.delivery_date, deadlineFilter)) return false
 
-        const fields = [clientName, productName, date, orderNum, opNum, obsSector]
-        return fields.some((f) => normalizeSearchText(f).includes(q))
-      }),
-    [
-      orders,
-      searchQuery,
-      opTypeFilter,
-      clientFilter,
-      clientTypeFilter,
-      deadlineFilter,
-      pendingOnly,
-      hideConcluded,
-      getOrderMessageInfo,
-    ],
-  )
+      // Filtro rápido de itens no pedido ("1 item", "2 itens", "3+ itens")
+      if (itemCountFilter !== 'all') {
+        const normalized = (o.order_number || '').replace(/[.\-\s]/g, '').replace(/^0+/, '') || '0'
+        const count = orderItemsCountMap.get(normalized) || 1
+        if (itemCountFilter === '1' && count !== 1) return false
+        if (itemCountFilter === '2' && count !== 2) return false
+        if (itemCountFilter === '3+' && count < 3) return false
+      }
+
+      // Filtro rápido "Em Retrabalho" (OPs na etapa "Retoque" ou "Retoques")
+      if (reworkOnly) {
+        if (o.stage !== 'Retoque' && o.stage !== 'Retoques') return false
+      }
+
+      // Filtro rápido "Estagnadas" (paradas na mesma etapa além do tempo-padrão)
+      if (stagnantOnly) {
+        if (!isStageDelayed(o)) return false
+      }
+
+      if (!searchQuery) return true
+      const q = normalizeSearchText(searchQuery)
+      if (!q) return true
+      const clientName = o.expand?.client_id?.name || o.client_name || ''
+      const productName =
+        o.op_type === 'Assistência' ? o.manual_product_name || '' : o.expand?.product_id?.name || ''
+      const date = o.delivery_date ? format(parseISO(o.delivery_date), 'dd/MM/yyyy') : ''
+      const orderNum = o.order_number || ''
+      const opNum = o.op_number || ''
+      const obsSector = o.observation_sector || ''
+
+      const fields = [clientName, productName, date, orderNum, opNum, obsSector]
+      return fields.some((f) => normalizeSearchText(f).includes(q))
+    })
+
+    // 2. Filtro rápido "5 mais atrasados" (mostrar apenas os 5 pedidos/OPs mais vencidos)
+    if (topDelayedOnly) {
+      const today = startOfDay(new Date())
+      const overdueList = list.filter((o) => {
+        if (o.status === 'Concluído' || !o.delivery_date) return false
+        const d = parseISO(o.delivery_date)
+        if (isNaN(d.getTime())) return false
+        return differenceInDays(startOfDay(d), today) < 0
+      })
+
+      // Ordena pelos mais atrasados primeiro (menor delivery_date / data mais antiga no passado)
+      overdueList.sort((a, b) => {
+        const timeA = new Date(a.delivery_date).getTime()
+        const timeB = new Date(b.delivery_date).getTime()
+        return timeA - timeB
+      })
+
+      list = overdueList.slice(0, 5)
+    }
+
+    return list
+  }, [
+    orders,
+    searchQuery,
+    opTypeFilter,
+    clientFilter,
+    clientTypeFilter,
+    deadlineFilter,
+    hideConcluded,
+    itemCountFilter,
+    orderItemsCountMap,
+    reworkOnly,
+    stagnantOnly,
+    topDelayedOnly,
+  ])
 
   const groupedFilteredOrders = useMemo(() => {
     const groups: {
@@ -320,15 +377,6 @@ export default function PcpKanban() {
             setDeadline={setDeadlineFilter}
           />
           <Button
-            variant={pendingOnly ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setPendingOnly(!pendingOnly)}
-            className="gap-2 h-8 text-xs"
-          >
-            <Bell className="size-3.5" />
-            Mensagens Pendentes
-          </Button>
-          <Button
             variant={hideConcluded ? 'default' : 'outline'}
             size="sm"
             onClick={() => setHideConcluded(!hideConcluded)}
@@ -337,15 +385,39 @@ export default function PcpKanban() {
             <CheckCircle2 className="size-3.5" />
             {hideConcluded ? 'Ocultar Concluídos' : 'Mostrar Concluídos'}
           </Button>
-          <Link to="/pcp/materiais">
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-2 h-8 text-xs bg-white dark:bg-slate-900 border-dashed"
-            >
-              <Package className="size-3.5" /> Suprimentos
-            </Button>
-          </Link>
+          <Button
+            variant={
+              itemCountFilter !== 'all' || topDelayedOnly || reworkOnly || stagnantOnly
+                ? 'default'
+                : quickFiltersOpen
+                  ? 'secondary'
+                  : 'outline'
+            }
+            size="sm"
+            onClick={() => setQuickFiltersOpen(!quickFiltersOpen)}
+            className="gap-1.5 h-8 text-xs"
+            title="Filtros rápidos de um clique"
+          >
+            <SlidersHorizontal className="size-3.5" />
+            <span>Filtros rápidos</span>
+            {(itemCountFilter !== 'all' || topDelayedOnly || reworkOnly || stagnantOnly) && (
+              <Badge
+                variant="secondary"
+                className="h-4 px-1 text-[10px] ml-0.5 bg-background text-foreground font-bold"
+              >
+                {
+                  [itemCountFilter !== 'all', topDelayedOnly, reworkOnly, stagnantOnly].filter(
+                    Boolean,
+                  ).length
+                }
+              </Badge>
+            )}
+            {quickFiltersOpen ? (
+              <ChevronUp className="size-3 opacity-70" />
+            ) : (
+              <ChevronDown className="size-3 opacity-70" />
+            )}
+          </Button>
           <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-md shadow-inner">
             <Button
               variant={viewMode === 'status' ? 'default' : 'ghost'}
@@ -398,6 +470,120 @@ export default function PcpKanban() {
           )}
         </div>
       </div>
+
+      {/* Linha expansível de Filtros Rápidos */}
+      {quickFiltersOpen && (
+        <div className="shrink-0 mb-2 p-2.5 rounded-lg border bg-white dark:bg-slate-900 shadow-xs flex flex-wrap items-center gap-2 animate-in fade-in-50 slide-in-from-top-1 duration-200">
+          <span className="text-xs font-semibold text-muted-foreground mr-1 flex items-center gap-1">
+            <Sparkles className="size-3 text-amber-500" />
+            Filtros rápidos:
+          </span>
+
+          {/* Grupo de Itens por Pedido (mutuamente exclusivos) */}
+          <div className="flex items-center rounded-md border p-0.5 bg-slate-50 dark:bg-slate-950">
+            <Button
+              variant={itemCountFilter === '1' ? 'default' : 'ghost'}
+              size="sm"
+              className={cn(
+                'h-7 px-2.5 text-xs rounded-sm',
+                itemCountFilter === '1' && 'shadow-xs',
+              )}
+              onClick={() => setItemCountFilter(itemCountFilter === '1' ? 'all' : '1')}
+            >
+              1 item
+            </Button>
+            <Button
+              variant={itemCountFilter === '2' ? 'default' : 'ghost'}
+              size="sm"
+              className={cn(
+                'h-7 px-2.5 text-xs rounded-sm',
+                itemCountFilter === '2' && 'shadow-xs',
+              )}
+              onClick={() => setItemCountFilter(itemCountFilter === '2' ? 'all' : '2')}
+            >
+              2 itens
+            </Button>
+            <Button
+              variant={itemCountFilter === '3+' ? 'default' : 'ghost'}
+              size="sm"
+              className={cn(
+                'h-7 px-2.5 text-xs rounded-sm',
+                itemCountFilter === '3+' && 'shadow-xs',
+              )}
+              onClick={() => setItemCountFilter(itemCountFilter === '3+' ? 'all' : '3+')}
+            >
+              3+ itens
+            </Button>
+          </div>
+
+          <div className="h-4 w-px bg-border" />
+
+          {/* 5 mais atrasados */}
+          <Button
+            variant={topDelayedOnly ? 'default' : 'outline'}
+            size="sm"
+            className={cn(
+              'h-7 px-2.5 text-xs gap-1.5',
+              topDelayedOnly
+                ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                : 'hover:border-purple-300 dark:hover:border-purple-800',
+            )}
+            onClick={() => setTopDelayedOnly(!topDelayedOnly)}
+          >
+            <Clock className="size-3" />5 mais atrasados
+          </Button>
+
+          {/* Em Retrabalho (etapa Retoque) */}
+          <Button
+            variant={reworkOnly ? 'default' : 'outline'}
+            size="sm"
+            className={cn(
+              'h-7 px-2.5 text-xs gap-1.5',
+              reworkOnly
+                ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                : 'hover:border-rose-300 dark:hover:border-rose-800',
+            )}
+            onClick={() => setReworkOnly(!reworkOnly)}
+          >
+            <RotateCcw className="size-3" />
+            Em Retrabalho
+          </Button>
+
+          {/* Estagnadas (paradas além do tempo-padrão) */}
+          <Button
+            variant={stagnantOnly ? 'default' : 'outline'}
+            size="sm"
+            className={cn(
+              'h-7 px-2.5 text-xs gap-1.5',
+              stagnantOnly
+                ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                : 'hover:border-amber-300 dark:hover:border-amber-800',
+            )}
+            onClick={() => setStagnantOnly(!stagnantOnly)}
+          >
+            <Hourglass className="size-3" />
+            Estagnadas
+          </Button>
+
+          {/* Botão para limpar filtros rápidos quando algum estiver ativo */}
+          {(itemCountFilter !== 'all' || topDelayedOnly || reworkOnly || stagnantOnly) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground gap-1 ml-auto"
+              onClick={() => {
+                setItemCountFilter('all')
+                setTopDelayedOnly(false)
+                setReworkOnly(false)
+                setStagnantOnly(false)
+              }}
+            >
+              <X className="size-3" />
+              Limpar rápidos
+            </Button>
+          )}
+        </div>
+      )}
 
       <StatusLegend className="shrink-0 mb-1" />
 

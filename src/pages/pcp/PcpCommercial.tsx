@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState, useMemo } from 'react'
 import pb from '@/lib/pocketbase/client'
-import { PcpOrder, PcpOrderObservation } from '@/types'
+import { PcpOrder, PcpOrderDelivery, PcpOrderObservation } from '@/types'
 import { useRealtime } from '@/hooks/use-realtime'
 import { Input } from '@/components/ui/input'
 import {
@@ -15,7 +15,7 @@ import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { format, parseISO, isAfter, startOfDay } from 'date-fns'
-import { Search, MessageCircle, Bell } from 'lucide-react'
+import { Search, MessageCircle, Truck, CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PcpFilters } from './components/PcpFilters'
 import { filterByDeadline, isOrderOverdue, normalizeSearchText } from '@/lib/pcp-utils'
@@ -53,12 +53,13 @@ const STAGES = [
 export default function PcpCommercial() {
   const [orders, setOrders] = useState<PcpOrder[]>([])
   const [observations, setObservations] = useState<Record<string, PcpOrderObservation[]>>({})
+  const [deliveries, setDeliveries] = useState<Record<string, PcpOrderDelivery[]>>({})
   const [search, setSearch] = useState('')
   const [opTypeFilter, setOpTypeFilter] = useState('all')
   const [clientFilter, setClientFilter] = useState('all')
   const [clientTypeFilter, setClientTypeFilter] = useState('all')
   const [deadlineFilter, setDeadlineFilter] = useState('all')
-  const [pendingOnly, setPendingOnly] = useState(false)
+  const [showConcluded, setShowConcluded] = useState(false)
   const [messageOrder, setMessageOrder] = useState<{
     id: string
     orderNumber: string
@@ -68,13 +69,16 @@ export default function PcpCommercial() {
 
   const loadData = async () => {
     try {
-      const [records, obs] = await Promise.all([
+      const [records, obs, delivs] = await Promise.all([
         pb.collection('pcp_orders').getFullList<PcpOrder>({
           sort: 'delivery_date',
           expand: 'product_id,client_id',
         }),
         pb.collection('pcp_order_observations').getFullList<PcpOrderObservation>({
           sort: 'created',
+        }),
+        pb.collection('pcp_order_deliveries').getFullList<PcpOrderDelivery>({
+          sort: '-created',
         }),
       ])
 
@@ -86,6 +90,13 @@ export default function PcpCommercial() {
         obsMap[o.order_id].push(o)
       })
       setObservations(obsMap)
+
+      const delivMap: Record<string, PcpOrderDelivery[]> = {}
+      delivs.forEach((d) => {
+        if (!delivMap[d.order_id]) delivMap[d.order_id] = []
+        delivMap[d.order_id].push(d)
+      })
+      setDeliveries(delivMap)
     } catch {
       /* intentionally ignored */
     }
@@ -97,6 +108,7 @@ export default function PcpCommercial() {
 
   useRealtime('pcp_orders', loadData)
   useRealtime('pcp_order_observations', loadData)
+  useRealtime('pcp_order_deliveries', loadData)
 
   const filteredOrders = orders.filter((op) => {
     if (!search) return true
@@ -117,15 +129,18 @@ export default function PcpCommercial() {
 
   const groupedOrders = useMemo(() => {
     const filteredByCustom = filteredOrders.filter((op) => {
+      // Regra de visualização solicitada:
+      // Por padrão: listar apenas OPs em aberto (não concluídas).
+      // Ao ativar 'Mostrar Concluídas': exibir também as OPs concluídas.
+      if (!showConcluded && op.status === 'Concluído') {
+        return false
+      }
+
       if (opTypeFilter !== 'all' && op.op_type !== opTypeFilter) return false
       if (clientFilter !== 'all' && op.client_id !== clientFilter) return false
       if (clientTypeFilter !== 'all' && op.expand?.client_id?.type !== clientTypeFilter)
         return false
       if (!filterByDeadline(op.delivery_date, deadlineFilter, op.status)) return false
-      if (pendingOnly) {
-        const msgState = getOrderMessageInfo(op.id).indicatorState
-        if (msgState !== 'blue' && msgState !== 'green') return false
-      }
       return true
     })
 
@@ -152,15 +167,7 @@ export default function PcpCommercial() {
       map.get(normalized)!.push(op)
     })
     return groups
-  }, [
-    filteredOrders,
-    opTypeFilter,
-    clientFilter,
-    clientTypeFilter,
-    deadlineFilter,
-    pendingOnly,
-    getOrderMessageInfo,
-  ])
+  }, [filteredOrders, showConcluded, opTypeFilter, clientFilter, clientTypeFilter, deadlineFilter])
 
   const getStatusInfo = (op: PcpOrder) => {
     if (op.status === 'Parado' || (op.bottleneck_reason && op.bottleneck_reason !== 'Nenhum')) {
@@ -229,13 +236,16 @@ export default function PcpCommercial() {
           setDeadline={setDeadlineFilter}
         />
         <Button
-          variant={pendingOnly ? 'default' : 'outline'}
+          variant={showConcluded ? 'default' : 'outline'}
           size="sm"
-          onClick={() => setPendingOnly(!pendingOnly)}
-          className="gap-2"
+          onClick={() => setShowConcluded(!showConcluded)}
+          className={cn(
+            'gap-2 transition-colors',
+            showConcluded && 'bg-green-600 hover:bg-green-700 text-white border-green-700',
+          )}
         >
-          <Bell className="size-4" />
-          Mensagens Pendentes
+          <CheckCircle2 className="size-4" />
+          Mostrar Concluídas
         </Button>
       </div>
       <div className="rounded-md border bg-card">
@@ -243,18 +253,19 @@ export default function PcpCommercial() {
           <TableHeader>
             <TableRow>
               <TableHead>OP</TableHead>
-              <TableHead>Produto</TableHead>
+              <TableHead>Produto / Expedição</TableHead>
               <TableHead>Previsão</TableHead>
               <TableHead className="w-[200px]">Progresso</TableHead>
               <TableHead>Etapa Atual</TableHead>
               <TableHead>Status</TableHead>
+              {showConcluded && <TableHead>Dados de Embarque (Expedição)</TableHead>}
               <TableHead className="w-[60px]">Mensagens</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {groupedOrders.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center h-24">
+                <TableCell colSpan={showConcluded ? 8 : 7} className="text-center h-24">
                   Nenhuma OP encontrada.
                 </TableCell>
               </TableRow>
@@ -267,7 +278,10 @@ export default function PcpCommercial() {
                       'bg-blue-100/80 text-blue-900 dark:bg-blue-900/40 dark:text-blue-100',
                     )}
                   >
-                    <TableCell colSpan={7} className="font-semibold text-sm py-1">
+                    <TableCell
+                      colSpan={showConcluded ? 8 : 7}
+                      className="font-semibold text-sm py-1"
+                    >
                       <div className="flex items-center gap-4">
                         <span>Pedido: {group.order_number}</span>
                         <span className="opacity-50">|</span>
@@ -277,19 +291,40 @@ export default function PcpCommercial() {
                   </TableRow>
                   {group.items.map((op) => {
                     const statusInfo = getStatusInfo(op)
+                    const isConcluded = op.status === 'Concluído'
+                    const opDeliveriesList = deliveries[op.id] || []
+
                     return (
-                      <TableRow key={op.id}>
-                        <TableCell className="py-1 pl-6 font-semibold">
-                          {op.op_number || '-'}
+                      <TableRow
+                        key={op.id}
+                        className={cn(isConcluded && 'bg-slate-50/60 dark:bg-slate-900/40')}
+                      >
+                        <TableCell className="py-1.5 pl-6 font-semibold">
+                          <div className="flex items-center gap-1.5">
+                            <span>{op.op_number || '-'}</span>
+                            {isConcluded && (
+                              <span title="OP Concluída" className="inline-flex items-center">
+                                <CheckCircle2 className="size-3.5 text-green-600 dark:text-green-400 shrink-0" />
+                              </span>
+                            )}
+                          </div>
                         </TableCell>
-                        <TableCell className="py-1">
+                        <TableCell className="py-1.5">
                           <div className="flex flex-col items-start gap-1">
-                            <span className="text-sm">
+                            <span className="text-sm font-medium">
                               {op.op_type === 'Assistência'
                                 ? op.manual_product_name
                                 : op.op_type === 'Especial'
                                   ? 'Produto Especial'
                                   : op.expand?.product_id?.name || '-'}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              Qtd: {op.quantity}
+                              {(op.delivered_quantity || 0) > 0 && (
+                                <span className="ml-1.5 text-blue-600 dark:text-blue-400 font-medium">
+                                  (Expedido: {op.delivered_quantity}/{op.quantity})
+                                </span>
+                              )}
                             </span>
                             {(observations[op.id] || []).length > 0 && (
                               <div className="flex flex-col gap-1 mt-1 w-full max-w-sm">
@@ -310,7 +345,7 @@ export default function PcpCommercial() {
                         </TableCell>
                         <TableCell
                           className={cn(
-                            'py-1',
+                            'py-1.5',
                             isOrderOverdue(op.delivery_date, op.status) && 'text-red-600 font-bold',
                           )}
                         >
@@ -318,7 +353,7 @@ export default function PcpCommercial() {
                             ? format(parseISO(op.delivery_date), 'dd/MM/yyyy')
                             : '-'}
                         </TableCell>
-                        <TableCell className="py-1">
+                        <TableCell className="py-1.5">
                           <div className="flex flex-col gap-2">
                             <Progress value={getProgress(op)} className="h-2" />
                             <span className="text-xs text-muted-foreground text-right">
@@ -326,19 +361,91 @@ export default function PcpCommercial() {
                             </span>
                           </div>
                         </TableCell>
-                        <TableCell className="py-1 font-medium">
+                        <TableCell className="py-1.5 font-medium">
                           {op.status === 'Concluído' ? (
-                            <span className="text-muted-foreground">-</span>
+                            <span className="text-xs text-green-600 dark:text-green-400 font-semibold">
+                              Expedição finalizada
+                            </span>
                           ) : (
                             <span className="text-sm">{op.stage}</span>
                           )}
                         </TableCell>
-                        <TableCell className="py-1">
+                        <TableCell className="py-1.5">
                           <Badge variant={statusInfo.variant} className={statusInfo.className}>
                             {statusInfo.label}
                           </Badge>
                         </TableCell>
-                        <TableCell className="py-1">
+                        {showConcluded && (
+                          <TableCell className="py-1.5">
+                            {isConcluded ? (
+                              <div className="min-w-[220px] max-w-md space-y-1.5">
+                                {opDeliveriesList.length > 0 ? (
+                                  opDeliveriesList.map((deliv, idx) => {
+                                    const departureDate = deliv.data_saida
+                                      ? format(new Date(deliv.data_saida), 'dd/MM/yyyy')
+                                      : deliv.created
+                                        ? format(new Date(deliv.created), 'dd/MM/yyyy')
+                                        : '-'
+                                    return (
+                                      <div
+                                        key={deliv.id || idx}
+                                        className="text-xs p-2 rounded-md bg-muted/60 border border-border/60 space-y-0.5"
+                                      >
+                                        <div className="flex items-center justify-between gap-2 font-medium">
+                                          <span className="flex items-center gap-1 text-foreground">
+                                            <Truck className="size-3 text-teal-600 shrink-0" />
+                                            {deliv.transportadora ||
+                                              op.transportadora ||
+                                              'Sem transportadora'}
+                                          </span>
+                                          <span className="text-[11px] text-muted-foreground font-semibold">
+                                            {departureDate}
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-0.5">
+                                          <span>
+                                            <strong className="text-foreground">NF: </strong>
+                                            {deliv.nf || op.nf || '-'}
+                                          </span>
+                                          <span className="text-foreground/80 font-medium">
+                                            {deliv.quantity} un
+                                          </span>
+                                        </div>
+                                      </div>
+                                    )
+                                  })
+                                ) : op.data_saida || op.transportadora || op.nf ? (
+                                  <div className="text-xs p-2 rounded-md bg-muted/60 border border-border/60 space-y-0.5">
+                                    <div className="flex items-center justify-between gap-2 font-medium">
+                                      <span className="flex items-center gap-1 text-foreground">
+                                        <Truck className="size-3 text-teal-600 shrink-0" />
+                                        {op.transportadora || 'Sem transportadora'}
+                                      </span>
+                                      <span className="text-[11px] text-muted-foreground font-semibold">
+                                        {op.data_saida
+                                          ? format(new Date(op.data_saida), 'dd/MM/yyyy')
+                                          : op.finished_at
+                                            ? format(new Date(op.finished_at), 'dd/MM/yyyy')
+                                            : '-'}
+                                      </span>
+                                    </div>
+                                    <div className="text-[11px] text-muted-foreground pt-0.5">
+                                      <strong className="text-foreground">NF: </strong>
+                                      {op.nf || '-'}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground italic">
+                                    Sem dados de expedição gravados
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">-</span>
+                            )}
+                          </TableCell>
+                        )}
+                        <TableCell className="py-1.5">
                           <Button
                             variant="ghost"
                             size="icon"

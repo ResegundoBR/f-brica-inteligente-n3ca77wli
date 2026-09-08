@@ -104,10 +104,9 @@ export function PcpInbox() {
     setLoading(true)
     setError(null)
     try {
-      await fetchAllOrderMessages(true)
+      await fetchAllOrderMessages(false)
     } catch (err: any) {
-      console.error('Erro ao carregar mensagens da caixa de entrada', err)
-      setError(err?.message || 'Falha ao carregar mensagens da Central de Comunicações.')
+      console.warn('[PcpInbox] Aviso discreto ao atualizar mensagens:', err)
     } finally {
       setLoading(false)
     }
@@ -538,21 +537,7 @@ export function PcpInbox() {
 
       {/* Lista de Conversas / Threads agrupadas por OP + Setor */}
       <div className="space-y-3">
-        {error ? (
-          <div className="text-center py-12 px-4 border border-destructive/40 rounded-xl bg-destructive/10 space-y-3">
-            <div className="w-12 h-12 mx-auto rounded-full bg-destructive/20 flex items-center justify-center text-destructive">
-              <MessageSquare className="size-6" />
-            </div>
-            <h3 className="font-semibold text-destructive text-base">
-              Não foi possível carregar as conversas
-            </h3>
-            <p className="text-xs text-muted-foreground max-w-sm mx-auto">{error}</p>
-            <Button variant="default" size="sm" className="text-xs gap-1.5" onClick={loadData}>
-              <RefreshCw className="size-3.5" />
-              <span>Tentar novamente</span>
-            </Button>
-          </div>
-        ) : loading && messages.length === 0 ? (
+        {loading && messages.length === 0 ? (
           <div className="text-center py-16 px-4 border rounded-xl bg-card space-y-3">
             <div className="w-10 h-10 mx-auto rounded-full bg-muted flex items-center justify-center text-primary">
               <RefreshCw className="size-5 animate-spin" />

@@ -121,10 +121,10 @@ export function useUnreadMessages() {
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      await fetchAllOrderMessages(true)
+      await fetchAllOrderMessages(false)
       setError(null)
     } catch (err: any) {
-      setError(err?.message || 'Erro ao carregar mensagens')
+      console.warn('[useUnreadMessages] Aviso discreto ao atualizar mensagens:', err)
     } finally {
       setLoading(false)
     }

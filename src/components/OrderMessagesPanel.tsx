@@ -38,6 +38,7 @@ import {
   type MessageChannel,
 } from '@/lib/message-sector'
 import { createOrderMessage, markOrderMessagesAsRead } from '@/services/pcp-order-messages'
+import { scheduleDebouncedReload } from '@/services/pcp-order-messages-store'
 import { toast } from '@/hooks/use-toast'
 import {
   AlertDialog,
@@ -121,6 +122,23 @@ export function OrderMessagesPanel({
     }
   }, [orderId, user, userIsPcp, userChannel, onMessagesRead])
 
+  // Atualiza as mensagens da OP a partir da lista compartilhada ou busca pontual silenciosa
+  const syncOrderMessagesFromStore = useCallback(
+    (allSharedMessages: PcpOrderMessage[]) => {
+      if (!orderId) return
+      const orderMsgs = allSharedMessages.filter((m) => m.order_id === orderId)
+      const visible = orderMsgs.filter((m) => {
+        if (userIsPcp) return true
+        if (!userChannel) return true
+        if (!m.sector) return true
+        return m.sector === userChannel
+      })
+      visible.sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime())
+      setMessages(visible)
+    },
+    [orderId, userIsPcp, userChannel],
+  )
+
   const loadMessages = useCallback(async () => {
     if (!orderId) return
     try {
@@ -130,7 +148,6 @@ export function OrderMessagesPanel({
         expand: 'user_id.role,reply_to.user_id',
       })
 
-      // Se for usuário de setor (não PCP), restringe à sua própria thread/setor
       const visible = res.filter((m) => {
         if (userIsPcp) return true
         if (!userChannel) return true
@@ -139,8 +156,8 @@ export function OrderMessagesPanel({
       })
 
       setMessages(visible)
-    } catch {
-      /* intentionally ignored */
+    } catch (err) {
+      console.warn('[OrderMessagesPanel] Aviso silencioso ao carregar mensagens da OP:', err)
     }
   }, [orderId, userIsPcp, userChannel])
 
@@ -152,27 +169,16 @@ export function OrderMessagesPanel({
   }, [open, orderId, loadMessages, markAsRead])
 
   // Escuta a fonte compartilhada de mensagens (pcp-order-messages-store)
-  // em vez de criar uma assinatura realtime separada do PocketBase.
   useEffect(() => {
     if (!open || !orderId) return
     const unsub = subscribeToSharedMessages((allSharedMessages) => {
-      // Quando novas mensagens chegarem via store compartilhado, atualiza a lista local do painel
-      const orderMsgs = allSharedMessages.filter((m) => m.order_id === orderId)
-      const visible = orderMsgs.filter((m) => {
-        if (userIsPcp) return true
-        if (!userChannel) return true
-        if (!m.sector) return true
-        return m.sector === userChannel
-      })
-      // Ordena por data de criação crescente
-      visible.sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime())
-      setMessages(visible)
+      syncOrderMessagesFromStore(allSharedMessages)
       markAsRead()
     })
     return () => {
       unsub()
     }
-  }, [open, orderId, userIsPcp, userChannel, markAsRead])
+  }, [open, orderId, syncOrderMessagesFromStore, markAsRead])
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -273,6 +279,9 @@ export function OrderMessagesPanel({
       setPendingLinkTarget(null)
       await loadMessages()
       await markAsRead()
+
+      // Agenda recarga debounced do store compartilhado para atualizar instantaneamente outras telas
+      scheduleDebouncedReload(300)
 
       toast({
         title: 'Mensagem enviada',

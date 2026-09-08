@@ -154,10 +154,10 @@ export function useOrderMessages(channel?: MessageChannel) {
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      await fetchAllOrderMessages(true)
+      await fetchAllOrderMessages(false)
       setError(null)
     } catch (err: any) {
-      setError(err?.message || 'Erro ao carregar mensagens da OP')
+      console.warn('[useOrderMessages] Aviso discreto ao atualizar mensagens:', err)
     } finally {
       setLoading(false)
     }

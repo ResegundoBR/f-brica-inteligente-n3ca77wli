@@ -81,10 +81,9 @@ export function CommunicationPendingBanner() {
   const reloadData = useCallback(async () => {
     setLoading(true)
     try {
-      await fetchAllOrderMessages(true)
-      setError(null)
+      await fetchAllOrderMessages(false)
     } catch (err: any) {
-      setError(err?.message || 'Falha ao sincronizar mensagens.')
+      console.warn('[CommunicationPendingBanner] Aviso ao sincronizar mensagens:', err)
     } finally {
       setLoading(false)
     }
@@ -223,28 +222,7 @@ export function CommunicationPendingBanner() {
     }
   }
 
-  // Se houver erro de carga na comunicação e não houver itens para exibir, exibe alerta com retry
-  if (error && !summary.hasPendencies) {
-    return (
-      <aside
-        aria-label="Erro na sincronização da Central de Comunicações"
-        className="w-full bg-destructive text-destructive-foreground shadow-sm px-4 py-2 text-xs flex items-center justify-between gap-2"
-      >
-        <span>
-          Não foi possível sincronizar as notificações da Central de Comunicações: {error}
-        </span>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={reloadData}
-          className="h-6 text-xs bg-white/20 hover:bg-white/30 text-white border-0"
-        >
-          Tentar novamente
-        </Button>
-      </aside>
-    )
-  }
-
+  // Se estiver carregando pela primeira vez sem dados, ou sem pendências, ou dispensado, ou na própria página:
   if (loading || !summary.hasPendencies || isDismissed || isInsideCommsPage) {
     return null
   }

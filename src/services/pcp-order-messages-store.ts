@@ -1,4 +1,4 @@
-import pb, { teardownRealtimeClient } from '@/lib/pocketbase/client'
+import pb from '@/lib/pocketbase/client'
 import type { PcpOrderMessage } from '@/types'
 
 type Listener = (messages: PcpOrderMessage[]) => void
@@ -20,13 +20,16 @@ let debounceTimer: ReturnType<typeof setTimeout> | null = null
 let pendingReload = false
 let activeFetchPromise: Promise<PcpOrderMessage[]> | null = null
 
-// Controle de backoff para 429 Too Many Requests
-// Delays crescentes especificados: 5s -> 15s -> 30s com limite de 3 tentativas
-const RATE_LIMIT_DELAYS = [5000, 15000, 30000]
-const MAX_RATE_LIMIT_RETRIES = 3
+// Configuração do Polling Periódico Leve (substitui a assinatura SSE/realtime que causava rajadas de 429)
+// Intervalo padrão de 45 segundos (timer global único, não por componente)
+const POLLING_INTERVAL_MS = 45000
+
+// Delays de backoff progressivo para 429 ou falhas de rede: 30s -> 60s -> 120s
+const RATE_LIMIT_DELAYS = [30000, 60000, 120000]
 let rateLimitRetryCount = 0
 let rateLimitBlockedUntil = 0
-let rateLimitTimer: ReturnType<typeof setTimeout> | null = null
+let backoffTimer: ReturnType<typeof setTimeout> | null = null
+let pollingTimer: ReturnType<typeof setInterval> | null = null
 
 const state: SharedMessagesState = {
   messages: [],
@@ -36,8 +39,6 @@ const state: SharedMessagesState = {
 }
 
 const listeners = new Set<Listener>()
-let realtimeUnsubscribe: (() => Promise<void>) | null = null
-let isSubscribing = false
 let currentAuthUserId: string | null = pb.authStore.record?.id ?? null
 
 function notifyListeners() {
@@ -46,7 +47,7 @@ function notifyListeners() {
     try {
       listener(currentList)
     } catch (err) {
-      console.error('[pcpOrderMessagesShared] Erro no listener:', err)
+      console.warn('[pcpOrderMessagesShared] Aviso no listener:', err)
     }
   })
 }
@@ -64,9 +65,12 @@ function isRateLimitError(err: any): boolean {
 
 /**
  * Busca todas as mensagens de pcp_order_messages no PocketBase
+ * BLINDAGEM TOTAL: Nunca lança erro não tratado para a UI nem expõe banner de erro.
+ * Se falhar ou der 429, mantém silenciosamente os últimos dados válidos em cache
+ * e agenda nova tentativa com backoff progressivo.
  */
 export async function fetchAllOrderMessages(force: boolean = false): Promise<PcpOrderMessage[]> {
-  // Se não estiver logado, zera tudo
+  // Se não estiver logado, zera tudo sem erro
   if (!pb.authStore.isValid && !pb.authStore.record) {
     state.messages = []
     state.loading = false
@@ -76,21 +80,20 @@ export async function fetchAllOrderMessages(force: boolean = false): Promise<Pcp
     return []
   }
 
-  // Se estivermos dentro da janela de espera de rate-limit (429), bloqueia novas chamadas imediatas
+  // Se estivermos dentro da janela de espera de rate-limit (429), mantém dados e aguarda
   const now = Date.now()
   if (now < rateLimitBlockedUntil && !force) {
     const remainingSec = Math.ceil((rateLimitBlockedUntil - now) / 1000)
-    console.warn(`[pcpOrderMessagesShared] Bloqueio por 429 ativo. Aguarde ${remainingSec}s...`)
+    console.warn(`[pcpOrderMessagesShared] Backoff ativo. Próxima checagem em ${remainingSec}s`)
     return state.messages
   }
 
-  // Se já há uma requisição em voo, reaproveita a mesma Promise para evitar tempestade
+  // Se já há uma requisição em voo, reaproveita a mesma Promise
   if (activeFetchPromise && !force) {
     return activeFetchPromise
   }
 
   state.loading = true
-  state.error = null
 
   activeFetchPromise = (async () => {
     try {
@@ -101,39 +104,39 @@ export async function fetchAllOrderMessages(force: boolean = false): Promise<Pcp
       state.messages = records
       state.initialized = true
       state.error = null
-      // Sucesso: reseta contador de 429
+      // Sucesso: reseta backoff de 429
       rateLimitRetryCount = 0
       rateLimitBlockedUntil = 0
       notifyListeners()
       return records
     } catch (err: any) {
-      console.error('[pcpOrderMessagesShared] Erro ao carregar mensagens:', err)
+      // Blindagem: apenas log discreto em console.warn
+      const rateLimited = isRateLimitError(err)
+      const delayIdx = Math.min(rateLimitRetryCount, RATE_LIMIT_DELAYS.length - 1)
+      const nextDelay = RATE_LIMIT_DELAYS[delayIdx]
+      rateLimitRetryCount += 1
+      rateLimitBlockedUntil = Date.now() + nextDelay
 
-      if (isRateLimitError(err)) {
-        if (rateLimitRetryCount < MAX_RATE_LIMIT_RETRIES) {
-          const delay = RATE_LIMIT_DELAYS[rateLimitRetryCount] || 30000
-          rateLimitRetryCount += 1
-          rateLimitBlockedUntil = Date.now() + delay
-          const seconds = Math.round(delay / 1000)
-          state.error = `Limite de requisições excedido. Nova tentativa em ${seconds}s (tentativa ${rateLimitRetryCount}/${MAX_RATE_LIMIT_RETRIES})...`
-          notifyListeners()
+      console.warn(
+        `[pcpOrderMessagesShared] Checagem adiada (${rateLimited ? '429 Rate Limit' : 'Falha na rede'}). Tentativa em ${Math.round(nextDelay / 1000)}s. Mantendo dados válidos em cache.`,
+      )
 
-          if (rateLimitTimer) clearTimeout(rateLimitTimer)
-          rateLimitTimer = setTimeout(() => {
-            rateLimitTimer = null
-            fetchAllOrderMessages(true).catch(() => {})
-          }, delay)
-        } else {
-          state.error =
-            'Muitas requisições ao servidor. Aguarde alguns instantes antes de atualizar.'
-          notifyListeners()
+      // Agenda tentativa de re-sincronização via backoff
+      if (backoffTimer) clearTimeout(backoffTimer)
+      backoffTimer = setTimeout(() => {
+        backoffTimer = null
+        if (listeners.size > 0 && pb.authStore.isValid) {
+          fetchAllOrderMessages(true).catch(() => {})
         }
-      } else {
-        state.error = err?.message || 'Falha ao sincronizar mensagens'
-        notifyListeners()
-      }
+      }, nextDelay)
 
-      throw err
+      // Sempre mantém os últimos dados válidos em cache, inicializado = true para não travar a UI
+      state.initialized = true
+      state.error = null
+      notifyListeners()
+
+      // Retorna os dados em cache em vez de lançar exceção para a UI
+      return state.messages
     } finally {
       state.loading = false
       activeFetchPromise = null
@@ -144,10 +147,10 @@ export async function fetchAllOrderMessages(force: boolean = false): Promise<Pcp
 }
 
 /**
- * Agenda uma recarga com debounce (300ms) para agrupar rajadas de eventos
+ * Agenda uma recarga com debounce (500ms) para agrupar ações do usuário sem gerar rajadas
  */
-export function scheduleDebouncedReload(delayMs: number = 300) {
-  // Se estiver em backoff de 429, respeita a espera
+export function scheduleDebouncedReload(delayMs: number = 500) {
+  // Se estiver em backoff de 429, respeita a janela de espera
   if (Date.now() < rateLimitBlockedUntil) {
     return
   }
@@ -167,16 +170,16 @@ export function scheduleDebouncedReload(delayMs: number = 300) {
 
 /**
  * Marca localmente IDs como lidos e envia o PATCH ao PocketBase
- * Impedindo que a alteração de leitura dispare um loop de recargas
+ * Impedindo que a alteração de leitura gere tempestade de requisições
  */
 export async function markMessagesAsReadLocallyAndRemote(ids: string[]): Promise<void> {
   const uniqueIds = Array.from(new Set(ids)).filter(Boolean)
   if (uniqueIds.length === 0) return
 
-  // 1. Registra no Set de supressão de eventos realtime
+  // 1. Registra no Set de supressão
   uniqueIds.forEach((id) => locallyMarkedReadIds.add(id))
 
-  // 2. Atualiza otimista imediata no estado em memória para resposta instantânea na UI
+  // 2. Atualização otimista imediata no estado em memória para resposta instantânea na UI
   const idSet = new Set(uniqueIds)
   let hadChange = false
   const updatedMessages = state.messages.map((m) => {
@@ -193,116 +196,60 @@ export async function markMessagesAsReadLocallyAndRemote(ids: string[]): Promise
   }
 
   // 3. Executa as atualizações na base de dados
-  // Sem chamar fetchAllOrderMessages ao final (já está otimista)
   try {
     await Promise.allSettled(
       uniqueIds.map((id) => pb.collection('pcp_order_messages').update(id, { read: true })),
     )
   } catch (err) {
-    console.warn('[pcpOrderMessagesShared] Erro ao atualizar status de lida:', err)
+    console.warn('[pcpOrderMessagesShared] Erro discreto ao atualizar leitura:', err)
   }
 }
 
 /**
- * Verifica se um evento realtime é uma simples alteração de marcação de leitura (PATCH read: true)
- * Se for apenas leitura ou se o ID foi marcado localmente por este cliente,
- * aplica a mutação de forma otimista local sem disparar nova requisição HTTP.
+ * Gerenciador do Timer Global Único de Polling Leve (a cada 45s)
+ * O timer só roda se houver ao menos um listener ativo e usuário logado.
  */
-function handleRealtimeEvent(e: { action: string; record: PcpOrderMessage }) {
-  const { action, record } = e
-  const recordId = record?.id
+function ensureGlobalPollingTimer() {
+  if (pollingTimer) return
+  if (typeof window === 'undefined') return
 
-  // Se for ação de update
-  if (action === 'update' && recordId) {
-    // Caso 1: ID está no nosso Set de atualizações locais de leitura
-    if (locallyMarkedReadIds.has(recordId)) {
-      // Já manipulamos localmente. Atualiza o registro em memória caso ainda não esteja
-      state.messages = state.messages.map((m) =>
-        m.id === recordId ? { ...m, ...record, read: true } : m,
-      )
-      notifyListeners()
-      // Mantém no set por um tempo para evitar rajadas e depois limpa
-      setTimeout(() => locallyMarkedReadIds.delete(recordId), 5000)
+  pollingTimer = setInterval(() => {
+    // Só busca se houver componentes escutando e usuário autenticado
+    if (listeners.size === 0) return
+    if (!pb.authStore.isValid && !pb.authStore.record) return
+
+    // Se estiver em backoff ativo de 429, pula este ciclo de polling
+    if (Date.now() < rateLimitBlockedUntil) {
       return
     }
 
-    // Caso 2: Se foi atualizado apenas o campo read para true por qualquer cliente
-    // (compara com a mensagem atual em memória se temos ela)
-    const existing = state.messages.find((m) => m.id === recordId)
-    if (existing && !existing.read && record.read) {
-      // Apenas mudou de não lido para lido! Atualiza em memória diretamente
-      // sem gerar tempestade de getFullList
-      state.messages = state.messages.map((m) =>
-        m.id === recordId ? { ...m, ...record, read: true } : m,
-      )
-      notifyListeners()
-      return
-    }
-  }
-
-  // Se for criação de nova mensagem ou alteração estrutural (ex: nova pergunta, resposta vinculada, etc.):
-  // agenda recarga com debounce para agrupar múltiplos eventos em 1 única requisição
-  scheduleDebouncedReload(300)
+    // Busca periódica leve
+    fetchAllOrderMessages(false).catch(() => {})
+  }, POLLING_INTERVAL_MS)
 }
 
-/**
- * Inicializa a assinatura singleton do PocketBase para pcp_order_messages
- */
-async function ensureRealtimeSubscription() {
-  if (realtimeUnsubscribe || isSubscribing) return
-  if (!pb.authStore.isValid && !pb.authStore.record) return
-
-  isSubscribing = true
-  try {
-    const unsub = await pb.collection<PcpOrderMessage>('pcp_order_messages').subscribe('*', (e) => {
-      handleRealtimeEvent(e as any)
-    })
-    realtimeUnsubscribe = unsub
-  } catch (err: any) {
-    console.warn('[pcpOrderMessagesShared] Erro na assinatura realtime:', err)
-    if (isRateLimitError(err)) {
-      if (rateLimitRetryCount < MAX_RATE_LIMIT_RETRIES) {
-        const delay = RATE_LIMIT_DELAYS[rateLimitRetryCount] || 30000
-        rateLimitRetryCount += 1
-        rateLimitBlockedUntil = Date.now() + delay
-        if (rateLimitTimer) clearTimeout(rateLimitTimer)
-        rateLimitTimer = setTimeout(() => {
-          rateLimitTimer = null
-          ensureRealtimeSubscription().catch(() => {})
-        }, delay)
-      }
-    }
-  } finally {
-    isSubscribing = false
+function stopGlobalPollingTimer() {
+  if (pollingTimer) {
+    clearInterval(pollingTimer)
+    pollingTimer = null
   }
 }
 
 /**
- * Desmonta completamente a assinatura realtime do store compartilhado
+ * Desmonta timers e limpa recursos do store compartilhado.
+ * Mantido como export compatível para teardowns em logout/troca de usuário.
  */
 export async function teardownSharedRealtimeSubscription(): Promise<void> {
-  if (rateLimitTimer) {
-    clearTimeout(rateLimitTimer)
-    rateLimitTimer = null
+  if (backoffTimer) {
+    clearTimeout(backoffTimer)
+    backoffTimer = null
   }
   if (debounceTimer) {
     clearTimeout(debounceTimer)
     debounceTimer = null
   }
   pendingReload = false
-
-  if (realtimeUnsubscribe) {
-    const fn = realtimeUnsubscribe
-    realtimeUnsubscribe = null
-    try {
-      await fn()
-    } catch {
-      /* ignore */
-    }
-  }
-
-  // Desmonta conexão SSE geral do cliente para garantir novo client id
-  await teardownRealtimeClient()
+  stopGlobalPollingTimer()
 }
 
 // Monitora alterações de autenticação (troca de conta ou logout)
@@ -311,7 +258,7 @@ if (typeof window !== 'undefined') {
     const nextId = record?.id ?? null
     if (currentAuthUserId !== nextId) {
       currentAuthUserId = nextId
-      // 1. Desmonta completamente a assinatura e conexão realtime antiga antes de qualquer coisa
+      // 1. Limpa timers anteriores
       await teardownSharedRealtimeSubscription()
 
       // 2. Limpa cache e estado anterior
@@ -322,9 +269,9 @@ if (typeof window !== 'undefined') {
       rateLimitRetryCount = 0
       rateLimitBlockedUntil = 0
 
-      // 3. Se houver usuário logado e subscribers ativos, recria conexão e recarrega dados
+      // 3. Se houver usuário logado e subscribers ativos, inicia polling e primeira carga
       if (nextId && listeners.size > 0) {
-        await ensureRealtimeSubscription()
+        ensureGlobalPollingTimer()
         fetchAllOrderMessages(true).catch(() => {})
       } else {
         notifyListeners()
@@ -336,25 +283,28 @@ if (typeof window !== 'undefined') {
   window.addEventListener('online', () => {
     rateLimitRetryCount = 0
     rateLimitBlockedUntil = 0
-    ensureRealtimeSubscription().catch(() => {})
-    fetchAllOrderMessages(true).catch(() => {})
+    if (listeners.size > 0 && pb.authStore.isValid) {
+      ensureGlobalPollingTimer()
+      fetchAllOrderMessages(true).catch(() => {})
+    }
   })
 }
 
 /**
  * Assina atualizações da fonte compartilhada de mensagens.
+ * Ativa o polling global único de 45 segundos se ainda não estiver ativo.
  * Retorna a função de unsubscribe.
  */
 export function subscribeToSharedMessages(listener: Listener): () => void {
   listeners.add(listener)
-  ensureRealtimeSubscription().catch(() => {})
+  ensureGlobalPollingTimer()
 
   // Se já temos dados carregados ou inicializados, notifica imediatamente
   if (state.initialized) {
     try {
       listener(state.messages)
     } catch (err) {
-      console.error('[pcpOrderMessagesShared] Erro ao notificar novo subscriber:', err)
+      console.warn('[pcpOrderMessagesShared] Aviso ao notificar subscriber:', err)
     }
   } else if (!state.loading) {
     // Inicia a primeira carga compartilhada
@@ -363,6 +313,10 @@ export function subscribeToSharedMessages(listener: Listener): () => void {
 
   return () => {
     listeners.delete(listener)
+    // Se não houver mais nenhum componente escutando, pausa o timer de polling
+    if (listeners.size === 0) {
+      stopGlobalPollingTimer()
+    }
   }
 }
 

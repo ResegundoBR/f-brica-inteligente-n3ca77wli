@@ -196,9 +196,6 @@ export function PcpInbox() {
   useEffect(() => {
     if (!targetOrderId) return
 
-    // Se já estiver abrindo ou exibindo a mesma conversa, não reprocessar
-    if (selectedConversation && selectedConversation.orderId === targetOrderId) return
-
     const match = conversationGroups.find((c) => c.orderId === targetOrderId)
     if (match) {
       setSelectedConversation({
@@ -235,7 +232,9 @@ export function PcpInbox() {
     return () => {
       isCancelled = true
     }
-  }, [targetOrderId, conversationGroups, selectedConversation?.orderId, userChannel, userSector])
+    // Executa apenas quando targetOrderId mudar ou quando carregar conversationGroups pela primeira vez
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetOrderId, conversationGroups.length > 0])
 
   // Métricas gerais
   const metrics = useMemo(() => {

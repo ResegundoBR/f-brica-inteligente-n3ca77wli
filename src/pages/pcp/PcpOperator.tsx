@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import pb from '@/lib/pocketbase/client'
-import { PcpOrder, ProductProcessModel, MaterialShortage } from '@/types'
+import { PcpOrder, ProductProcessModel, MaterialShortage, PcpOrderObservation } from '@/types'
 import { useRealtime } from '@/hooks/use-realtime'
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -38,7 +38,7 @@ import {
 } from '@/lib/pcp-utils'
 import { getMaterialAvailabilityStatus } from '@/lib/material-status'
 import { isBefore, startOfDay, parseISO } from 'date-fns'
-import { Package, ChevronDown, ChevronUp, Circle, Search, X, Boxes } from 'lucide-react'
+import { Package, ChevronDown, ChevronUp, Circle, Search, X, Boxes, Paintbrush } from 'lucide-react'
 import { MaterialDescriptionAutocomplete } from '@/pages/pcp/components/MaterialDescriptionAutocomplete'
 import { SeparationMaterialsModal } from '@/pages/pcp/components/SeparationMaterialsModal'
 import { useOrderMessages } from '@/hooks/use-order-messages'
@@ -302,6 +302,12 @@ function FinishDialog({
   )
 }
 
+function isAcabamentoSector(sector?: string | null): boolean {
+  if (!sector) return false
+  const norm = normalizeSearchText(sector)
+  return norm === 'acabamento'
+}
+
 function OperatorCard({
   op,
   process,
@@ -316,6 +322,7 @@ function OperatorCard({
   messageState = 'none',
   messageCount = 0,
   onMessageClick,
+  acabamentoColor,
 }: {
   op: PcpOrder
   process?: ProductProcessModel
@@ -330,6 +337,7 @@ function OperatorCard({
   messageState?: IndicatorState
   messageCount?: number
   onMessageClick?: () => void
+  acabamentoColor?: string
 }) {
   const isLocked = op.bottleneck_reason && op.bottleneck_reason !== 'Nenhum'
   const isDelayed = op.delivery_date
@@ -522,13 +530,30 @@ function OperatorCard({
               {op.op_type}
             </Badge>
           </div>
-          <span className="w-full break-words">
-            {op.op_type === 'Assistência'
-              ? op.manual_product_name
-              : op.op_type === 'Especial'
-                ? op.manual_product_name || 'Produto Especial (Ver Anexo)'
-                : op.expand?.product_id?.name || 'S/Produto'}
-          </span>
+          <div className="w-full min-w-0">
+            <span className="break-words">
+              {op.op_type === 'Assistência'
+                ? op.manual_product_name
+                : op.op_type === 'Especial'
+                  ? op.manual_product_name || 'Produto Especial (Ver Anexo)'
+                  : op.expand?.product_id?.name || 'S/Produto'}
+              {op.quantity !== undefined && op.quantity !== null && (
+                <span className="font-semibold text-slate-800 dark:text-slate-100">
+                  {' — '}
+                  {op.quantity} un
+                </span>
+              )}
+            </span>
+            {acabamentoColor && (
+              <div className="mt-1 flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 break-words">
+                <Paintbrush className="size-3.5 shrink-0 text-slate-400 dark:text-slate-500" />
+                <span className="text-slate-500 dark:text-slate-400 font-normal">Cor:</span>
+                <span className="font-semibold text-slate-700 dark:text-slate-200">
+                  {acabamentoColor}
+                </span>
+              </div>
+            )}
+          </div>
 
           {displayProcess && (
             <div className="w-full p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800">
@@ -885,6 +910,7 @@ export default function PcpOperator() {
   const [orders, setOrders] = useState<PcpOrder[]>([])
   const [processes, setProcesses] = useState<ProductProcessModel[]>([])
   const [shortagesByOrder, setShortagesByOrder] = useState<Record<string, MaterialShortage[]>>({})
+  const [acabamentoColorsByOrder, setAcabamentoColorsByOrder] = useState<Record<string, string>>({})
   const [selectedSector, setSelectedSector] = useState<SectorName>('Suprimentos')
   const [searchTerm, setSearchTerm] = useState('')
   const [messageOrder, setMessageOrder] = useState<{
@@ -930,9 +956,18 @@ export default function PcpOperator() {
       setProcesses(procs)
       setOrders(records)
 
-      const shortageRes = await pb.collection('material_shortages').getFullList<MaterialShortage>({
-        sort: '-created',
-      })
+      const [shortageRes, obsRes] = await Promise.all([
+        pb.collection('material_shortages').getFullList<MaterialShortage>({
+          sort: '-created',
+        }),
+        pb
+          .collection('pcp_order_observations')
+          .getFullList<PcpOrderObservation>({
+            sort: 'created',
+          })
+          .catch(() => [] as PcpOrderObservation[]),
+      ])
+
       const sMap: Record<string, MaterialShortage[]> = {}
       shortageRes.forEach((s) => {
         if (s.order_id) {
@@ -941,6 +976,15 @@ export default function PcpOperator() {
         }
       })
       setShortagesByOrder(sMap)
+
+      const colorMap: Record<string, string> = {}
+      obsRes.forEach((obs) => {
+        if (obs.order_id && isAcabamentoSector(obs.sector) && obs.content && obs.content.trim()) {
+          // Última observação de acabamento válida registrada para a OP
+          colorMap[obs.order_id] = obs.content.trim()
+        }
+      })
+      setAcabamentoColorsByOrder(colorMap)
     } catch {
       /* intentionally ignored */
     }
@@ -957,6 +1001,9 @@ export default function PcpOperator() {
     loadData()
   })
   useRealtime('material_shortages', () => {
+    loadData()
+  })
+  useRealtime('pcp_order_observations', () => {
     loadData()
   })
 
@@ -1542,6 +1589,7 @@ export default function PcpOperator() {
                       opNumber: op.op_number || '',
                     })
                   }
+                  acabamentoColor={acabamentoColorsByOrder[op.id]}
                 />
               ))
             )}
@@ -1591,6 +1639,7 @@ export default function PcpOperator() {
                       opNumber: op.op_number || '',
                     })
                   }
+                  acabamentoColor={acabamentoColorsByOrder[op.id]}
                 />
               ))
             )}

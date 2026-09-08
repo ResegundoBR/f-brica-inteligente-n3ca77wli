@@ -64,22 +64,11 @@ const SECTORS = {
     'Furação',
     'Rosca',
     'Concreto',
+    'Retoque',
   ],
   Acabamento: ['Preparação', 'Pintura', 'Verniz', 'Retoques', 'Retoque'],
   Montagem: ['Montagem', 'Qualidade', 'Retoque'],
   Expedição: ['Embalagem', 'Expedição'],
-  Fabricação: [
-    'Separação',
-    'Corte',
-    'Dobra',
-    'Calandra',
-    'Solda',
-    'Acab. Solda',
-    'Furação',
-    'Rosca',
-    'Concreto',
-    'Retoque',
-  ],
 } as const
 
 type SectorName = keyof typeof SECTORS

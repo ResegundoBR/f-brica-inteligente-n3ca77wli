@@ -51,20 +51,27 @@ export function useOrderMessages(channel?: MessageChannel) {
   const markOrderAsRead = useCallback(
     (orderId: string) => {
       const userIsPcp = isPcpManager(user)
+      const currentChannel = getUserChannel(user)
       const messagesToMark = messagesRef.current.filter((m) => {
         if (m.order_id !== orderId || m.read) return false
+        if (m.user_id === user?.id) return false
         const senderIsPcp = isPcpSender(m)
-        return userIsPcp ? !senderIsPcp : senderIsPcp
+        if (userIsPcp) {
+          return !senderIsPcp
+        } else {
+          const sectorMatch = !m.sector || !currentChannel || m.sector === currentChannel
+          return senderIsPcp && sectorMatch
+        }
       })
       if (messagesToMark.length > 0) {
         const markIds = new Set(messagesToMark.map((m) => m.id))
         setMessages((prev) => prev.map((m) => (markIds.has(m.id) ? { ...m, read: true } : m)))
+        messagesToMark.forEach((m) => {
+          pb.collection('pcp_order_messages')
+            .update(m.id, { read: true })
+            .catch(() => {})
+        })
       }
-      messagesToMark.forEach((m) => {
-        pb.collection('pcp_order_messages')
-          .update(m.id, { read: true })
-          .catch(() => {})
-      })
     },
     [user],
   )

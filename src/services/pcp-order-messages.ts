@@ -1,5 +1,6 @@
 import pb from '@/lib/pocketbase/client'
 import type { PcpOrderMessage, MessageSector, MessageType, MessageStatus } from '@/types'
+import { isPcpSender } from '@/lib/message-sector'
 
 export interface CreateOrderMessageInput {
   order_id: string
@@ -39,6 +40,48 @@ export const createOrderMessage = async (data: CreateOrderMessageInput) => {
 
 export const updateOrderMessage = (id: string, data: Partial<PcpOrderMessage>) =>
   pb.collection('pcp_order_messages').update<PcpOrderMessage>(id, data)
+
+/**
+ * Marca como lidas as mensagens da conversa de uma OP direcionadas ao usuário/perfil atual.
+ * - Para PCP: mensagens não lidas enviadas por outros (não PCP).
+ * - Para Setor: mensagens não lidas do PCP para o setor do usuário (ou sem setor específico).
+ */
+export const markOrderMessagesAsRead = async (
+  orderId: string,
+  currentUser: { id: string; role?: string; expand?: any; email?: string } | null | undefined,
+  isPcp: boolean,
+  userChannel?: MessageSector | null,
+) => {
+  if (!orderId || !currentUser) return []
+  try {
+    const list = await pb.collection('pcp_order_messages').getFullList<PcpOrderMessage>({
+      filter: `order_id="${orderId}" && read=false`,
+      expand: 'user_id.role',
+    })
+
+    const toMark = list.filter((m) => {
+      if (m.user_id === currentUser.id) return false
+      const senderIsPcp = isPcpSender(m)
+      if (isPcp) {
+        return !senderIsPcp
+      } else {
+        const sectorMatch = !m.sector || !userChannel || m.sector === userChannel
+        return senderIsPcp && sectorMatch
+      }
+    })
+
+    if (toMark.length > 0) {
+      await Promise.allSettled(
+        toMark.map((m) => pb.collection('pcp_order_messages').update(m.id, { read: true })),
+      )
+    }
+
+    return toMark
+  } catch (err) {
+    console.warn('Erro ao marcar mensagens da OP como lidas:', err)
+    return []
+  }
+}
 
 export const getAllMessages = () =>
   pb.collection('pcp_order_messages').getFullList<PcpOrderMessage>({

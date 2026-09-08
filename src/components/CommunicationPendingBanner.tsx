@@ -208,7 +208,7 @@ export function CommunicationPendingBanner() {
   // Se estiver na própria página de comunicações, marca como visto e não exibe o banner
   useEffect(() => {
     if (location.pathname === '/pcp/comunicacoes' && summary.latestCreatedTime > 0) {
-      setLastSeen(summary.latestCreatedTime)
+      setLastSeen(summary.latestCreatedTime || Date.now())
       setDismissedKey(currentFingerprint)
     }
   }, [location.pathname, summary.latestCreatedTime, currentFingerprint, setLastSeen])

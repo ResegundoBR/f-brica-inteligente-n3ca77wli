@@ -138,10 +138,14 @@ export function PcpInbox() {
 
       // Regra de não lidas:
       // Se sou PCP: mensagem não lida enviada por outros (não PCP)
-      // Se sou setor: mensagem não lida enviada pelo PCP
+      // Se sou setor: mensagem não lida enviada pelo PCP direcionada ao meu canal/setor
       const msgFromPcp = isPcpSender(msg)
-      const isUnread = !msg.read && msg.user_id !== user?.id && (isPcp ? !msgFromPcp : msgFromPcp)
-
+      const isUnread =
+        !msg.read &&
+        msg.user_id !== user?.id &&
+        (isPcp
+          ? !msgFromPcp
+          : msgFromPcp && (!msg.sector || !userChannel || msg.sector === userChannel))
       if (isUnread) {
         conv.unreadCount += 1
       }
@@ -158,7 +162,12 @@ export function PcpInbox() {
 
       if (msg.type === 'Pergunta') {
         conv.totalQuestions += 1
-        if (msg.status === 'Pendente') {
+        // Regra (2): Só conta como pendente se relevante ao perfil:
+        // Se for PCP: perguntas feitas por outros (não PCP)
+        // Se for Setor: perguntas feitas pelo setor ou direcionadas ao setor
+        const isOwnQuestion = msg.user_id === user?.id
+        const isRelevantQuestion = isPcp ? !msgFromPcp && !isOwnQuestion : isOwnQuestion
+        if (msg.status === 'Pendente' && isRelevantQuestion) {
           conv.pendingQuestionsCount += 1
         } else if (msg.status === 'Respondida') {
           conv.answeredQuestionsCount += 1
@@ -236,6 +245,16 @@ export function PcpInbox() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetOrderId, conversationGroups.length > 0])
 
+  // Ao abrir uma conversa na Central, marca automaticamente como lidas as mensagens direcionadas ao perfil atual
+  useEffect(() => {
+    if (!selectedConversation) return
+    const conv = conversationGroups.find((c) => c.orderId === selectedConversation.orderId)
+    if (conv && conv.unreadCount > 0) {
+      handleMarkConversationAsRead(conv)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedConversation?.orderId])
+
   // Métricas gerais
   const metrics = useMemo(() => {
     let totalPendingQuestions = 0
@@ -286,9 +305,16 @@ export function PcpInbox() {
 
   // Marca conversa como lida
   const handleMarkConversationAsRead = async (conv: ConversationGroup) => {
-    const unreadMsgs = conv.messages.filter(
-      (m) => !m.read && m.user_id !== user?.id && (isPcp ? !isPcpSender(m) : isPcpSender(m)),
-    )
+    const unreadMsgs = conv.messages.filter((m) => {
+      if (m.read || m.user_id === user?.id) return false
+      const senderIsPcp = isPcpSender(m)
+      if (isPcp) {
+        return !senderIsPcp
+      } else {
+        const sectorMatch = !m.sector || !userChannel || m.sector === userChannel
+        return senderIsPcp && sectorMatch
+      }
+    })
 
     if (unreadMsgs.length === 0) return
 

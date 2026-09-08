@@ -97,6 +97,7 @@ export function useUnreadMessages() {
     const remaining = allUnreadRef.current.filter((m) => m.order_id !== orderId)
     allUnreadRef.current = remaining
     setUnreadCount(remaining.length)
+    setRecentMessages((prev) => prev.filter((m) => m.order_id !== orderId || m.type === 'Pergunta'))
     if (remaining.length === 0) setHasNewMessage(false)
   }, [])
 

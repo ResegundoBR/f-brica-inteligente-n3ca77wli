@@ -37,8 +37,18 @@ import {
   SECTOR_VISUALS,
   type MessageChannel,
 } from '@/lib/message-sector'
-import { createOrderMessage } from '@/services/pcp-order-messages'
+import { createOrderMessage, markOrderMessagesAsRead } from '@/services/pcp-order-messages'
 import { toast } from '@/hooks/use-toast'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 
 interface OrderMessagesPanelProps {
   orderId: string | null
@@ -66,6 +76,7 @@ export function OrderMessagesPanel({
   const [sending, setSending] = useState(false)
   const [msgType, setMsgType] = useState<MessageType>('Pergunta')
   const [replyingTo, setReplyingTo] = useState<PcpOrderMessage | null>(initialReplyTo)
+  const [pendingLinkTarget, setPendingLinkTarget] = useState<PcpOrderMessage | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const { user } = useAuth()
@@ -99,6 +110,17 @@ export function OrderMessagesPanel({
     }
   }, [sector, userChannel])
 
+  // Função para marcar como lidas as mensagens da conversa direcionadas ao perfil atual
+  const markAsRead = useCallback(async () => {
+    if (!orderId || !user) return
+    try {
+      await markOrderMessagesAsRead(orderId, user, userIsPcp, userChannel)
+      onMessagesRead?.(orderId)
+    } catch {
+      /* ignore */
+    }
+  }, [orderId, user, userIsPcp, userChannel, onMessagesRead])
+
   const loadMessages = useCallback(async () => {
     if (!orderId) return
     try {
@@ -125,14 +147,14 @@ export function OrderMessagesPanel({
   useEffect(() => {
     if (open && orderId) {
       loadMessages()
-      onMessagesRead?.(orderId)
+      markAsRead()
     }
-  }, [open, orderId, loadMessages, onMessagesRead])
+  }, [open, orderId, loadMessages, markAsRead])
 
   useRealtime('pcp_order_messages', () => {
     if (open && orderId) {
       loadMessages()
-      onMessagesRead?.(orderId)
+      markAsRead()
     }
   })
 
@@ -197,20 +219,26 @@ export function OrderMessagesPanel({
     }
   }
 
-  const handleSend = async () => {
+  // Executa o envio real da mensagem com ou sem reply_to vinculado
+  const executeSendMessage = async (replyToTarget?: PcpOrderMessage | null) => {
     if (!input.trim() || !orderId || !user) return
     setSending(true)
     try {
+      const activeReplyTo = replyToTarget !== undefined ? replyToTarget : replyingTo
+
       // Setor da mensagem:
-      // Se o usuário é PCP, a mensagem é direcionada ao canal selecionado
+      // Se o usuário é PCP, a mensagem é direcionada ao canal selecionado (ou ao canal da pergunta sendo respondida)
       // Se o usuário é do setor (ex: Comercial, Acabamento, etc.), é detectado automaticamente pelo perfil
-      const messageSector: MessageSector = userIsPcp
+      const fallbackSector = userIsPcp
         ? selectedChannel
         : detectedUserSector !== 'pcp'
           ? detectedUserSector
           : selectedChannel
 
-      const payloadType = replyingTo ? 'Informação' : msgType
+      const messageSector: MessageSector =
+        activeReplyTo && activeReplyTo.sector ? activeReplyTo.sector : fallbackSector
+
+      const payloadType = activeReplyTo ? 'Informação' : msgType
       const payloadStatus = payloadType === 'Pergunta' ? 'Pendente' : undefined
 
       await createOrderMessage({
@@ -220,18 +248,21 @@ export function OrderMessagesPanel({
         sector: messageSector,
         type: payloadType,
         status: payloadStatus,
-        reply_to: replyingTo ? replyingTo.id : undefined,
+        reply_to: activeReplyTo ? activeReplyTo.id : undefined,
         read: false,
       })
 
       setInput('')
       setReplyingTo(null)
+      setPendingLinkTarget(null)
       await loadMessages()
-      onMessagesRead?.(orderId)
+      await markAsRead()
 
       toast({
         title: 'Mensagem enviada',
-        description: 'Sua mensagem foi enviada com sucesso.',
+        description: activeReplyTo
+          ? 'Sua resposta foi vinculada à pergunta com sucesso!'
+          : 'Sua mensagem foi enviada com sucesso.',
       })
 
       // Fecha o painel automaticamente após o envio bem-sucedido
@@ -245,6 +276,35 @@ export function OrderMessagesPanel({
     } finally {
       setSending(false)
     }
+  }
+
+  const handleSend = () => {
+    if (!input.trim() || !orderId || !user) return
+
+    // Regra (3): Se for mensagem comum (sem vinculação/reply_to) e msgType !== 'Pergunta',
+    // verificar se a conversa no canal atual possui pergunta pendente de outro usuário.
+    // Se tiver, oferecer vincular como resposta dessa pergunta antes de enviar.
+    if (!replyingTo && msgType !== 'Pergunta') {
+      const relevantSector = userIsPcp ? selectedChannel : userChannel
+      const pendingQuestionsInSector = messages.filter((m) => {
+        if (m.type !== 'Pergunta' || m.status !== 'Pendente') return false
+        // Pergunta feita por outro usuário
+        if (m.user_id === user.id) return false
+        if (userIsPcp) {
+          return !m.sector || m.sector === relevantSector
+        }
+        return !m.sector || m.sector === relevantSector
+      })
+
+      if (pendingQuestionsInSector.length > 0) {
+        // Encontra a pergunta pendente mais recente do setor
+        const targetQ = pendingQuestionsInSector[pendingQuestionsInSector.length - 1]
+        setPendingLinkTarget(targetQ)
+        return
+      }
+    }
+
+    executeSendMessage()
   }
 
   return (
@@ -655,6 +715,64 @@ export function OrderMessagesPanel({
             </Button>
           </div>
         </div>
+
+        {/* Diálogo de confirmação para vincular mensagem comum a pergunta pendente existente */}
+        <AlertDialog
+          open={!!pendingLinkTarget}
+          onOpenChange={(isOpen) => {
+            if (!isOpen) setPendingLinkTarget(null)
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <HelpCircle className="size-5 text-amber-500" />
+                Vincular como resposta da pergunta pendente?
+              </AlertDialogTitle>
+              <AlertDialogDescription className="space-y-2 text-sm pt-1">
+                <span>Esta conversa possui uma pergunta pendente que ainda aguarda retorno:</span>
+                <div className="p-3 rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 text-foreground text-xs space-y-1">
+                  <div className="font-semibold text-amber-900 dark:text-amber-200 flex items-center justify-between">
+                    <span>{pendingLinkTarget?.expand?.user_id?.name || 'Usuário'}</span>
+                    <Badge variant="outline" className="text-[10px]">
+                      {pendingLinkTarget?.sector || 'Canal'}
+                    </Badge>
+                  </div>
+                  <p className="italic text-muted-foreground line-clamp-3">
+                    "{pendingLinkTarget?.content}"
+                  </p>
+                </div>
+                <span>
+                  Deseja vincular sua mensagem como resposta direta a essa pergunta para marcá-la
+                  automaticamente como <strong>Respondida</strong>?
+                </span>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter className="gap-2 sm:gap-0">
+              <AlertDialogCancel
+                onClick={() => {
+                  const target = pendingLinkTarget
+                  setPendingLinkTarget(null)
+                  // Envia como mensagem comum avulsa (sem vincular)
+                  executeSendMessage(null)
+                }}
+              >
+                Não, enviar sem vincular
+              </AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+                onClick={() => {
+                  const target = pendingLinkTarget
+                  setPendingLinkTarget(null)
+                  // Envia vinculada à pergunta pendente
+                  executeSendMessage(target)
+                }}
+              >
+                Sim, vincular e responder
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </SheetContent>
     </Sheet>
   )

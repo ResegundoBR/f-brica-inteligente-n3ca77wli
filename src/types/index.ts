@@ -242,6 +242,7 @@ export interface PcpOrder {
     | 'Pintura'
     | 'Verniz'
     | 'Retoques'
+    | 'Retoque'
     | 'Montagem'
     | 'Qualidade'
     | 'Embalagem'
@@ -251,7 +252,7 @@ export interface PcpOrder {
     | 'Expedição'
   annex?: string
   outsourcing_data?: any
-  bottleneck_reason: 'Nenhum' | 'Falta de Material' | 'Dúvida Técnica' | 'Sobrecarga'
+  bottleneck_reason: 'Nenhum' | 'Falta de Material' | 'Dúvida Técnica' | 'Sobrecarga' | 'Retrabalho'
   bottleneck_details?: string
   observations?: string
   observation_sector?: 'Fabricação' | 'Acabamento' | 'Montagem' | 'Projetos' | ''
@@ -487,5 +488,30 @@ export interface PcpOrderMaterial {
   expand?: {
     order_id?: PcpOrder
     separated_by?: User
+  }
+}
+
+export type PcpReworkStatus = 'Pendente' | 'Em Andamento' | 'Concluído'
+
+export interface PcpRework {
+  id: string
+  order_id: string
+  origin_sector: string
+  origin_stage: string
+  target_sector: string
+  description: string
+  status: PcpReworkStatus
+  signaled_by?: string
+  signaled_at: string
+  executed_by?: string
+  started_at?: string
+  finished_at?: string
+  duration_minutes?: number
+  created: string
+  updated: string
+  expand?: {
+    order_id?: PcpOrder
+    signaled_by?: User
+    executed_by?: User
   }
 }

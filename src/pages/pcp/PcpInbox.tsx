@@ -56,7 +56,7 @@ export function PcpInbox() {
   const isPcp = isPcpManager(user)
   const userSector = getUserSector(user)
   const userChannel = getUserChannel(user) || (userSector !== 'pcp' ? userSector : null)
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const targetOrderId = searchParams.get('orderId')
 
   const [messages, setMessages] = useState<PcpOrderMessage[]>([])
@@ -194,7 +194,10 @@ export function PcpInbox() {
 
   // Abre conversa automaticamente se orderId vier na query string
   useEffect(() => {
-    if (!targetOrderId || selectedConversation) return
+    if (!targetOrderId) return
+
+    // Se já estiver abrindo ou exibindo a mesma conversa, não reprocessar
+    if (selectedConversation && selectedConversation.orderId === targetOrderId) return
 
     const match = conversationGroups.find((c) => c.orderId === targetOrderId)
     if (match) {
@@ -232,7 +235,7 @@ export function PcpInbox() {
     return () => {
       isCancelled = true
     }
-  }, [targetOrderId, conversationGroups, selectedConversation, userChannel, userSector])
+  }, [targetOrderId, conversationGroups, selectedConversation?.orderId, userChannel, userSector])
 
   // Métricas gerais
   const metrics = useMemo(() => {
@@ -741,7 +744,16 @@ export function PcpInbox() {
           orderNumber={selectedConversation.orderNumber}
           opNumber={selectedConversation.opNumber}
           open={!!selectedConversation}
-          onOpenChange={(open) => !open && setSelectedConversation(null)}
+          onOpenChange={(open) => {
+            if (!open) {
+              setSelectedConversation(null)
+              if (searchParams.has('orderId')) {
+                const nextParams = new URLSearchParams(searchParams)
+                nextParams.delete('orderId')
+                setSearchParams(nextParams, { replace: true })
+              }
+            }
+          }}
           sector={selectedConversation.sector}
           initialReplyTo={selectedConversation.initialReplyTo}
           onMessagesRead={() => loadData()}

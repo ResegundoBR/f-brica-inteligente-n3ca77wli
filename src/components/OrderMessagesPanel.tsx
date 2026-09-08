@@ -38,6 +38,7 @@ import {
   type MessageChannel,
 } from '@/lib/message-sector'
 import { createOrderMessage } from '@/services/pcp-order-messages'
+import { toast } from '@/hooks/use-toast'
 
 interface OrderMessagesPanelProps {
   orderId: string | null
@@ -227,8 +228,20 @@ export function OrderMessagesPanel({
       setReplyingTo(null)
       await loadMessages()
       onMessagesRead?.(orderId)
+
+      toast({
+        title: 'Mensagem enviada',
+        description: 'Sua mensagem foi enviada com sucesso.',
+      })
+
+      // Fecha o painel automaticamente após o envio bem-sucedido
+      onOpenChange(false)
     } catch {
-      /* intentionally ignored */
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao enviar mensagem',
+        description: 'Não foi possível enviar a mensagem. Tente novamente.',
+      })
     } finally {
       setSending(false)
     }

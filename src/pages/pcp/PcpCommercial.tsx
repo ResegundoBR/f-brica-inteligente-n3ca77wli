@@ -15,12 +15,10 @@ import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { format, parseISO, isAfter, startOfDay } from 'date-fns'
-import { Search, MessageCircle, Truck, CheckCircle2 } from 'lucide-react'
+import { Search, Truck, CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PcpFilters } from './components/PcpFilters'
 import { filterByDeadline, isOrderOverdue, normalizeSearchText } from '@/lib/pcp-utils'
-import { OrderMessagesPanel } from '@/components/OrderMessagesPanel'
-import { useOrderMessages } from '@/hooks/use-order-messages'
 
 const STAGES = [
   'Separação',
@@ -60,12 +58,6 @@ export default function PcpCommercial() {
   const [clientTypeFilter, setClientTypeFilter] = useState('all')
   const [deadlineFilter, setDeadlineFilter] = useState('all')
   const [showConcluded, setShowConcluded] = useState(false)
-  const [messageOrder, setMessageOrder] = useState<{
-    id: string
-    orderNumber: string
-    opNumber: string
-  } | null>(null)
-  const { getOrderMessageInfo, markOrderAsRead } = useOrderMessages('Comercial')
 
   const loadData = async () => {
     try {
@@ -129,10 +121,13 @@ export default function PcpCommercial() {
 
   const groupedOrders = useMemo(() => {
     const filteredByCustom = filteredOrders.filter((op) => {
-      // Regra de visualização solicitada:
-      // Por padrão: listar apenas OPs em aberto (não concluídas).
-      // Ao ativar 'Mostrar Concluídas': exibir também as OPs concluídas.
+      // Regra de visualização:
+      // Toggle desligado: listar apenas OPs em aberto (não concluídas).
+      // Toggle ligado: listar SOMENTE as OPs concluídas.
       if (!showConcluded && op.status === 'Concluído') {
+        return false
+      }
+      if (showConcluded && op.status !== 'Concluído') {
         return false
       }
 
@@ -259,13 +254,12 @@ export default function PcpCommercial() {
               <TableHead>Etapa Atual</TableHead>
               <TableHead>Status</TableHead>
               {showConcluded && <TableHead>Dados de Embarque (Expedição)</TableHead>}
-              <TableHead className="w-[60px]">Mensagens</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {groupedOrders.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={showConcluded ? 8 : 7} className="text-center h-24">
+                <TableCell colSpan={showConcluded ? 7 : 6} className="text-center h-24">
                   Nenhuma OP encontrada.
                 </TableCell>
               </TableRow>
@@ -279,7 +273,7 @@ export default function PcpCommercial() {
                     )}
                   >
                     <TableCell
-                      colSpan={showConcluded ? 8 : 7}
+                      colSpan={showConcluded ? 7 : 6}
                       className="font-semibold text-sm py-1"
                     >
                       <div className="flex items-center gap-4">
@@ -445,41 +439,6 @@ export default function PcpCommercial() {
                             )}
                           </TableCell>
                         )}
-                        <TableCell className="py-1.5">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 relative"
-                            onClick={() =>
-                              setMessageOrder({
-                                id: op.id,
-                                orderNumber: op.order_number,
-                                opNumber: op.op_number || '',
-                              })
-                            }
-                          >
-                            {(() => {
-                              const info = getOrderMessageInfo(op.id)
-                              const state = info.indicatorState
-                              const iconColor =
-                                state === 'green'
-                                  ? 'text-green-500 animate-pulse'
-                                  : state === 'blue'
-                                    ? 'text-blue-500'
-                                    : 'text-gray-400 dark:text-gray-500'
-                              return (
-                                <>
-                                  <MessageCircle className={cn('size-4', iconColor)} />
-                                  {info.count > 0 ? (
-                                    <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-blue-500 text-white text-[9px] font-bold">
-                                      {info.count > 99 ? '99+' : info.count}
-                                    </span>
-                                  ) : null}
-                                </>
-                              )
-                            })()}
-                          </Button>
-                        </TableCell>
                       </TableRow>
                     )
                   })}
@@ -489,16 +448,6 @@ export default function PcpCommercial() {
           </TableBody>
         </Table>
       </div>
-
-      <OrderMessagesPanel
-        orderId={messageOrder?.id || null}
-        orderNumber={messageOrder?.orderNumber || ''}
-        opNumber={messageOrder?.opNumber || ''}
-        open={!!messageOrder}
-        onOpenChange={(open) => !open && setMessageOrder(null)}
-        onMessagesRead={markOrderAsRead}
-        sector="Comercial"
-      />
     </div>
   )
 }

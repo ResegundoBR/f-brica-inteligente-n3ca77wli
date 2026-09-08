@@ -27,6 +27,7 @@ import {
   Truck,
   MapPin,
   Lightbulb,
+  MessageSquare,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -99,6 +100,7 @@ const navItems = [
   { title: 'Dashboard PCP', url: '/pcp/dashboard', icon: LayoutDashboard, group: 'PCP' },
   { title: 'Painel de Controle', url: '/pcp/kanban', icon: Kanban, group: 'PCP' },
   { title: 'Ordens de Produção', url: '/pcp/ordens', icon: FileText, group: 'PCP' },
+  { title: 'Central de Comunicações', url: '/pcp/comunicacoes', icon: MessageSquare, group: 'PCP' },
   { title: 'Clientes', url: '/pcp/clientes', icon: Users, group: 'PCP' },
   { title: 'Portal do Operador', url: '/pcp/operador', icon: TabletSmartphone, group: 'PCP' },
   { title: 'Visão Comercial', url: '/pcp/comercial', icon: Eye, group: 'PCP' },
@@ -159,10 +161,11 @@ export function AppSidebar() {
       case 'Log de Atividades':
         return !!role.access_users
       case 'Dashboard PCP':
+      case 'Central de Comunicações':
       case 'Clientes':
       case 'Relatório de Ocorrências':
       case 'Central de Melhorias':
-        return !!role.access_pcp
+        return !!role.access_pcp || !!role.access_commercial || !!role.access_operator
       case 'Painel de Controle':
         return !!role.access_painel_controle || !!role.access_pcp
       case 'Ordens de Produção':

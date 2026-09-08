@@ -155,6 +155,10 @@ function OperatorMessageBadge({ state, onClick }: { state: IndicatorState; onCli
       className:
         'bg-gray-400 text-white dark:bg-gray-600 dark:text-gray-100 hover:bg-gray-500 dark:hover:bg-gray-500',
     },
+    red: {
+      label: 'PERGUNTA PENDENTE',
+      className: 'bg-amber-500 text-white animate-pulse hover:bg-amber-600 shadow-sm',
+    },
   }
   const c = config[state]
   return (

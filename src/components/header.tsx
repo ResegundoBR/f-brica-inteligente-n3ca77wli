@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Bell, Search, UserCircle, CheckCircle, Trash2 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { MessageNotificationBell } from '@/components/MessageNotificationBell'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import {
   DropdownMenu,
@@ -80,6 +81,7 @@ export function Header() {
         </div>
       </div>
       <div className="ml-auto flex items-center gap-2">
+        <MessageNotificationBell />
         <Popover>
           <PopoverTrigger asChild>
             <Button variant="ghost" size="icon" className="relative">

@@ -1220,6 +1220,7 @@ function KanbanCard({
                   onMessageClick?.()
                 }}
                 className="inline-flex items-center"
+                title={messageState === 'red' ? 'Perguntas pendentes' : 'Mensagens da OP'}
               >
                 <OrderMessageBell state={messageState} size="sm" />
               </button>

@@ -335,18 +335,33 @@ export interface MaterialShortage {
   }
 }
 
+export type MessageSector =
+  | 'Comercial'
+  | 'Acabamento'
+  | 'Fabricação'
+  | 'Montagem'
+  | 'Expedição'
+  | 'Operador'
+
+export type MessageType = 'Pergunta' | 'Informação'
+export type MessageStatus = 'Pendente' | 'Respondida'
+
 export interface PcpOrderMessage {
   id: string
   order_id: string
   user_id: string
   content: string
   read?: boolean
-  sector?: 'Comercial' | 'Operador'
+  sector?: MessageSector
+  type?: MessageType
+  status?: MessageStatus
+  reply_to?: string
   created: string
   updated: string
   expand?: {
     user_id?: User
     order_id?: PcpOrder
+    reply_to?: PcpOrderMessage
   }
 }
 

@@ -83,7 +83,10 @@ export function RoleGuard({ module, children }: RoleGuardProps) {
           access = !!currentRole.access_users
           break
         case 'pcp':
-          access = !!currentRole.access_pcp
+          access =
+            !!currentRole.access_pcp ||
+            !!currentRole.access_commercial ||
+            !!currentRole.access_operator
           break
         case 'suprimentos':
           access = !!currentRole.access_suprimentos || !!currentRole.access_pcp

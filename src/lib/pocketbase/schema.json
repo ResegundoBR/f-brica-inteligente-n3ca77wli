@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-08T17:07:00.873Z",
+  "generatedAt": "2026-09-08T17:25:23.589Z",
   "collections": [
     {
       "name": "users",
@@ -1493,7 +1493,35 @@
           "type": "select",
           "required": false,
           "system": false,
-          "selectValues": ["Comercial", "Operador"]
+          "selectValues": [
+            "Comercial",
+            "Acabamento",
+            "Fabricação",
+            "Montagem",
+            "Expedição",
+            "Operador"
+          ]
+        },
+        {
+          "name": "type",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["Pergunta", "Informação"]
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["Pendente", "Respondida"]
+        },
+        {
+          "name": "reply_to",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "pcp_order_messages"
         }
       ],
       "indexes": ["CREATE INDEX idx_pcp_order_messages_order ON pcp_order_messages (order_id)"]

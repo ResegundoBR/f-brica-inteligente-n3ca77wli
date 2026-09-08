@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { useAuth } from '@/hooks/use-auth'
-import { PcpOrderMessage } from '@/types'
+import type { PcpOrderMessage, MessageSector } from '@/types'
 import {
   type MessageChannel,
   type IndicatorState,
@@ -14,6 +14,7 @@ import {
 export interface OrderMessageInfo {
   count: number
   unreadCount: number
+  pendingCount: number
   indicatorState: IndicatorState
 }
 
@@ -29,7 +30,7 @@ export function useOrderMessages(channel?: MessageChannel) {
     try {
       const res = await pb.collection('pcp_order_messages').getFullList<PcpOrderMessage>({
         sort: 'created',
-        expand: 'user_id.role',
+        expand: 'user_id.role,reply_to.user_id',
       })
       const filtered = effectiveChannel ? res.filter((m) => m.sector === effectiveChannel) : res
       setMessages(filtered)
@@ -81,7 +82,7 @@ export function useOrderMessages(channel?: MessageChannel) {
     (orderId: string): OrderMessageInfo => {
       const orderMessages = messagesByOrder[orderId] || []
       if (orderMessages.length === 0) {
-        return { count: 0, unreadCount: 0, indicatorState: 'none' }
+        return { count: 0, unreadCount: 0, pendingCount: 0, indicatorState: 'none' }
       }
 
       const userIsPcp = isPcpManager(user)
@@ -91,11 +92,31 @@ export function useOrderMessages(channel?: MessageChannel) {
         userIsPcp ? !isPcpSender(m) : isPcpSender(m),
       )
 
+      // Perguntas pendentes da OP
+      const pendingQuestions = orderMessages.filter(
+        (m) => m.type === 'Pergunta' && m.status === 'Pendente',
+      )
+
+      // Se sou PCP e há perguntas pendentes vindas de outros, ou se sou setor e há pendências
+      const relevantPending = userIsPcp
+        ? pendingQuestions.filter((m) => !isPcpSender(m))
+        : pendingQuestions
+
+      if (relevantPending.length > 0) {
+        return {
+          count: orderMessages.length,
+          unreadCount: otherMessages.filter((m) => !m.read).length,
+          pendingCount: relevantPending.length,
+          indicatorState: 'red', // Destaque para perguntas pendentes
+        }
+      }
+
       const unreadFromOthers = otherMessages.filter((m) => !m.read)
       if (unreadFromOthers.length > 0) {
         return {
           count: unreadFromOthers.length,
           unreadCount: unreadFromOthers.length,
+          pendingCount: 0,
           indicatorState: 'green',
         }
       }
@@ -110,6 +131,7 @@ export function useOrderMessages(channel?: MessageChannel) {
         return {
           count: myMessages.length,
           unreadCount: 0,
+          pendingCount: 0,
           indicatorState: 'blue',
         }
       }
@@ -117,6 +139,7 @@ export function useOrderMessages(channel?: MessageChannel) {
       return {
         count: orderMessages.length,
         unreadCount: 0,
+        pendingCount: 0,
         indicatorState: 'gray',
       }
     },

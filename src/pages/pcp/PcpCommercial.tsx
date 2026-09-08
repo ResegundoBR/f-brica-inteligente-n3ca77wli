@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import pb from '@/lib/pocketbase/client'
 import { PcpOrder, PcpOrderDelivery, PcpOrderObservation } from '@/types'
 import { useRealtime } from '@/hooks/use-realtime'
@@ -15,7 +16,7 @@ import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { format, parseISO, isAfter, startOfDay } from 'date-fns'
-import { Search, Truck, CheckCircle2 } from 'lucide-react'
+import { Search, Truck, CheckCircle2, MessageSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PcpFilters } from './components/PcpFilters'
 import { filterByDeadline, isOrderOverdue, normalizeSearchText } from '@/lib/pcp-utils'
@@ -49,6 +50,7 @@ const STAGES = [
 ]
 
 export default function PcpCommercial() {
+  const navigate = useNavigate()
   const [orders, setOrders] = useState<PcpOrder[]>([])
   const [observations, setObservations] = useState<Record<string, PcpOrderObservation[]>>({})
   const [deliveries, setDeliveries] = useState<Record<string, PcpOrderDelivery[]>>({})
@@ -291,16 +293,29 @@ export default function PcpCommercial() {
                     return (
                       <TableRow
                         key={op.id}
-                        className={cn(isConcluded && 'bg-slate-50/60 dark:bg-slate-900/40')}
+                        onClick={() => navigate(`/pcp/comunicacoes?orderId=${op.id}`)}
+                        className={cn(
+                          'cursor-pointer transition-colors group hover:bg-sky-50/70 dark:hover:bg-sky-950/30',
+                          isConcluded && 'bg-slate-50/60 dark:bg-slate-900/40',
+                        )}
+                        title="Clique para questionar o Gestor do PCP na Central de Comunicações"
                       >
                         <TableCell className="py-1.5 pl-6 font-semibold">
-                          <div className="flex items-center gap-1.5">
-                            <span>{op.op_number || '-'}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="group-hover:text-sky-600 dark:group-hover:text-sky-400 group-hover:underline transition-colors">
+                              {op.op_number || '-'}
+                            </span>
                             {isConcluded && (
                               <span title="OP Concluída" className="inline-flex items-center">
                                 <CheckCircle2 className="size-3.5 text-green-600 dark:text-green-400 shrink-0" />
                               </span>
                             )}
+                            <span
+                              title="Questionar Gestor do PCP"
+                              className="inline-flex items-center"
+                            >
+                              <MessageSquare className="size-3.5 text-muted-foreground/40 group-hover:text-sky-600 dark:group-hover:text-sky-400 shrink-0 transition-colors" />
+                            </span>
                           </div>
                         </TableCell>
                         <TableCell className="py-1.5">

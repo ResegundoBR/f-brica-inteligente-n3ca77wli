@@ -194,18 +194,45 @@ export function PcpInbox() {
 
   // Abre conversa automaticamente se orderId vier na query string
   useEffect(() => {
-    if (targetOrderId && conversationGroups.length > 0 && !selectedConversation) {
-      const match = conversationGroups.find((c) => c.orderId === targetOrderId)
-      if (match) {
-        setSelectedConversation({
-          orderId: match.orderId,
-          orderNumber: match.orderNumber,
-          opNumber: match.opNumber,
-          sector: match.sector,
-        })
-      }
+    if (!targetOrderId || selectedConversation) return
+
+    const match = conversationGroups.find((c) => c.orderId === targetOrderId)
+    if (match) {
+      setSelectedConversation({
+        orderId: match.orderId,
+        orderNumber: match.orderNumber,
+        opNumber: match.opNumber,
+        sector: match.sector,
+      })
+      return
     }
-  }, [targetOrderId, conversationGroups, selectedConversation])
+
+    // Se a OP ainda não tem nenhuma mensagem criada (nova conversa),
+    // busca os dados da OP diretamente em pcp_orders para abrir o painel pronto para envio.
+    let isCancelled = false
+    pb.collection('pcp_orders')
+      .getOne<any>(targetOrderId)
+      .then((order) => {
+        if (isCancelled || !order) return
+        const orderSector: MessageSector =
+          (userChannel as MessageSector) ||
+          (userSector !== 'pcp' ? (userSector as MessageSector) : 'Comercial')
+
+        setSelectedConversation({
+          orderId: order.id,
+          orderNumber: order.order_number || 'S/N',
+          opNumber: order.op_number || '',
+          sector: orderSector,
+        })
+      })
+      .catch(() => {
+        /* OP não encontrada ou sem permissão */
+      })
+
+    return () => {
+      isCancelled = true
+    }
+  }, [targetOrderId, conversationGroups, selectedConversation, userChannel, userSector])
 
   // Métricas gerais
   const metrics = useMemo(() => {

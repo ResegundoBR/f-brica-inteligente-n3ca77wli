@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import pb from '@/lib/pocketbase/client'
 import { useAuth } from '@/hooks/use-auth'
 import { useRealtime } from '@/hooks/use-realtime'
@@ -7,6 +8,7 @@ import {
   isPcpSender,
   isPcpManager,
   getUserChannel,
+  getUserSector,
   SECTOR_OPTIONS,
   SECTOR_VISUALS,
 } from '@/lib/message-sector'
@@ -43,6 +45,8 @@ interface ConversationGroup {
   unreadCount: number
   pendingQuestionsCount: number
   answeredQuestionsCount: number
+  pcpResponsesCount: number
+  latestPcpResponse?: PcpOrderMessage
   totalQuestions: number
   lastMessage: PcpOrderMessage
 }
@@ -50,13 +54,16 @@ interface ConversationGroup {
 export function PcpInbox() {
   const { user } = useAuth()
   const isPcp = isPcpManager(user)
-  const userChannel = getUserChannel(user)
+  const userSector = getUserSector(user)
+  const userChannel = getUserChannel(user) || (userSector !== 'pcp' ? userSector : null)
+  const [searchParams] = useSearchParams()
+  const targetOrderId = searchParams.get('orderId')
 
   const [messages, setMessages] = useState<PcpOrderMessage[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [sectorFilter, setSectorFilter] = useState<string>('all')
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'unread'>('pending')
+  const [sectorFilter, setSectorFilter] = useState<string>(isPcp ? 'all' : userChannel || 'all')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'unread'>('all')
   const [selectedConversation, setSelectedConversation] = useState<{
     orderId: string
     orderNumber: string
@@ -99,9 +106,9 @@ export function PcpInbox() {
       const orderNumber = order?.order_number || 'S/N'
       const opNumber = order?.op_number || ''
       const clientName = order?.expand?.client_id?.name || order?.client_name || ''
-      const sector = (msg.sector || 'Operador') as MessageSector
+      const sector = (msg.sector || (userChannel ?? 'Operador')) as MessageSector
 
-      // Se o usuário não é PCP, só vê conversas do seu setor
+      // Se o usuário não é PCP, só vê conversas do seu setor/canal
       if (!isPcp && userChannel && sector !== userChannel) {
         continue
       }
@@ -120,6 +127,7 @@ export function PcpInbox() {
           unreadCount: 0,
           pendingQuestionsCount: 0,
           answeredQuestionsCount: 0,
+          pcpResponsesCount: 0,
           totalQuestions: 0,
           lastMessage: msg,
         })
@@ -138,6 +146,16 @@ export function PcpInbox() {
         conv.unreadCount += 1
       }
 
+      if (msgFromPcp && (msg.reply_to || msg.type === 'Informação')) {
+        conv.pcpResponsesCount += 1
+        if (
+          !conv.latestPcpResponse ||
+          new Date(msg.created) > new Date(conv.latestPcpResponse.created)
+        ) {
+          conv.latestPcpResponse = msg
+        }
+      }
+
       if (msg.type === 'Pergunta') {
         conv.totalQuestions += 1
         if (msg.status === 'Pendente') {
@@ -149,16 +167,24 @@ export function PcpInbox() {
     }
 
     // Ordenação esperada:
-    // 1. Mais perguntas pendentes primeiro
-    // 2. Mais mensagens não lidas
-    // 3. Mais recente
+    // Se for PCP: pendentes > não lidas > mais recente
+    // Se for setor: novidades/respostas PCP não lidas > pendentes > mais recente
     const list = Array.from(map.values())
     list.sort((a, b) => {
-      if (b.pendingQuestionsCount !== a.pendingQuestionsCount) {
-        return b.pendingQuestionsCount - a.pendingQuestionsCount
-      }
-      if (b.unreadCount !== a.unreadCount) {
-        return b.unreadCount - a.unreadCount
+      if (isPcp) {
+        if (b.pendingQuestionsCount !== a.pendingQuestionsCount) {
+          return b.pendingQuestionsCount - a.pendingQuestionsCount
+        }
+        if (b.unreadCount !== a.unreadCount) {
+          return b.unreadCount - a.unreadCount
+        }
+      } else {
+        if (b.unreadCount !== a.unreadCount) {
+          return b.unreadCount - a.unreadCount
+        }
+        if (b.pendingQuestionsCount !== a.pendingQuestionsCount) {
+          return b.pendingQuestionsCount - a.pendingQuestionsCount
+        }
       }
       return new Date(b.lastMessage.created).getTime() - new Date(a.lastMessage.created).getTime()
     })
@@ -166,28 +192,46 @@ export function PcpInbox() {
     return list
   }, [messages, isPcp, userChannel, user?.id])
 
+  // Abre conversa automaticamente se orderId vier na query string
+  useEffect(() => {
+    if (targetOrderId && conversationGroups.length > 0 && !selectedConversation) {
+      const match = conversationGroups.find((c) => c.orderId === targetOrderId)
+      if (match) {
+        setSelectedConversation({
+          orderId: match.orderId,
+          orderNumber: match.orderNumber,
+          opNumber: match.opNumber,
+          sector: match.sector,
+        })
+      }
+    }
+  }, [targetOrderId, conversationGroups, selectedConversation])
+
   // Métricas gerais
   const metrics = useMemo(() => {
     let totalPendingQuestions = 0
     let totalUnreadMessages = 0
+    let totalPcpResponses = 0
     let totalConversations = conversationGroups.length
 
     for (const c of conversationGroups) {
       totalPendingQuestions += c.pendingQuestionsCount
       totalUnreadMessages += c.unreadCount
+      totalPcpResponses += c.pcpResponsesCount
     }
 
     return {
       totalConversations,
       totalPendingQuestions,
       totalUnreadMessages,
+      totalPcpResponses,
     }
   }, [conversationGroups])
 
   // Filtragem
   const filteredConversations = useMemo(() => {
     return conversationGroups.filter((c) => {
-      if (sectorFilter !== 'all' && c.sector !== sectorFilter) {
+      if (isPcp && sectorFilter !== 'all' && c.sector !== sectorFilter) {
         return false
       }
 
@@ -209,7 +253,7 @@ export function PcpInbox() {
 
       return true
     })
-  }, [conversationGroups, sectorFilter, statusFilter, search])
+  }, [conversationGroups, isPcp, sectorFilter, statusFilter, search])
 
   // Marca conversa como lida
   const handleMarkConversationAsRead = async (conv: ConversationGroup) => {
@@ -243,9 +287,19 @@ export function PcpInbox() {
             <div>
               <h1 className="text-2xl font-bold tracking-tight text-foreground">
                 Central de Comunicações
+                {!isPcp && userChannel && (
+                  <Badge
+                    variant="outline"
+                    className="ml-2.5 font-bold text-xs py-0.5 border-blue-500/40 text-blue-700 dark:text-blue-300 bg-blue-50/50 dark:bg-blue-950/40"
+                  >
+                    Canal {userChannel}
+                  </Badge>
+                )}
               </h1>
               <p className="text-sm text-muted-foreground">
-                Caixa de entrada de mensagens e Q&A alinhadas por OP e Setor fabril
+                {isPcp
+                  ? 'Caixa de entrada de mensagens e Q&A alinhadas por OP e Setor fabril'
+                  : `Canal exclusivo de comunicação do setor ${userChannel || ''} com o PCP`}
               </p>
             </div>
           </div>
@@ -271,13 +325,13 @@ export function PcpInbox() {
           <CardContent className="p-4 flex items-center justify-between">
             <div>
               <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
-                Perguntas Pendentes
+                {isPcp ? 'Perguntas Pendentes' : 'Suas Perguntas Pendentes'}
               </span>
               <span className="text-2xl font-bold text-amber-600 dark:text-amber-400">
                 {metrics.totalPendingQuestions}
               </span>
               <p className="text-[11px] text-muted-foreground mt-0.5">
-                Aguardando resposta do PCP/equipe
+                {isPcp ? 'Aguardando resposta do PCP/equipe' : 'Aguardando resposta do PCP'}
               </p>
             </div>
             <div className="p-3 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-600 dark:text-amber-400">
@@ -290,13 +344,13 @@ export function PcpInbox() {
           <CardContent className="p-4 flex items-center justify-between">
             <div>
               <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
-                Mensagens Não Lidas
+                {isPcp ? 'Mensagens Não Lidas' : 'Novidades / Não Lidas'}
               </span>
               <span className="text-2xl font-bold text-red-600 dark:text-red-400">
                 {metrics.totalUnreadMessages}
               </span>
               <p className="text-[11px] text-muted-foreground mt-0.5">
-                Novas atualizações para sua visualização
+                {isPcp ? 'Mensagens pendentes de leitura' : 'Respostas e avisos do PCP'}
               </p>
             </div>
             <div className="p-3 rounded-full bg-red-100 dark:bg-red-950 text-red-600 dark:text-red-400">
@@ -309,13 +363,15 @@ export function PcpInbox() {
           <CardContent className="p-4 flex items-center justify-between">
             <div>
               <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
-                Canais / Conversas
+                {isPcp ? 'Canais / Conversas' : 'OPs com Conversas'}
               </span>
               <span className="text-2xl font-bold text-foreground">
                 {metrics.totalConversations}
               </span>
               <p className="text-[11px] text-muted-foreground mt-0.5">
-                Total de OPs com interações ativas
+                {isPcp
+                  ? 'Total de OPs com interações ativas'
+                  : `Total no canal ${userChannel || 'do setor'}`}
               </p>
             </div>
             <div className="p-3 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400">
@@ -569,6 +625,22 @@ export function PcpInbox() {
                             </span>
                             <p className="text-amber-900 dark:text-amber-300 italic truncate">
                               "{latestPendingQuestion.content}"
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Linha 5: Destaque da última resposta do PCP para o setor */}
+                      {!isPcp && conv.latestPcpResponse && (
+                        <div className="mt-2 p-2 rounded-lg bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/70 flex items-start gap-2 text-xs">
+                          <CheckCircle2 className="size-3.5 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <span className="font-semibold text-blue-950 dark:text-blue-200 block text-[11px]">
+                              Resposta do PCP (
+                              {conv.latestPcpResponse.expand?.user_id?.name || 'PCP'}):
+                            </span>
+                            <p className="text-blue-900 dark:text-blue-300 truncate">
+                              "{conv.latestPcpResponse.content}"
                             </p>
                           </div>
                         </div>

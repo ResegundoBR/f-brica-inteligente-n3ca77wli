@@ -16,7 +16,8 @@ import {
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
-import { Trash, Plus, ShoppingCart, Volume2, VolumeX } from 'lucide-react'
+import { Trash, Plus, ShoppingCart, Volume2, VolumeX, MessageSquare } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import {
   Select,
   SelectContent,
@@ -922,6 +923,7 @@ export default function PcpOperator() {
     orderNumber: string
     opNumber: string
   } | null>(null)
+  const navigate = useNavigate()
   const { user } = useAuth()
   const { toast } = useToast()
   const { getOrderMessageInfo, markOrderAsRead } = useOrderMessages('Operador')
@@ -1361,124 +1363,135 @@ export default function PcpOperator() {
           </p>
         </div>
 
-        <Dialog open={openRequest} onOpenChange={setOpenRequest}>
-          <DialogTrigger asChild>
-            <Button
-              size="lg"
-              className="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold h-12 shadow-sm whitespace-nowrap"
-            >
-              <ShoppingCart className="mr-2 size-5" /> Solicitar Compra / Insumo
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="text-2xl font-black">Solicitar Compra / Insumo</DialogTitle>
-              <DialogDescription>
-                Faça o pedido de materiais, ferramentas ou insumos para o seu setor.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="req-code">Código</Label>
-                  <Input
-                    id="req-code"
-                    placeholder="Opcional"
-                    value={reqCode}
-                    onChange={(e) => setReqCode(e.target.value)}
-                  />
+        <div className="flex items-center gap-2 w-full md:w-auto">
+          <Button
+            size="lg"
+            variant="outline"
+            className="flex-1 md:flex-initial border-2 border-blue-500/30 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/40 font-bold h-12 shadow-sm whitespace-nowrap"
+            onClick={() => navigate('/pcp/comunicacoes')}
+          >
+            <MessageSquare className="mr-2 size-5 text-blue-600 dark:text-blue-400" /> Caixa de
+            Comunicações
+          </Button>
+
+          <Dialog open={openRequest} onOpenChange={setOpenRequest}>
+            <DialogTrigger asChild>
+              <Button
+                size="lg"
+                className="flex-1 md:flex-initial bg-blue-600 hover:bg-blue-700 text-white font-bold h-12 shadow-sm whitespace-nowrap"
+              >
+                <ShoppingCart className="mr-2 size-5" /> Solicitar Compra / Insumo
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="text-2xl font-black">Solicitar Compra / Insumo</DialogTitle>
+                <DialogDescription>
+                  Faça o pedido de materiais, ferramentas ou insumos para o seu setor.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="req-code">Código</Label>
+                    <Input
+                      id="req-code"
+                      placeholder="Opcional"
+                      value={reqCode}
+                      onChange={(e) => setReqCode(e.target.value)}
+                    />
+                  </div>
+                  <div className="col-span-2 space-y-2">
+                    <Label htmlFor="req-desc">Item / Descrição</Label>
+                    <MaterialDescriptionAutocomplete
+                      id="req-desc"
+                      productId={selectedOp?.product_id}
+                      value={reqDesc}
+                      onChange={setReqDesc}
+                      onCodeChange={setReqCode}
+                      placeholder="Ex: Broca 8mm, Fita Crepe..."
+                    />
+                  </div>
                 </div>
-                <div className="col-span-2 space-y-2">
-                  <Label htmlFor="req-desc">Item / Descrição</Label>
-                  <MaterialDescriptionAutocomplete
-                    id="req-desc"
-                    productId={selectedOp?.product_id}
-                    value={reqDesc}
-                    onChange={setReqDesc}
-                    onCodeChange={setReqCode}
-                    placeholder="Ex: Broca 8mm, Fita Crepe..."
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Quantidade</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={reqQtd}
+                      onChange={(e) => setReqQtd(Number(e.target.value))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Tipo</Label>
+                    <Select value={reqType} onValueChange={setReqType}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Ferramentas">Ferramentas</SelectItem>
+                        <SelectItem value="Materiais">Materiais</SelectItem>
+                        <SelectItem value="Produtos">Produtos</SelectItem>
+                        <SelectItem value="Insumos">Insumos</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Quantidade</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={reqQtd}
-                    onChange={(e) => setReqQtd(Number(e.target.value))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Tipo</Label>
-                  <Select value={reqType} onValueChange={setReqType}>
+                  <Label>Prioridade</Label>
+                  <Select value={reqPriority} onValueChange={setReqPriority}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Ferramentas">Ferramentas</SelectItem>
-                      <SelectItem value="Materiais">Materiais</SelectItem>
-                      <SelectItem value="Produtos">Produtos</SelectItem>
-                      <SelectItem value="Insumos">Insumos</SelectItem>
+                      <SelectItem value="Sem pressa">Sem pressa</SelectItem>
+                      <SelectItem value="Próximos dias">Próximos dias</SelectItem>
+                      <SelectItem value="Urgente">Urgente</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="space-y-2">
+                  <Label>Ordem de Produção (Opcional)</Label>
+                  <Select value={reqOrderId} onValueChange={setReqOrderId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Nenhuma (Requisição Geral)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Nenhuma (Requisição Geral)</SelectItem>
+                      {orders.map((op) => (
+                        <SelectItem key={op.id} value={op.id}>
+                          Pedido {op.order_number} | OP {op.op_number || '-'}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Observações</Label>
+                  <Textarea
+                    placeholder="Detalhes adicionais do pedido..."
+                    value={reqObs}
+                    onChange={(e) => setReqObs(e.target.value)}
+                    className="min-h-[80px]"
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label>Prioridade</Label>
-                <Select value={reqPriority} onValueChange={setReqPriority}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Sem pressa">Sem pressa</SelectItem>
-                    <SelectItem value="Próximos dias">Próximos dias</SelectItem>
-                    <SelectItem value="Urgente">Urgente</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Ordem de Produção (Opcional)</Label>
-                <Select value={reqOrderId} onValueChange={setReqOrderId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Nenhuma (Requisição Geral)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Nenhuma (Requisição Geral)</SelectItem>
-                    {orders.map((op) => (
-                      <SelectItem key={op.id} value={op.id}>
-                        Pedido {op.order_number} | OP {op.op_number || '-'}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Observações</Label>
-                <Textarea
-                  placeholder="Detalhes adicionais do pedido..."
-                  value={reqObs}
-                  onChange={(e) => setReqObs(e.target.value)}
-                  className="min-h-[80px]"
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setOpenRequest(false)}>
-                Cancelar
-              </Button>
-              <Button
-                onClick={handlePurchaseRequest}
-                className="bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                Enviar Solicitação
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setOpenRequest(false)}>
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={handlePurchaseRequest}
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  Enviar Solicitação
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
-
       <div className="flex flex-wrap pb-2 gap-2 mb-2">
         {(Object.keys(SECTORS) as SectorName[]).map((sector) => (
           <Button

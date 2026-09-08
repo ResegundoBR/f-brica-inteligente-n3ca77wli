@@ -18,6 +18,7 @@ interface RoleGuardProps {
     | 'comercial'
     | 'operator'
     | 'catalog_consultation'
+    | 'comunicacoes'
   children: React.ReactNode
 }
 
@@ -113,6 +114,22 @@ export function RoleGuard({ module, children }: RoleGuardProps) {
         case 'catalog_consultation':
           access = !!currentRole.access_catalog_consultation
           break
+        case 'comunicacoes': {
+          const roleName = (currentRole.name || '').toLowerCase()
+          const isSector =
+            !!currentRole.access_pcp ||
+            !!currentRole.access_operator ||
+            !!currentRole.access_commercial ||
+            !!currentRole.access_visao_comercial ||
+            roleName.includes('comercial') ||
+            roleName.includes('acabamento') ||
+            roleName.includes('fabric') ||
+            roleName.includes('montagem') ||
+            roleName.includes('expedi') ||
+            roleName.includes('operador')
+          access = isSector
+          break
+        }
       }
 
       if (isMounted) setHasAccess(access)

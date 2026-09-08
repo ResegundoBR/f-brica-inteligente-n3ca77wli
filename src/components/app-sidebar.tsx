@@ -160,8 +160,22 @@ export function AppSidebar() {
       case 'Status dos Produtos':
       case 'Log de Atividades':
         return !!role.access_users
+      case 'Central de Comunicações': {
+        const roleName = (role.name || '').toLowerCase()
+        return (
+          !!role.access_pcp ||
+          !!role.access_commercial ||
+          !!role.access_operator ||
+          !!role.access_visao_comercial ||
+          roleName.includes('comercial') ||
+          roleName.includes('acabamento') ||
+          roleName.includes('fabric') ||
+          roleName.includes('montagem') ||
+          roleName.includes('expedi') ||
+          roleName.includes('operador')
+        )
+      }
       case 'Dashboard PCP':
-      case 'Central de Comunicações':
       case 'Clientes':
       case 'Relatório de Ocorrências':
       case 'Central de Melhorias':

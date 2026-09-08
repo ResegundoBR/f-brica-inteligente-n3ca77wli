@@ -173,7 +173,7 @@ const App = () => (
               <Route
                 path="/pcp/comunicacoes"
                 element={
-                  <RoleGuard module="pcp">
+                  <RoleGuard module="comunicacoes">
                     <PcpInbox />
                   </RoleGuard>
                 }

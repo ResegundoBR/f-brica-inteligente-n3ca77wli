@@ -120,17 +120,17 @@ export default function ConsultationDetail() {
   const composition = product.data?.composition || []
   const isPendencia = statusLower.includes('pendência') || statusLower.includes('ajuste')
 
-  // Filtra apenas processos com preenchimento (conteúdo útil para o operador)
+  // Filtra apenas processos com preenchimento (conteúdo útil para o operador).
+  // kanban_stage NÃO conta como preenchimento pois é atribuído automaticamente na criação dos processos-padrão.
   const isProcessFilled = (proc: ProductProcessModel) => {
     const hasDescription = Boolean(proc.description && proc.description.trim().length > 0)
     const hasImages = Array.isArray(proc.image)
       ? proc.image.length > 0
       : Boolean(proc.image && typeof proc.image === 'string' && proc.image.trim().length > 0)
-    const hasKanbanStage = Boolean(proc.kanban_stage && proc.kanban_stage.trim().length > 0)
     const hasHours = typeof proc.estimated_hours === 'number' && proc.estimated_hours > 0
     const hasDays = typeof proc.estimated_days === 'number' && proc.estimated_days > 0
 
-    return hasDescription || hasImages || hasKanbanStage || hasHours || hasDays
+    return hasDescription || hasImages || hasHours || hasDays
   }
 
   const filledProcesses = processes.filter(isProcessFilled)

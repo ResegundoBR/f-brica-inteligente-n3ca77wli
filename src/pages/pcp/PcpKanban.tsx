@@ -48,6 +48,12 @@ import { OrderMessageBell } from '@/components/OrderMessageBell'
 import { OrderMessagesPanel } from '@/components/OrderMessagesPanel'
 import { StatusLegend } from '@/components/StatusLegend'
 import { ExpeditionModal } from './components/ExpeditionModal'
+import { useAuth } from '@/hooks/use-auth'
+import { PromisedDateBadge } from '@/components/PromisedDateBadge'
+import { PromisedDateModal } from '@/components/PromisedDateModal'
+import { setPromisedDateOnOrder } from '@/services/pcp-promised-date'
+import { useToast } from '@/hooks/use-toast'
+import { Target, Calendar as CalendarIcon } from 'lucide-react'
 
 const MACRO_GROUPS = [
   {
@@ -151,10 +157,25 @@ export default function PcpKanban() {
   const [topDelayedOnly, setTopDelayedOnly] = useState(false)
   const [reworkOnly, setReworkOnly] = useState(false)
   const [stagnantOnly, setStagnantOnly] = useState(false)
+  const [promisedOnly, setPromisedOnly] = useState(false)
+  const { user } = useAuth()
+  const { toast } = useToast()
+
+  const isAdmin = useMemo(() => {
+    if (!user) return false
+    return (
+      user.expand?.role?.name === 'admin' ||
+      user.expand?.role?.name === 'Administrador' ||
+      user.email === 'reginaldo.segundo@planagroup.com.br'
+    )
+  }, [user])
+
+  const [promisedModalOpen, setPromisedModalOpen] = useState(false)
+  const [isEmergencyContext, setIsEmergencyContext] = useState(false)
 
   const fetchOrders = async () => {
     const res = await pb.collection('pcp_orders').getFullList({
-      expand: 'product_id,client_id,operator_id',
+      expand: 'product_id,client_id,operator_id,promised_by',
       sort: '-manual_priority,-created',
     })
     setOrders(res)
@@ -269,6 +290,11 @@ export default function PcpKanban() {
         if (!isStageDelayed(o)) return false
       }
 
+      // Filtro rápido "Datas Prometidas" (apenas OPs com data prometida)
+      if (promisedOnly) {
+        if (!o.promised_date) return false
+      }
+
       if (!searchQuery) return true
       const q = normalizeSearchText(searchQuery)
       if (!q) return true
@@ -304,6 +330,15 @@ export default function PcpKanban() {
       list = overdueList.slice(0, 5)
     }
 
+    // Ordenação do filtro rápido "Datas Prometidas" (vencidas primeiro)
+    if (promisedOnly) {
+      list = [...list].sort((a, b) => {
+        const timeA = a.promised_date ? new Date(a.promised_date).getTime() : Infinity
+        const timeB = b.promised_date ? new Date(b.promised_date).getTime() : Infinity
+        return timeA - timeB
+      })
+    }
+
     return list
   }, [
     orders,
@@ -317,6 +352,7 @@ export default function PcpKanban() {
     orderItemsCountMap,
     reworkOnly,
     stagnantOnly,
+    promisedOnly,
     topDelayedOnly,
   ])
 
@@ -387,7 +423,11 @@ export default function PcpKanban() {
           </Button>
           <Button
             variant={
-              itemCountFilter !== 'all' || topDelayedOnly || reworkOnly || stagnantOnly
+              itemCountFilter !== 'all' ||
+              topDelayedOnly ||
+              reworkOnly ||
+              stagnantOnly ||
+              promisedOnly
                 ? 'default'
                 : quickFiltersOpen
                   ? 'secondary'
@@ -400,15 +440,23 @@ export default function PcpKanban() {
           >
             <SlidersHorizontal className="size-3.5" />
             <span>Filtros rápidos</span>
-            {(itemCountFilter !== 'all' || topDelayedOnly || reworkOnly || stagnantOnly) && (
+            {(itemCountFilter !== 'all' ||
+              topDelayedOnly ||
+              reworkOnly ||
+              stagnantOnly ||
+              promisedOnly) && (
               <Badge
                 variant="secondary"
                 className="h-4 px-1 text-[10px] ml-0.5 bg-background text-foreground font-bold"
               >
                 {
-                  [itemCountFilter !== 'all', topDelayedOnly, reworkOnly, stagnantOnly].filter(
-                    Boolean,
-                  ).length
+                  [
+                    itemCountFilter !== 'all',
+                    topDelayedOnly,
+                    reworkOnly,
+                    stagnantOnly,
+                    promisedOnly,
+                  ].filter(Boolean).length
                 }
               </Badge>
             )}
@@ -565,8 +613,28 @@ export default function PcpKanban() {
             Estagnadas
           </Button>
 
+          {/* Datas Prometidas */}
+          <Button
+            variant={promisedOnly ? 'default' : 'outline'}
+            size="sm"
+            className={cn(
+              'h-7 px-2.5 text-xs gap-1.5',
+              promisedOnly
+                ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                : 'hover:border-emerald-300 dark:hover:border-emerald-800',
+            )}
+            onClick={() => setPromisedOnly(!promisedOnly)}
+          >
+            <Target className="size-3" />
+            Datas Prometidas
+          </Button>
+
           {/* Botão para limpar filtros rápidos quando algum estiver ativo */}
-          {(itemCountFilter !== 'all' || topDelayedOnly || reworkOnly || stagnantOnly) && (
+          {(itemCountFilter !== 'all' ||
+            topDelayedOnly ||
+            reworkOnly ||
+            stagnantOnly ||
+            promisedOnly) && (
             <Button
               variant="ghost"
               size="sm"
@@ -576,6 +644,7 @@ export default function PcpKanban() {
                 setTopDelayedOnly(false)
                 setReworkOnly(false)
                 setStagnantOnly(false)
+                setPromisedOnly(false)
               }}
             >
               <X className="size-3" />
@@ -1213,13 +1282,104 @@ export default function PcpKanban() {
                     <span className="text-muted-foreground block text-xs">Processo Atual</span>
                     <span className="font-medium">{selectedOrder.stage}</span>
                   </div>
-                  <div className="col-span-2 mt-2 flex items-center justify-between p-3 border rounded-md bg-red-50/50 dark:bg-red-950/20">
+
+                  {/* Painel Data Prometida (exclusivo para edição pelo Admin, visível a todos) */}
+                  <div className="col-span-2 p-3 border rounded-lg bg-slate-50 dark:bg-slate-900/60 space-y-2">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">🎯</span>
+                        <div>
+                          <span className="font-bold text-foreground text-sm block">
+                            Data Prometida (PCP)
+                          </span>
+                          <p className="text-[11px] text-muted-foreground">
+                            Prazo renegociado. A data original de entrega permanece intacta para
+                            auditoria.
+                          </p>
+                        </div>
+                      </div>
+                      {selectedOrder.promised_date && (
+                        <PromisedDateBadge
+                          promisedDate={selectedOrder.promised_date}
+                          status={selectedOrder.status}
+                          size="md"
+                        />
+                      )}
+                    </div>
+
+                    {selectedOrder.promised_date ? (
+                      <div className="text-xs space-y-1.5 pt-2 border-t border-slate-200 dark:border-slate-800">
+                        <div className="flex items-center justify-between">
+                          <span className="text-muted-foreground">Data prometida:</span>
+                          <span className="font-bold text-foreground">
+                            {format(parseISO(selectedOrder.promised_date), 'dd/MM/yyyy')}
+                          </span>
+                        </div>
+                        {selectedOrder.promised_note && (
+                          <div className="bg-background/80 p-2 rounded border text-[11px] text-foreground">
+                            <span className="font-medium text-muted-foreground block mb-0.5">
+                              Nota:
+                            </span>
+                            {selectedOrder.promised_note}
+                          </div>
+                        )}
+                        {(selectedOrder.expand?.promised_by || selectedOrder.promised_at) && (
+                          <div className="text-[10px] text-muted-foreground text-right italic pt-1">
+                            Definido por{' '}
+                            <span className="font-medium text-foreground">
+                              {selectedOrder.expand?.promised_by?.name ||
+                                selectedOrder.expand?.promised_by?.email ||
+                                'Admin'}
+                            </span>
+                            {selectedOrder.promised_at &&
+                              isValid(parseISO(selectedOrder.promised_at)) && (
+                                <>
+                                  {' '}
+                                  em{' '}
+                                  {format(parseISO(selectedOrder.promised_at), 'dd/MM/yyyy HH:mm')}
+                                </>
+                              )}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground italic pt-1">
+                        Nenhuma data prometida informada. Esta OP segue o prazo original.
+                      </p>
+                    )}
+
+                    {isAdmin ? (
+                      <div className="pt-2 flex justify-end">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="text-xs h-8 gap-1.5"
+                          onClick={() => {
+                            setIsEmergencyContext(false)
+                            setPromisedModalOpen(true)
+                          }}
+                        >
+                          <CalendarIcon className="size-3.5" />
+                          {selectedOrder.promised_date
+                            ? 'Alterar data prometida'
+                            : 'Definir data prometida'}
+                        </Button>
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-muted-foreground italic text-right pt-1">
+                        Edição exclusiva do perfil Admin
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="col-span-2 mt-1 flex items-center justify-between p-3 border rounded-md bg-red-50/50 dark:bg-red-950/20">
                     <div>
                       <span className="block text-red-600 dark:text-red-400 font-bold text-sm">
                         Urgência
                       </span>
                       <p className="text-xs text-muted-foreground">
-                        Sinaliza esta OP como emergência no painel de operadores
+                        Ao ativar emergência, é obrigatório informar a data máxima para finalização
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
@@ -1229,19 +1389,43 @@ export default function PcpKanban() {
                           selectedOrder.manual_priority === 1 ? 'text-red-600' : 'text-slate-400',
                         )}
                       >
-                        {selectedOrder.manual_priority === 1 ? 'EMERGÊNCIA' : 'NORMAL'}
+                        {selectedOrder.manual_priority === 1 ? 'EMERGÊNCIA 🚨' : 'NORMAL'}
                       </span>
-                      <Switch
-                        checked={selectedOrder.manual_priority === 1}
-                        onCheckedChange={async (checked) => {
-                          const newVal = checked ? 1 : 0
-                          const updated = { ...selectedOrder, manual_priority: newVal }
-                          setSelectedOrder(updated)
-                          await pb
-                            .collection('pcp_orders')
-                            .update(selectedOrder.id, { manual_priority: newVal })
-                        }}
-                      />
+                      {isAdmin ? (
+                        <Switch
+                          checked={selectedOrder.manual_priority === 1}
+                          onCheckedChange={async (checked) => {
+                            if (checked) {
+                              setIsEmergencyContext(true)
+                              setPromisedModalOpen(true)
+                            } else {
+                              try {
+                                const updated = await pb
+                                  .collection('pcp_orders')
+                                  .update(selectedOrder.id, { manual_priority: 0 })
+                                await pb.collection('pcp_order_logs').create({
+                                  order_id: selectedOrder.id,
+                                  user_id: user?.id || null,
+                                  stage: selectedOrder.stage || '',
+                                  action: 'Emergência desativada',
+                                  details: 'Urgência alterada para NORMAL',
+                                })
+                                setSelectedOrder({ ...selectedOrder, manual_priority: 0 })
+                                fetchOrders()
+                                toast({ title: 'Emergência desativada' })
+                              } catch (err) {
+                                toast({
+                                  title: 'Erro',
+                                  description: 'Não foi possível alterar a urgência.',
+                                  variant: 'destructive',
+                                })
+                              }
+                            }
+                          }}
+                        />
+                      ) : (
+                        <span className="text-[11px] text-muted-foreground">(somente Admin)</span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1342,6 +1526,51 @@ export default function PcpKanban() {
         onOpenChange={setExpeditionModalOpen}
         initialOrderNumber={expeditionOrderNumber}
       />
+      {selectedOrder && (
+        <PromisedDateModal
+          open={promisedModalOpen}
+          onOpenChange={setPromisedModalOpen}
+          currentDate={selectedOrder.promised_date}
+          currentNote={selectedOrder.promised_note}
+          opIdentifier={
+            selectedOrder.op_number
+              ? `OP ${selectedOrder.op_number}`
+              : `Pedido #${selectedOrder.order_number}`
+          }
+          isEmergencyContext={isEmergencyContext}
+          onConfirm={async ({ promised_date, promised_note }) => {
+            try {
+              const updated = await setPromisedDateOnOrder({
+                orderId: selectedOrder.id,
+                orderNumber: selectedOrder.order_number,
+                opNumber: selectedOrder.op_number,
+                currentPromisedDate: selectedOrder.promised_date,
+                newPromisedDate: promised_date,
+                note: promised_note,
+                userId: user?.id,
+                userName: user?.name || user?.email,
+                alsoSetEmergency: isEmergencyContext ? true : undefined,
+              })
+              setSelectedOrder(updated as any)
+              fetchOrders()
+              toast({
+                title: promised_date ? 'Data Prometida salva' : 'Data Prometida removida',
+                description: promised_date
+                  ? `Data definida para ${format(parseISO(promised_date), 'dd/MM/yyyy')}`
+                  : 'A OP voltou a seguir o fluxo regular.',
+              })
+            } catch (err) {
+              console.error(err)
+              toast({
+                title: 'Erro ao salvar Data Prometida',
+                description: 'Tente novamente.',
+                variant: 'destructive',
+              })
+              throw err
+            }
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -1399,6 +1628,13 @@ function KanbanCard({
             {order.order_number}
           </span>
           <div className="flex items-center gap-1">
+            {order.promised_date && (
+              <PromisedDateBadge
+                promisedDate={order.promised_date}
+                status={order.status}
+                size="sm"
+              />
+            )}
             {messageState !== 'none' && (
               <button
                 onClick={(e) => {
@@ -1545,6 +1781,14 @@ function CompactKanbanCard({
         )}{' '}
         {order.order_number}
       </span>
+      {order.promised_date && (
+        <PromisedDateBadge
+          promisedDate={order.promised_date}
+          status={order.status}
+          size="compact"
+          className="my-0.5"
+        />
+      )}
       <span className="block truncate w-full font-normal opacity-90 text-[7px]">
         {order.expand?.client_id?.name || order.client_name}
       </span>

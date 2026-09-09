@@ -46,6 +46,7 @@ import {
 import { getMaterialAvailabilityStatus } from '@/lib/material-status'
 import { isBefore, startOfDay, parseISO } from 'date-fns'
 import { Package, ChevronDown, ChevronUp, Circle, Search, X, Boxes, Paintbrush } from 'lucide-react'
+import { PromisedDateBadge } from '@/components/PromisedDateBadge'
 import { MaterialDescriptionAutocomplete } from '@/pages/pcp/components/MaterialDescriptionAutocomplete'
 import { SeparationMaterialsModal } from '@/pages/pcp/components/SeparationMaterialsModal'
 import { useOrderMessages } from '@/hooks/use-order-messages'
@@ -517,6 +518,11 @@ function OperatorCard({
                 Entrega:{' '}
                 {parseISO(op.delivery_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
               </span>
+            )}
+            {op.promised_date && (
+              <div className="mt-1">
+                <PromisedDateBadge promisedDate={op.promised_date} status={op.status} size="sm" />
+              </div>
             )}
             {materialStatus !== 'none' && (
               <div className="mt-1 flex flex-col items-start sm:items-end gap-0.5 max-w-full">

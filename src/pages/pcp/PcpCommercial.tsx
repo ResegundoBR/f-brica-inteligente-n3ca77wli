@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button'
 import { format, parseISO, isAfter, startOfDay } from 'date-fns'
 import { Search, Truck, CheckCircle2, MessageSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { PromisedDateBadge } from '@/components/PromisedDateBadge'
 import { PcpFilters } from './components/PcpFilters'
 import { filterByDeadline, isOrderOverdue, normalizeSearchText } from '@/lib/pcp-utils'
 
@@ -352,15 +353,26 @@ export default function PcpCommercial() {
                             )}
                           </div>
                         </TableCell>
-                        <TableCell
-                          className={cn(
-                            'py-1.5',
-                            isOrderOverdue(op.delivery_date, op.status) && 'text-red-600 font-bold',
-                          )}
-                        >
-                          {op.delivery_date && !isNaN(parseISO(op.delivery_date).getTime())
-                            ? format(parseISO(op.delivery_date), 'dd/MM/yyyy')
-                            : '-'}
+                        <TableCell className="py-1.5">
+                          <div className="flex flex-col gap-1 items-start">
+                            <span
+                              className={cn(
+                                isOrderOverdue(op.delivery_date, op.status) &&
+                                  'text-red-600 font-bold',
+                              )}
+                            >
+                              {op.delivery_date && !isNaN(parseISO(op.delivery_date).getTime())
+                                ? format(parseISO(op.delivery_date), 'dd/MM/yyyy')
+                                : '-'}
+                            </span>
+                            {op.promised_date && (
+                              <PromisedDateBadge
+                                promisedDate={op.promised_date}
+                                status={op.status}
+                                size="sm"
+                              />
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="py-1.5">
                           <div className="flex flex-col gap-2">

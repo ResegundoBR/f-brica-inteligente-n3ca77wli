@@ -257,6 +257,10 @@ export interface PcpOrder {
   observations?: string
   observation_sector?: 'Fabricação' | 'Acabamento' | 'Montagem' | 'Projetos' | ''
   delivery_date: string
+  promised_date?: string
+  promised_note?: string
+  promised_by?: string
+  promised_at?: string
   manual_priority?: number
   started_at?: string
   finished_at?: string
@@ -271,6 +275,7 @@ export interface PcpOrder {
     product_id?: Product
     operator_id?: User
     client_id?: Client
+    promised_by?: User
   }
 }
 

@@ -234,3 +234,38 @@ export function normalizeSearchText(text: string): string {
     .toLowerCase()
     .trim()
 }
+
+export interface PromisedDateInfo {
+  formattedDate: string // "dd/mm"
+  isOverdue: boolean // data < hoje && status !== 'Concluído'
+  isDueSoon: boolean // <= 3 dias restantes (e não vencida)
+  isConcluded: boolean
+  daysRemaining: number
+}
+
+export function getPromisedDateInfo(
+  promisedDateStr: string | undefined | null,
+  status?: string,
+): PromisedDateInfo | null {
+  if (!promisedDateStr) return null
+  const date = parseISO(promisedDateStr)
+  if (!isValid(date)) return null
+
+  const today = startOfDay(new Date())
+  const pDay = startOfDay(date)
+  const isConcluded = status === 'Concluído'
+  const diff = differenceInDays(pDay, today)
+  const isOverdue = !isConcluded && diff < 0
+  const isDueSoon = !isConcluded && diff >= 0 && diff <= 3
+
+  const day = String(date.getUTCDate()).padStart(2, '0')
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+
+  return {
+    formattedDate: `${day}/${month}`,
+    isOverdue,
+    isDueSoon,
+    isConcluded,
+    daysRemaining: diff,
+  }
+}

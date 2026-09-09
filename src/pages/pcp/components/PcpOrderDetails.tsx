@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/sheet'
 import { Label } from '@/components/ui/label'
 import { format, parseISO, isBefore, startOfDay, isValid } from 'date-fns'
-import { Paperclip, AlertCircle, Clock, Pencil, Trash2, Truck } from 'lucide-react'
+import { Paperclip, AlertCircle, Clock, Pencil, Trash2, Truck, Calendar } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import pb from '@/lib/pocketbase/client'
 import { cn } from '@/lib/utils'
@@ -17,6 +17,11 @@ import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { useState, useEffect } from 'react'
 import { PcpOrderDelivery } from '@/types'
+import { PromisedDateBadge } from '@/components/PromisedDateBadge'
+import { PromisedDateModal } from '@/components/PromisedDateModal'
+import { setPromisedDateOnOrder } from '@/services/pcp-promised-date'
+import { useAuth } from '@/hooks/use-auth'
+import { useToast } from '@/hooks/use-toast'
 
 export function PcpOrderDetails({
   op,
@@ -25,6 +30,7 @@ export function PcpOrderDetails({
   onEdit,
   onDelete,
   isAdmin,
+  onOrderUpdated,
 }: {
   op: PcpOrder | null
   observations: PcpOrderObservation[]
@@ -32,20 +38,30 @@ export function PcpOrderDetails({
   onEdit: () => void
   onDelete: () => void
   isAdmin: boolean
+  onOrderUpdated?: (updated: PcpOrder) => void
 }) {
   const [logs, setLogs] = useState<any[]>([])
   const [deliveries, setDeliveries] = useState<PcpOrderDelivery[]>([])
+  const [promisedModalOpen, setPromisedModalOpen] = useState(false)
+  const [isEmergencyContext, setIsEmergencyContext] = useState(false)
+  const { user } = useAuth()
+  const { toast } = useToast()
+
+  const fetchLogs = () => {
+    if (!op) return
+    pb.collection('pcp_order_logs')
+      .getFullList({
+        filter: `order_id="${op.id}"`,
+        sort: '-created',
+        expand: 'user_id',
+      })
+      .then(setLogs)
+      .catch(console.error)
+  }
 
   useEffect(() => {
     if (op) {
-      pb.collection('pcp_order_logs')
-        .getFullList({
-          filter: `order_id="${op.id}"`,
-          sort: '-created',
-          expand: 'user_id',
-        })
-        .then(setLogs)
-        .catch(console.error)
+      fetchLogs()
 
       pb.collection('pcp_order_deliveries')
         .getFullList<PcpOrderDelivery>({
@@ -59,7 +75,7 @@ export function PcpOrderDetails({
       setLogs([])
       setDeliveries([])
     }
-  }, [op])
+  }, [op?.id])
 
   const today = startOfDay(new Date())
   const deliveryDateObj = op?.delivery_date ? parseISO(op.delivery_date) : null
@@ -69,6 +85,78 @@ export function PcpOrderDetails({
     op && isValidDeliveryDate
       ? op.status !== 'Concluído' && isBefore(startOfDay(deliveryDateObj), today)
       : false
+
+  const promisedDateObj = op?.promised_date ? parseISO(op.promised_date) : null
+  const isValidPromisedDate = promisedDateObj && isValid(promisedDateObj)
+
+  const handlePromisedConfirm = async ({
+    promised_date,
+    promised_note,
+  }: {
+    promised_date: string | null
+    promised_note: string
+  }) => {
+    if (!op) return
+    try {
+      const updated = await setPromisedDateOnOrder({
+        orderId: op.id,
+        orderNumber: op.order_number,
+        opNumber: op.op_number,
+        currentPromisedDate: op.promised_date,
+        newPromisedDate: promised_date,
+        note: promised_note,
+        userId: user?.id,
+        userName: user?.name || user?.email,
+        alsoSetEmergency: isEmergencyContext ? true : undefined,
+      })
+      toast({
+        title: promised_date ? 'Data Prometida salva' : 'Data Prometida removida',
+        description: promised_date
+          ? `Data definida para ${format(parseISO(promised_date), 'dd/MM/yyyy')}`
+          : 'A OP voltou a seguir o fluxo regular.',
+      })
+      fetchLogs()
+      onOrderUpdated?.(updated as any)
+    } catch (err) {
+      console.error(err)
+      toast({
+        title: 'Erro ao salvar Data Prometida',
+        description: 'Tente novamente.',
+        variant: 'destructive',
+      })
+      throw err
+    }
+  }
+
+  const handleEmergencyToggle = async (checked: boolean) => {
+    if (!op) return
+    if (checked) {
+      // Obrigatório definir a data máxima
+      setIsEmergencyContext(true)
+      setPromisedModalOpen(true)
+    } else {
+      // Desativar emergência
+      try {
+        const updated = await pb.collection('pcp_orders').update(op.id, { manual_priority: 0 })
+        await pb.collection('pcp_order_logs').create({
+          order_id: op.id,
+          user_id: user?.id || null,
+          stage: op.stage || '',
+          action: 'Emergência desativada',
+          details: 'Urgência alterada para NORMAL',
+        })
+        fetchLogs()
+        onOrderUpdated?.(updated as any)
+        toast({ title: 'Emergência desativada' })
+      } catch (err) {
+        toast({
+          title: 'Erro',
+          description: 'Não foi possível alterar a urgência.',
+          variant: 'destructive',
+        })
+      }
+    }
+  }
 
   const obsBySector = observations.reduce(
     (acc, obs) => {
@@ -182,11 +270,93 @@ export function PcpOrderDetails({
                 <p className="font-medium text-sm mt-1">{op.stage}</p>
               </div>
 
-              <div className="col-span-2 mt-2 flex items-center justify-between p-3 border rounded-md bg-red-50/50 dark:bg-red-950/20">
+              {/* Painel de Data Prometida (exclusivo para edição pelo Admin, visível a todos) */}
+              <div className="col-span-2 p-3.5 border rounded-lg bg-slate-50 dark:bg-slate-900/60 space-y-2">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">🎯</span>
+                    <div>
+                      <Label className="font-bold text-foreground text-sm">
+                        Data Prometida (PCP)
+                      </Label>
+                      <p className="text-[11px] text-muted-foreground">
+                        Prazo renegociado. A data original de entrega permanece intacta para
+                        auditoria.
+                      </p>
+                    </div>
+                  </div>
+                  {op.promised_date && (
+                    <PromisedDateBadge
+                      promisedDate={op.promised_date}
+                      status={op.status}
+                      size="md"
+                    />
+                  )}
+                </div>
+
+                {op.promised_date ? (
+                  <div className="text-xs space-y-1.5 pt-2 border-t border-slate-200 dark:border-slate-800">
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Data prometida:</span>
+                      <span className="font-bold text-foreground">
+                        {isValidPromisedDate ? format(promisedDateObj, 'dd/MM/yyyy') : '-'}
+                      </span>
+                    </div>
+                    {op.promised_note && (
+                      <div className="bg-background/80 p-2 rounded border text-[11px] text-foreground">
+                        <span className="font-medium text-muted-foreground block mb-0.5">
+                          Nota:
+                        </span>
+                        {op.promised_note}
+                      </div>
+                    )}
+                    {(op.expand?.promised_by || op.promised_at) && (
+                      <div className="text-[10px] text-muted-foreground text-right italic pt-1">
+                        Definido por{' '}
+                        <span className="font-medium text-foreground">
+                          {op.expand?.promised_by?.name || op.expand?.promised_by?.email || 'Admin'}
+                        </span>
+                        {op.promised_at && isValid(parseISO(op.promised_at)) && (
+                          <> em {format(parseISO(op.promised_at), 'dd/MM/yyyy HH:mm')}</>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground italic pt-1">
+                    Nenhuma data prometida informada. Esta OP segue o prazo original.
+                  </p>
+                )}
+
+                {isAdmin ? (
+                  <div className="pt-2 flex justify-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="text-xs h-8 gap-1.5"
+                      onClick={() => {
+                        setIsEmergencyContext(false)
+                        setPromisedModalOpen(true)
+                      }}
+                    >
+                      <Calendar className="size-3.5" />
+                      {op.promised_date ? 'Alterar data prometida' : 'Definir data prometida'}
+                    </Button>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground italic text-right pt-1">
+                    Edição exclusiva do perfil Admin
+                  </p>
+                )}
+              </div>
+
+              {/* Bloco de Emergência */}
+              <div className="col-span-2 mt-1 flex items-center justify-between p-3 border rounded-md bg-red-50/50 dark:bg-red-950/20">
                 <div>
                   <Label className="text-red-600 dark:text-red-400 font-bold">Urgência</Label>
                   <p className="text-xs text-muted-foreground">
-                    Sinaliza esta OP como emergência no painel de operadores
+                    Ao ativar emergência, é obrigatório informar a data máxima para finalização
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -196,15 +366,16 @@ export function PcpOrderDetails({
                       op.manual_priority === 1 ? 'text-red-600' : 'text-slate-400',
                     )}
                   >
-                    {op.manual_priority === 1 ? 'EMERGÊNCIA' : 'NORMAL'}
+                    {op.manual_priority === 1 ? 'EMERGÊNCIA 🚨' : 'NORMAL'}
                   </span>
-                  <Switch
-                    checked={op.manual_priority === 1}
-                    onCheckedChange={async (checked) => {
-                      const newVal = checked ? 1 : 0
-                      await pb.collection('pcp_orders').update(op.id, { manual_priority: newVal })
-                    }}
-                  />
+                  {isAdmin ? (
+                    <Switch
+                      checked={op.manual_priority === 1}
+                      onCheckedChange={handleEmergencyToggle}
+                    />
+                  ) : (
+                    <span className="text-[11px] text-muted-foreground">(somente Admin)</span>
+                  )}
                 </div>
               </div>
 
@@ -359,6 +530,17 @@ export function PcpOrderDetails({
           </div>
         )}
       </SheetContent>
+      {op && (
+        <PromisedDateModal
+          open={promisedModalOpen}
+          onOpenChange={setPromisedModalOpen}
+          currentDate={op.promised_date}
+          currentNote={op.promised_note}
+          opIdentifier={op.op_number ? `OP ${op.op_number}` : `Pedido #${op.order_number}`}
+          isEmergencyContext={isEmergencyContext}
+          onConfirm={handlePromisedConfirm}
+        />
+      )}
     </Sheet>
   )
 }

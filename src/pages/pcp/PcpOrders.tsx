@@ -26,6 +26,7 @@ import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { format, parseISO, isBefore, startOfDay, differenceInDays } from 'date-fns'
 import { Paperclip, Clock, Search, Bell } from 'lucide-react'
+import { PromisedDateBadge } from '@/components/PromisedDateBadge'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -73,6 +74,7 @@ export default function PcpOrders() {
   } | null>(null)
   const [pendingOnly, setPendingOnly] = useState(false)
   const [prazoEspecialOnly, setPrazoEspecialOnly] = useState(false)
+  const [promisedOnly, setPromisedOnly] = useState(false)
   const [editingOp, setEditingOp] = useState<PcpOrder | null>(null)
   const [deleteOp, setDeleteOp] = useState<PcpOrder | null>(null)
   const { toast } = useToast()
@@ -92,7 +94,7 @@ export default function PcpOrders() {
     Promise.allSettled([
       pb
         .collection('pcp_orders')
-        .getFullList<PcpOrder>({ sort: '-created', expand: 'product_id,client_id' })
+        .getFullList<PcpOrder>({ sort: '-created', expand: 'product_id,client_id,promised_by' })
         .then(setOrders)
         .catch(() => {
           toast({
@@ -193,8 +195,17 @@ export default function PcpOrders() {
         if (msgState !== 'green') return false
       }
       if (prazoEspecialOnly && op.manual_priority !== 2) return false
+      if (promisedOnly && !op.promised_date) return false
       return true
     })
+
+    if (promisedOnly) {
+      filteredByCustom.sort((a, b) => {
+        const timeA = a.promised_date ? new Date(a.promised_date).getTime() : Infinity
+        const timeB = b.promised_date ? new Date(b.promised_date).getTime() : Infinity
+        return timeA - timeB
+      })
+    }
 
     const groups: {
       normalized_key: string
@@ -219,6 +230,15 @@ export default function PcpOrders() {
       map.get(normalized)!.push(op)
     })
     groups.sort((a, b) => {
+      if (promisedOnly) {
+        const getMinPromised = (items: PcpOrder[]) => {
+          const dates = items.map((i) =>
+            i.promised_date ? new Date(i.promised_date).getTime() : Infinity,
+          )
+          return Math.min(...dates)
+        }
+        return getMinPromised(a.items) - getMinPromised(b.items)
+      }
       const prioOf = (items: PcpOrder[]) => {
         if (items.some((o) => o.manual_priority === 1)) return 0
         if (items.some((o) => o.manual_priority === 2)) return 1
@@ -238,6 +258,7 @@ export default function PcpOrders() {
     deadlineFilter,
     pendingOnly,
     prazoEspecialOnly,
+    promisedOnly,
     getOrderMessageInfo,
   ])
 
@@ -360,6 +381,18 @@ export default function PcpOrders() {
           >
             <span>⚡</span>
             Prazo Especial
+          </Button>
+          <Button
+            variant={promisedOnly ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setPromisedOnly(!promisedOnly)}
+            className={cn(
+              'gap-1.5',
+              promisedOnly && 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700',
+            )}
+          >
+            <span>🎯</span>
+            Datas Prometidas
           </Button>
           <Button
             variant={pendingOnly ? 'default' : 'outline'}
@@ -541,9 +574,20 @@ export default function PcpOrders() {
                     </TableCell>
                     <TableCell className="py-1">
                       <div className="flex items-center gap-2">
-                        {op.delivery_date && !isNaN(parseISO(op.delivery_date).getTime())
-                          ? format(parseISO(op.delivery_date), 'dd/MM/yyyy')
-                          : '-'}
+                        <div className="flex flex-col gap-1 items-start">
+                          <span>
+                            {op.delivery_date && !isNaN(parseISO(op.delivery_date).getTime())
+                              ? format(parseISO(op.delivery_date), 'dd/MM/yyyy')
+                              : '-'}
+                          </span>
+                          {op.promised_date && (
+                            <PromisedDateBadge
+                              promisedDate={op.promised_date}
+                              status={op.status}
+                              size="sm"
+                            />
+                          )}
+                        </div>
                         {getOrderColor(op) === 'purple' && (
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -654,6 +698,10 @@ export default function PcpOrders() {
           setDeleteOp(selectedOp)
         }}
         isAdmin={isAdmin}
+        onOrderUpdated={(updated) => {
+          setSelectedOp(updated)
+          loadData()
+        }}
       />
 
       <AlertDialog open={!!deleteOp} onOpenChange={(open) => !open && setDeleteOp(null)}>

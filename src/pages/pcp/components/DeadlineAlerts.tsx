@@ -2,8 +2,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { PcpOrder } from '@/types'
 import { startOfDay, isSameDay, addDays, isSameWeek, isBefore, parseISO, isValid } from 'date-fns'
-import { AlertOctagon, CalendarClock, CalendarDays, CalendarRange } from 'lucide-react'
+import { AlertOctagon, CalendarClock, CalendarDays, CalendarRange, Target } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { PromisedDateBadge } from '@/components/PromisedDateBadge'
 
 interface DeadlineAlertsProps {
   orders: PcpOrder[]
@@ -12,8 +13,8 @@ interface DeadlineAlertsProps {
 interface DeadlineGroup {
   key: string
   label: string
-  icon: typeof AlertOctagon
-  variant: 'overdue' | 'today' | 'tomorrow' | 'week'
+  icon: typeof AlertOctagon | typeof Target
+  variant: 'promised_overdue' | 'overdue' | 'today' | 'tomorrow' | 'week'
   items: PcpOrder[]
 }
 
@@ -21,12 +22,21 @@ export function DeadlineAlerts({ orders }: DeadlineAlertsProps) {
   const today = startOfDay(new Date())
   const tomorrow = addDays(today, 1)
 
+  const promisedOverdue: PcpOrder[] = []
   const overdue: PcpOrder[] = []
   const dueToday: PcpOrder[] = []
   const dueTomorrow: PcpOrder[] = []
   const dueThisWeek: PcpOrder[] = []
 
   orders.forEach((o) => {
+    // Destaque aditivo: OPs com data prometida vencida
+    if (o.promised_date && o.status !== 'Concluído') {
+      const pDate = parseISO(o.promised_date)
+      if (isValid(pDate) && isBefore(startOfDay(pDate), today)) {
+        promisedOverdue.push(o)
+      }
+    }
+
     if (!o.delivery_date) return
     const d = parseISO(o.delivery_date)
     if (!isValid(d)) return
@@ -51,7 +61,24 @@ export function DeadlineAlerts({ orders }: DeadlineAlertsProps) {
   })
 
   const groups: DeadlineGroup[] = [
-    { key: 'overdue', label: 'Vencidas', icon: AlertOctagon, variant: 'overdue', items: overdue },
+    ...(promisedOverdue.length > 0
+      ? [
+          {
+            key: 'promised_overdue',
+            label: '🎯 Prometidas Vencidas',
+            icon: Target,
+            variant: 'promised_overdue' as const,
+            items: promisedOverdue,
+          },
+        ]
+      : []),
+    {
+      key: 'overdue',
+      label: 'Vencidas (Prazo Original)',
+      icon: AlertOctagon,
+      variant: 'overdue',
+      items: overdue,
+    },
     { key: 'today', label: 'Vencem Hoje', icon: CalendarClock, variant: 'today', items: dueToday },
     {
       key: 'tomorrow',
@@ -70,6 +97,8 @@ export function DeadlineAlerts({ orders }: DeadlineAlertsProps) {
   ]
 
   const variantStyles: Record<string, string> = {
+    promised_overdue:
+      'border-red-500 bg-red-100/70 dark:bg-red-950/40 shadow-[0_0_10px_rgba(239,68,68,0.25)] md:col-span-2',
     overdue: 'border-red-300 dark:border-red-900 bg-red-50/50 dark:bg-red-950/20',
     today: 'border-orange-200 dark:border-orange-900',
     tomorrow: 'border-yellow-200 dark:border-yellow-900',
@@ -77,6 +106,7 @@ export function DeadlineAlerts({ orders }: DeadlineAlertsProps) {
   }
 
   const iconStyles: Record<string, string> = {
+    promised_overdue: 'text-red-600 animate-pulse',
     overdue: 'text-red-600',
     today: 'text-orange-600',
     tomorrow: 'text-yellow-600',
@@ -84,6 +114,7 @@ export function DeadlineAlerts({ orders }: DeadlineAlertsProps) {
   }
 
   const badgeVariant: Record<string, 'destructive' | 'secondary' | 'outline'> = {
+    promised_overdue: 'destructive',
     overdue: 'destructive',
     today: 'secondary',
     tomorrow: 'outline',
@@ -131,8 +162,15 @@ export function DeadlineAlerts({ orders }: DeadlineAlertsProps) {
                           key={op.id}
                           className="flex items-center justify-between gap-2 text-xs py-1 px-2 rounded bg-background/60"
                         >
-                          <span className="font-medium truncate">
-                            {`Pedido #${op.order_number} - OP ${op.op_number || 'S/N'}`}
+                          <span className="font-medium truncate flex items-center gap-1.5">
+                            {group.key === 'promised_overdue' && (
+                              <PromisedDateBadge
+                                promisedDate={op.promised_date}
+                                status={op.status}
+                                size="compact"
+                              />
+                            )}
+                            <span>{`Pedido #${op.order_number} - OP ${op.op_number || 'S/N'}`}</span>
                           </span>
                           <Badge variant="outline" className="text-[9px] shrink-0">
                             {op.status}

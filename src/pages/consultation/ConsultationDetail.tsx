@@ -120,6 +120,21 @@ export default function ConsultationDetail() {
   const composition = product.data?.composition || []
   const isPendencia = statusLower.includes('pendência') || statusLower.includes('ajuste')
 
+  // Filtra apenas processos com preenchimento (conteúdo útil para o operador)
+  const isProcessFilled = (proc: ProductProcessModel) => {
+    const hasDescription = Boolean(proc.description && proc.description.trim().length > 0)
+    const hasImages = Array.isArray(proc.image)
+      ? proc.image.length > 0
+      : Boolean(proc.image && typeof proc.image === 'string' && proc.image.trim().length > 0)
+    const hasKanbanStage = Boolean(proc.kanban_stage && proc.kanban_stage.trim().length > 0)
+    const hasHours = typeof proc.estimated_hours === 'number' && proc.estimated_hours > 0
+    const hasDays = typeof proc.estimated_days === 'number' && proc.estimated_days > 0
+
+    return hasDescription || hasImages || hasKanbanStage || hasHours || hasDays
+  }
+
+  const filledProcesses = processes.filter(isProcessFilled)
+
   return (
     <div className="space-y-6 animate-fade-in-up">
       <div className="flex items-center gap-4">
@@ -208,9 +223,13 @@ export default function ConsultationDetail() {
           <Card className="p-6 text-center text-muted-foreground">
             Nenhum processo cadastrado para este produto.
           </Card>
+        ) : filledProcesses.length === 0 ? (
+          <Card className="p-6 text-center text-muted-foreground">
+            Nenhum processo preenchido para esta OP.
+          </Card>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {processes.map((proc) => (
+            {filledProcesses.map((proc) => (
               <ProcessObservationCard key={proc.id} process={proc} productId={product.id} />
             ))}
           </div>

@@ -49,6 +49,7 @@ import { Package, ChevronDown, ChevronUp, Circle, Search, X, Boxes, Paintbrush }
 import { PromisedDateBadge } from '@/components/PromisedDateBadge'
 import { MaterialDescriptionAutocomplete } from '@/pages/pcp/components/MaterialDescriptionAutocomplete'
 import { SeparationMaterialsModal } from '@/pages/pcp/components/SeparationMaterialsModal'
+import { StockWithdrawalModal } from '@/pages/pcp/components/StockWithdrawalModal'
 import { useOrderMessages } from '@/hooks/use-order-messages'
 import { OrderMessagesPanel } from '@/components/OrderMessagesPanel'
 import type { IndicatorState } from '@/lib/message-sector'
@@ -335,6 +336,8 @@ function OperatorCard({
   onForceStart,
   onReportMaterial,
   onOpenSeparation,
+  onOpenWithdrawal,
+  hasComposition = false,
   messageState = 'none',
   messageCount = 0,
   onMessageClick,
@@ -352,6 +355,8 @@ function OperatorCard({
   onForceStart: () => void
   onReportMaterial?: () => void
   onOpenSeparation?: () => void
+  onOpenWithdrawal?: () => void
+  hasComposition?: boolean
   messageState?: IndicatorState
   messageCount?: number
   onMessageClick?: () => void
@@ -731,13 +736,24 @@ function OperatorCard({
         )}
       </CardContent>
       <CardFooter className="flex flex-col gap-3 pt-0 px-4 sm:px-6">
-        {isSeparationStage && onOpenSeparation && (
+        {isSeparationStage && hasComposition && onOpenSeparation && (
           <Button
             size="lg"
             className="w-full text-base h-12 bg-primary hover:bg-primary/90 text-primary-foreground font-black shadow-md border-2 border-primary/20"
             onClick={onOpenSeparation}
           >
             <Boxes className="mr-2 size-5" /> Separar Materiais
+          </Button>
+        )}
+
+        {!hasComposition && op.status !== 'Concluído' && onOpenWithdrawal && (
+          <Button
+            size="lg"
+            variant="default"
+            className="w-full text-base h-12 bg-amber-600 hover:bg-amber-700 text-white font-black shadow-md border-2 border-amber-500/20"
+            onClick={onOpenWithdrawal}
+          >
+            <Package className="mr-2 size-5" /> 📦 Retirada de Estoque
           </Button>
         )}
 
@@ -1020,6 +1036,7 @@ export default function PcpOperator() {
   const [processes, setProcesses] = useState<ProductProcessModel[]>([])
   const [shortagesByOrder, setShortagesByOrder] = useState<Record<string, MaterialShortage[]>>({})
   const [acabamentoColorsByOrder, setAcabamentoColorsByOrder] = useState<Record<string, string>>({})
+  const [orderMaterialsCountMap, setOrderMaterialsCountMap] = useState<Record<string, number>>({})
   const [selectedSector, setSelectedSector] = useState<SectorName>('Suprimentos')
   const [searchTerm, setSearchTerm] = useState('')
   const [messageOrder, setMessageOrder] = useState<{
@@ -1041,6 +1058,7 @@ export default function PcpOperator() {
   const [reqObs, setReqObs] = useState('')
   const [reqOrderId, setReqOrderId] = useState('none')
   const [separationOp, setSeparationOp] = useState<PcpOrder | null>(null)
+  const [withdrawalOp, setWithdrawalOp] = useState<PcpOrder | null>(null)
 
   const loadData = async () => {
     try {
@@ -1066,7 +1084,7 @@ export default function PcpOperator() {
       setProcesses(procs)
       setOrders(records)
 
-      const [shortageRes, obsRes] = await Promise.all([
+      const [shortageRes, obsRes, materialsRes] = await Promise.all([
         pb.collection('material_shortages').getFullList<MaterialShortage>({
           sort: '-created',
         }),
@@ -1076,6 +1094,12 @@ export default function PcpOperator() {
             sort: 'created',
           })
           .catch(() => [] as PcpOrderObservation[]),
+        pb
+          .collection('pcp_order_materials')
+          .getFullList<{ id: string; order_id: string }>({
+            fields: 'id,order_id',
+          })
+          .catch(() => [] as { id: string; order_id: string }[]),
       ])
 
       const sMap: Record<string, MaterialShortage[]> = {}
@@ -1095,6 +1119,14 @@ export default function PcpOperator() {
         }
       })
       setAcabamentoColorsByOrder(colorMap)
+
+      const matCount: Record<string, number> = {}
+      materialsRes.forEach((m) => {
+        if (m.order_id) {
+          matCount[m.order_id] = (matCount[m.order_id] || 0) + 1
+        }
+      })
+      setOrderMaterialsCountMap(matCount)
     } catch {
       /* intentionally ignored */
     }
@@ -1114,6 +1146,9 @@ export default function PcpOperator() {
     loadData()
   })
   useRealtime('pcp_order_observations', () => {
+    loadData()
+  })
+  useRealtime('pcp_order_materials', () => {
     loadData()
   })
 
@@ -1821,6 +1856,8 @@ export default function PcpOperator() {
                   onForceStart={() => handleForceStart(op)}
                   onReportMaterial={() => handleReportMaterial(op)}
                   onOpenSeparation={() => setSeparationOp(op)}
+                  onOpenWithdrawal={() => setWithdrawalOp(op)}
+                  hasComposition={(orderMaterialsCountMap[op.id] || 0) > 0}
                   messageState={getOrderMessageInfo(op.id).indicatorState}
                   messageCount={getOrderMessageInfo(op.id).count}
                   onMessageClick={() =>
@@ -1875,6 +1912,8 @@ export default function PcpOperator() {
                   onForceStart={() => handleForceStart(op)}
                   onReportMaterial={() => handleReportMaterial(op)}
                   onOpenSeparation={() => setSeparationOp(op)}
+                  onOpenWithdrawal={() => setWithdrawalOp(op)}
+                  hasComposition={(orderMaterialsCountMap[op.id] || 0) > 0}
                   messageState={getOrderMessageInfo(op.id).indicatorState}
                   messageCount={getOrderMessageInfo(op.id).count}
                   onMessageClick={() =>
@@ -1896,6 +1935,14 @@ export default function PcpOperator() {
         open={!!separationOp}
         onOpenChange={(open) => !open && setSeparationOp(null)}
         onMaterialsChanged={loadData}
+      />
+
+      <StockWithdrawalModal
+        op={withdrawalOp}
+        open={!!withdrawalOp}
+        onOpenChange={(open) => !open && setWithdrawalOp(null)}
+        onWithdrawalSuccess={loadData}
+        onRequestMissingMaterial={(op) => handleReportMaterial(op)}
       />
 
       <OrderMessagesPanel

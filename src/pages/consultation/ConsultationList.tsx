@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
 import {
   Table,
   TableBody,
@@ -21,6 +20,7 @@ export default function ConsultationList() {
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const navigate = useNavigate()
 
   const loadProducts = async () => {
     try {
@@ -49,23 +49,10 @@ export default function ConsultationList() {
       p.code?.toLowerCase().includes(search.toLowerCase()),
   )
 
-  const getStatusBadge = (status?: any) => {
-    if (!status) return <Badge variant="secondary">-</Badge>
-    const name = status.name || ''
-    const lower = name.toLowerCase()
-    if (lower.includes('pendência') || lower.includes('ajuste')) {
-      return <Badge className="bg-purple-600 hover:bg-purple-700 text-white">{name}</Badge>
-    }
-    if (lower === 'validado') {
-      return <Badge className="bg-green-600 hover:bg-green-700 text-white">{name}</Badge>
-    }
-    return <Badge variant="secondary">{name}</Badge>
-  }
-
   return (
     <div className="space-y-6 animate-fade-in-up">
       <div>
-        <h1 className="text-3xl font-bold">Consulta Catálogo Técnico</h1>
+        <h1 className="text-3xl font-bold">Consulta Catálogo</h1>
         <p className="text-muted-foreground">
           Visualize produtos e reporte discrepâncias da fábrica.
         </p>
@@ -84,10 +71,8 @@ export default function ConsultationList() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Código</TableHead>
-                <TableHead>Nome</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Ação</TableHead>
+                <TableHead className="w-1/3">Código</TableHead>
+                <TableHead className="w-2/3">Nome</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -100,33 +85,26 @@ export default function ConsultationList() {
                     <TableCell>
                       <Skeleton className="h-4 w-[200px]" />
                     </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-6 w-[100px] rounded-full" />
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Skeleton className="h-8 w-8 ml-auto rounded-md" />
-                    </TableCell>
                   </TableRow>
                 ))
               ) : filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center py-6 text-muted-foreground">
+                  <TableCell colSpan={2} className="text-center py-6 text-muted-foreground">
                     Nenhum produto encontrado.
                   </TableCell>
                 </TableRow>
               ) : (
                 filtered.map((p) => (
-                  <TableRow key={p.id}>
-                    <TableCell className="font-mono text-sm">{p.code || '-'}</TableCell>
-                    <TableCell className="font-medium">{p.name}</TableCell>
-                    <TableCell>{getStatusBadge(p.expand?.status)}</TableCell>
-                    <TableCell className="text-right">
-                      <Link
-                        to={`/consulta/${p.id}`}
-                        className="text-primary hover:underline text-sm font-medium"
-                      >
-                        Consultar
-                      </Link>
+                  <TableRow
+                    key={p.id}
+                    onClick={() => navigate(`/consulta/${p.id}`)}
+                    className="cursor-pointer hover:bg-muted/50 transition-colors"
+                  >
+                    <TableCell className="font-mono text-sm font-semibold text-primary">
+                      {p.code || '-'}
+                    </TableCell>
+                    <TableCell className="font-medium text-slate-900 dark:text-slate-100">
+                      {p.name}
                     </TableCell>
                   </TableRow>
                 ))

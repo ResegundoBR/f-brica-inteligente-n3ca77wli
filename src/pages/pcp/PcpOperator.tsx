@@ -51,6 +51,7 @@ import { MaterialDescriptionAutocomplete } from '@/pages/pcp/components/Material
 import { SeparationMaterialsModal } from '@/pages/pcp/components/SeparationMaterialsModal'
 import { StockWithdrawalModal } from '@/pages/pcp/components/StockWithdrawalModal'
 import { useOrderMessages } from '@/hooks/use-order-messages'
+import { useUnreadMessages } from '@/hooks/use-unread-messages'
 import { OrderMessagesPanel } from '@/components/OrderMessagesPanel'
 import type { IndicatorState } from '@/lib/message-sector'
 
@@ -1048,6 +1049,7 @@ export default function PcpOperator() {
   const { user } = useAuth()
   const { toast } = useToast()
   const { getOrderMessageInfo, markOrderAsRead } = useOrderMessages('Operador')
+  const { totalBadgeCount } = useUnreadMessages()
 
   const [openRequest, setOpenRequest] = useState(false)
   const [reqDesc, setReqDesc] = useState('')
@@ -1618,22 +1620,27 @@ export default function PcpOperator() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 w-full md:w-auto">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
           <Button
             size="lg"
             variant="outline"
-            className="flex-1 md:flex-initial border-2 border-blue-500/30 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/40 font-bold h-12 shadow-sm whitespace-nowrap"
+            className="relative w-full sm:w-auto border-2 border-blue-500/30 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/40 font-bold h-12 shadow-sm whitespace-nowrap justify-center"
             onClick={() => navigate('/pcp/comunicacoes')}
           >
             <MessageSquare className="mr-2 size-5 text-blue-600 dark:text-blue-400" /> Caixa de
             Comunicações
+            {totalBadgeCount > 0 && (
+              <span className="ml-2 inline-flex items-center justify-center rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white shadow-sm">
+                {totalBadgeCount > 99 ? '99+' : totalBadgeCount}
+              </span>
+            )}
           </Button>
 
           <Dialog open={openRequest} onOpenChange={setOpenRequest}>
             <DialogTrigger asChild>
               <Button
                 size="lg"
-                className="flex-1 md:flex-initial bg-blue-600 hover:bg-blue-700 text-white font-bold h-12 shadow-sm whitespace-nowrap"
+                className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold h-12 shadow-sm whitespace-nowrap justify-center"
               >
                 <ShoppingCart className="mr-2 size-5" /> Solicitar Compra / Insumo
               </Button>

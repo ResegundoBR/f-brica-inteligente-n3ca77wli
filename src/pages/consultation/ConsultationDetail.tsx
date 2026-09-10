@@ -136,29 +136,34 @@ export default function ConsultationDetail() {
   const filledProcesses = processes.filter(isProcessFilled)
 
   return (
-    <div className="space-y-6 animate-fade-in-up">
-      <div className="flex items-center gap-4">
-        <Button variant="outline" size="icon" onClick={() => navigate('/consulta')}>
+    <div className="space-y-6 animate-fade-in-up max-w-full overflow-x-hidden pb-8">
+      <div className="flex items-start gap-3 min-w-0">
+        <Button
+          variant="outline"
+          size="icon"
+          className="shrink-0 mt-0.5"
+          onClick={() => navigate('/consulta')}
+        >
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <div className="flex-1">
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold">{product.name}</h1>
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-xl sm:text-2xl font-bold break-words">{product.name}</h1>
             {statusName && (
               <Badge
                 className={
                   isPendencia
-                    ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                    ? 'bg-purple-600 hover:bg-purple-700 text-white shrink-0'
                     : statusLower === 'validado'
-                      ? 'bg-green-600 hover:bg-green-700 text-white'
-                      : ''
+                      ? 'bg-green-600 hover:bg-green-700 text-white shrink-0'
+                      : 'shrink-0'
                 }
               >
                 {statusName}
               </Badge>
             )}
           </div>
-          <p className="text-sm text-muted-foreground font-mono">
+          <p className="text-xs sm:text-sm text-muted-foreground font-mono break-all mt-1">
             Código: {product.code || 'N/A'}
             {product.expand?.category && ` • Categoria: ${product.expand.category.name}`}
           </p>
@@ -179,35 +184,43 @@ export default function ConsultationDetail() {
       </div>
 
       {composition.length > 0 && (
-        <Card>
+        <Card className="overflow-hidden">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
-              <Package className="h-4 w-4" /> Composição ({composition.length})
+              <Package className="h-4 w-4 shrink-0" /> Composição ({composition.length})
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[60px]">#</TableHead>
-                  <TableHead className="w-[100px]">Cód.</TableHead>
-                  <TableHead>Descrição</TableHead>
-                  <TableHead className="w-[80px]">Qtd.</TableHead>
-                  <TableHead className="w-[100px]">Medida</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {composition.map((item, i) => (
-                  <TableRow key={i}>
-                    <TableCell className="text-xs">{item.index || ''}</TableCell>
-                    <TableCell className="text-xs font-mono">{item.code || ''}</TableCell>
-                    <TableCell className="text-sm">{item.description || ''}</TableCell>
-                    <TableCell className="text-sm">{String(item.quantity || '')}</TableCell>
-                    <TableCell className="text-sm">{item.measurements || ''}</TableCell>
+            <div className="w-full overflow-x-auto">
+              <Table className="min-w-[500px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[50px]">#</TableHead>
+                    <TableHead className="w-[110px]">Cód.</TableHead>
+                    <TableHead className="min-w-[180px]">Descrição</TableHead>
+                    <TableHead className="w-[70px]">Qtd.</TableHead>
+                    <TableHead className="w-[110px]">Medida</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {composition.map((item, i) => (
+                    <TableRow key={i}>
+                      <TableCell className="text-xs">{item.index || ''}</TableCell>
+                      <TableCell className="text-xs font-mono font-medium">
+                        {item.code || ''}
+                      </TableCell>
+                      <TableCell className="text-sm break-words">
+                        {item.description || ''}
+                      </TableCell>
+                      <TableCell className="text-sm">{String(item.quantity || '')}</TableCell>
+                      <TableCell className="text-sm whitespace-nowrap">
+                        {item.measurements || ''}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -256,6 +269,7 @@ export default function ConsultationDetail() {
               size="sm"
               onClick={handleGeneralObservation}
               disabled={submittingGeneral || !generalObservation.trim()}
+              className="w-full sm:w-auto"
             >
               <Send className="mr-2 h-3 w-3" />
               {submittingGeneral ? 'Enviando...' : 'Enviar Observação Geral'}

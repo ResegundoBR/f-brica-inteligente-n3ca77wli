@@ -13,8 +13,8 @@ export function ConsultationFiles({ files, record, label }: Props) {
   if (!files || files.length === 0) return null
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className="overflow-hidden">
+      <CardHeader className="pb-3">
         <CardTitle className="text-base">
           {label} ({files.length})
         </CardTitle>
@@ -24,17 +24,18 @@ export function ConsultationFiles({ files, record, label }: Props) {
           const name = typeof file === 'string' ? file : file?.name || 'Arquivo'
           const url = pb.files.getUrl(record, name) as string
           return (
-            <div key={i} className="flex items-center gap-3 p-2 border rounded-md">
+            <div key={i} className="flex items-center gap-2 sm:gap-3 p-2 border rounded-md min-w-0">
               <FileText className="h-5 w-5 text-primary shrink-0" />
               <a
                 href={url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-sm font-medium hover:underline truncate flex-1"
+                className="text-xs sm:text-sm font-medium hover:underline truncate flex-1 min-w-0"
+                title={name}
               >
                 {name}
               </a>
-              <Button variant="ghost" size="icon" asChild>
+              <Button variant="ghost" size="icon" className="shrink-0" asChild>
                 <a href={url} download={name}>
                   <Download className="h-4 w-4" />
                 </a>

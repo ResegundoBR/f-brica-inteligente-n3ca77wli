@@ -178,6 +178,7 @@ export function AppSidebar() {
       case 'Dashboard PCP':
       case 'Clientes':
       case 'Relatório de Ocorrências':
+        return !!role.access_pcp
       case 'Central de Melhorias':
         return !!role.access_pcp || !!role.access_commercial || !!role.access_operator
       case 'Painel de Controle':

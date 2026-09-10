@@ -285,7 +285,7 @@ const App = () => (
               <Route
                 path="/pcp/melhorias"
                 element={
-                  <RoleGuard module="pcp">
+                  <RoleGuard module="melhorias">
                     <PcpMelhorias />
                   </RoleGuard>
                 }

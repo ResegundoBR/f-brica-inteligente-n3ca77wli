@@ -19,6 +19,7 @@ interface RoleGuardProps {
     | 'operator'
     | 'catalog_consultation'
     | 'comunicacoes'
+    | 'melhorias'
   children: React.ReactNode
 }
 
@@ -84,6 +85,9 @@ export function RoleGuard({ module, children }: RoleGuardProps) {
           access = !!currentRole.access_users
           break
         case 'pcp':
+          access = !!currentRole.access_pcp
+          break
+        case 'melhorias':
           access =
             !!currentRole.access_pcp ||
             !!currentRole.access_commercial ||

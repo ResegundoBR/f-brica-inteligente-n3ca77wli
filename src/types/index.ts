@@ -504,6 +504,7 @@ export interface PcpRework {
   origin_sector: string
   origin_stage: string
   target_sector: string
+  target_stage?: string
   description: string
   status: PcpReworkStatus
   signaled_by?: string

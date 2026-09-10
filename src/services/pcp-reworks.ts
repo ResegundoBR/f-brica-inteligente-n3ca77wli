@@ -6,6 +6,7 @@ export interface CreateReworkInput {
   origin_sector: string
   origin_stage: string
   target_sector: string
+  target_stage?: string
   description: string
   signaled_by?: string
   signaled_at?: string
@@ -18,6 +19,7 @@ export async function createRework(input: CreateReworkInput): Promise<PcpRework>
     origin_sector: input.origin_sector,
     origin_stage: input.origin_stage,
     target_sector: input.target_sector,
+    target_stage: input.target_stage,
     description: input.description,
     status: 'Pendente',
     signaled_by: input.signaled_by,

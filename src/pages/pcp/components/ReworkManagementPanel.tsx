@@ -490,11 +490,14 @@ export function ReworkManagementPanel({ reworks, loading = false }: ReworkManage
                                 {r.target_sector || 'Corretor'}
                               </Badge>
                             </div>
-                            {r.origin_stage && (
-                              <span className="text-[10px] text-muted-foreground">
-                                Etapa: {r.origin_stage}
-                              </span>
-                            )}
+                            <div className="flex flex-col text-[10px] text-muted-foreground">
+                              {r.origin_stage && <span>Origem: {r.origin_stage}</span>}
+                              {r.target_stage && (
+                                <span className="text-blue-600 dark:text-blue-400 font-medium">
+                                  Destino: {r.target_stage}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </TableCell>
 

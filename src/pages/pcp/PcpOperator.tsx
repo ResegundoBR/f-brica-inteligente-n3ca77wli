@@ -351,7 +351,7 @@ function OperatorCard({
   onStart: () => void
   onFinishConfirm: (nextStage: string | null) => void
   onBottleneck: (reason: string, details: string, missingItems?: any[]) => void
-  onReworkSubmit: (targetSector: string, description: string) => void
+  onReworkSubmit: (targetSector: string, targetStage: string, description: string) => void
   shortages?: MaterialShortage[]
   onForceStart: () => void
   onReportMaterial?: () => void
@@ -445,10 +445,17 @@ function OperatorCard({
   const [reworkTargetSector, setReworkTargetSector] = useState<
     'Fabricação' | 'Acabamento' | 'Montagem'
   >('Fabricação')
+  const [reworkTargetStage, setReworkTargetStage] = useState<string>('Corte')
   const [reworkDescription, setReworkDescription] = useState('')
   const [missingItems, setMissingItems] = useState<
     { description: string; code: string; quantity: number }[]
   >([])
+
+  // Obter as etapas disponíveis para o setor de destino (excluindo 'Retoque')
+  const targetSectorStages = useMemo(() => {
+    const list = SECTORS[reworkTargetSector] || []
+    return (list as readonly string[]).filter((st) => st !== 'Retoque')
+  }, [reworkTargetSector])
 
   const handleOpenBottleneckChange = (isOpen: boolean) => {
     setOpenBottleneck(isOpen)
@@ -457,13 +464,15 @@ function OperatorCard({
       setDetails('')
       setReworkDescription('')
       setReworkTargetSector('Fabricação')
+      setReworkTargetStage('Corte')
       setMissingItems([])
     }
   }
 
   const handleBottleneckSubmit = () => {
     if (reason === 'Retrabalho') {
-      onReworkSubmit(reworkTargetSector, reworkDescription)
+      const stageToUse = reworkTargetStage || targetSectorStages[0] || 'Corte'
+      onReworkSubmit(reworkTargetSector, stageToUse, reworkDescription)
       setOpenBottleneck(false)
       return
     }
@@ -852,7 +861,13 @@ function OperatorCard({
                     <Label className="text-base font-semibold">Setor de Destino da Correção</Label>
                     <Select
                       value={reworkTargetSector}
-                      onValueChange={(val: any) => setReworkTargetSector(val)}
+                      onValueChange={(val: any) => {
+                        setReworkTargetSector(val)
+                        const stages = (SECTORS[val as keyof typeof SECTORS] || []).filter(
+                          (st) => st !== 'Retoque',
+                        )
+                        setReworkTargetStage(stages[0] || '')
+                      }}
                     >
                       <SelectTrigger className="h-12 text-base font-medium">
                         <SelectValue placeholder="Selecione o setor de destino" />
@@ -865,6 +880,30 @@ function OperatorCard({
                     </Select>
                     <p className="text-xs text-muted-foreground">
                       Setor responsável por executar a correção do defeito/não-conformidade.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-base font-semibold">
+                      Para qual etapa? <span className="text-red-500">*</span>
+                    </Label>
+                    <Select
+                      value={reworkTargetStage}
+                      onValueChange={(val: string) => setReworkTargetStage(val)}
+                    >
+                      <SelectTrigger className="h-12 text-base font-medium">
+                        <SelectValue placeholder="Selecione a etapa de destino" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {targetSectorStages.map((st) => (
+                          <SelectItem key={st} value={st}>
+                            {st}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Etapa exata em que a OP deve entrar na fila do setor escolhido.
                     </p>
                   </div>
 
@@ -892,7 +931,7 @@ function OperatorCard({
                       variant="destructive"
                       className="bg-amber-600 hover:bg-amber-700 text-white font-bold"
                       onClick={handleBottleneckSubmit}
-                      disabled={!reworkDescription.trim()}
+                      disabled={!reworkDescription.trim() || !reworkTargetStage}
                     >
                       <RotateCcw className="mr-2 size-4" /> Confirmar Retrabalho
                     </Button>
@@ -1296,18 +1335,23 @@ export default function PcpOperator() {
     }
   }
 
-  const handleReworkSubmit = async (op: PcpOrder, targetSector: string, description: string) => {
+  const handleReworkSubmit = async (
+    op: PcpOrder,
+    targetSector: string,
+    targetStage: string,
+    description: string,
+  ) => {
     const originSector = selectedSector
     const originStage = op.stage
 
-    // Atualização otimista: stage='Retoque', status='Fila'
+    // Atualização otimista: stage=targetStage, status='Fila'
     setOrders((prev) =>
       prev.map((o) =>
         o.id === op.id
           ? ({
               ...o,
               status: 'Fila',
-              stage: 'Retoque' as any,
+              stage: targetStage as any,
               started_at: '',
               bottleneck_reason: 'Retrabalho',
               bottleneck_details: description,
@@ -1317,19 +1361,20 @@ export default function PcpOperator() {
     )
 
     try {
-      // 1. Criar registro do retrabalho
+      // 1. Criar registro do retrabalho com target_stage
       await createRework({
         order_id: op.id,
         origin_sector: originSector,
         origin_stage: originStage,
         target_sector: targetSector,
+        target_stage: targetStage,
         description,
         signaled_by: user?.id,
       })
 
-      // 2. Atualizar OP para Retoque na Fila
+      // 2. Atualizar OP para a ETAPA escolhida na Fila
       await pb.collection('pcp_orders').update(op.id, {
-        stage: 'Retoque',
+        stage: targetStage,
         status: 'Fila',
         started_at: '',
         bottleneck_reason: 'Retrabalho',
@@ -1342,12 +1387,12 @@ export default function PcpOperator() {
         user_id: user?.id,
         stage: originStage,
         action: 'Retrabalho Sinalizado',
-        details: `Enviado para ${targetSector} (Retoque). Motivo: ${description}`,
+        details: `Enviado para ${targetSector} (Etapa: ${targetStage}). Motivo: ${description}`,
       })
 
       toast({
         title: 'Retrabalho Sinalizado',
-        description: `OP enviada para Retoque (${targetSector}). Retornará automaticamente para ${originStage} ao ser concluída.`,
+        description: `OP enviada para ${targetStage} (${targetSector}). Retornará automaticamente para ${originStage} ao ser concluída.`,
       })
     } catch (err: any) {
       toast({
@@ -1856,8 +1901,8 @@ export default function PcpOperator() {
                   onBottleneck={(reason, details, items) =>
                     handleBottleneck(op, reason, details, items)
                   }
-                  onReworkSubmit={(targetSector, description) =>
-                    handleReworkSubmit(op, targetSector, description)
+                  onReworkSubmit={(targetSector, targetStage, description) =>
+                    handleReworkSubmit(op, targetSector, targetStage, description)
                   }
                   shortages={shortagesByOrder[op.id] || []}
                   onForceStart={() => handleForceStart(op)}
@@ -1912,8 +1957,8 @@ export default function PcpOperator() {
                   onBottleneck={(reason, details, items) =>
                     handleBottleneck(op, reason, details, items)
                   }
-                  onReworkSubmit={(targetSector, description) =>
-                    handleReworkSubmit(op, targetSector, description)
+                  onReworkSubmit={(targetSector, targetStage, description) =>
+                    handleReworkSubmit(op, targetSector, targetStage, description)
                   }
                   shortages={shortagesByOrder[op.id] || []}
                   onForceStart={() => handleForceStart(op)}

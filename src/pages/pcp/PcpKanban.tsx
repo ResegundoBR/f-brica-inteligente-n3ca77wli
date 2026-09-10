@@ -157,6 +157,7 @@ export default function PcpKanban() {
   const [itemCountFilter, setItemCountFilter] = useState<'all' | '1' | '2' | '3+'>('all')
   const [topDelayedOnly, setTopDelayedOnly] = useState(false)
   const [reworkOnly, setReworkOnly] = useState(false)
+  const [activeReworkOrderIds, setActiveReworkOrderIds] = useState<Set<string>>(new Set())
   const [stagnantOnly, setStagnantOnly] = useState(false)
   const [promisedOnly, setPromisedOnly] = useState(false)
   const { user } = useAuth()
@@ -218,14 +219,32 @@ export default function PcpKanban() {
     }
   }
 
+  const fetchReworks = async () => {
+    try {
+      const openReworks = await pb.collection('pcp_reworks').getFullList({
+        filter: 'status != "Concluído"',
+        fields: 'id,order_id,status',
+      })
+      const set = new Set<string>()
+      openReworks.forEach((r) => {
+        if (r.order_id) set.add(r.order_id)
+      })
+      setActiveReworkOrderIds(set)
+    } catch {
+      /* ignored */
+    }
+  }
+
   useEffect(() => {
     fetchOrders()
     fetchObservations()
     fetchShortages()
+    fetchReworks()
   }, [])
   useRealtime('pcp_orders', fetchOrders)
   useRealtime('pcp_order_observations', fetchObservations)
   useRealtime('material_shortages', fetchShortages)
+  useRealtime('pcp_reworks', fetchReworks)
 
   const handleDragStart = (e: React.DragEvent, id: string) => {
     e.dataTransfer.setData('orderId', id)
@@ -281,9 +300,14 @@ export default function PcpKanban() {
         if (itemCountFilter === '3+' && count < 3) return false
       }
 
-      // Filtro rápido "Em Retrabalho" (OPs na etapa "Retoque" ou "Retoques")
+      // Filtro rápido "Em Retrabalho" (identificar por pcp_reworks em aberto ou motivo Retrabalho)
       if (reworkOnly) {
-        if (o.stage !== 'Retoque' && o.stage !== 'Retoques') return false
+        const hasOpenRework =
+          activeReworkOrderIds.has(o.id) ||
+          o.bottleneck_reason === 'Retrabalho' ||
+          o.stage === 'Retoque' ||
+          o.stage === 'Retoques'
+        if (!hasOpenRework) return false
       }
 
       // Filtro rápido "Estagnadas" (paradas na mesma etapa além do tempo-padrão)
@@ -352,6 +376,7 @@ export default function PcpKanban() {
     itemCountFilter,
     orderItemsCountMap,
     reworkOnly,
+    activeReworkOrderIds,
     stagnantOnly,
     promisedOnly,
     topDelayedOnly,

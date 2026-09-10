@@ -18,9 +18,15 @@ export const distributeMaterials = (
   distributions: Distribution[],
   totalReceived: number,
   traceability?: TraceabilityInfo,
+  shortageId?: string,
 ) =>
   pb.send('/backend/v1/materials/distribute', {
     method: 'POST',
-    body: JSON.stringify({ distributions, total_received: totalReceived, traceability }),
+    body: JSON.stringify({
+      distributions,
+      total_received: totalReceived,
+      traceability,
+      shortage_id: shortageId,
+    }),
     headers: { 'Content-Type': 'application/json' },
   })

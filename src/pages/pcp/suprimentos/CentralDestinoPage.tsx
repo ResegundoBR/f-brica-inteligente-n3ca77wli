@@ -57,6 +57,7 @@ export default function CentralDestinoPage() {
     const received = Number(item.received_quantity) || 0
     const total = Number(item.quantity) || 0
     const order = item.expand?.order_id
+    const hasOp = Boolean(order?.op_number || order?.order_number || item.order_id)
     return (
       <TableRow
         key={item.id}
@@ -68,9 +69,13 @@ export default function CentralDestinoPage() {
           {received}/{total}
         </TableCell>
         <TableCell className="text-xs">{item.supplier || '-'}</TableCell>
-        <TableCell className="text-xs">{order?.op_number || order?.order_number || '-'}</TableCell>
         <TableCell className="text-xs">
-          {order?.expand?.product_id?.name || order?.manual_product_name || '-'}
+          {order?.op_number || order?.order_number || (!hasOp ? 'Almoxarifado / Suprimentos' : '-')}
+        </TableCell>
+        <TableCell className="text-xs">
+          {order?.expand?.product_id?.name ||
+            order?.manual_product_name ||
+            (!hasOp ? 'Estoque Geral' : '-')}
         </TableCell>
         <TableCell className="text-xs">{item.sector || '-'}</TableCell>
         <TableCell className="text-xs">

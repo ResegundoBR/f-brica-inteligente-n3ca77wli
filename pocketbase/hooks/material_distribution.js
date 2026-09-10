@@ -9,6 +9,7 @@ routerAdd(
     try {
       var body = e.requestInfo().body || {}
       var distributions = body.distributions || []
+      var shortageIdInput = (body.shortage_id || '').trim()
       var traceability = body.traceability || {}
       var userId = e.auth ? e.auth.id : ''
 
@@ -20,7 +21,9 @@ routerAdd(
       console.log(
         'Distribute input: distributions=' +
           JSON.stringify(distributions) +
-          ' total_received=' +
+          ' shortage_id="' +
+          shortageIdInput +
+          '" total_received=' +
           totalReceived +
           ' code="' +
           code +
@@ -42,6 +45,14 @@ routerAdd(
 
       if (totalReceived <= 0) {
         return e.badRequestError('Quantidade total recebida deve ser maior que zero')
+      }
+
+      if (!description && shortageIdInput) {
+        try {
+          var originShortage = $app.findRecordById('material_shortages', shortageIdInput)
+          description = originShortage.getString('description')
+          if (!code) code = originShortage.getString('code') || ''
+        } catch (_) {}
       }
 
       if (!description && distributions.length > 0) {
@@ -135,7 +146,15 @@ routerAdd(
 
       var shortageIds = []
       for (var j = 0; j < distributions.length; j++) {
-        shortageIds.push(distributions[j].shortage_id)
+        if (
+          distributions[j].shortage_id &&
+          shortageIds.indexOf(distributions[j].shortage_id) === -1
+        ) {
+          shortageIds.push(distributions[j].shortage_id)
+        }
+      }
+      if (shortageIdInput && shortageIds.indexOf(shortageIdInput) === -1) {
+        shortageIds.push(shortageIdInput)
       }
       var shortageIdsStr = shortageIds.join(', ')
 
@@ -158,6 +177,39 @@ routerAdd(
       $app.save(entrada)
       console.log('Entrada movement saved id=' + entrada.id)
       runningBalance = Number(runningBalance) + Number(totalReceived)
+
+      // --- 2.1 Se não houver distributions mas houver shortageId de origem, atualizar a solicitação ---
+      if ((!distributions || distributions.length === 0) && shortageIdInput) {
+        try {
+          var singleShortage = $app.findRecordById('material_shortages', shortageIdInput)
+          var origTotalQty = Number(singleShortage.getInt('quantity')) || 0
+          var origCurrentReceived = Number(singleShortage.getInt('received_quantity')) || 0
+          var origNewReceived = origCurrentReceived + totalReceived
+
+          var singleStatus = 'Recebido_Parcial'
+          if (origTotalQty > 0 && origNewReceived >= origTotalQty) {
+            singleStatus = 'Recebido'
+          } else if (origTotalQty === 0) {
+            singleStatus = 'Recebido'
+          }
+
+          singleShortage.set('received_quantity', origNewReceived)
+          singleShortage.set('status', singleStatus)
+          if (code) singleShortage.set('code', code)
+          $app.save(singleShortage)
+          console.log(
+            'Direct shortage ' +
+              shortageIdInput +
+              ' updated: status=' +
+              singleStatus +
+              ' received=' +
+              origNewReceived,
+          )
+          results.push({ shortage_id: shortageIdInput, success: true, status: singleStatus })
+        } catch (sErr) {
+          console.log('Error updating direct shortage ' + shortageIdInput + ': ' + String(sErr))
+        }
+      }
 
       // --- 3. Para cada distribuição: atualizar shortage, criar Saída, criar mensagem ---
       for (var k = 0; k < distributions.length; k++) {

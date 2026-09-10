@@ -123,7 +123,7 @@ export function SmartReceiveDialog({
         unit_price: numUnitPrice > 0 ? numUnitPrice : undefined,
         freight: numFreight > 0 ? numFreight : undefined,
       }
-      await distributeMaterials(distArray, received, traceabilityInfo)
+      await distributeMaterials(distArray, received, traceabilityInfo, item?.id)
       toast({
         title: 'Distribuição concluída',
         description: `${received} unidade(s) recebidas. ${totalDistributed} distribuídas. ${surplus} em estoque.`,
@@ -255,35 +255,44 @@ export function SmartReceiveDialog({
                   {related.map((s) => {
                     const op = s.expand?.order_id
                     const product = op?.expand?.product_id
+                    const isWithoutOp = !s.order_id && !op
                     const needed = Number(s.quantity) || 0
                     const alreadyRcvd = Number(s.received_quantity) || 0
                     const remaining = Math.max(0, needed - alreadyRcvd)
                     return (
                       <TableRow key={s.id}>
                         <TableCell className="text-sm font-medium">
-                          {op?.op_number || op?.order_number || '-'}
+                          {op?.op_number ||
+                            op?.order_number ||
+                            (isWithoutOp ? 'Estoque Geral / Almoxarifado' : '-')}
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
                           {product?.code ? `${product.code} - ` : ''}
-                          {product?.name || '-'}
+                          {product?.name || (isWithoutOp ? 'Material sem OP vinculada' : '-')}
                         </TableCell>
                         <TableCell className="text-right text-sm">{needed}</TableCell>
                         <TableCell className="text-right text-sm text-muted-foreground">
                           {alreadyRcvd}
                         </TableCell>
                         <TableCell>
-                          <Input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            max={remaining}
-                            placeholder="0"
-                            className="h-8 w-full text-right text-sm"
-                            value={distributions[s.id] || ''}
-                            onChange={(e) =>
-                              setDistributions((prev) => ({ ...prev, [s.id]: e.target.value }))
-                            }
-                          />
+                          {isWithoutOp ? (
+                            <span className="text-xs text-muted-foreground block text-right italic">
+                              Entrada em Estoque
+                            </span>
+                          ) : (
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              max={remaining}
+                              placeholder="0"
+                              className="h-8 w-full text-right text-sm"
+                              value={distributions[s.id] || ''}
+                              onChange={(e) =>
+                                setDistributions((prev) => ({ ...prev, [s.id]: e.target.value }))
+                              }
+                            />
+                          )}
                         </TableCell>
                       </TableRow>
                     )

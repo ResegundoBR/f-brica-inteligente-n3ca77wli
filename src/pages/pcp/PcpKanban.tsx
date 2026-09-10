@@ -26,6 +26,7 @@ import {
   Hourglass,
   Clock,
   Sparkles,
+  MessageSquare,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
@@ -1146,9 +1147,13 @@ export default function PcpKanban() {
           )}
           {selectedOrder && (
             <Tabs defaultValue="detalhes" className="flex-1 flex flex-col overflow-hidden">
-              <TabsList className="grid w-full grid-cols-3 shrink-0">
+              <TabsList className="grid w-full grid-cols-4 shrink-0">
                 <TabsTrigger value="detalhes">Detalhes</TabsTrigger>
                 <TabsTrigger value="entregas">Entregas / Expedição</TabsTrigger>
+                <TabsTrigger value="comunicacao" className="flex items-center gap-1.5">
+                  <MessageSquare className="size-3.5" />
+                  Comunicação
+                </TabsTrigger>
                 <TabsTrigger value="historico">Log / Histórico</TabsTrigger>
               </TabsList>
               <TabsContent value="detalhes" className="flex-1 overflow-y-auto pt-4 space-y-4">
@@ -1504,6 +1509,63 @@ export default function PcpKanban() {
               </TabsContent>
               <TabsContent value="entregas" className="flex-1 overflow-y-auto pt-4">
                 <OrderDeliveriesList order={selectedOrder} />
+              </TabsContent>
+              <TabsContent
+                value="comunicacao"
+                className="flex-1 overflow-hidden pt-2 flex flex-col"
+              >
+                <div className="flex-1 flex flex-col min-h-0 border rounded-lg bg-card overflow-hidden">
+                  <div className="p-3 border-b bg-muted/40 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <MessageSquare className="size-4 text-primary" />
+                      <span className="text-sm font-semibold">Central de Comunicação da OP</span>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs gap-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 dark:hover:bg-blue-900 border-blue-200 dark:border-blue-800"
+                      onClick={() =>
+                        setMessageOrder({
+                          id: selectedOrder.id,
+                          orderNumber: selectedOrder.order_number,
+                          opNumber: selectedOrder.op_number || '',
+                        })
+                      }
+                    >
+                      <MessageSquare className="size-3.5" />
+                      Abrir em Painel Lateral
+                    </Button>
+                  </div>
+                  <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-3">
+                    <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                      <MessageSquare className="size-6" />
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-sm">
+                        Comunicação da OP {selectedOrder.order_number}
+                      </h4>
+                      <p className="text-xs text-muted-foreground mt-1 max-w-sm">
+                        Envie e visualize perguntas e informações direcionadas aos setores
+                        (Operador, Comercial, Fabricação, Acabamento, Montagem) vinculadas
+                        diretamente a esta OP.
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      className="gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium"
+                      onClick={() =>
+                        setMessageOrder({
+                          id: selectedOrder.id,
+                          orderNumber: selectedOrder.order_number,
+                          opNumber: selectedOrder.op_number || '',
+                        })
+                      }
+                    >
+                      <MessageSquare className="size-4" />
+                      Acessar Central de Comunicação da OP
+                    </Button>
+                  </div>
+                </div>
               </TabsContent>
               <TabsContent value="historico" className="flex-1 overflow-y-auto pt-4">
                 <OrderLogsList orderId={selectedOrder.id} />

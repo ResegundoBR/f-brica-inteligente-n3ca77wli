@@ -8,7 +8,16 @@ import {
 } from '@/components/ui/sheet'
 import { Label } from '@/components/ui/label'
 import { format, parseISO, isBefore, startOfDay, isValid } from 'date-fns'
-import { Paperclip, AlertCircle, Clock, Pencil, Trash2, Truck, Calendar } from 'lucide-react'
+import {
+  Paperclip,
+  AlertCircle,
+  Clock,
+  Pencil,
+  Trash2,
+  Truck,
+  Calendar,
+  MessageSquare,
+} from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import pb from '@/lib/pocketbase/client'
 import { cn } from '@/lib/utils'
@@ -31,6 +40,7 @@ export function PcpOrderDetails({
   onDelete,
   isAdmin,
   onOrderUpdated,
+  onOpenMessages,
 }: {
   op: PcpOrder | null
   observations: PcpOrderObservation[]
@@ -39,6 +49,7 @@ export function PcpOrderDetails({
   onDelete: () => void
   isAdmin: boolean
   onOrderUpdated?: (updated: PcpOrder) => void
+  onOpenMessages?: (op: PcpOrder) => void
 }) {
   const [logs, setLogs] = useState<any[]>([])
   const [deliveries, setDeliveries] = useState<PcpOrderDelivery[]>([])
@@ -173,16 +184,30 @@ export function PcpOrderDetails({
         <SheetHeader>
           <SheetTitle>Detalhes da OP</SheetTitle>
         </SheetHeader>
-        {isAdmin && op && (
-          <div className="flex gap-2 mt-2">
-            <Button variant="outline" size="sm" className="flex-1" onClick={onEdit}>
-              <Pencil className="size-4 mr-2" />
-              Editar OP
-            </Button>
-            <Button variant="destructive" size="sm" className="flex-1" onClick={onDelete}>
-              <Trash2 className="size-4 mr-2" />
-              Excluir OP
-            </Button>
+        {op && (
+          <div className="space-y-2 mt-2">
+            {onOpenMessages && (
+              <Button
+                type="button"
+                className="w-full gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-sm"
+                onClick={() => onOpenMessages(op)}
+              >
+                <MessageSquare className="size-4" />
+                Central de Comunicação da OP
+              </Button>
+            )}
+            {isAdmin && (
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" className="flex-1" onClick={onEdit}>
+                  <Pencil className="size-4 mr-2" />
+                  Editar OP
+                </Button>
+                <Button variant="destructive" size="sm" className="flex-1" onClick={onDelete}>
+                  <Trash2 className="size-4 mr-2" />
+                  Excluir OP
+                </Button>
+              </div>
+            )}
           </div>
         )}
         {op && (

@@ -1,5 +1,4 @@
 import { Fragment, useEffect, useState, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
 import pb from '@/lib/pocketbase/client'
 import { PcpOrder, PcpOrderDelivery, PcpOrderObservation } from '@/types'
 import { useRealtime } from '@/hooks/use-realtime'
@@ -21,6 +20,7 @@ import { cn } from '@/lib/utils'
 import { PromisedDateBadge } from '@/components/PromisedDateBadge'
 import { PcpFilters } from './components/PcpFilters'
 import { filterByDeadline, isOrderOverdue, normalizeSearchText } from '@/lib/pcp-utils'
+import { OrderMessagesPanel } from '@/components/OrderMessagesPanel'
 
 const STAGES = [
   'Separação',
@@ -51,7 +51,6 @@ const STAGES = [
 ]
 
 export default function PcpCommercial() {
-  const navigate = useNavigate()
   const [orders, setOrders] = useState<PcpOrder[]>([])
   const [observations, setObservations] = useState<Record<string, PcpOrderObservation[]>>({})
   const [deliveries, setDeliveries] = useState<Record<string, PcpOrderDelivery[]>>({})
@@ -61,6 +60,11 @@ export default function PcpCommercial() {
   const [clientTypeFilter, setClientTypeFilter] = useState('all')
   const [deadlineFilter, setDeadlineFilter] = useState('all')
   const [showConcluded, setShowConcluded] = useState(false)
+  const [messageOrder, setMessageOrder] = useState<{
+    id: string
+    orderNumber: string
+    opNumber: string
+  } | null>(null)
 
   const loadData = async () => {
     try {
@@ -294,7 +298,13 @@ export default function PcpCommercial() {
                     return (
                       <TableRow
                         key={op.id}
-                        onClick={() => navigate(`/pcp/comunicacoes?orderId=${op.id}`)}
+                        onClick={() =>
+                          setMessageOrder({
+                            id: op.id,
+                            orderNumber: op.order_number,
+                            opNumber: op.op_number || '',
+                          })
+                        }
                         className={cn(
                           'cursor-pointer transition-colors group hover:bg-sky-50/70 dark:hover:bg-sky-950/30',
                           isConcluded && 'bg-slate-50/60 dark:bg-slate-900/40',
@@ -475,6 +485,14 @@ export default function PcpCommercial() {
           </TableBody>
         </Table>
       </div>
+
+      <OrderMessagesPanel
+        orderId={messageOrder?.id ?? null}
+        orderNumber={messageOrder?.orderNumber ?? ''}
+        opNumber={messageOrder?.opNumber ?? ''}
+        open={!!messageOrder}
+        onOpenChange={(open) => !open && setMessageOrder(null)}
+      />
     </div>
   )
 }

@@ -702,6 +702,13 @@ export default function PcpOrders() {
           setSelectedOp(updated)
           loadData()
         }}
+        onOpenMessages={(op) =>
+          setMessageOrder({
+            id: op.id,
+            orderNumber: op.order_number,
+            opNumber: op.op_number || '',
+          })
+        }
       />
 
       <AlertDialog open={!!deleteOp} onOpenChange={(open) => !open && setDeleteOp(null)}>

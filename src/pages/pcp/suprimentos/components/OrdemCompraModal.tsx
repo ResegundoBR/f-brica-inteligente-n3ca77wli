@@ -25,7 +25,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Plus, Trash2, Loader2 } from 'lucide-react'
+import { Plus, Trash2, Loader2, Link2, Sparkles } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { MaterialShortage } from '@/types'
+import { findOtherOpDemands } from '@/services/material-consolidation'
 
 export interface OCItemInput {
   description: string
@@ -33,6 +36,9 @@ export interface OCItemInput {
   quantity: number
   unit_price: number
   material_shortage_id?: string
+  suggestedTotal?: number
+  otherOpsCount?: number
+  otherOpsExtraQty?: number
 }
 
 interface OrdemCompraModalProps {
@@ -40,6 +46,7 @@ interface OrdemCompraModalProps {
   onOpenChange: (open: boolean) => void
   supplierName: string
   initialItems: OCItemInput[]
+  allShortages?: MaterialShortage[]
   onConfirm: (
     items: OCItemInput[],
     deliveryTerms: string,
@@ -54,6 +61,7 @@ export function OrdemCompraModal({
   onOpenChange,
   supplierName,
   initialItems,
+  allShortages = [],
   onConfirm,
 }: OrdemCompraModalProps) {
   const [items, setItems] = useState<OCItemInput[]>(initialItems)
@@ -69,13 +77,30 @@ export function OrdemCompraModal({
 
   useEffect(() => {
     if (open) {
-      setItems(initialItems)
+      // Calcula consolidação para cada item da OC com base em allShortages
+      const enriched = initialItems.map((it) => {
+        if (!it.material_shortage_id || allShortages.length === 0) return it
+        const originalShortage = allShortages.find((s) => s.id === it.material_shortage_id)
+        if (!originalShortage) return it
+        const consolidation = findOtherOpDemands(originalShortage, allShortages)
+        if (consolidation.otherDemands.length > 0) {
+          return {
+            ...it,
+            suggestedTotal: consolidation.totalConsolidatedQuantity,
+            otherOpsCount: consolidation.otherDemands.length,
+            otherOpsExtraQty: consolidation.totalOtherQuantity,
+          }
+        }
+        return it
+      })
+
+      setItems(enriched)
       setDeliveryTerms('')
       setExpectedDate('')
       setPaymentTerms('')
       setDeliveryType('Entrega')
     }
-  }, [open, initialItems])
+  }, [open, initialItems, allShortages])
 
   const formatCurrency = (v: number) =>
     v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -88,6 +113,9 @@ export function OrdemCompraModal({
 
   const updatePrice = (idx: number, price: number) =>
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, unit_price: price } : it)))
+
+  const applySuggestedTotal = (idx: number, suggestedQty: number) =>
+    setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, quantity: suggestedQty } : it)))
 
   const removeItem = (idx: number) => setItems((prev) => prev.filter((_, i) => i !== idx))
 
@@ -180,48 +208,81 @@ export function OrdemCompraModal({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {items.map((item, idx) => (
-                  <TableRow key={idx}>
-                    <TableCell>
-                      <Input
-                        className="h-8 w-24"
-                        value={item.code || ''}
-                        onChange={(e) => updateCode(idx, e.target.value)}
-                        placeholder="-"
-                      />
-                    </TableCell>
-                    <TableCell className="text-sm font-medium">{item.description}</TableCell>
-                    <TableCell>
-                      <Input
-                        type="number"
-                        className="h-8 w-20"
-                        value={item.quantity}
-                        onChange={(e) => updateQty(idx, Number(e.target.value) || 0)}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        className="h-8 w-28"
-                        value={item.unit_price}
-                        onChange={(e) => updatePrice(idx, Number(e.target.value) || 0)}
-                      />
-                    </TableCell>
-                    <TableCell className="text-right text-sm font-semibold">
-                      {formatCurrency(item.quantity * item.unit_price)}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        className="h-7 w-7 p-0"
-                        onClick={() => removeItem(idx)}
-                      >
-                        <Trash2 className="w-3.5 h-3.5 text-red-500" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {items.map((item, idx) => {
+                  const hasSuggestion =
+                    item.suggestedTotal != null &&
+                    item.suggestedTotal > item.quantity &&
+                    (item.otherOpsCount || 0) > 0
+
+                  return (
+                    <TableRow
+                      key={idx}
+                      className={hasSuggestion ? 'bg-amber-50/40 dark:bg-amber-950/20' : undefined}
+                    >
+                      <TableCell>
+                        <Input
+                          className="h-8 w-24"
+                          value={item.code || ''}
+                          onChange={(e) => updateCode(idx, e.target.value)}
+                          placeholder="-"
+                        />
+                      </TableCell>
+                      <TableCell className="text-sm font-medium">
+                        <div>
+                          <span>{item.description}</span>
+                          {hasSuggestion && (
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950/60 dark:text-amber-200"
+                              >
+                                <Link2 className="size-3 mr-1" />+{item.otherOpsExtraQty} un em{' '}
+                                {item.otherOpsCount} outra(s) OP(s)
+                              </Badge>
+                              <button
+                                type="button"
+                                onClick={() => applySuggestedTotal(idx, item.suggestedTotal!)}
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 hover:text-amber-800 underline dark:text-amber-300"
+                              >
+                                <Sparkles className="size-3" />
+                                Sugerir total: adotar {item.suggestedTotal} un
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          type="number"
+                          className="h-8 w-20"
+                          value={item.quantity}
+                          onChange={(e) => updateQty(idx, Number(e.target.value) || 0)}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          className="h-8 w-28"
+                          value={item.unit_price}
+                          onChange={(e) => updatePrice(idx, Number(e.target.value) || 0)}
+                        />
+                      </TableCell>
+                      <TableCell className="text-right text-sm font-semibold">
+                        {formatCurrency(item.quantity * item.unit_price)}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          className="h-7 w-7 p-0"
+                          onClick={() => removeItem(idx)}
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
               </TableBody>
             </Table>
           </div>

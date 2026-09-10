@@ -258,6 +258,7 @@ export default function ComprasPage() {
       ) : (
         <ComprasTable
           items={comprasItems}
+          allShortages={shortages}
           onEdit={setEditItem}
           selectedIds={selectedIds}
           onToggleSelect={toggleSelect}
@@ -269,6 +270,7 @@ export default function ComprasPage() {
 
       <ComprasItemDialog
         item={editItem}
+        allShortages={shortages}
         open={!!editItem}
         onOpenChange={(o) => !o && setEditItem(null)}
         onUpdate={fetchShortages}
@@ -278,6 +280,7 @@ export default function ComprasPage() {
         onOpenChange={setOcModalOpen}
         supplierName={ocSupplier}
         initialItems={ocItems}
+        allShortages={shortages}
         onConfirm={handleConfirmOC}
       />
       <OrdemCompraDocument

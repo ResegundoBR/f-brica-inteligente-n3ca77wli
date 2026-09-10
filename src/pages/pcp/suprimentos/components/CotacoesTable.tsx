@@ -14,9 +14,13 @@ import { MaterialShortage } from '@/types'
 import { NovoBadge } from '@/components/NovoBadge'
 import { useSupplierGroups } from '@/hooks/use-supplier-groups'
 import { SupplierGroupSection } from './SupplierGroupSection'
+import { useMemo } from 'react'
+import { findOtherOpDemands } from '@/services/material-consolidation'
+import { ConsolidatedDemandBadge } from './ConsolidatedDemandBlock'
 
 interface CotacoesTableProps {
   items: MaterialShortage[]
+  allShortages?: MaterialShortage[]
   selectedIds: Set<string>
   onToggleSelect: (id: string) => void
   onToggleSelectAll: () => void
@@ -29,6 +33,7 @@ interface CotacoesTableProps {
 
 function CotacoesRow({
   item,
+  consolidation,
   selectedIds,
   onToggleSelect,
   onRowClick,
@@ -36,6 +41,7 @@ function CotacoesRow({
   isNew,
 }: {
   item: MaterialShortage
+  consolidation?: ReturnType<typeof findOtherOpDemands>
   selectedIds: Set<string>
   onToggleSelect: (id: string) => void
   onRowClick: (item: MaterialShortage) => void
@@ -59,9 +65,12 @@ function CotacoesRow({
       </TableCell>
       <TableCell className="text-xs text-muted-foreground">{item.code || '-'}</TableCell>
       <TableCell className="font-medium text-sm">
-        <div className="flex items-center gap-2">
-          {item.description}
-          {isNew(item.id) && <NovoBadge />}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-1.5">
+          <div className="flex items-center gap-2">
+            <span>{item.description}</span>
+            {isNew(item.id) && <NovoBadge />}
+          </div>
+          <ConsolidatedDemandBadge consolidation={consolidation} />
         </div>
       </TableCell>
       <TableCell className="text-xs text-muted-foreground">
@@ -126,6 +135,7 @@ function TableCols({
 
 export function CotacoesTable({
   items,
+  allShortages,
   selectedIds,
   onToggleSelect,
   onToggleSelectAll,
@@ -137,6 +147,15 @@ export function CotacoesTable({
 }: CotacoesTableProps) {
   const groups = useSupplierGroups(items)
   const allSelected = items.length > 0 && selectedIds.size === items.length
+  const shortagesPool = allShortages || items
+
+  const consolidationsMap = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof findOtherOpDemands>>()
+    for (const item of items) {
+      map.set(item.id, findOtherOpDemands(item, shortagesPool))
+    }
+    return map
+  }, [items, shortagesPool])
 
   if (!grouped) {
     return (
@@ -148,6 +167,7 @@ export function CotacoesTable({
               <CotacoesRow
                 key={item.id}
                 item={item}
+                consolidation={consolidationsMap.get(item.id)}
                 selectedIds={selectedIds}
                 onToggleSelect={onToggleSelect}
                 onRowClick={onRowClick}
@@ -182,6 +202,7 @@ export function CotacoesTable({
                   <CotacoesRow
                     key={item.id}
                     item={item}
+                    consolidation={consolidationsMap.get(item.id)}
                     selectedIds={selectedIds}
                     onToggleSelect={onToggleSelect}
                     onRowClick={onRowClick}

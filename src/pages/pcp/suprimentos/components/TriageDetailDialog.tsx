@@ -13,8 +13,13 @@ import { format, parseISO } from 'date-fns'
 import pb from '@/lib/pocketbase/client'
 import { useToast } from '@/hooks/use-toast'
 
+import { useMemo } from 'react'
+import { findOtherOpDemands } from '@/services/material-consolidation'
+import { ConsolidatedDemandBlock } from './ConsolidatedDemandBlock'
+
 interface TriageDetailDialogProps {
   item: MaterialShortage | null
+  allShortages?: MaterialShortage[]
   open: boolean
   onOpenChange: (o: boolean) => void
   onAction: () => void
@@ -22,11 +27,17 @@ interface TriageDetailDialogProps {
 
 export function TriageDetailDialog({
   item,
+  allShortages = [],
   open,
   onOpenChange,
   onAction,
 }: TriageDetailDialogProps) {
   const { toast } = useToast()
+  const consolidation = useMemo(() => {
+    if (!item) return null
+    return findOtherOpDemands(item, allShortages)
+  }, [item, allShortages])
+
   if (!item) return null
 
   const handleTriage = async (status: 'Cotação' | 'Cancelado') => {
@@ -44,14 +55,14 @@ export function TriageDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[650px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="size-5 text-blue-600" />
-            Triagem — {item.description}
+            <span>Triagem — {item.description}</span>
           </DialogTitle>
         </DialogHeader>
-        <div className="space-y-3 py-2">
+        <div className="space-y-4 py-2">
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div>
               <span className="text-muted-foreground">Código:</span>{' '}
@@ -89,6 +100,14 @@ export function TriageDetailDialog({
                 {item.observation}
               </p>
             </div>
+          )}
+
+          {/* Bloco de consolidação de demanda com outras OPs */}
+          {consolidation && consolidation.otherDemands.length > 0 && (
+            <ConsolidatedDemandBlock
+              consolidation={consolidation}
+              currentItemLabel={`Pedido ${item.expand?.order_id?.order_number || 'Req. Geral'} (OP ${item.expand?.order_id?.op_number || '-'})`}
+            />
           )}
         </div>
         <DialogFooter className="gap-2">

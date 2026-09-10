@@ -159,7 +159,7 @@ export default function SolicitacoesPage() {
           Nenhuma solicitação pendente.
         </div>
       ) : (
-        <TriageTable items={triagemItems} onRowClick={handleRowClick} />
+        <TriageTable items={triagemItems} allShortages={shortages} onRowClick={handleRowClick} />
       )}
       {selectedIds.length > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-fade-in-up">
@@ -226,6 +226,7 @@ export default function SolicitacoesPage() {
       </Dialog>
       <TriageDetailDialog
         item={selectedItem}
+        allShortages={shortages}
         open={!!selectedItem}
         onOpenChange={(o) => !o && setSelectedItem(null)}
         onAction={fetchShortages}

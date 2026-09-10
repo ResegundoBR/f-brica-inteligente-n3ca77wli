@@ -11,14 +11,26 @@ import pb from '@/lib/pocketbase/client'
 import { selectQuotation } from '@/services/quotations'
 import { SupplierSearch } from './SupplierSearch'
 import { SupplierFormDialog } from './SupplierFormDialog'
+import { useMemo } from 'react'
+import { findOtherOpDemands } from '@/services/material-consolidation'
+import { ConsolidatedDemandBlock } from './ConsolidatedDemandBlock'
 
 interface EnhancedQuotationFormProps {
   item: MaterialShortage
+  allShortages?: MaterialShortage[]
   onUpdate: () => void
   onClose: () => void
 }
 
-export function EnhancedQuotationForm({ item, onUpdate, onClose }: EnhancedQuotationFormProps) {
+export function EnhancedQuotationForm({
+  item,
+  allShortages = [],
+  onUpdate,
+  onClose,
+}: EnhancedQuotationFormProps) {
+  const consolidation = useMemo(() => {
+    return findOtherOpDemands(item, allShortages)
+  }, [item, allShortages])
   const [quotations, setQuotations] = useState<Quotation[]>([])
   const [desc, setDesc] = useState(item.description)
   const [qty, setQty] = useState(String(item.quantity))
@@ -145,6 +157,27 @@ export function EnhancedQuotationForm({ item, onUpdate, onClose }: EnhancedQuota
             />
           </div>
         </div>
+
+        {/* Bloco de consolidação de demanda com sugestão de quantidade total */}
+        {consolidation && consolidation.otherDemands.length > 0 && (
+          <ConsolidatedDemandBlock
+            consolidation={consolidation}
+            currentItemLabel={`Esta solicitação (${item.quantity} un)`}
+            onApplyTotal={(suggestedQty) => {
+              setQty(String(suggestedQty))
+              pb.collection('material_shortages')
+                .update(item.id, { quantity: suggestedQty })
+                .then(() => {
+                  onUpdate()
+                  toast.success(`Quantidade atualizada para ${suggestedQty} un (total consolidado)`)
+                })
+                .catch(() => {
+                  toast.error('Erro ao atualizar quantidade do item')
+                })
+            }}
+            applyButtonLabel="Sugerir e aplicar total"
+          />
+        )}
         <div className="space-y-2 p-3 border rounded-lg">
           <div className="flex items-end gap-2">
             <div className="flex-1">

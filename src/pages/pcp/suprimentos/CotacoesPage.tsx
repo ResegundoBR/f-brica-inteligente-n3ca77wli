@@ -160,6 +160,7 @@ export default function CotacoesPage() {
       ) : (
         <CotacoesTable
           items={filteredCotacaoItems}
+          allShortages={shortages}
           selectedIds={selectedIds}
           onToggleSelect={toggleSelect}
           onToggleSelectAll={toggleSelectAll}
@@ -173,6 +174,7 @@ export default function CotacoesPage() {
 
       <TriageDialog
         item={selectedItem}
+        allShortages={shortages}
         open={!!selectedItem}
         onOpenChange={(o) => !o && setSelectedItem(null)}
         onUpdate={fetchData}

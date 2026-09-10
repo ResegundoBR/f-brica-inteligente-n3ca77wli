@@ -38,14 +38,19 @@ import {
 import { SupplierSearchSelect } from './SupplierSearchSelect'
 import { SupplierFormDialog } from './SupplierFormDialog'
 import { useToast } from '@/hooks/use-toast'
+import { useMemo } from 'react'
+import { findOtherOpDemands } from '@/services/material-consolidation'
+import { ConsolidatedDemandBlock } from './ConsolidatedDemandBlock'
 
 export function QuotationDialog({
   item,
+  allShortages = [],
   open,
   onOpenChange,
   onUpdate,
 }: {
   item: MaterialShortage | null
+  allShortages?: MaterialShortage[]
   open: boolean
   onOpenChange: (o: boolean) => void
   onUpdate?: () => void
@@ -185,9 +190,20 @@ export function QuotationDialog({
     }
   }
 
+  const consolidation = useMemo(() => {
+    if (!item) return null
+    return findOtherOpDemands(item, allShortages)
+  }, [item, allShortages])
+
   const handleCopy = () => {
     if (!item) return
-    navigator.clipboard.writeText(`Item: ${item.description} - Quantidade: ${item.quantity}`)
+    const extraMsg =
+      consolidation && consolidation.totalOtherQuantity > 0
+        ? ` (Consolidado com outras OPs: ${consolidation.totalConsolidatedQuantity})`
+        : ''
+    navigator.clipboard.writeText(
+      `Item: ${item.description} - Quantidade: ${item.quantity}${extraMsg}`,
+    )
     toast({ title: 'Copiado!', description: 'Texto copiado para área de transferência.' })
   }
 
@@ -265,6 +281,34 @@ export function QuotationDialog({
                 />
               </div>
             )}
+
+            {/* Bloco de consolidação de demanda com sugestão de quantidade total */}
+            {consolidation && consolidation.otherDemands.length > 0 && (
+              <ConsolidatedDemandBlock
+                consolidation={consolidation}
+                currentItemLabel={`Esta solicitação (${item.quantity} un)`}
+                onApplyTotal={(suggestedQty) => {
+                  setEditQty(String(suggestedQty))
+                  updateShortageItem(item.id, { quantity: suggestedQty })
+                    .then(() => {
+                      toast({
+                        title: 'Quantidade atualizada',
+                        description: `Qtde alterada para ${suggestedQty} un (total consolidado).`,
+                      })
+                      onUpdate?.()
+                    })
+                    .catch((err: any) => {
+                      toast({
+                        title: 'Erro ao atualizar',
+                        description: err.message,
+                        variant: 'destructive',
+                      })
+                    })
+                }}
+                applyButtonLabel="Sugerir e aplicar total"
+              />
+            )}
+
             {quotations.length > 0 ? (
               <div className="border rounded-md overflow-hidden">
                 <Table>

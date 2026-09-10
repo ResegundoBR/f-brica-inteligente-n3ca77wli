@@ -14,12 +14,25 @@ import { useNewRequests } from '@/hooks/use-new-requests'
 import { format, parseISO } from 'date-fns'
 import { cn } from '@/lib/utils'
 
+import { useMemo } from 'react'
+import { findOtherOpDemands } from '@/services/material-consolidation'
+import { ConsolidatedDemandBadge } from './ConsolidatedDemandBlock'
+
 interface TriageTableProps {
   items: MaterialShortage[]
+  allShortages?: MaterialShortage[]
   onRowClick: (item: MaterialShortage) => void
 }
 
-export function TriageTable({ items, onRowClick }: TriageTableProps) {
+export function TriageTable({ items, allShortages, onRowClick }: TriageTableProps) {
+  const shortagesPool = allShortages || items
+  const consolidationsMap = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof findOtherOpDemands>>()
+    for (const item of items) {
+      map.set(item.id, findOtherOpDemands(item, shortagesPool))
+    }
+    return map
+  }, [items, shortagesPool])
   const selectedIds = useShortageStore((s) => s.selectedIds)
   const toggle = useShortageStore((s) => s.toggle)
   const { isNew } = useNewRequests()
@@ -68,7 +81,12 @@ export function TriageTable({ items, onRowClick }: TriageTableProps) {
                   {format(parseISO(item.created), 'dd/MM/yy')}
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">{item.code || '-'}</TableCell>
-                <TableCell className="font-medium text-sm">{item.description}</TableCell>
+                <TableCell className="font-medium text-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-1.5">
+                    <span>{item.description}</span>
+                    <ConsolidatedDemandBadge consolidation={consolidationsMap.get(item.id)} />
+                  </div>
+                </TableCell>
                 <TableCell className="text-right text-sm font-semibold">{item.quantity}</TableCell>
                 <TableCell className="text-xs">{item.sector || '-'}</TableCell>
                 <TableCell className="text-xs">

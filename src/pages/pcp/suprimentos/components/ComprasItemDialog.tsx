@@ -23,15 +23,25 @@ import { toast } from 'sonner'
 import { Loader2, Save, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import pb from '@/lib/pocketbase/client'
+import { useMemo } from 'react'
+import { findOtherOpDemands } from '@/services/material-consolidation'
+import { ConsolidatedDemandBlock } from './ConsolidatedDemandBlock'
 
 interface ComprasItemDialogProps {
   item: MaterialShortage | null
+  allShortages?: MaterialShortage[]
   open: boolean
   onOpenChange: (open: boolean) => void
   onUpdate: () => void
 }
 
-export function ComprasItemDialog({ item, open, onOpenChange, onUpdate }: ComprasItemDialogProps) {
+export function ComprasItemDialog({
+  item,
+  allShortages = [],
+  open,
+  onOpenChange,
+  onUpdate,
+}: ComprasItemDialogProps) {
   const [quotations, setQuotations] = useState<Quotation[]>([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -39,6 +49,12 @@ export function ComprasItemDialog({ item, open, onOpenChange, onUpdate }: Compra
   const [supplier, setSupplier] = useState('')
   const [unitPrice, setUnitPrice] = useState('')
   const [expectedDate, setExpectedDate] = useState('')
+  const [itemQuantity, setItemQuantity] = useState<number>(0)
+
+  const consolidation = useMemo(() => {
+    if (!item) return null
+    return findOtherOpDemands(item, allShortages)
+  }, [item, allShortages])
 
   const fetchQuotations = useCallback(async () => {
     if (!item) return
@@ -61,6 +77,7 @@ export function ComprasItemDialog({ item, open, onOpenChange, onUpdate }: Compra
       setSupplier(item.supplier || '')
       setUnitPrice(item.unit_price ? String(item.unit_price) : '')
       setExpectedDate(item.expected_date || '')
+      setItemQuantity(item.quantity)
     }
   }, [open, item, fetchQuotations])
 
@@ -88,16 +105,31 @@ export function ComprasItemDialog({ item, open, onOpenChange, onUpdate }: Compra
     try {
       await pb.collection('material_shortages').update(item.id, {
         supplier,
+        quantity: itemQuantity || item.quantity,
         ...(unitPrice && { unit_price: Number(unitPrice) }),
         ...(expectedDate && { expected_date: expectedDate }),
       })
-      toast.success('Dados salvos')
+      toast.success('Dados salvos com sucesso')
       onUpdate()
       onOpenChange(false)
     } catch {
       toast.error('Erro ao salvar')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleApplyConsolidatedTotal = async (suggestedQty: number) => {
+    if (!item) return
+    setItemQuantity(suggestedQty)
+    try {
+      await pb.collection('material_shortages').update(item.id, {
+        quantity: suggestedQty,
+      })
+      toast.success(`Quantidade atualizada para ${suggestedQty} un (total consolidado)`)
+      onUpdate()
+    } catch {
+      toast.error('Erro ao atualizar quantidade do item')
     }
   }
 
@@ -115,8 +147,24 @@ export function ComprasItemDialog({ item, open, onOpenChange, onUpdate }: Compra
             <div className="text-sm text-muted-foreground">
               <span className="font-medium text-foreground">{item.description}</span>
               {item.code && <span className="ml-2">— Código: {item.code}</span>}
-              <span className="ml-2">— Qtde: {item.quantity}</span>
+              <span className="ml-2">— Qtde: {itemQuantity || item.quantity}</span>
+              {item.expand?.order_id?.order_number && (
+                <span className="ml-2">— Pedido: {item.expand.order_id.order_number}</span>
+              )}
+              {item.expand?.order_id?.op_number && (
+                <span className="ml-2">— OP: {item.expand.order_id.op_number}</span>
+              )}
             </div>
+
+            {/* Bloco de consolidação de demanda com outras OPs */}
+            {consolidation && consolidation.otherDemands.length > 0 && (
+              <ConsolidatedDemandBlock
+                consolidation={consolidation}
+                currentItemLabel={`Esta solicitação (${itemQuantity || item.quantity} un)`}
+                onApplyTotal={handleApplyConsolidatedTotal}
+                applyButtonLabel="Sugerir e adotar total"
+              />
+            )}
 
             <div>
               <h4 className="text-sm font-semibold mb-2">Cotações Registradas</h4>

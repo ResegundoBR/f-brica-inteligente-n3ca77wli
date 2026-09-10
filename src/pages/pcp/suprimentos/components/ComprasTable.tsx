@@ -13,9 +13,13 @@ import { MaterialShortage } from '@/types'
 import { Pencil } from 'lucide-react'
 import { useSupplierGroups } from '@/hooks/use-supplier-groups'
 import { SupplierGroupSection } from './SupplierGroupSection'
+import { useMemo } from 'react'
+import { findOtherOpDemands } from '@/services/material-consolidation'
+import { ConsolidatedDemandBadge } from './ConsolidatedDemandBlock'
 
 interface ComprasTableProps {
   items: MaterialShortage[]
+  allShortages?: MaterialShortage[]
   onEdit: (item: MaterialShortage) => void
   selectedIds: Set<string>
   onToggleSelect: (id: string) => void
@@ -29,11 +33,13 @@ const formatCurrency = (v: number) =>
 
 function ComprasRow({
   item,
+  consolidation,
   onEdit,
   selectedIds,
   onToggleSelect,
 }: {
   item: MaterialShortage
+  consolidation?: ReturnType<typeof findOtherOpDemands>
   onEdit: (item: MaterialShortage) => void
   selectedIds: Set<string>
   onToggleSelect: (id: string) => void
@@ -52,7 +58,12 @@ function ComprasRow({
         {format(parseISO(item.created), 'dd/MM/yy')}
       </TableCell>
       <TableCell className="text-xs text-muted-foreground">{item.code || '-'}</TableCell>
-      <TableCell className="font-medium text-sm">{item.description}</TableCell>
+      <TableCell className="font-medium text-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-1.5">
+          <span>{item.description}</span>
+          <ConsolidatedDemandBadge consolidation={consolidation} />
+        </div>
+      </TableCell>
       <TableCell className="text-xs text-muted-foreground">{item.supplier || '-'}</TableCell>
       <TableCell className="text-right text-sm font-semibold">{item.quantity}</TableCell>
       <TableCell className="text-right text-xs text-muted-foreground">{received || '-'}</TableCell>
@@ -106,6 +117,7 @@ function TableCols({
 
 export function ComprasTable({
   items,
+  allShortages,
   onEdit,
   selectedIds,
   onToggleSelect,
@@ -115,6 +127,15 @@ export function ComprasTable({
 }: ComprasTableProps) {
   const groups = useSupplierGroups(items)
   const allSelected = items.length > 0 && selectedIds.size === items.length
+  const shortagesPool = allShortages || items
+
+  const consolidationsMap = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof findOtherOpDemands>>()
+    for (const item of items) {
+      map.set(item.id, findOtherOpDemands(item, shortagesPool))
+    }
+    return map
+  }, [items, shortagesPool])
 
   if (!grouped) {
     return (
@@ -126,6 +147,7 @@ export function ComprasTable({
               <ComprasRow
                 key={item.id}
                 item={item}
+                consolidation={consolidationsMap.get(item.id)}
                 onEdit={onEdit}
                 selectedIds={selectedIds}
                 onToggleSelect={onToggleSelect}
@@ -158,6 +180,7 @@ export function ComprasTable({
                   <ComprasRow
                     key={item.id}
                     item={item}
+                    consolidation={consolidationsMap.get(item.id)}
                     onEdit={onEdit}
                     selectedIds={selectedIds}
                     onToggleSelect={onToggleSelect}

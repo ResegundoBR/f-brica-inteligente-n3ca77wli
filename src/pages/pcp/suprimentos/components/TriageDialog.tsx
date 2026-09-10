@@ -13,18 +13,34 @@ import { MaterialShortage } from '@/types'
 import { toast } from 'sonner'
 import pb from '@/lib/pocketbase/client'
 import { EnhancedQuotationForm } from './EnhancedQuotationForm'
+import { useMemo } from 'react'
+import { findOtherOpDemands } from '@/services/material-consolidation'
+import { ConsolidatedDemandBlock } from './ConsolidatedDemandBlock'
 
 interface TriageDialogProps {
   item: MaterialShortage | null
+  allShortages?: MaterialShortage[]
   open: boolean
   onOpenChange: (open: boolean) => void
   onUpdate: () => void
 }
 
-export function TriageDialog({ item, open, onOpenChange, onUpdate }: TriageDialogProps) {
+export function TriageDialog({
+  item,
+  allShortages = [],
+  open,
+  onOpenChange,
+  onUpdate,
+}: TriageDialogProps) {
   const [loading, setLoading] = useState<string | null>(null)
   const [phase, setPhase] = useState<'triage' | 'quotation'>('triage')
   const [triagedItem, setTriagedItem] = useState<MaterialShortage | null>(null)
+
+  const currentItem = triagedItem || item
+  const consolidation = useMemo(() => {
+    if (!currentItem) return null
+    return findOtherOpDemands(currentItem, allShortages)
+  }, [currentItem, allShortages])
 
   const handleTriage = async (action: 'estoque' | 'cotacao') => {
     if (!item) return
@@ -63,16 +79,23 @@ export function TriageDialog({ item, open, onOpenChange, onUpdate }: TriageDialo
   }
 
   if (!item && !triagedItem) return null
-  const currentItem = triagedItem || item
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className={phase === 'quotation' ? 'max-w-2xl' : 'max-w-md'}>
+      <DialogContent
+        className={
+          phase === 'quotation'
+            ? 'max-w-2xl max-h-[90vh] overflow-y-auto'
+            : 'max-w-xl max-h-[90vh] overflow-y-auto'
+        }
+      >
         {phase === 'triage' ? (
           <>
             <DialogHeader>
               <DialogTitle>Triagem de Solicitação</DialogTitle>
-              <DialogDescription>Escolha o destino do item.</DialogDescription>
+              <DialogDescription>
+                Escolha o destino do item para cotação ou estoque.
+              </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
@@ -103,7 +126,15 @@ export function TriageDialog({ item, open, onOpenChange, onUpdate }: TriageDialo
                   </div>
                 )}
               </div>
-              <div className="flex gap-3">
+              {/* Bloco de consolidação de demanda com outras OPs */}
+              {consolidation && consolidation.otherDemands.length > 0 && (
+                <ConsolidatedDemandBlock
+                  consolidation={consolidation}
+                  currentItemLabel={`Pedido ${item?.expand?.order_id?.order_number || 'Req. Geral'} (OP ${item?.expand?.order_id?.op_number || '-'})`}
+                />
+              )}
+
+              <div className="flex gap-3 pt-1">
                 <Button
                   className="flex-1"
                   variant="outline"
@@ -135,6 +166,7 @@ export function TriageDialog({ item, open, onOpenChange, onUpdate }: TriageDialo
         ) : (
           <EnhancedQuotationForm
             item={currentItem!}
+            allShortages={allShortages}
             onUpdate={onUpdate}
             onClose={() => handleClose(false)}
           />

@@ -18,6 +18,8 @@ import {
 import { ComprasTable } from './components/ComprasTable'
 import { ComprasItemDialog } from './components/ComprasItemDialog'
 import { OrdemCompraModal, type OCItemInput } from './components/OrdemCompraModal'
+import { ProductDossierModal } from './components/ProductDossierModal'
+import { ProductSearchBar } from './components/ProductSearchBar'
 import { OrdemCompraDocument } from './components/OrdemCompraDocument'
 import { createOrdemCompra, getOrdemCompraItens } from '@/services/ordens-compra'
 import { useShortageStore } from '@/stores/useShortageStore'
@@ -27,6 +29,8 @@ export default function ComprasPage() {
   const [shortages, setShortages] = useState<MaterialShortage[]>([])
   const [editItem, setEditItem] = useState<MaterialShortage | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [dossierOpen, setDossierOpen] = useState(false)
+  const [dossierItem, setDossierItem] = useState<MaterialShortage | null>(null)
   const [ocModalOpen, setOcModalOpen] = useState(false)
   const [ocItems, setOcItems] = useState<OCItemInput[]>([])
   const [ocSupplier, setOcSupplier] = useState('')
@@ -221,6 +225,25 @@ export default function ComprasPage() {
           title="Compras"
           description="Monitoramento de pedidos de compra ativos e previsão de entrega."
           icon={ShoppingCart}
+          action={
+            <ProductSearchBar
+              className="w-64 sm:w-80"
+              placeholder="Pesquisar produto (dossiê)..."
+              onSelectProduct={(p) => {
+                setDossierItem({
+                  id: p.id || '',
+                  code: p.code,
+                  description: p.description,
+                  quantity: p.quantity || 0,
+                  sector: 'Suprimentos',
+                  status: 'Compra',
+                  created: '',
+                  updated: '',
+                } as MaterialShortage)
+                setDossierOpen(true)
+              }}
+            />
+          }
         />
         <div className="flex items-center gap-2">
           <Select value={opFilter} onValueChange={setOpFilter}>
@@ -323,6 +346,11 @@ export default function ComprasPage() {
         items={ocDocumentItems}
         open={ocDocOpen}
         onOpenChange={setOcDocOpen}
+      />
+      <ProductDossierModal
+        open={dossierOpen}
+        onOpenChange={setDossierOpen}
+        initialProduct={dossierItem}
       />
     </div>
   )

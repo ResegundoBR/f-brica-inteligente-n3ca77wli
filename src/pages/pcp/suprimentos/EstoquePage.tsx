@@ -21,9 +21,11 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Inventory } from '@/types'
-import { Warehouse, AlertTriangle, Plus, History } from 'lucide-react'
+import { Warehouse, AlertTriangle, Plus, History, FileSpreadsheet } from 'lucide-react'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
 import { InventoryItemDialog } from './components/InventoryItemDialog'
+import { ProductDossierModal } from './components/ProductDossierModal'
+import { ProductSearchBar } from './components/ProductSearchBar'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { getInventory, createInventoryItem } from '@/services/inventory'
@@ -31,6 +33,8 @@ import { getInventory, createInventoryItem } from '@/services/inventory'
 export default function EstoquePage() {
   const [inventory, setInventory] = useState<Inventory[]>([])
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
+  const [dossierOpen, setDossierOpen] = useState(false)
+  const [dossierItem, setDossierItem] = useState<Inventory | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [newCode, setNewCode] = useState('')
   const [newDesc, setNewDesc] = useState('')
@@ -86,6 +90,16 @@ export default function EstoquePage() {
     }
   }
 
+  const [searchTerm, setSearchTerm] = useState('')
+
+  const filteredInventory = inventory.filter((item) => {
+    if (!searchTerm.trim()) return true
+    const term = searchTerm.toLowerCase().trim()
+    const matchCode = item.code ? item.code.toLowerCase().includes(term) : false
+    const matchDesc = item.description ? item.description.toLowerCase().includes(term) : false
+    return matchCode || matchDesc
+  })
+
   const lowStockCount = inventory.filter((i) => i.quantity <= (i.min_quantity || 0)).length
   const totalItems = inventory.reduce((acc, i) => acc + (Number(i.quantity) || 0), 0)
 
@@ -96,12 +110,33 @@ export default function EstoquePage() {
         description="Controle de saldo de materiais, alertas de estoque mínimo e histórico de movimentações."
         icon={Warehouse}
         action={
-          <Button
-            onClick={() => setCreateOpen(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
-          >
-            <Plus className="size-4 mr-2" /> Novo Item
-          </Button>
+          <div className="flex items-center gap-2">
+            <ProductSearchBar
+              className="w-64 sm:w-80"
+              placeholder="Pesquisar produto (dossiê)..."
+              onSelectProduct={(p) => {
+                const inv = p.inventoryItem || inventory.find((i) => i.id === p.id) || null
+                setDossierItem(
+                  inv ||
+                    ({
+                      id: p.id || '',
+                      code: p.code,
+                      description: p.description,
+                      quantity: p.quantity || 0,
+                      created: '',
+                      updated: '',
+                    } as Inventory),
+                )
+                setDossierOpen(true)
+              }}
+            />
+            <Button
+              onClick={() => setCreateOpen(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              <Plus className="size-4 mr-2" /> Novo Item
+            </Button>
+          </div>
         }
       />
 
@@ -139,9 +174,39 @@ export default function EstoquePage() {
         </Card>
       </div>
 
+      {/* Barra de busca na listagem de estoque */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <div className="relative flex-1 max-w-md">
+          <Input
+            placeholder="Pesquisar estoque por código ou descrição..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-3 pr-8"
+          />
+          {searchTerm && (
+            <button
+              type="button"
+              onClick={() => setSearchTerm('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+        {searchTerm && (
+          <span className="text-xs text-muted-foreground self-center">
+            {filteredInventory.length} de {inventory.length} item(ns) encontrado(s)
+          </span>
+        )}
+      </div>
+
       {inventory.length === 0 ? (
         <div className="p-8 text-center border-2 border-dashed rounded-xl border-slate-200 dark:border-slate-800 text-slate-400 font-medium">
           Nenhum item em estoque.
+        </div>
+      ) : filteredInventory.length === 0 ? (
+        <div className="p-8 text-center border-2 border-dashed rounded-xl border-slate-200 dark:border-slate-800 text-slate-400 font-medium">
+          Nenhum item encontrado para &ldquo;{searchTerm}&rdquo;.
         </div>
       ) : (
         <div className="bg-white dark:bg-slate-900 rounded-lg border shadow-sm overflow-hidden">
@@ -158,7 +223,7 @@ export default function EstoquePage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {inventory.map((item) => {
+              {filteredInventory.map((item) => {
                 const isLow = item.quantity <= (item.min_quantity || 0)
                 return (
                   <TableRow
@@ -194,17 +259,32 @@ export default function EstoquePage() {
                       )}
                     </TableCell>
                     <TableCell className="text-center">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-xs"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setSelectedItemId(item.id)
-                        }}
-                      >
-                        <History className="size-3 mr-1" /> Movimentações
-                      </Button>
+                      <div className="flex items-center justify-center gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setDossierItem(item)
+                            setDossierOpen(true)
+                          }}
+                          title="Abrir Dossiê / Ficha do Produto"
+                        >
+                          <FileSpreadsheet className="size-3 mr-1" /> Ficha
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setSelectedItemId(item.id)
+                          }}
+                        >
+                          <History className="size-3 mr-1" /> Movim.
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 )
@@ -218,6 +298,12 @@ export default function EstoquePage() {
         item={selectedItem}
         open={!!selectedItemId}
         onOpenChange={(o) => !o && setSelectedItemId(null)}
+      />
+
+      <ProductDossierModal
+        open={dossierOpen}
+        onOpenChange={setDossierOpen}
+        initialProduct={dossierItem}
       />
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>

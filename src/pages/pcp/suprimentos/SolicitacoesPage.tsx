@@ -22,6 +22,8 @@ import {
 } from '@/components/ui/select'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
 import { TriageTable } from './components/TriageTable'
+import { ProductDossierModal } from './components/ProductDossierModal'
+import { ProductSearchBar } from './components/ProductSearchBar'
 import { TriageDetailDialog } from './components/TriageDetailDialog'
 import { NewShortageModal } from '@/pages/pcp/components/NewShortageModal'
 import { useShortageStore } from '@/stores/useShortageStore'
@@ -33,6 +35,8 @@ export default function SolicitacoesPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [shortages, setShortages] = useState<MaterialShortage[]>([])
   const [selectedItem, setSelectedItem] = useState<MaterialShortage | null>(null)
+  const [dossierOpen, setDossierOpen] = useState(false)
+  const [dossierItem, setDossierItem] = useState<MaterialShortage | null>(null)
   const [batchSupplierOpen, setBatchSupplierOpen] = useState(false)
   const [batchSupplierValue, setBatchSupplierValue] = useState('')
   const [supplierSuggestions, setSupplierSuggestions] = useState<string[]>([])
@@ -129,12 +133,31 @@ export default function SolicitacoesPage() {
         description="Triagem de solicitações da fábrica: usar estoque ou iniciar cotação."
         icon={ClipboardList}
         action={
-          <Button
-            onClick={() => setModalOpen(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
-          >
-            <Plus className="size-4 mr-2" /> Nova Solicitação
-          </Button>
+          <div className="flex items-center gap-2">
+            <ProductSearchBar
+              className="w-64 sm:w-80"
+              placeholder="Pesquisar produto (dossiê)..."
+              onSelectProduct={(p) => {
+                setDossierItem({
+                  id: p.id || '',
+                  code: p.code,
+                  description: p.description,
+                  quantity: p.quantity || 0,
+                  sector: 'Suprimentos',
+                  status: 'Pendente',
+                  created: '',
+                  updated: '',
+                } as MaterialShortage)
+                setDossierOpen(true)
+              }}
+            />
+            <Button
+              onClick={() => setModalOpen(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              <Plus className="size-4 mr-2" /> Nova Solicitação
+            </Button>
+          </div>
         }
       />
       <NewShortageModal open={modalOpen} onOpenChange={setModalOpen} />
@@ -230,6 +253,11 @@ export default function SolicitacoesPage() {
         open={!!selectedItem}
         onOpenChange={(o) => !o && setSelectedItem(null)}
         onAction={fetchShortages}
+      />
+      <ProductDossierModal
+        open={dossierOpen}
+        onOpenChange={setDossierOpen}
+        initialProduct={dossierItem}
       />
     </div>
   )

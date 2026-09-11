@@ -4,7 +4,7 @@ import { useRealtime } from '@/hooks/use-realtime'
 import { useAuth } from '@/hooks/use-auth'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { MaterialShortage, OrdemCompra, OrdemCompraItem, PcpOrder } from '@/types'
+import { MaterialShortage, OrdemCompra, OrdemCompraItem, PcpOrder, Quotation } from '@/types'
 import { ShoppingCart, FileText, Layers } from 'lucide-react'
 import { parseISO, isBefore, startOfDay, isValid } from 'date-fns'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
@@ -116,7 +116,7 @@ export default function ComprasPage() {
     })
   }
 
-  const handleGerarOC = () => {
+  const handleGerarOC = async () => {
     const selected = comprasItems.filter((i) => selectedIds.has(i.id))
     if (selected.length === 0) return
     const suppliers = new Set(selected.map((s) => s.supplier || '').filter(Boolean))
@@ -129,11 +129,36 @@ export default function ComprasPage() {
       return
     }
     const supplierName = selected[0].supplier || ''
+
+    // Busca cotações selecionadas para pré-carregar ST e IPI se existirem
+    const selectedShortageIds = selected.map((s) => s.id)
+    let quotationsMap: Record<string, { st_value?: number; ipi_value?: number }> = {}
+    try {
+      const filterStr = selectedShortageIds
+        .map((id) => `material_shortage_id = "${id}"`)
+        .join(' || ')
+      if (filterStr) {
+        const quots = await pb.collection('quotations').getFullList<Quotation>({
+          filter: `(${filterStr}) && selected = true`,
+        })
+        for (const q of quots) {
+          quotationsMap[q.material_shortage_id] = {
+            st_value: q.st_value,
+            ipi_value: q.ipi_value,
+          }
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+
     const items: OCItemInput[] = selected.map((s) => ({
       description: s.description,
       code: s.code,
       quantity: Number(s.quantity) || 0,
       unit_price: Number(s.unit_price) || 0,
+      st_value: quotationsMap[s.id]?.st_value || 0,
+      ipi_value: quotationsMap[s.id]?.ipi_value || 0,
       material_shortage_id: s.id,
     }))
     setOcSupplier(supplierName)
@@ -148,7 +173,14 @@ export default function ComprasPage() {
     paymentTerms: string,
     deliveryType: string,
   ) => {
-    const total = items.reduce((sum, it) => sum + it.quantity * it.unit_price, 0)
+    const total = items.reduce(
+      (sum, it) =>
+        sum +
+        it.quantity * it.unit_price +
+        (Number(it.st_value) || 0) +
+        (Number(it.ipi_value) || 0),
+      0,
+    )
     try {
       const oc = await createOrdemCompra({
         supplier: ocSupplier,
@@ -163,7 +195,10 @@ export default function ComprasPage() {
           code: it.code,
           quantity: it.quantity,
           unit_price: it.unit_price,
-          total: it.quantity * it.unit_price,
+          st_value: Number(it.st_value) || 0,
+          ipi_value: Number(it.ipi_value) || 0,
+          total:
+            it.quantity * it.unit_price + (Number(it.st_value) || 0) + (Number(it.ipi_value) || 0),
           material_shortage_id: it.material_shortage_id,
         })),
       })

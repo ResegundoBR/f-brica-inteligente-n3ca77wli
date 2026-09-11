@@ -52,6 +52,8 @@ export const createOrdemCompra = async (data: {
     code?: string
     quantity: number
     unit_price?: number
+    st_value?: number
+    ipi_value?: number
     total?: number
     material_shortage_id?: string
   }>
@@ -77,6 +79,8 @@ export const createOrdemCompra = async (data: {
       ...(item.code && { code: item.code }),
       quantity: item.quantity,
       ...(item.unit_price !== undefined && { unit_price: item.unit_price }),
+      ...(item.st_value !== undefined && { st_value: item.st_value }),
+      ...(item.ipi_value !== undefined && { ipi_value: item.ipi_value }),
       ...(item.total !== undefined && { total: item.total }),
       ...(item.material_shortage_id && { material_shortage_id: item.material_shortage_id }),
     })

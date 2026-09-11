@@ -35,6 +35,8 @@ export interface OCItemInput {
   code?: string
   quantity: number
   unit_price: number
+  st_value?: number
+  ipi_value?: number
   material_shortage_id?: string
   suggestedTotal?: number
   otherOpsCount?: number
@@ -74,6 +76,8 @@ export function OrdemCompraModal({
   const [newCode, setNewCode] = useState('')
   const [newQty, setNewQty] = useState('1')
   const [newPrice, setNewPrice] = useState('')
+  const [newSt, setNewSt] = useState('')
+  const [newIpi, setNewIpi] = useState('')
 
   useEffect(() => {
     if (open) {
@@ -114,6 +118,12 @@ export function OrdemCompraModal({
   const updatePrice = (idx: number, price: number) =>
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, unit_price: price } : it)))
 
+  const updateSt = (idx: number, st: number) =>
+    setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, st_value: st } : it)))
+
+  const updateIpi = (idx: number, ipi: number) =>
+    setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ipi_value: ipi } : it)))
+
   const applySuggestedTotal = (idx: number, suggestedQty: number) =>
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, quantity: suggestedQty } : it)))
 
@@ -128,15 +138,22 @@ export function OrdemCompraModal({
         ...(newCode.trim() && { code: newCode.trim() }),
         quantity: Number(newQty) || 1,
         unit_price: Number(newPrice) || 0,
+        st_value: Number(newSt) || 0,
+        ipi_value: Number(newIpi) || 0,
       },
     ])
     setNewDesc('')
     setNewCode('')
     setNewQty('1')
     setNewPrice('')
+    setNewSt('')
+    setNewIpi('')
   }
 
-  const grandTotal = items.reduce((sum, it) => sum + it.quantity * it.unit_price, 0)
+  const getItemTotal = (it: OCItemInput) =>
+    it.quantity * it.unit_price + (Number(it.st_value) || 0) + (Number(it.ipi_value) || 0)
+
+  const grandTotal = items.reduce((sum, it) => sum + getItemTotal(it), 0)
 
   const handleConfirm = async () => {
     setSaving(true)
@@ -199,12 +216,14 @@ export function OrdemCompraModal({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[100px]">Código</TableHead>
+                  <TableHead className="w-[90px]">Código</TableHead>
                   <TableHead>Descrição</TableHead>
-                  <TableHead className="w-[100px]">Qtde</TableHead>
-                  <TableHead className="w-[120px]">Vl. Unit.</TableHead>
-                  <TableHead className="text-right w-[120px]">Total</TableHead>
-                  <TableHead className="w-[40px]"></TableHead>
+                  <TableHead className="w-[80px]">Qtde</TableHead>
+                  <TableHead className="w-[105px]">Vl. Unit.</TableHead>
+                  <TableHead className="w-[95px]">ST</TableHead>
+                  <TableHead className="w-[95px]">IPI</TableHead>
+                  <TableHead className="text-right w-[115px]">Total</TableHead>
+                  <TableHead className="w-[36px]"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -221,7 +240,7 @@ export function OrdemCompraModal({
                     >
                       <TableCell>
                         <Input
-                          className="h-8 w-24"
+                          className="h-8 w-20"
                           value={item.code || ''}
                           onChange={(e) => updateCode(idx, e.target.value)}
                           placeholder="-"
@@ -254,7 +273,7 @@ export function OrdemCompraModal({
                       <TableCell>
                         <Input
                           type="number"
-                          className="h-8 w-20"
+                          className="h-8 w-16"
                           value={item.quantity}
                           onChange={(e) => updateQty(idx, Number(e.target.value) || 0)}
                         />
@@ -263,13 +282,33 @@ export function OrdemCompraModal({
                         <Input
                           type="number"
                           step="0.01"
-                          className="h-8 w-28"
+                          className="h-8 w-24"
                           value={item.unit_price}
                           onChange={(e) => updatePrice(idx, Number(e.target.value) || 0)}
                         />
                       </TableCell>
+                      <TableCell>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          className="h-8 w-20"
+                          value={item.st_value ?? ''}
+                          placeholder="0,00"
+                          onChange={(e) => updateSt(idx, Number(e.target.value) || 0)}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          className="h-8 w-20"
+                          value={item.ipi_value ?? ''}
+                          placeholder="0,00"
+                          onChange={(e) => updateIpi(idx, Number(e.target.value) || 0)}
+                        />
+                      </TableCell>
                       <TableCell className="text-right text-sm font-semibold">
-                        {formatCurrency(item.quantity * item.unit_price)}
+                        {formatCurrency(getItemTotal(item))}
                       </TableCell>
                       <TableCell>
                         <Button
@@ -288,11 +327,11 @@ export function OrdemCompraModal({
           </div>
 
           <div className="flex flex-wrap items-end gap-2 p-3 border-2 border-dashed rounded-lg">
-            <div className="w-24 space-y-1">
+            <div className="w-20 space-y-1">
               <Label className="text-xs">Código</Label>
               <Input value={newCode} onChange={(e) => setNewCode(e.target.value)} placeholder="-" />
             </div>
-            <div className="flex-1 min-w-[150px] space-y-1">
+            <div className="flex-1 min-w-[140px] space-y-1">
               <Label className="text-xs">Nova Descrição</Label>
               <Input
                 value={newDesc}
@@ -300,17 +339,38 @@ export function OrdemCompraModal({
                 placeholder="Adicionar item..."
               />
             </div>
-            <div className="w-20 space-y-1">
+            <div className="w-16 space-y-1">
               <Label className="text-xs">Qtde</Label>
               <Input type="number" value={newQty} onChange={(e) => setNewQty(e.target.value)} />
             </div>
-            <div className="w-28 space-y-1">
+            <div className="w-24 space-y-1">
               <Label className="text-xs">Vl. Unit.</Label>
               <Input
                 type="number"
                 step="0.01"
                 value={newPrice}
                 onChange={(e) => setNewPrice(e.target.value)}
+                placeholder="0,00"
+              />
+            </div>
+            <div className="w-20 space-y-1">
+              <Label className="text-xs">ST</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={newSt}
+                onChange={(e) => setNewSt(e.target.value)}
+                placeholder="0,00"
+              />
+            </div>
+            <div className="w-20 space-y-1">
+              <Label className="text-xs">IPI</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={newIpi}
+                onChange={(e) => setNewIpi(e.target.value)}
+                placeholder="0,00"
               />
             </div>
             <Button variant="outline" size="sm" onClick={handleAddItem}>

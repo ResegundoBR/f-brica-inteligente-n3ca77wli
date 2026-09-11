@@ -378,6 +378,8 @@ export interface Quotation {
   price: number
   delivery_days?: number
   selected?: boolean
+  st_value?: number
+  ipi_value?: number
   created: string
   updated: string
   expand?: {
@@ -463,6 +465,8 @@ export interface OrdemCompraItem {
   code?: string
   quantity: number
   unit_price?: number
+  st_value?: number
+  ipi_value?: number
   total?: number
   created: string
   updated: string

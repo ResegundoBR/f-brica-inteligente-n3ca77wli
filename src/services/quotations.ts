@@ -17,6 +17,8 @@ export const createQuotation = (data: {
   supplier: string
   price: number
   delivery_days?: number
+  st_value?: number
+  ipi_value?: number
 }) => pb.collection('quotations').create({ ...data, selected: false })
 
 export const selectQuotation = async (quotationId: string, shortageId: string) => {

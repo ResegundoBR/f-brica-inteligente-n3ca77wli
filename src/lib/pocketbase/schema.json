@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-10T22:23:19.847Z",
+  "generatedAt": "2026-09-11T20:56:55.502Z",
   "collections": [
     {
       "name": "users",
@@ -1613,6 +1613,18 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "st_value",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ipi_value",
+          "type": "number",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
@@ -2022,6 +2034,18 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "st_value",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ipi_value",
+          "type": "number",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [

@@ -178,12 +178,18 @@ export function SupplierMetrics({
         purchaseDate: oc.created,
         receivedDate: oc.updated,
         daysRealized: diffDays,
-        items: ocItems.map((it) => ({
-          description: it.description,
-          quantity: it.quantity,
-          unitPrice: it.unit_price,
-          total: it.total ?? (it.unit_price ? it.unit_price * it.quantity : 0),
-        })),
+        items: ocItems.map((it) => {
+          const st = Number(it.st_value) || 0
+          const ipi = Number(it.ipi_value) || 0
+          return {
+            description: it.description,
+            quantity: it.quantity,
+            unitPrice: it.unit_price,
+            total:
+              it.total ??
+              (it.unit_price !== undefined ? it.unit_price * it.quantity + st + ipi : 0),
+          }
+        }),
         totalAmount: Number(oc.total) || 0,
       })
     }
@@ -587,11 +593,14 @@ export function SupplierMetrics({
                 <div className="space-y-3">
                   {supplierOCs.map((oc) => {
                     const items = ocItemsMap[oc.id] || []
-                    const itemsTotal = items.reduce(
-                      (acc, it) =>
-                        acc + (it.total ?? (it.unit_price ? it.unit_price * it.quantity : 0)),
-                      0,
-                    )
+                    const itemsTotal = items.reduce((acc, it) => {
+                      const st = Number(it.st_value) || 0
+                      const ipi = Number(it.ipi_value) || 0
+                      return (
+                        acc +
+                        (it.total ?? (it.unit_price ? it.unit_price * it.quantity + st + ipi : 0))
+                      )
+                    }, 0)
                     const displayTotal =
                       oc.total && Number(oc.total) > 0 ? Number(oc.total) : itemsTotal
 
@@ -636,9 +645,11 @@ export function SupplierMetrics({
                                     <th className="py-2 px-3 text-center font-semibold w-16">
                                       Qtd
                                     </th>
-                                    <th className="py-2 px-3 text-right font-semibold w-24">
+                                    <th className="py-2 px-3 text-right font-semibold w-20">
                                       Valor Unit.
                                     </th>
+                                    <th className="py-2 px-3 text-right font-semibold w-16">ST</th>
+                                    <th className="py-2 px-3 text-right font-semibold w-16">IPI</th>
                                     <th className="py-2 px-3 text-right font-semibold w-24">
                                       Valor Total
                                     </th>
@@ -646,10 +657,12 @@ export function SupplierMetrics({
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                                   {items.map((it) => {
+                                    const st = Number(it.st_value) || 0
+                                    const ipi = Number(it.ipi_value) || 0
                                     const itTotal =
                                       it.total ??
                                       (it.unit_price !== undefined
-                                        ? it.unit_price * it.quantity
+                                        ? it.unit_price * it.quantity + st + ipi
                                         : 0)
                                     return (
                                       <tr
@@ -671,6 +684,12 @@ export function SupplierMetrics({
                                           {it.unit_price !== undefined
                                             ? formatCurrency(it.unit_price)
                                             : '-'}
+                                        </td>
+                                        <td className="py-2 px-3 text-right text-muted-foreground">
+                                          {st > 0 ? formatCurrency(st) : '-'}
+                                        </td>
+                                        <td className="py-2 px-3 text-right text-muted-foreground">
+                                          {ipi > 0 ? formatCurrency(ipi) : '-'}
                                         </td>
                                         <td className="py-2 px-3 text-right font-semibold text-slate-800 dark:text-slate-200">
                                           {formatCurrency(itTotal)}

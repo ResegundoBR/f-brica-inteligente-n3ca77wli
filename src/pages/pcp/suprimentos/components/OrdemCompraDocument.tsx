@@ -45,10 +45,12 @@ export function OrdemCompraDocument({ oc, items, open, onOpenChange }: OrdemComp
 
   const handlePrint = () => {
     const rows = items
-      .map(
-        (it) =>
-          `<tr><td>${it.code || '-'}</td><td>${it.description}</td><td class="r">${it.quantity}</td><td class="r">${formatCurrency(it.unit_price || 0)}</td><td class="r">${formatCurrency(it.total || (it.quantity || 0) * (it.unit_price || 0))}</td></tr>`,
-      )
+      .map((it) => {
+        const st = Number(it.st_value) || 0
+        const ipi = Number(it.ipi_value) || 0
+        const itTotal = it.total ?? (it.quantity || 0) * (it.unit_price || 0) + st + ipi
+        return `<tr><td>${it.code || '-'}</td><td>${it.description}</td><td class="r">${it.quantity}</td><td class="r">${formatCurrency(it.unit_price || 0)}</td><td class="r">${st > 0 ? formatCurrency(st) : '-'}</td><td class="r">${ipi > 0 ? formatCurrency(ipi) : '-'}</td><td class="r">${formatCurrency(itTotal)}</td></tr>`
+      })
       .join('')
 
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>OC ${formatOcNumber(oc.oc_number)}</title>
@@ -89,7 +91,7 @@ export function OrdemCompraDocument({ oc, items, open, onOpenChange }: OrdemComp
       ${oc.payment_terms ? `<p><strong>Condições de Pagamento:</strong> ${oc.payment_terms}</p>` : ''}
     </div>
     <div class="delivery-box">${deliveryInfo}</div>
-    <table><thead><tr><th>Código</th><th>Descrição</th><th class="r">Qtde</th><th class="r">Vl. Unit.</th><th class="r">Total</th></tr></thead>
+    <table><thead><tr><th>Código</th><th>Descrição</th><th class="r">Qtde</th><th class="r">Vl. Unit.</th><th class="r">ST</th><th class="r">IPI</th><th class="r">Total</th></tr></thead>
     <tbody>${rows}</tbody></table>
     <div class="total">Total Geral: ${formatCurrency(grandTotal)}</div>
     ${oc.delivery_terms ? `<div class="terms"><strong>Condições de Entrega:</strong><br/>${oc.delivery_terms}</div>` : ''}
@@ -152,21 +154,36 @@ export function OrdemCompraDocument({ oc, items, open, onOpenChange }: OrdemComp
                 <th className="text-left py-2 text-sm">Descrição</th>
                 <th className="text-right py-2 text-sm">Qtde</th>
                 <th className="text-right py-2 text-sm">Vl. Unit.</th>
+                <th className="text-right py-2 text-sm">ST</th>
+                <th className="text-right py-2 text-sm">IPI</th>
                 <th className="text-right py-2 text-sm">Total</th>
               </tr>
             </thead>
             <tbody>
-              {items.map((it) => (
-                <tr key={it.id} className="border-b">
-                  <td className="py-2 text-sm">{it.code || '-'}</td>
-                  <td className="py-2 text-sm">{it.description}</td>
-                  <td className="text-right py-2 text-sm">{it.quantity}</td>
-                  <td className="text-right py-2 text-sm">{formatCurrency(it.unit_price || 0)}</td>
-                  <td className="text-right py-2 text-sm font-semibold">
-                    {formatCurrency(it.total || (it.quantity || 0) * (it.unit_price || 0))}
-                  </td>
-                </tr>
-              ))}
+              {items.map((it) => {
+                const st = Number(it.st_value) || 0
+                const ipi = Number(it.ipi_value) || 0
+                const itTotal = it.total ?? (it.quantity || 0) * (it.unit_price || 0) + st + ipi
+                return (
+                  <tr key={it.id} className="border-b">
+                    <td className="py-2 text-sm">{it.code || '-'}</td>
+                    <td className="py-2 text-sm">{it.description}</td>
+                    <td className="text-right py-2 text-sm">{it.quantity}</td>
+                    <td className="text-right py-2 text-sm">
+                      {formatCurrency(it.unit_price || 0)}
+                    </td>
+                    <td className="text-right py-2 text-sm text-muted-foreground">
+                      {st > 0 ? formatCurrency(st) : '-'}
+                    </td>
+                    <td className="text-right py-2 text-sm text-muted-foreground">
+                      {ipi > 0 ? formatCurrency(ipi) : '-'}
+                    </td>
+                    <td className="text-right py-2 text-sm font-semibold">
+                      {formatCurrency(itTotal)}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
           <div className="text-right">

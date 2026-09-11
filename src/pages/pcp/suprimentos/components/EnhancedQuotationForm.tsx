@@ -36,6 +36,8 @@ export function EnhancedQuotationForm({
   const [qty, setQty] = useState(String(item.quantity))
   const [supplier, setSupplier] = useState('')
   const [price, setPrice] = useState('')
+  const [stValue, setStValue] = useState('')
+  const [ipiValue, setIpiValue] = useState('')
   const [deliveryDays, setDeliveryDays] = useState('')
   const [saving, setSaving] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -64,16 +66,22 @@ export function EnhancedQuotationForm({
     }
     setSaving(true)
     try {
+      const parsedSt = stValue ? parseFloat(stValue) : undefined
+      const parsedIpi = ipiValue ? parseFloat(ipiValue) : undefined
       await pb.collection('quotations').create({
         material_shortage_id: item.id,
         supplier: supplier.trim(),
         price: parseFloat(price),
+        st_value: parsedSt && Number.isFinite(parsedSt) ? parsedSt : undefined,
+        ipi_value: parsedIpi && Number.isFinite(parsedIpi) ? parsedIpi : undefined,
         delivery_days: deliveryDays ? parseInt(deliveryDays) : undefined,
         selected: false,
       })
       await loadQuotations()
       setSupplier('')
       setPrice('')
+      setStValue('')
+      setIpiValue('')
       setDeliveryDays('')
       onUpdate()
       toast.success('Cotação adicionada')
@@ -193,7 +201,7 @@ export function EnhancedQuotationForm({
               <Plus className="w-4 h-4" />
             </Button>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <div>
               <Label className="text-xs">Preço (R$)</Label>
               <Input
@@ -204,6 +212,30 @@ export function EnhancedQuotationForm({
                 className="h-8 text-sm"
               />
             </div>
+            <div>
+              <Label className="text-xs">ST (R$)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={stValue}
+                onChange={(e) => setStValue(e.target.value)}
+                placeholder="0.00"
+                className="h-8 text-sm"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">IPI (R$)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={ipiValue}
+                onChange={(e) => setIpiValue(e.target.value)}
+                placeholder="0.00"
+                className="h-8 text-sm"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
             <div>
               <Label className="text-xs">Prazo (dias)</Label>
               <Input
@@ -235,7 +267,10 @@ export function EnhancedQuotationForm({
                 <div className="flex-1">
                   <p className="text-sm font-medium">{q.supplier}</p>
                   <p className="text-xs text-muted-foreground">
-                    R$ {q.price.toFixed(2)} • {q.delivery_days || '-'} dias
+                    R$ {q.price.toFixed(2)}
+                    {q.st_value ? ` • ST: R$ ${q.st_value.toFixed(2)}` : ''}
+                    {q.ipi_value ? ` • IPI: R$ ${q.ipi_value.toFixed(2)}` : ''}
+                    {` • ${q.delivery_days || '-'} dias`}
                   </p>
                 </div>
                 <Button

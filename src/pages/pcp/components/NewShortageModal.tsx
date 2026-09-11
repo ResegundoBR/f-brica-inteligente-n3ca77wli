@@ -257,6 +257,16 @@ export function NewShortageModal({
             </div>
           </div>
 
+          <div className="space-y-1.5">
+            <Label htmlFor="item-code">Código Interno</Label>
+            <Input
+              id="item-code"
+              value={itemCode}
+              onChange={(e) => setItemCode(e.target.value)}
+              placeholder="Ex.: 5725, MAT-001..."
+            />
+          </div>
+
           <div className="space-y-1.5 flex flex-col relative">
             <Label>Item / Material</Label>
             <Popover open={comboboxOpen} onOpenChange={setComboboxOpen}>
@@ -282,7 +292,6 @@ export function NewShortageModal({
                     value={itemDesc}
                     onValueChange={(val) => {
                       setItemDesc(val)
-                      setItemCode('')
                     }}
                   />
                   <CommandList>
@@ -311,7 +320,7 @@ export function NewShortageModal({
                             key={i}
                             value={`${s.code} ${s.desc}`}
                             onSelect={() => {
-                              setItemCode(s.code)
+                              setItemCode(s.code || '')
                               setItemDesc(s.desc)
                               setComboboxOpen(false)
                             }}
@@ -351,7 +360,18 @@ export function NewShortageModal({
             </div>
             <div className="space-y-1.5">
               <Label>Setor / Destino</Label>
-              <Input value={sector} onChange={(e) => setSector(e.target.value)} />
+              <Select value={sector} onValueChange={setSector}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o setor" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Montagem">Montagem</SelectItem>
+                  <SelectItem value="Acabamento">Acabamento</SelectItem>
+                  <SelectItem value="Fabricação">Fabricação</SelectItem>
+                  <SelectItem value="Expedição">Expedição</SelectItem>
+                  <SelectItem value="Adm">Adm</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <Label>Prioridade</Label>

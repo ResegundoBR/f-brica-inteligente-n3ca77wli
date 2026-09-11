@@ -58,6 +58,8 @@ export function QuotationDialog({
   const [quotations, setQuotations] = useState<Quotation[]>([])
   const [supplier, setSupplier] = useState('')
   const [price, setPrice] = useState('')
+  const [stValue, setStValue] = useState('')
+  const [ipiValue, setIpiValue] = useState('')
   const [deliveryDays, setDeliveryDays] = useState('')
   const [editing, setEditing] = useState(false)
   const [editDesc, setEditDesc] = useState('')
@@ -78,6 +80,8 @@ export function QuotationDialog({
         .catch(() => {})
       setSupplier('')
       setPrice('')
+      setStValue('')
+      setIpiValue('')
       setDeliveryDays('')
       setEditing(false)
       setEditDesc(item.description)
@@ -96,16 +100,22 @@ export function QuotationDialog({
       toast({ title: 'Erro', description: 'Preço inválido', variant: 'destructive' })
       return
     }
+    const numSt = stValue ? Number(stValue) : undefined
+    const numIpi = ipiValue ? Number(ipiValue) : undefined
     try {
       await createQuotation({
         material_shortage_id: item.id,
         supplier: supplier.trim(),
         price: numPrice,
+        st_value: numSt && Number.isFinite(numSt) ? numSt : undefined,
+        ipi_value: numIpi && Number.isFinite(numIpi) ? numIpi : undefined,
         delivery_days: deliveryDays ? Number(deliveryDays) : undefined,
       })
       setQuotations(await getQuotationsByShortage(item.id))
       setSupplier('')
       setPrice('')
+      setStValue('')
+      setIpiValue('')
       setDeliveryDays('')
       toast({ title: 'Cotação adicionada' })
     } catch (err: any) {
@@ -315,7 +325,9 @@ export function QuotationDialog({
                   <TableHeader>
                     <TableRow>
                       <TableHead>Fornecedor</TableHead>
-                      <TableHead className="text-right">Preço</TableHead>
+                      <TableHead className="text-right">Preço Unit.</TableHead>
+                      <TableHead className="text-right">ST (R$)</TableHead>
+                      <TableHead className="text-right">IPI (R$)</TableHead>
                       <TableHead className="text-center">Prazo (dias)</TableHead>
                       <TableHead className="text-center">Sel.</TableHead>
                       <TableHead className="w-[60px]" />
@@ -330,6 +342,16 @@ export function QuotationDialog({
                         <TableCell className="font-medium text-sm">{q.supplier}</TableCell>
                         <TableCell className="text-right font-semibold text-sm">
                           R$ {Number(q.price).toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-right text-xs text-muted-foreground">
+                          {q.st_value != null && q.st_value > 0
+                            ? `R$ ${Number(q.st_value).toFixed(2)}`
+                            : '-'}
+                        </TableCell>
+                        <TableCell className="text-right text-xs text-muted-foreground">
+                          {q.ipi_value != null && q.ipi_value > 0
+                            ? `R$ ${Number(q.ipi_value).toFixed(2)}`
+                            : '-'}
                         </TableCell>
                         <TableCell className="text-center text-sm">
                           {q.delivery_days || '-'}
@@ -370,8 +392,8 @@ export function QuotationDialog({
             )}
             <div className="border-t pt-4 space-y-3">
               <Label className="font-semibold">Adicionar Cotação</Label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="space-y-1">
+              <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
+                <div className="space-y-1 sm:col-span-2">
                   <Label className="text-xs">Fornecedor</Label>
                   <SupplierSearchSelect
                     value={supplier}
@@ -391,6 +413,30 @@ export function QuotationDialog({
                     placeholder="0.00"
                   />
                 </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">ST (R$)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={stValue}
+                    onChange={(e) => setStValue(e.target.value)}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">IPI (R$)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={ipiValue}
+                    onChange={(e) => setIpiValue(e.target.value)}
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="space-y-1">
                   <Label className="text-xs">Prazo (dias)</Label>
                   <Input

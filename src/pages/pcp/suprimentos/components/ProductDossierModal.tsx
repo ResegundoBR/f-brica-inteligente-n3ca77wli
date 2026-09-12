@@ -33,7 +33,20 @@ import {
   User,
   MasterComponent,
 } from '@/types'
-import { getMasterComponents } from '@/services/components'
+import { getMasterComponents, reactivateMasterComponent } from '@/services/components'
+import { Button } from '@/components/ui/button'
+import { useToast } from '@/hooks/use-toast'
+import { RotateCcw } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { format, parseISO, isValid } from 'date-fns'
 import { calculateShortageBalance, isSameItem } from '@/services/material-consolidation'
 import { cn } from '@/lib/utils'
@@ -107,7 +120,10 @@ export function ProductDossierModal({
   const [allMovements, setAllMovements] = useState<InventoryMovement[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+  const [isReactivating, setIsReactivating] = useState(false)
+  const [reactivateConfirmOpen, setReactivateConfirmOpen] = useState(false)
   const searchContainerRef = useRef<HTMLDivElement>(null)
+  const { toast } = useToast()
 
   // Carrega os dados necessários quando abre
   useEffect(() => {
@@ -736,13 +752,25 @@ export function ProductDossierModal({
                       </Badge>
                     )}
                     {selectedMasterComponent?.active === false && (
-                      <UserActionBadge
-                        user={selectedMasterComponent.expand?.deactivated_by}
-                        date={selectedMasterComponent.deactivated_at}
-                        prefix="inativado por"
-                        showTime={true}
-                        compact={true}
-                      />
+                      <>
+                        <UserActionBadge
+                          user={selectedMasterComponent.expand?.deactivated_by}
+                          date={selectedMasterComponent.deactivated_at}
+                          prefix="inativado por"
+                          showTime={true}
+                          compact={true}
+                        />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-6 px-2 text-[11px] text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 ml-1"
+                          onClick={() => setReactivateConfirmOpen(true)}
+                          disabled={isReactivating}
+                          title="Reativar componente para que volte a aparecer nas buscas e autocompletes"
+                        >
+                          <RotateCcw className="size-3 mr-1" /> Reativar
+                        </Button>
+                      </>
                     )}
                   </div>
                   <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
@@ -1134,6 +1162,55 @@ export function ProductDossierModal({
           </div>
         )}
       </DialogContent>
+
+      {/* CONFIRMAÇÃO DE REATIVAÇÃO */}
+      <AlertDialog open={reactivateConfirmOpen} onOpenChange={setReactivateConfirmOpen}>
+        <AlertDialogContent className="sm:max-w-[440px]">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-emerald-600">
+              <RotateCcw className="size-5" /> Reativar Componente
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Deseja reativar o componente{' '}
+              <strong>&ldquo;{selectedProduct?.description}&rdquo;</strong>? Ele voltará a aparecer
+              nos autocompletes e listagens ativas do sistema.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isReactivating}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              disabled={isReactivating}
+              onClick={async (e) => {
+                e.preventDefault()
+                if (!selectedMasterComponent?.id) return
+                setIsReactivating(true)
+                try {
+                  const updated = await reactivateMasterComponent(selectedMasterComponent.id)
+                  toast({
+                    title: 'Componente reativado',
+                    description: `O item "${updated.description}" está ativo novamente no sistema.`,
+                  })
+                  setAllMasterComponents((prev) =>
+                    prev.map((c) => (c.id === updated.id ? updated : c)),
+                  )
+                  setReactivateConfirmOpen(false)
+                } catch (err: any) {
+                  toast({
+                    title: 'Erro ao reativar',
+                    description: err.message || 'Não foi possível reativar o componente.',
+                    variant: 'destructive',
+                  })
+                } finally {
+                  setIsReactivating(false)
+                }
+              }}
+            >
+              {isReactivating ? 'Reativando...' : 'Confirmar Reativação'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   )
 }

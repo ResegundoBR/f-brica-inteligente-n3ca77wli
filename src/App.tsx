@@ -25,6 +25,7 @@ import TerceirizacaoPage from './pages/pcp/suprimentos/TerceirizacaoPage'
 import FornecedoresPage from './pages/pcp/suprimentos/FornecedoresPage'
 import OrdensCompraPage from './pages/pcp/suprimentos/OrdensCompraPage'
 import CentralDestinoPage from './pages/pcp/suprimentos/CentralDestinoPage'
+import DuplicatasPage from './pages/pcp/suprimentos/DuplicatasPage'
 import PcpClients from './pages/pcp/PcpClients'
 import PcpOperator from './pages/pcp/PcpOperator'
 import PcpCommercial from './pages/pcp/PcpCommercial'
@@ -231,6 +232,14 @@ const App = () => (
                 element={
                   <RoleGuard module="suprimentos">
                     <EstoquePage />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/pcp/suprimentos/duplicatas"
+                element={
+                  <RoleGuard module="suprimentos">
+                    <DuplicatasPage />
                   </RoleGuard>
                 }
               />

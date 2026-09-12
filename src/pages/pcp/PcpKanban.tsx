@@ -52,6 +52,7 @@ import { ExpeditionModal } from './components/ExpeditionModal'
 import { useAuth } from '@/hooks/use-auth'
 import { PromisedDateBadge } from '@/components/PromisedDateBadge'
 import { PromisedDateModal } from '@/components/PromisedDateModal'
+import { UserActionBadge } from '@/components/UserActionBadge'
 import { setPromisedDateOnOrder } from '@/services/pcp-promised-date'
 import { useToast } from '@/hooks/use-toast'
 import { Target, Calendar as CalendarIcon } from 'lucide-react'
@@ -1062,8 +1063,15 @@ export default function PcpKanban() {
                           : o.expand?.product_id?.name || 'S/Produto'}
                       <span className="ml-4 font-medium text-foreground">Qtd:</span> {o.quantity}
                     </div>
-                    <div className="text-sm font-medium text-red-600 dark:text-red-400 mt-2">
-                      Motivo: {o.bottleneck_reason}
+                    <div className="text-sm font-medium text-red-600 dark:text-red-400 mt-2 flex flex-wrap items-center gap-2">
+                      <span>Motivo: {o.bottleneck_reason}</span>
+                      {o.expand?.bottleneck_by && (
+                        <UserActionBadge
+                          user={o.expand.bottleneck_by}
+                          prefix="Sinalizado por"
+                          compact={true}
+                        />
+                      )}
                     </div>
                     {o.bottleneck_details && (
                       <div className="text-xs text-muted-foreground italic border-l-2 border-red-200 pl-2 mt-1">
@@ -1188,13 +1196,22 @@ export default function PcpKanban() {
                       <AlertCircle className="size-4 mr-2" /> Gargalo de Produção
                     </h3>
                     <div className="space-y-2">
-                      <div>
-                        <span className="text-sm font-medium text-orange-700 dark:text-orange-300">
-                          Motivo:{' '}
-                        </span>
-                        <span className="text-sm text-orange-600 dark:text-orange-200">
-                          {selectedOrder.bottleneck_reason}
-                        </span>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <span className="text-sm font-medium text-orange-700 dark:text-orange-300">
+                            Motivo:{' '}
+                          </span>
+                          <span className="text-sm text-orange-600 dark:text-orange-200">
+                            {selectedOrder.bottleneck_reason}
+                          </span>
+                        </div>
+                        {selectedOrder.expand?.bottleneck_by && (
+                          <UserActionBadge
+                            user={selectedOrder.expand.bottleneck_by}
+                            prefix="Sinalizado por"
+                            compact={true}
+                          />
+                        )}
                       </div>
                       {selectedOrder.bottleneck_details && (
                         <div>
@@ -1354,21 +1371,15 @@ export default function PcpKanban() {
                           </div>
                         )}
                         {(selectedOrder.expand?.promised_by || selectedOrder.promised_at) && (
-                          <div className="text-[10px] text-muted-foreground text-right italic pt-1">
-                            Definido por{' '}
-                            <span className="font-medium text-foreground">
-                              {selectedOrder.expand?.promised_by?.name ||
-                                selectedOrder.expand?.promised_by?.email ||
-                                'Admin'}
-                            </span>
-                            {selectedOrder.promised_at &&
-                              isValid(parseISO(selectedOrder.promised_at)) && (
-                                <>
-                                  {' '}
-                                  em{' '}
-                                  {format(parseISO(selectedOrder.promised_at), 'dd/MM/yyyy HH:mm')}
-                                </>
-                              )}
+                          <div className="pt-1 flex justify-end">
+                            <UserActionBadge
+                              user={selectedOrder.expand?.promised_by}
+                              date={selectedOrder.promised_at}
+                              prefix="Definido por"
+                              showTime={true}
+                              compact={true}
+                              fallbackText="Definido por Admin"
+                            />
                           </div>
                         )}
                       </div>

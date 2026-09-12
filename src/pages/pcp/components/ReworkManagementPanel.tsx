@@ -522,11 +522,14 @@ export function ReworkManagementPanel({ reworks, loading = false }: ReworkManage
                               <UserActionBadge
                                 user={r.expand.signaled_by}
                                 date={r.signaled_at || r.created}
-                                prefix="por"
+                                prefix="Sinalizado por"
                                 compact={true}
                               />
                             ) : (
-                              <span className="text-muted-foreground">Não identificado</span>
+                              <UserActionBadge
+                                date={r.signaled_at || r.created}
+                                fallbackText="Não identificado"
+                              />
                             )}
                           </div>
                         </TableCell>
@@ -537,7 +540,7 @@ export function ReworkManagementPanel({ reworks, loading = false }: ReworkManage
                               <UserActionBadge
                                 user={r.expand.executed_by}
                                 date={r.finished_at}
-                                prefix="por"
+                                prefix="Executado por"
                                 compact={true}
                               />
                             ) : (

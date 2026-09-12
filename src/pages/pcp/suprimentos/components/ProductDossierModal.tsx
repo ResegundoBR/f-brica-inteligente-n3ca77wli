@@ -32,6 +32,7 @@ import {
   OrdemCompra,
   OrdemCompraItem,
   PcpOrder,
+  User,
 } from '@/types'
 import { format, parseISO, isValid } from 'date-fns'
 import {
@@ -418,34 +419,47 @@ export function ProductDossierModal({
         clientName?: string
         totalQuantity: number
         lastDate?: string
+        lastUser?: any
         reasons: string[]
       }
     >()
 
-    movements
+    // Ordenar cronologicamente para garantir que a última movimentação determine lastDate e lastUser
+    const sortedExits = movements
       .filter((m) => m.type === 'Saída')
-      .forEach((m) => {
-        const order = m.expand?.order_id
-        const opNumber = order?.op_number || '-'
-        const orderNumber = order?.order_number || '-'
-        const key = order?.id || m.reason || 'sem-op'
-
-        const existing = map.get(key) || {
-          orderId: order?.id,
-          opNumber: opNumber !== '-' ? opNumber : m.reason?.includes('OP') ? m.reason : 'OP Geral',
-          orderNumber,
-          clientName: order?.client_name,
-          totalQuantity: 0,
-          lastDate: m.exit_date || m.created,
-          reasons: [],
-        }
-
-        existing.totalQuantity += Number(m.quantity) || 0
-        if (m.reason && !existing.reasons.includes(m.reason)) {
-          existing.reasons.push(m.reason)
-        }
-        map.set(key, existing)
+      .sort((a, b) => {
+        const dateA = new Date(a.exit_date || a.created).getTime()
+        const dateB = new Date(b.exit_date || b.created).getTime()
+        return dateA - dateB
       })
+
+    sortedExits.forEach((m) => {
+      const order = m.expand?.order_id
+      const opNumber = order?.op_number || '-'
+      const orderNumber = order?.order_number || '-'
+      const key = order?.id || m.reason || 'sem-op'
+
+      const existing = map.get(key) || {
+        orderId: order?.id,
+        opNumber: opNumber !== '-' ? opNumber : m.reason?.includes('OP') ? m.reason : 'OP Geral',
+        orderNumber,
+        clientName: order?.client_name,
+        totalQuantity: 0,
+        lastDate: m.exit_date || m.created,
+        lastUser: m.expand?.user_id,
+        reasons: [],
+      }
+
+      existing.totalQuantity += Number(m.quantity) || 0
+      existing.lastDate = m.exit_date || m.created
+      if (m.expand?.user_id) {
+        existing.lastUser = m.expand.user_id
+      }
+      if (m.reason && !existing.reasons.includes(m.reason)) {
+        existing.reasons.push(m.reason)
+      }
+      map.set(key, existing)
+    })
 
     return Array.from(map.values()).sort((a, b) => b.totalQuantity - a.totalQuantity)
   }, [movements])
@@ -873,13 +887,14 @@ export function ProductDossierModal({
                           <TableHead className="text-xs text-right">Qtde Utilizada</TableHead>
                           <TableHead className="text-xs whitespace-nowrap">Última Saída</TableHead>
                           <TableHead className="text-xs">Motivo / Obs</TableHead>
+                          <TableHead className="text-xs">Baixa por</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {exitsByOp.length === 0 ? (
                           <TableRow>
                             <TableCell
-                              colSpan={6}
+                              colSpan={7}
                               className="text-center py-4 text-muted-foreground text-xs"
                             >
                               Nenhuma saída vinculada a OPs encontrada.
@@ -901,6 +916,14 @@ export function ProductDossierModal({
                               </TableCell>
                               <TableCell className="text-xs text-muted-foreground">
                                 {op.reasons.join(', ') || '-'}
+                              </TableCell>
+                              <TableCell className="text-xs">
+                                <UserActionBadge
+                                  user={op.lastUser}
+                                  prefix="baixa por"
+                                  compact={true}
+                                  fallbackText="-"
+                                />
                               </TableCell>
                             </TableRow>
                           ))

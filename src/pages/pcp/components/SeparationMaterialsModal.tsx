@@ -459,15 +459,13 @@ export function SeparationMaterialsModal({
           <Badge className="bg-emerald-600 text-white font-bold text-[10px] px-2 py-0.5">
             <Check className="size-3 mr-0.5" /> Separado
           </Badge>
-          {(item.expand?.separated_by || item.separated_at) && (
-            <UserActionBadge
-              user={item.expand?.separated_by}
-              date={item.separated_at}
-              prefix="por"
-              showTime={true}
-              compact={true}
-            />
-          )}
+          <UserActionBadge
+            user={item.expand?.separated_by}
+            date={item.separated_at}
+            prefix="Separado por"
+            showTime={true}
+            compact={true}
+          />
         </div>
       )}
       {item.status === 'Falta' && (

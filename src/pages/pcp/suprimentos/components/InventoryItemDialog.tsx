@@ -22,6 +22,7 @@ import {
 import { Inventory, InventoryMovement } from '@/types'
 import { getMovementsByInventory, createMovement } from '@/services/inventory'
 import { useToast } from '@/hooks/use-toast'
+import { UserActionBadge } from '@/components/UserActionBadge'
 import { cn } from '@/lib/utils'
 import { format, parseISO, isValid } from 'date-fns'
 
@@ -173,68 +174,90 @@ export function InventoryItemDialog({
                     <TableHead className="text-xs whitespace-nowrap">Dt. Saída</TableHead>
                     <TableHead className="text-xs">OP</TableHead>
                     <TableHead className="text-xs">Motivo</TableHead>
+                    <TableHead className="text-xs whitespace-nowrap">Responsável</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {movements.length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={12}
+                        colSpan={13}
                         className="text-center text-muted-foreground text-xs py-4"
                       >
                         Sem movimentações.
                       </TableCell>
                     </TableRow>
                   ) : (
-                    movements.map((m) => (
-                      <TableRow key={m.id}>
-                        <TableCell className="text-xs whitespace-nowrap">
-                          {fmtDateTime(m.created)}
-                        </TableCell>
-                        <TableCell className="text-xs">
-                          <Badge
-                            variant={m.type === 'Entrada' ? 'secondary' : 'destructive'}
-                            className="text-[10px]"
+                    movements.map((m) => {
+                      const isManualWithdrawal = (m.reason || '')
+                        .toLowerCase()
+                        .includes('retirada manual')
+                      const prefix = isManualWithdrawal
+                        ? 'Retirado por'
+                        : m.type === 'Entrada'
+                          ? 'Entrada por'
+                          : 'Baixa por'
+
+                      return (
+                        <TableRow key={m.id}>
+                          <TableCell className="text-xs whitespace-nowrap">
+                            {fmtDateTime(m.created)}
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            <Badge
+                              variant={m.type === 'Entrada' ? 'secondary' : 'destructive'}
+                              className="text-[10px]"
+                            >
+                              {m.type}
+                            </Badge>
+                          </TableCell>
+                          <TableCell
+                            className={cn(
+                              'text-xs text-right font-semibold whitespace-nowrap',
+                              m.type === 'Entrada' ? 'text-green-600' : 'text-red-500',
+                            )}
                           >
-                            {m.type}
-                          </Badge>
-                        </TableCell>
-                        <TableCell
-                          className={cn(
-                            'text-xs text-right font-semibold whitespace-nowrap',
-                            m.type === 'Entrada' ? 'text-green-600' : 'text-red-500',
-                          )}
-                        >
-                          {m.type === 'Entrada' ? '+' : '-'}
-                          {m.quantity}
-                        </TableCell>
-                        <TableCell className="text-xs text-right font-semibold whitespace-nowrap">
-                          {m.balance_after != null ? m.balance_after : '-'}
-                        </TableCell>
-                        <TableCell className="text-xs whitespace-nowrap">
-                          {fmtDate(m.purchase_date)}
-                        </TableCell>
-                        <TableCell className="text-xs whitespace-nowrap">
-                          {fmtDate(m.arrival_date)}
-                        </TableCell>
-                        <TableCell className="text-xs text-right whitespace-nowrap">
-                          {fmtCurrency(m.unit_price)}
-                        </TableCell>
-                        <TableCell className="text-xs text-right whitespace-nowrap">
-                          {fmtCurrency(m.total_value)}
-                        </TableCell>
-                        <TableCell className="text-xs text-right whitespace-nowrap">
-                          {fmtCurrency(m.freight)}
-                        </TableCell>
-                        <TableCell className="text-xs whitespace-nowrap">
-                          {fmtDate(m.exit_date)}
-                        </TableCell>
-                        <TableCell className="text-xs whitespace-nowrap">{orderLabel(m)}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground max-w-[160px] truncate">
-                          {m.reason || '-'}
-                        </TableCell>
-                      </TableRow>
-                    ))
+                            {m.type === 'Entrada' ? '+' : '-'}
+                            {m.quantity}
+                          </TableCell>
+                          <TableCell className="text-xs text-right font-semibold whitespace-nowrap">
+                            {m.balance_after != null ? m.balance_after : '-'}
+                          </TableCell>
+                          <TableCell className="text-xs whitespace-nowrap">
+                            {fmtDate(m.purchase_date)}
+                          </TableCell>
+                          <TableCell className="text-xs whitespace-nowrap">
+                            {fmtDate(m.arrival_date)}
+                          </TableCell>
+                          <TableCell className="text-xs text-right whitespace-nowrap">
+                            {fmtCurrency(m.unit_price)}
+                          </TableCell>
+                          <TableCell className="text-xs text-right whitespace-nowrap">
+                            {fmtCurrency(m.total_value)}
+                          </TableCell>
+                          <TableCell className="text-xs text-right whitespace-nowrap">
+                            {fmtCurrency(m.freight)}
+                          </TableCell>
+                          <TableCell className="text-xs whitespace-nowrap">
+                            {fmtDate(m.exit_date)}
+                          </TableCell>
+                          <TableCell className="text-xs whitespace-nowrap">
+                            {orderLabel(m)}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground max-w-[160px] truncate">
+                            {m.reason || '-'}
+                          </TableCell>
+                          <TableCell className="text-xs whitespace-nowrap">
+                            <UserActionBadge
+                              user={m.expand?.user_id}
+                              prefix={prefix}
+                              compact={true}
+                              fallbackText="-"
+                            />
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })
                   )}
                 </TableBody>
               </Table>

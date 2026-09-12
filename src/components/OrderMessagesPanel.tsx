@@ -25,6 +25,7 @@ import {
   Factory,
   MessageSquare,
 } from 'lucide-react'
+import { UserActionBadge } from '@/components/UserActionBadge'
 import { cn } from '@/lib/utils'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -469,11 +470,18 @@ export function OrderMessagesPanel({
                       isOwnMessage ? 'items-end' : 'items-start',
                     )}
                   >
-                    {/* Linha superior: remetente, setor, tipo */}
-                    <div className="flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground">
-                      <span className="font-semibold text-foreground">
-                        {isOwnMessage ? 'Você' : msg.expand?.user_id?.name || 'Usuário'}
-                      </span>
+                    {/* Linha superior: remetente com UserActionBadge, setor, tipo */}
+                    <div className="flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground flex-wrap">
+                      {isOwnMessage ? (
+                        <UserActionBadge user={user} prefix="" compact={true} fallbackText="Você" />
+                      ) : (
+                        <UserActionBadge
+                          user={msg.expand?.user_id}
+                          prefix=""
+                          compact={true}
+                          fallbackText="Usuário"
+                        />
+                      )}
                       <span>•</span>
                       {senderIsPcp ? (
                         <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-semibold text-[10px]">

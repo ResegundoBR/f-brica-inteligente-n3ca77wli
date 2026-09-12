@@ -195,29 +195,36 @@ export function ProductSearchBar({
       </div>
 
       {isOpen && filtered.length > 0 && (
-        <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-white dark:bg-slate-900 rounded-md border shadow-lg max-h-64 overflow-y-auto divide-y dark:divide-slate-800">
-          <div className="px-3 py-1.5 text-[11px] font-semibold text-muted-foreground bg-slate-50 dark:bg-slate-800/50">
-            Dossiê / Ficha do Produto ({filtered.length})
+        <div className="absolute right-0 top-full mt-1 z-50 w-full min-w-[340px] sm:min-w-[480px] md:min-w-[540px] max-w-[95vw] bg-white dark:bg-slate-900 rounded-md border shadow-xl max-h-80 overflow-y-auto overflow-x-hidden divide-y dark:divide-slate-800">
+          <div className="px-3 py-1.5 text-[11px] font-semibold text-muted-foreground bg-slate-50 dark:bg-slate-800/50 sticky top-0 z-10 flex items-center justify-between border-b dark:border-slate-800">
+            <span>Dossiê / Ficha do Produto ({filtered.length})</span>
+            <span className="text-[10px] text-muted-foreground font-normal hidden sm:inline">
+              Clique para abrir a ficha
+            </span>
           </div>
           {filtered.map((item, idx) => (
             <div
               key={idx}
               onClick={() => handleSelect(item)}
-              className="p-2.5 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer flex items-center justify-between text-xs transition-colors"
+              title={item.description}
+              className="p-2.5 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer flex items-center justify-between gap-3 text-xs transition-colors"
             >
-              <div className="flex flex-col pr-2">
-                <span className="font-semibold text-slate-800 dark:text-slate-200">
+              <div className="flex flex-col min-w-0 flex-1">
+                <span
+                  className="font-semibold text-slate-800 dark:text-slate-200 truncate block text-xs sm:text-sm"
+                  title={item.description}
+                >
                   {item.description}
                 </span>
-                <span className="text-[11px] text-muted-foreground">
+                <span className="text-[11px] text-muted-foreground truncate">
                   {item.code ? `Código: ${item.code}` : 'Sem código cadastrado'}
                 </span>
               </div>
-              <div className="flex items-center gap-1.5 flex-shrink-0">
+              <div className="flex items-center gap-1.5 shrink-0 flex-nowrap">
                 {item.source && (
                   <Badge
                     variant={item.source === 'Estoque' ? 'default' : 'outline'}
-                    className={`text-[9px] px-1.5 py-0 ${
+                    className={`text-[9px] px-1.5 py-0 whitespace-nowrap shrink-0 ${
                       item.source === 'Estoque'
                         ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 border-transparent'
                         : 'text-muted-foreground'
@@ -229,14 +236,14 @@ export function ProductSearchBar({
                 {item.quantity !== undefined && item.quantity !== null && !item.isCatalogOnly ? (
                   <Badge
                     variant="outline"
-                    className="text-[10px] font-mono text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800"
+                    className="text-[10px] font-mono text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800 whitespace-nowrap shrink-0"
                   >
                     Saldo: {item.quantity}
                   </Badge>
                 ) : (
                   <Badge
                     variant="secondary"
-                    className="text-[9px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 font-normal"
+                    className="text-[9px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 font-normal whitespace-nowrap shrink-0"
                   >
                     somente catálogo, sem estoque
                   </Badge>
@@ -244,7 +251,7 @@ export function ProductSearchBar({
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-6 px-1.5 text-[11px] text-blue-600 hover:text-blue-700"
+                  className="h-6 px-1.5 text-[11px] text-blue-600 hover:text-blue-700 shrink-0"
                 >
                   <FileText className="size-3 mr-1" /> Ficha
                 </Button>
@@ -255,7 +262,7 @@ export function ProductSearchBar({
       )}
 
       {isOpen && searchTerm.trim() && filtered.length === 0 && (
-        <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-white dark:bg-slate-900 rounded-md border shadow-lg p-3 text-center text-xs text-muted-foreground">
+        <div className="absolute right-0 top-full mt-1 z-50 w-full min-w-[320px] sm:min-w-[400px] max-w-[95vw] bg-white dark:bg-slate-900 rounded-md border shadow-lg p-3 text-center text-xs text-muted-foreground overflow-x-hidden">
           Nenhum produto correspondente a &ldquo;{searchTerm}&rdquo;.
         </div>
       )}

@@ -814,7 +814,7 @@ function OperatorCard({
               {isLocked ? 'JÁ SINALIZADO' : 'SINALIZAR GARGALO'}
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[425px]">
+          <DialogContent className="w-[95vw] sm:max-w-[520px] max-h-[92vh] overflow-y-auto p-4 sm:p-6">
             <DialogHeader>
               <DialogTitle className="text-2xl font-black">Por que a produção parou?</DialogTitle>
             </DialogHeader>
@@ -944,23 +944,58 @@ function OperatorCard({
                   </div>
 
                   {reason === 'Falta de Material' && (
-                    <div className="space-y-3 border p-3 rounded-md bg-slate-50 dark:bg-slate-900">
-                      <Label className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                        Materiais Faltantes
-                      </Label>
+                    <div className="space-y-3 border p-3 rounded-md bg-slate-50 dark:bg-slate-900 overflow-x-hidden">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                          Materiais Faltantes
+                        </Label>
+                        <span className="text-[11px] text-muted-foreground font-normal">
+                          {missingItems.length} {missingItems.length === 1 ? 'item' : 'itens'}
+                        </span>
+                      </div>
                       {missingItems.map((item, idx) => (
-                        <div key={idx} className="flex gap-2 items-center">
-                          <Input
-                            placeholder="Código"
-                            value={item.code}
-                            onChange={(e) => {
-                              const newItems = [...missingItems]
-                              newItems[idx].code = e.target.value
-                              setMissingItems(newItems)
-                            }}
-                            className="w-20 sm:w-24 text-xs h-9 bg-white dark:bg-slate-950"
-                          />
-                          <div className="flex-1">
+                        <div
+                          key={idx}
+                          className="flex flex-col sm:flex-row gap-2 sm:items-center p-2.5 sm:p-2 bg-white dark:bg-slate-950 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm"
+                        >
+                          {/* Linha 1 no mobile: Código + Botão Remover */}
+                          <div className="flex items-center gap-2 w-full sm:w-auto">
+                            <div className="flex-1 sm:w-24 sm:flex-initial">
+                              <label className="text-[10px] font-semibold text-muted-foreground block mb-0.5 sm:hidden">
+                                Código
+                              </label>
+                              <Input
+                                placeholder="Código"
+                                value={item.code}
+                                onChange={(e) => {
+                                  const newItems = [...missingItems]
+                                  newItems[idx].code = e.target.value
+                                  setMissingItems(newItems)
+                                }}
+                                className="w-full sm:w-24 text-xs h-9 bg-slate-50 dark:bg-slate-900 sm:bg-white sm:dark:bg-slate-950"
+                              />
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="sm:hidden h-9 px-2 text-red-500 hover:text-red-600 hover:bg-red-50 shrink-0 ml-auto flex items-center gap-1"
+                              onClick={() => {
+                                const newItems = [...missingItems]
+                                newItems.splice(idx, 1)
+                                setMissingItems(newItems)
+                              }}
+                              title="Remover material faltante"
+                            >
+                              <Trash className="size-4" />
+                              <span className="text-xs">Remover</span>
+                            </Button>
+                          </div>
+
+                          {/* Linha 2 no mobile: Descrição do material ocupando toda a largura */}
+                          <div className="w-full sm:flex-1 sm:min-w-0">
+                            <label className="text-[10px] font-semibold text-muted-foreground block mb-0.5 sm:hidden">
+                              Descrição do material
+                            </label>
                             <MaterialDescriptionAutocomplete
                               productId={op.product_id}
                               value={item.description}
@@ -974,40 +1009,50 @@ function OperatorCard({
                                 newItems[idx].code = code
                                 setMissingItems(newItems)
                               }}
-                              placeholder="Descrição do material"
-                              inputClassName="text-xs h-9 bg-white dark:bg-slate-950"
+                              placeholder="Descrição do material..."
+                              inputClassName="text-xs h-9 bg-slate-50 dark:bg-slate-900 sm:bg-white sm:dark:bg-slate-950 w-full"
                             />
                           </div>
-                          <Input
-                            type="number"
-                            min="1"
-                            placeholder="Qtd"
-                            value={item.quantity || ''}
-                            onChange={(e) => {
-                              const newItems = [...missingItems]
-                              newItems[idx].quantity = Number(e.target.value)
-                              setMissingItems(newItems)
-                            }}
-                            className="w-16 sm:w-20 text-xs h-9 bg-white dark:bg-slate-950"
-                          />
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-9 w-9 text-red-500 hover:text-red-600 hover:bg-red-50 shrink-0"
-                            onClick={() => {
-                              const newItems = [...missingItems]
-                              newItems.splice(idx, 1)
-                              setMissingItems(newItems)
-                            }}
-                          >
-                            <Trash className="size-4" />
-                          </Button>
+
+                          {/* Linha 3 no mobile: Quantidade (e no desktop: Quantidade + Remover) */}
+                          <div className="flex items-center gap-2 w-full sm:w-auto">
+                            <div className="w-full sm:w-20">
+                              <label className="text-[10px] font-semibold text-muted-foreground block mb-0.5 sm:hidden">
+                                Quantidade
+                              </label>
+                              <Input
+                                type="number"
+                                min="1"
+                                placeholder="Qtd"
+                                value={item.quantity || ''}
+                                onChange={(e) => {
+                                  const newItems = [...missingItems]
+                                  newItems[idx].quantity = Number(e.target.value)
+                                  setMissingItems(newItems)
+                                }}
+                                className="w-full sm:w-20 text-xs h-9 bg-slate-50 dark:bg-slate-900 sm:bg-white sm:dark:bg-slate-950"
+                              />
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="hidden sm:inline-flex h-9 w-9 text-red-500 hover:text-red-600 hover:bg-red-50 shrink-0"
+                              onClick={() => {
+                                const newItems = [...missingItems]
+                                newItems.splice(idx, 1)
+                                setMissingItems(newItems)
+                              }}
+                              title="Remover material faltante"
+                            >
+                              <Trash className="size-4" />
+                            </Button>
+                          </div>
                         </div>
                       ))}
                       <Button
                         variant="outline"
                         size="sm"
-                        className="w-full text-xs border-dashed bg-white dark:bg-slate-950 hover:bg-slate-100 dark:hover:bg-slate-800"
+                        className="w-full text-xs border-dashed bg-white dark:bg-slate-950 hover:bg-slate-100 dark:hover:bg-slate-800 h-9"
                         onClick={() =>
                           setMissingItems([
                             ...missingItems,

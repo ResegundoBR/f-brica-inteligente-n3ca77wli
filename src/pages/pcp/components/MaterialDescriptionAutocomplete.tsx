@@ -30,7 +30,14 @@ function fetchAllSuggestions(): Promise<Suggestion[]> {
   if (suggestionsCache) return Promise.resolve(suggestionsCache)
   if (suggestionsPromise) return suggestionsPromise
   suggestionsPromise = Promise.all([
-    getMasterComponents().catch(() => []),
+    getMasterComponents('', { includeInactive: false }).catch(() => []),
+    pb
+      .collection('components')
+      .getFullList<{ id: string; code?: string; description?: string; active?: boolean }>({
+        filter: 'active = false',
+        fields: 'id,code,description,active',
+      })
+      .catch(() => []),
     pb
       .collection('inventory')
       .getFullList<{
@@ -53,8 +60,21 @@ function fetchAllSuggestions(): Promise<Suggestion[]> {
       })
       .catch(() => [] as MaterialShortage[]),
   ])
-    .then(([components, inventoryItems, prods, shorts]) => {
+    .then(([activeComponents, inactiveComponents, inventoryItems, prods, shorts]) => {
       const all: Suggestion[] = []
+
+      // Conjunto de chaves de itens inativos para supressão em autocompletes
+      const inactiveKeySet = new Set<string>()
+      inactiveComponents.forEach((ic) => {
+        if (ic.code) inactiveKeySet.add(`code:${ic.code.trim().toLowerCase()}`)
+        if (ic.description) inactiveKeySet.add(`desc:${ic.description.trim().toLowerCase()}`)
+      })
+
+      const isInactive = (code?: string, desc?: string) => {
+        if (code && inactiveKeySet.has(`code:${code.trim().toLowerCase()}`)) return true
+        if (desc && inactiveKeySet.has(`desc:${desc.trim().toLowerCase()}`)) return true
+        return false
+      }
 
       // Lookup do inventário para saber saldo/unidade em tempo hábil
       const invByCompId = new Map<
@@ -76,8 +96,8 @@ function fetchAllSuggestions(): Promise<Suggestion[]> {
         if (inv.description) invByDesc.set(inv.description.toLowerCase().trim(), inv)
       })
 
-      // 1. Mestre de componentes (prioridade primária unificada)
-      components.forEach((comp) => {
+      // 1. Mestre de componentes ativos (prioridade primária unificada)
+      activeComponents.forEach((comp) => {
         if (comp.description) {
           const invMatch =
             invByCompId.get(comp.id) ||
@@ -99,9 +119,9 @@ function fetchAllSuggestions(): Promise<Suggestion[]> {
         }
       })
 
-      // 2. Inventário restante (caso haja itens não cadastrados em components)
+      // 2. Inventário restante (apenas se não estiver marcado como inativo no mestre)
       inventoryItems.forEach((inv) => {
-        if (inv.description) {
+        if (inv.description && !isInactive(inv.code, inv.description)) {
           const hasStock = inv.quantity !== undefined && inv.quantity !== null && inv.quantity > 0
           all.push({
             code: inv.code || '',
@@ -113,11 +133,11 @@ function fetchAllSuggestions(): Promise<Suggestion[]> {
         }
       })
 
-      // 3. Composição de produtos (compatibilidade aditiva)
+      // 3. Composição de produtos (apenas se não estiver inativo)
       prods.forEach((p) => {
         if (p.data?.composition) {
           p.data.composition.forEach((c: any) => {
-            if (c.description) {
+            if (c.description && !isInactive(c.code, c.description)) {
               const invMatch =
                 (c.code ? invByCode.get(c.code.toLowerCase().trim()) : undefined) ||
                 invByDesc.get(c.description.toLowerCase().trim())
@@ -138,9 +158,9 @@ function fetchAllSuggestions(): Promise<Suggestion[]> {
         }
       })
 
-      // 4. Faltas anteriores
+      // 4. Faltas anteriores (apenas se não estiver inativo)
       shorts.forEach((s) => {
-        if (s.description) {
+        if (s.description && !isInactive(s.code, s.description)) {
           const invMatch =
             (s.code ? invByCode.get(s.code.toLowerCase().trim()) : undefined) ||
             invByDesc.get(s.description.toLowerCase().trim())

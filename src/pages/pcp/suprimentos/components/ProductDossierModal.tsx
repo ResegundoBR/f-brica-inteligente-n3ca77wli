@@ -117,7 +117,9 @@ export function ProductDossierModal({
     setIsLoading(true)
 
     Promise.all([
-      getMasterComponents().catch(() => [] as MasterComponent[]),
+      getMasterComponents('', { includeInactive: true, expand: 'deactivated_by' }).catch(
+        () => [] as MasterComponent[],
+      ),
       pb
         .collection('inventory')
         .getFullList<Inventory>({ sort: 'description' })
@@ -347,6 +349,21 @@ export function ProductDossierModal({
       ) || null
     )
   }, [selectedProduct, allInventory])
+
+  const selectedMasterComponent = useMemo(() => {
+    if (!selectedProduct) return null
+    const normCode = selectedProduct.code?.trim().toLowerCase()
+    const normDesc = selectedProduct.description?.trim().toLowerCase()
+
+    return (
+      allMasterComponents.find(
+        (c) =>
+          (c.id && selectedProduct.id && c.id === selectedProduct.id) ||
+          (normCode && c.code && c.code.trim().toLowerCase() === normCode) ||
+          (normDesc && c.description && c.description.trim().toLowerCase() === normDesc),
+      ) || null
+    )
+  }, [selectedProduct, allMasterComponents])
 
   const stockBalance = currentInventory ? currentInventory.quantity : 0
   const minStock = currentInventory ? currentInventory.min_quantity || 0 : 0
@@ -685,10 +702,25 @@ export function ProductDossierModal({
             <div className="bg-slate-50 dark:bg-slate-800/40 p-4 rounded-lg border">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div className="space-y-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs font-mono font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-900">
                       {selectedProduct.code || 'SEM CÓDIGO'}
                     </span>
+                    {selectedMasterComponent?.active === false ? (
+                      <Badge
+                        variant="destructive"
+                        className="text-[10px] bg-amber-600 hover:bg-amber-700 text-white font-bold"
+                      >
+                        Inativo
+                      </Badge>
+                    ) : (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40"
+                      >
+                        Ativo
+                      </Badge>
+                    )}
                     {currentInventory ? (
                       isLowStock && (
                         <Badge variant="destructive" className="text-[10px]">
@@ -702,6 +734,15 @@ export function ProductDossierModal({
                       >
                         Somente Catálogo (Sem Estoque)
                       </Badge>
+                    )}
+                    {selectedMasterComponent?.active === false && (
+                      <UserActionBadge
+                        user={selectedMasterComponent.expand?.deactivated_by}
+                        date={selectedMasterComponent.deactivated_at}
+                        prefix="inativado por"
+                        showTime={true}
+                        compact={true}
+                      />
                     )}
                   </div>
                   <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">

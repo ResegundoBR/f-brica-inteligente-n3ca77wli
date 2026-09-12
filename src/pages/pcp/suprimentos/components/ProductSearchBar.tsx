@@ -40,8 +40,15 @@ export function ProductSearchBar({
     let cancelled = false
 
     Promise.all([
-      // Busca unificada com agregação de estoque no mestre
-      searchUnifiedComponentsWithStock('', 200).catch(() => []),
+      // Busca unificada com agregação de estoque no mestre (apenas ativos)
+      searchUnifiedComponentsWithStock('', 200, { includeInactive: false }).catch(() => []),
+      pb
+        .collection('components')
+        .getFullList<{ id: string; code?: string; description?: string }>({
+          filter: 'active = false',
+          fields: 'id,code,description',
+        })
+        .catch(() => []),
       pb
         .collection('inventory')
         .getFullList<Inventory>({ sort: 'description' })
@@ -53,12 +60,24 @@ export function ProductSearchBar({
         })
         .catch(() => [] as MaterialShortage[]),
     ])
-      .then(([unifiedComponents, inv, shorts]) => {
+      .then(([unifiedComponents, inactiveComponents, inv, shorts]) => {
         if (cancelled) return
         const list: SearchProductItem[] = []
         const seen = new Set<string>()
 
-        // 1. Prioridade máxima: Cadastro mestre unificado (searchUnifiedComponentsWithStock)
+        const inactiveKeySet = new Set<string>()
+        inactiveComponents.forEach((ic) => {
+          if (ic.code) inactiveKeySet.add(`code:${ic.code.trim().toLowerCase()}`)
+          if (ic.description) inactiveKeySet.add(`desc:${ic.description.trim().toLowerCase()}`)
+        })
+
+        const isInactive = (code?: string, desc?: string) => {
+          if (code && inactiveKeySet.has(`code:${code.trim().toLowerCase()}`)) return true
+          if (desc && inactiveKeySet.has(`desc:${desc.trim().toLowerCase()}`)) return true
+          return false
+        }
+
+        // 1. Prioridade máxima: Cadastro mestre unificado ativo (searchUnifiedComponentsWithStock)
         for (const comp of unifiedComponents) {
           const c = (comp.code || '').trim().toLowerCase()
           const d = (comp.description || '').trim().toLowerCase()
@@ -89,12 +108,12 @@ export function ProductSearchBar({
           }
         }
 
-        // 2. Itens do estoque legados não referenciados no mestre
+        // 2. Itens do estoque legados não referenciados no mestre (excluindo inativos)
         for (const item of inv) {
           const c = (item.code || '').trim().toLowerCase()
           const d = (item.description || '').trim().toLowerCase()
           const key = c ? `c:${c}` : `d:${d}`
-          if (!seen.has(key)) {
+          if (!seen.has(key) && !isInactive(item.code, item.description)) {
             seen.add(key)
             const hasStock = item.quantity !== undefined && item.quantity !== null
             list.push({
@@ -109,12 +128,12 @@ export function ProductSearchBar({
           }
         }
 
-        // 3. Itens de material shortages históricos
+        // 3. Itens de material shortages históricos (excluindo inativos)
         for (const s of shorts) {
           const c = (s.code || '').trim().toLowerCase()
           const d = (s.description || '').trim().toLowerCase()
           const key = c ? `c:${c}` : `d:${d}`
-          if (!seen.has(key) && (s.description || s.code)) {
+          if (!seen.has(key) && (s.description || s.code) && !isInactive(s.code, s.description)) {
             seen.add(key)
             list.push({
               id: s.id,

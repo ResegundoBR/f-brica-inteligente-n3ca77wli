@@ -402,8 +402,13 @@ export interface MasterComponent {
   unit?: string
   active?: boolean
   source?: 'inventory' | 'catalog' | 'manual' | 'imported'
+  deactivated_by?: string
+  deactivated_at?: string
   created: string
   updated: string
+  expand?: {
+    deactivated_by?: User
+  }
 }
 
 export interface Inventory {

@@ -111,7 +111,14 @@ export function NewShortageModal({
   useEffect(() => {
     if (!open) return
     Promise.all([
-      getMasterComponents().catch(() => []),
+      getMasterComponents('', { includeInactive: false }).catch(() => []),
+      pb
+        .collection('components')
+        .getFullList<{ id: string; code?: string; description?: string }>({
+          filter: 'active = false',
+          fields: 'id,code,description',
+        })
+        .catch(() => []),
       pb
         .collection('inventory')
         .getFullList<{
@@ -134,7 +141,7 @@ export function NewShortageModal({
         })
         .catch(() => [] as MaterialShortage[]),
     ])
-      .then(([components, inventoryItems, prods, shorts]) => {
+      .then(([activeComponents, inactiveComponents, inventoryItems, prods, shorts]) => {
         const allComp: {
           code: string
           desc: string
@@ -143,6 +150,18 @@ export function NewShortageModal({
           has_stock?: boolean
           unit?: string
         }[] = []
+
+        const inactiveKeySet = new Set<string>()
+        inactiveComponents.forEach((ic) => {
+          if (ic.code) inactiveKeySet.add(`code:${ic.code.trim().toLowerCase()}`)
+          if (ic.description) inactiveKeySet.add(`desc:${ic.description.trim().toLowerCase()}`)
+        })
+
+        const isInactive = (code?: string, desc?: string) => {
+          if (code && inactiveKeySet.has(`code:${code.trim().toLowerCase()}`)) return true
+          if (desc && inactiveKeySet.has(`desc:${desc.trim().toLowerCase()}`)) return true
+          return false
+        }
 
         const invByCompId = new Map<
           string,
@@ -163,8 +182,8 @@ export function NewShortageModal({
           if (inv.description) invByDesc.set(inv.description.toLowerCase().trim(), inv)
         })
 
-        // 1. Mestre unificado de componentes
-        components.forEach((comp) => {
+        // 1. Mestre unificado de componentes ativos
+        activeComponents.forEach((comp) => {
           if (comp.description) {
             const invMatch =
               invByCompId.get(comp.id) ||
@@ -187,9 +206,9 @@ export function NewShortageModal({
           }
         })
 
-        // 2. Itens do inventário restantes
+        // 2. Itens do inventário restantes (excluindo inativos do mestre)
         inventoryItems.forEach((inv) => {
-          if (inv.description) {
+          if (inv.description && !isInactive(inv.code, inv.description)) {
             const hasStock = inv.quantity !== undefined && inv.quantity !== null && inv.quantity > 0
             allComp.push({
               code: inv.code || '',
@@ -201,11 +220,11 @@ export function NewShortageModal({
           }
         })
 
-        // 3. Composição de produtos
+        // 3. Composição de produtos (excluindo inativos)
         prods.forEach((p) => {
           if (p.data?.composition) {
             p.data.composition.forEach((c: any) => {
-              if (c.description) {
+              if (c.description && !isInactive(c.code, c.description)) {
                 const invMatch =
                   (c.code ? invByCode.get(c.code.toLowerCase().trim()) : undefined) ||
                   invByDesc.get(c.description.toLowerCase().trim())
@@ -226,9 +245,9 @@ export function NewShortageModal({
           }
         })
 
-        // 4. Faltas anteriores
+        // 4. Faltas anteriores (excluindo inativos)
         shorts.forEach((s) => {
-          if (s.description) {
+          if (s.description && !isInactive(s.code, s.description)) {
             const invMatch =
               (s.code ? invByCode.get(s.code.toLowerCase().trim()) : undefined) ||
               invByDesc.get(s.description.toLowerCase().trim())
@@ -246,7 +265,6 @@ export function NewShortageModal({
             })
           }
         })
-
         const seen = new Set<string>()
         const unique: {
           code: string

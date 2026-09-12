@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-12T15:45:34.658Z",
+  "generatedAt": "2026-09-12T16:54:34.251Z",
   "collections": [
     {
       "name": "users",
@@ -2569,6 +2569,19 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "deactivated_by",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "deactivated_at",
+          "type": "date",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [

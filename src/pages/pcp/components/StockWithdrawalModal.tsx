@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
+import { useAuth } from '@/hooks/use-auth'
 import { createMovement } from '@/services/inventory'
 import { normalizeSearchText } from '@/lib/pcp-utils'
 import type { PcpOrder, Inventory } from '@/types'
@@ -43,6 +44,7 @@ export function StockWithdrawalModal({
   onRequestMissingMaterial,
 }: StockWithdrawalModalProps) {
   const { toast } = useToast()
+  const { user } = useAuth()
 
   const [inventoryList, setInventoryList] = useState<Inventory[]>([])
   const [loadingInventory, setLoadingInventory] = useState(false)
@@ -293,6 +295,12 @@ export function StockWithdrawalModal({
                   {selectedItem.code ? `[${selectedItem.code}] ` : ''}
                   {selectedItem.description}
                 </p>
+                {user && (
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Retirado por:{' '}
+                    <strong className="text-foreground">{user.name || user.email}</strong>
+                  </p>
+                )}
               </div>
               <div className="text-right shrink-0">
                 <span className="text-[10px] uppercase font-bold text-muted-foreground block">

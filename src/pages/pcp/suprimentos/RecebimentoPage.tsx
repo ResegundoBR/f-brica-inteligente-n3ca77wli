@@ -83,6 +83,7 @@ export default function RecebimentoPage() {
         received_quantity: newReceivedQty,
         status: newStatus,
         code: resolvedCode,
+        received_by: pb.authStore.record?.id || undefined,
       })
 
       toast({

@@ -11,6 +11,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { UserActionBadge } from '@/components/UserActionBadge'
 import {
   Search,
   Package,
@@ -74,6 +75,8 @@ export interface DossierPurchaseItem {
   ocNumber: string
   quantity: number
   status?: string
+  receivedBy?: User
+  ocUser?: User
 }
 
 export function ProductDossierModal({
@@ -108,15 +111,15 @@ export function ProductDossierModal({
       pb.collection('inventory').getFullList<Inventory>({ sort: 'description' }),
       pb.collection('material_shortages').getFullList<MaterialShortage>({
         sort: '-created',
-        expand: 'order_id,order_id.product_id',
+        expand: 'order_id,order_id.product_id,received_by,requested_by',
       }),
       pb.collection('ordem_compra_itens').getFullList<OrdemCompraItem>({
         sort: '-created',
-        expand: 'oc_id,material_shortage_id',
+        expand: 'oc_id,oc_id.user_id,material_shortage_id',
       }),
       pb.collection('inventory_movements').getFullList<InventoryMovement>({
         sort: '-created',
-        expand: 'inventory_id,order_id',
+        expand: 'inventory_id,order_id,user_id',
       }),
     ])
       .then(([inv, shortages, ocItens, movements]) => {
@@ -324,6 +327,7 @@ export function ProductDossierModal({
           ocNumber: oc?.oc_number || '-',
           quantity: qty,
           status: oc?.status || 'OC',
+          ocUser: oc?.expand?.user_id,
         })
       }
     }
@@ -355,6 +359,7 @@ export function ProductDossierModal({
             ocNumber: '-',
             quantity: qty,
             status: s.status,
+            receivedBy: s.expand?.received_by,
           })
         }
       }
@@ -661,13 +666,14 @@ export function ProductDossierModal({
                         <TableHead className="text-xs text-right">Valor Unitário</TableHead>
                         <TableHead className="text-xs text-right">Valor Total</TableHead>
                         <TableHead className="text-xs text-center">Status</TableHead>
+                        <TableHead className="text-xs">Responsável / Recebido</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {purchases.length === 0 ? (
                         <TableRow>
                           <TableCell
-                            colSpan={7}
+                            colSpan={8}
                             className="text-center py-6 text-muted-foreground text-xs"
                           >
                             Nenhuma compra registrada para este produto.
@@ -703,6 +709,23 @@ export function ProductDossierModal({
                                 {p.status || 'Registrado'}
                               </Badge>
                             </TableCell>
+                            <TableCell className="text-xs">
+                              {p.receivedBy ? (
+                                <UserActionBadge
+                                  user={p.receivedBy}
+                                  prefix="recebido por"
+                                  compact={true}
+                                />
+                              ) : p.ocUser ? (
+                                <UserActionBadge
+                                  user={p.ocUser}
+                                  prefix="comprador"
+                                  compact={true}
+                                />
+                              ) : (
+                                '-'
+                              )}
+                            </TableCell>
                           </TableRow>
                         ))
                       )}
@@ -723,13 +746,14 @@ export function ProductDossierModal({
                         <TableHead className="text-xs text-right">Saldo Após</TableHead>
                         <TableHead className="text-xs">OP Vinculada</TableHead>
                         <TableHead className="text-xs">Motivo</TableHead>
+                        <TableHead className="text-xs">Realizado por</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {movements.length === 0 ? (
                         <TableRow>
                           <TableCell
-                            colSpan={6}
+                            colSpan={7}
                             className="text-center py-6 text-muted-foreground text-xs"
                           >
                             Nenhuma movimentação registrada para este item no estoque.
@@ -774,6 +798,14 @@ export function ProductDossierModal({
                               </TableCell>
                               <TableCell className="text-xs text-muted-foreground">
                                 {m.reason || '-'}
+                              </TableCell>
+                              <TableCell className="text-xs">
+                                <UserActionBadge
+                                  user={m.expand?.user_id}
+                                  prefix={isEntry ? 'entrada por' : 'baixa por'}
+                                  compact={true}
+                                  fallbackText="-"
+                                />
                               </TableCell>
                             </TableRow>
                           )

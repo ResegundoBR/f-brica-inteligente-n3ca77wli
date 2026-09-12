@@ -18,6 +18,7 @@ import { format, parseISO } from 'date-fns'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
 import { SupplierGroupSection } from './components/SupplierGroupSection'
 import { useSupplierGroups } from '@/hooks/use-supplier-groups'
+import { UserActionBadge } from '@/components/UserActionBadge'
 import { cn } from '@/lib/utils'
 
 export default function CentralDestinoPage() {
@@ -28,7 +29,7 @@ export default function CentralDestinoPage() {
     try {
       const res = await pb.collection('material_shortages').getFullList<MaterialShortage>({
         sort: '-created',
-        expand: 'order_id,order_id.product_id,requested_by',
+        expand: 'order_id,order_id.product_id,requested_by,received_by,distributed_by',
       })
       const destinoItems = res.filter(
         (s) => s.status === 'Recebido' || s.status === 'Recebido_Parcial',
@@ -81,6 +82,21 @@ export default function CentralDestinoPage() {
         <TableCell className="text-xs">
           {item.expected_date ? format(parseISO(item.expected_date), 'dd/MM/yyyy') : '-'}
         </TableCell>
+        <TableCell className="text-xs space-y-1">
+          {item.expand?.received_by && (
+            <div>
+              <UserActionBadge user={item.expand.received_by} prefix="Rec:" compact={true} />
+            </div>
+          )}
+          {item.expand?.distributed_by && (
+            <div>
+              <UserActionBadge user={item.expand.distributed_by} prefix="Dest:" compact={true} />
+            </div>
+          )}
+          {!item.expand?.received_by && !item.expand?.distributed_by && (
+            <span className="text-muted-foreground">-</span>
+          )}
+        </TableCell>
         <TableCell>
           <Badge
             variant="outline"
@@ -110,6 +126,7 @@ export default function CentralDestinoPage() {
         <TableHead>Produto</TableHead>
         <TableHead className="w-[100px]">Setor</TableHead>
         <TableHead className="w-[100px]">Previsão</TableHead>
+        <TableHead className="w-[140px]">Recebido / Destinado</TableHead>
         <TableHead className="w-[100px]">Status</TableHead>
       </TableRow>
     </TableHeader>

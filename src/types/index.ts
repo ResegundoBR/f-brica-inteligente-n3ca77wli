@@ -271,11 +271,13 @@ export interface PcpOrder {
   delivered_quantity?: number
   created: string
   updated: string
+  bottleneck_by?: string
   expand?: {
     product_id?: Product
     operator_id?: User
     client_id?: Client
     promised_by?: User
+    bottleneck_by?: User
   }
 }
 
@@ -333,11 +335,15 @@ export interface MaterialShortage {
   unit_price?: number
   purchase_date?: string
   quotation_date?: string
+  received_by?: string
+  distributed_by?: string
   created: string
   updated: string
   expand?: {
     order_id?: PcpOrder
     requested_by?: User
+    received_by?: User
+    distributed_by?: User
   }
 }
 
@@ -380,10 +386,12 @@ export interface Quotation {
   selected?: boolean
   st_value?: number
   ipi_value?: number
+  quoted_by?: string
   created: string
   updated: string
   expand?: {
     material_shortage_id?: MaterialShortage
+    quoted_by?: User
   }
 }
 

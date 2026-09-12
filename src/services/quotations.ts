@@ -4,12 +4,13 @@ import { Quotation } from '@/types'
 export const getQuotations = () =>
   pb
     .collection('quotations')
-    .getFullList<Quotation>({ sort: '-created', expand: 'material_shortage_id' })
+    .getFullList<Quotation>({ sort: '-created', expand: 'material_shortage_id,quoted_by' })
 
 export const getQuotationsByShortage = (shortageId: string) =>
   pb.collection('quotations').getFullList<Quotation>({
     filter: `material_shortage_id = "${shortageId}"`,
     sort: 'price',
+    expand: 'quoted_by',
   })
 
 export const createQuotation = (data: {
@@ -19,7 +20,15 @@ export const createQuotation = (data: {
   delivery_days?: number
   st_value?: number
   ipi_value?: number
-}) => pb.collection('quotations').create({ ...data, selected: false })
+  quoted_by?: string
+}) => {
+  const currentUserId = pb.authStore.record?.id
+  return pb.collection('quotations').create({
+    ...data,
+    quoted_by: data.quoted_by || currentUserId || undefined,
+    selected: false,
+  })
+}
 
 export const selectQuotation = async (quotationId: string, shortageId: string) => {
   const all = await pb

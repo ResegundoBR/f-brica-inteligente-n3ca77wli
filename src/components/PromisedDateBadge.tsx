@@ -8,6 +8,10 @@ interface PromisedDateBadgeProps {
   className?: string
   size?: 'sm' | 'md' | 'compact'
   titlePrefix?: string
+  promisedBy?: {
+    name?: string
+    email?: string
+  } | null
 }
 
 export function PromisedDateBadge({
@@ -16,6 +20,7 @@ export function PromisedDateBadge({
   className,
   size = 'md',
   titlePrefix,
+  promisedBy,
 }: PromisedDateBadgeProps) {
   const info = getPromisedDateInfo(promisedDate, status)
   if (!info) return null
@@ -46,7 +51,10 @@ export function PromisedDateBadge({
         ? 'text-[10px] px-1.5 py-0.5 h-5 leading-none'
         : 'text-xs px-2 py-0.5 font-medium'
 
+  const promisedByName = promisedBy?.name || promisedBy?.email?.split('@')[0] || ''
   const titleText = `${titlePrefix ? titlePrefix + ' - ' : ''}Data Prometida: ${info.formattedDate}${
+    promisedByName ? ` (definida por ${promisedByName})` : ''
+  }${
     info.isConcluded
       ? ' (Concluída)'
       : info.isOverdue
@@ -68,7 +76,10 @@ export function PromisedDateBadge({
       )}
     >
       <span>🎯</span>
-      <span>Prometido: {info.formattedDate}</span>
+      <span>
+        Prometido: {info.formattedDate}
+        {promisedByName && size !== 'compact' && ` · ${promisedByName.split(' ')[0]}`}
+      </span>
     </Badge>
   )
 }

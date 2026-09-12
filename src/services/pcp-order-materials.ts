@@ -17,6 +17,7 @@ export const getOrderMaterials = async (orderId: string): Promise<PcpOrderMateri
   return pb.collection('pcp_order_materials').getFullList<PcpOrderMaterial>({
     filter: `order_id = "${orderId}"`,
     sort: 'created',
+    expand: 'separated_by',
   })
 }
 
@@ -28,6 +29,7 @@ export const getOrderMaterialsForOrders = async (
   return pb.collection('pcp_order_materials').getFullList<PcpOrderMaterial>({
     filter,
     sort: 'created',
+    expand: 'separated_by',
   })
 }
 

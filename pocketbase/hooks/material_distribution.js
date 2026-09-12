@@ -196,6 +196,9 @@ routerAdd(
           singleShortage.set('received_quantity', origNewReceived)
           singleShortage.set('status', singleStatus)
           if (code) singleShortage.set('code', code)
+          if (userId) {
+            singleShortage.set('received_by', userId)
+          }
           $app.save(singleShortage)
           console.log(
             'Direct shortage ' +
@@ -249,6 +252,10 @@ routerAdd(
         shortage.set('received_quantity', sNewReceived)
         shortage.set('status', newStatus)
         if (code) shortage.set('code', code)
+        if (userId) {
+          shortage.set('received_by', userId)
+          shortage.set('distributed_by', userId)
+        }
         console.log(
           'Saving shortage ' +
             dist.shortage_id +

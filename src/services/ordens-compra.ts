@@ -59,6 +59,7 @@ export const createOrdemCompra = async (data: {
   }>
 }) => {
   const oc_number = await generateOcNumber()
+  const currentUserId = pb.authStore.record?.id
   const oc = await pb.collection('ordens_de_compra').create<OrdemCompra>({
     oc_number,
     supplier: data.supplier,
@@ -69,7 +70,7 @@ export const createOrdemCompra = async (data: {
     ...(data.payment_terms && { payment_terms: data.payment_terms }),
     ...(data.delivery_type && { delivery_type: data.delivery_type }),
     total: data.total,
-    ...(data.user_id && { user_id: data.user_id }),
+    user_id: data.user_id || currentUserId || undefined,
   })
 
   for (const item of data.itens) {

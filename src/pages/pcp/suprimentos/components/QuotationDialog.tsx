@@ -41,6 +41,7 @@ import { useToast } from '@/hooks/use-toast'
 import { useMemo } from 'react'
 import { findOtherOpDemands } from '@/services/material-consolidation'
 import { ConsolidatedDemandBlock } from './ConsolidatedDemandBlock'
+import { UserActionBadge } from '@/components/UserActionBadge'
 
 export function QuotationDialog({
   item,
@@ -329,6 +330,7 @@ export function QuotationDialog({
                       <TableHead className="text-right">ST (R$)</TableHead>
                       <TableHead className="text-right">IPI (R$)</TableHead>
                       <TableHead className="text-center">Prazo (dias)</TableHead>
+                      <TableHead>Cotado por</TableHead>
                       <TableHead className="text-center">Sel.</TableHead>
                       <TableHead className="w-[60px]" />
                     </TableRow>
@@ -339,7 +341,9 @@ export function QuotationDialog({
                         key={q.id}
                         className={cn(q.selected && 'bg-blue-50 dark:bg-blue-900/20')}
                       >
-                        <TableCell className="font-medium text-sm">{q.supplier}</TableCell>
+                        <TableCell className="font-medium text-sm">
+                          <div>{q.supplier}</div>
+                        </TableCell>
                         <TableCell className="text-right font-semibold text-sm">
                           R$ {Number(q.price).toFixed(2)}
                         </TableCell>
@@ -355,6 +359,15 @@ export function QuotationDialog({
                         </TableCell>
                         <TableCell className="text-center text-sm">
                           {q.delivery_days || '-'}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                          <UserActionBadge
+                            user={q.expand?.quoted_by}
+                            date={q.created}
+                            prefix="por"
+                            compact={true}
+                            fallbackText="-"
+                          />
                         </TableCell>
                         <TableCell className="text-center">
                           {q.selected ? (

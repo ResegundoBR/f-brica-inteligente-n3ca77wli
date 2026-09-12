@@ -26,6 +26,7 @@ import { MaterialShortage } from '@/types'
 import { CheckCircle, ShoppingCart, AlertCircle, TrendingUp, AlertTriangle } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
+import { UserActionBadge } from '@/components/UserActionBadge'
 import { format, parseISO } from 'date-fns'
 import { extractFieldErrors, type FieldErrors } from '@/lib/pocketbase/errors'
 import {
@@ -273,9 +274,15 @@ function ShortageDetailsModal({
             <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
               Solicitante
             </span>
-            <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-              {item.expand?.requested_by?.name || 'Sistema'}
-            </span>
+            <div className="pt-0.5">
+              <UserActionBadge
+                user={item.expand?.requested_by}
+                date={item.created}
+                prefix="por"
+                compact={false}
+                fallbackText="Sistema"
+              />
+            </div>
           </div>
           <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded border border-slate-100 dark:border-slate-800">
             <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
@@ -600,11 +607,16 @@ function ShortageRow({
           </Badge>
         </TableCell>
         <TableCell className="text-xs text-slate-600 dark:text-slate-400 font-medium">
-          {item.expand?.requested_by?.name ? (
-            item.expand.requested_by.name
+          {item.expand?.requested_by ? (
+            <UserActionBadge
+              user={item.expand.requested_by}
+              date={item.created}
+              prefix="por"
+              compact={true}
+            />
           ) : (
             <span className="flex items-center gap-1 opacity-70">
-              <AlertCircle className="size-3" /> Sistema
+              <AlertCircle className="size-3" /> Sistema · {format(parseISO(item.created), 'dd/MM')}
             </span>
           )}
         </TableCell>

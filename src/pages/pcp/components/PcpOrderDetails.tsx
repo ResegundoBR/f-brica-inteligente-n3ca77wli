@@ -220,9 +220,19 @@ export function PcpOrderDetails({
             )}
             {op.status === 'Parado' && (
               <div className="bg-red-50 dark:bg-red-950/20 p-4 rounded-md border border-red-200 dark:border-red-900">
-                <h3 className="font-semibold text-red-800 dark:text-red-400 mb-2 flex items-center">
-                  <AlertCircle className="size-4 mr-2" /> Gargalo de Produção
-                </h3>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="font-semibold text-red-800 dark:text-red-400 flex items-center">
+                    <AlertCircle className="size-4 mr-2" /> Gargalo de Produção
+                  </h3>
+                  {op.expand?.bottleneck_by && (
+                    <span className="text-xs text-red-700 dark:text-red-300">
+                      Sinalizado por:{' '}
+                      <strong>
+                        {op.expand.bottleneck_by.name || op.expand.bottleneck_by.email}
+                      </strong>
+                    </span>
+                  )}
+                </div>
                 <div className="space-y-2">
                   <div>
                     <span className="text-sm font-medium text-red-700 dark:text-red-300">

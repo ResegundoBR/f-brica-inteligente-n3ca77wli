@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { OrdemCompra, OrdemCompraItem } from '@/types'
 import { format, parseISO } from 'date-fns'
 import { Printer } from 'lucide-react'
+import { UserActionBadge } from '@/components/UserActionBadge'
 
 interface OrdemCompraDocumentProps {
   oc: OrdemCompra | null
@@ -42,6 +43,11 @@ export function OrdemCompraDocument({ oc, items, open, onOpenChange }: OrdemComp
 
   const deliveryInfo =
     oc.delivery_type === 'Retira' ? 'Retirada no fornecedor' : `Entrega: ${KLAXON_ADDRESS}`
+
+  const issuerName = oc.expand?.user_id?.name || oc.expand?.user_id?.email || 'Sistema'
+  const emissionDate = oc.created
+    ? format(parseISO(oc.created), 'dd/MM/yyyy HH:mm')
+    : format(new Date(), 'dd/MM/yyyy')
 
   const handlePrint = () => {
     const rows = items
@@ -82,7 +88,7 @@ export function OrdemCompraDocument({ oc, items, open, onOpenChange }: OrdemComp
     </div>
     <div class="oc-title">
       <h2>Ordem de Compra Nº ${formatOcNumber(oc.oc_number)}</h2>
-      <p>Data: ${format(new Date(), 'dd/MM/yyyy')}</p>
+      <p>Emitido por: <strong>${issuerName}</strong> em ${emissionDate}</p>
     </div>
     <div class="info-grid">
       <p><strong>Fornecedor:</strong> ${oc.supplier}</p>
@@ -122,7 +128,22 @@ export function OrdemCompraDocument({ oc, items, open, onOpenChange }: OrdemComp
             </div>
           </div>
           <div className="flex justify-between items-start border-b pb-3">
-            <h3 className="font-bold text-lg">Ordem de Compra Nº {formatOcNumber(oc.oc_number)}</h3>
+            <div>
+              <h3 className="font-bold text-lg">
+                Ordem de Compra Nº {formatOcNumber(oc.oc_number)}
+              </h3>
+              {oc.expand?.user_id && (
+                <div className="mt-1">
+                  <UserActionBadge
+                    user={oc.expand.user_id}
+                    date={oc.created}
+                    prefix="Emitido por"
+                    compact={false}
+                    showTime={true}
+                  />
+                </div>
+              )}
+            </div>
             <p className="text-sm text-muted-foreground">{format(new Date(), 'dd/MM/yyyy')}</p>
           </div>
           <div className="grid grid-cols-2 gap-2">

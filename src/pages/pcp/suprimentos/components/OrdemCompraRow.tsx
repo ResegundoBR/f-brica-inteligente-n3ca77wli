@@ -11,6 +11,7 @@ import { TableCell, TableRow } from '@/components/ui/table'
 import { Eye } from 'lucide-react'
 import { format, parseISO, isBefore, startOfDay } from 'date-fns'
 import type { OrdemCompra } from '@/types'
+import { UserActionBadge } from '@/components/UserActionBadge'
 
 interface OrdemCompraRowProps {
   oc: OrdemCompra
@@ -31,7 +32,19 @@ export function OrdemCompraRow({ oc, onStatusChange, onViewDoc }: OrdemCompraRow
   return (
     <TableRow className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
       <TableCell className="font-bold text-sm">{oc.oc_number}</TableCell>
-      <TableCell className="text-sm font-medium">{oc.supplier}</TableCell>
+      <TableCell className="text-sm font-medium">
+        <div>{oc.supplier}</div>
+        {oc.expand?.user_id && (
+          <div className="mt-0.5">
+            <UserActionBadge
+              user={oc.expand.user_id}
+              date={oc.created}
+              prefix="por"
+              compact={true}
+            />
+          </div>
+        )}
+      </TableCell>
       <TableCell>
         <Select value={oc.status || 'Pendente'} onValueChange={(v) => onStatusChange(oc.id, v)}>
           <SelectTrigger className="h-8 w-[130px]">

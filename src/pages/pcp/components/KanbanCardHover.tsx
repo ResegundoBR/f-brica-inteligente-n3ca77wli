@@ -124,9 +124,16 @@ export function KanbanCardHover({
 
           {order.bottleneck_reason && order.bottleneck_reason !== 'Nenhum' && (
             <div className="bg-orange-50 dark:bg-orange-950/30 rounded-md p-2 border border-orange-200 dark:border-orange-800">
-              <div className="flex items-center gap-1 text-orange-700 dark:text-orange-400 font-semibold">
-                <AlertCircle className="size-3" />
-                {order.bottleneck_reason}
+              <div className="flex items-center justify-between gap-1 text-orange-700 dark:text-orange-400 font-semibold">
+                <div className="flex items-center gap-1">
+                  <AlertCircle className="size-3" />
+                  {order.bottleneck_reason}
+                </div>
+                {order.expand?.bottleneck_by && (
+                  <span className="text-[10px] font-normal text-muted-foreground">
+                    por {order.expand.bottleneck_by.name?.split(' ')[0]}
+                  </span>
+                )}
               </div>
               {order.bottleneck_details && (
                 <p className="mt-1 text-orange-600 dark:text-orange-300 whitespace-pre-wrap">

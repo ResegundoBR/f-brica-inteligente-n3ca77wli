@@ -30,6 +30,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/use-toast'
+import { UserActionBadge } from '@/components/UserActionBadge'
 import { useAuth } from '@/hooks/use-auth'
 import { useIsMobile } from '@/hooks/use-mobile'
 import {
@@ -454,9 +455,20 @@ export function SeparationMaterialsModal({
   const renderStatusBadges = (item: PcpOrderMaterial) => (
     <>
       {item.status === 'Separado' && (
-        <Badge className="bg-emerald-600 text-white font-bold text-[10px] px-2 py-0.5">
-          <Check className="size-3 mr-0.5" /> Separado
-        </Badge>
+        <div className="flex flex-col items-center gap-0.5">
+          <Badge className="bg-emerald-600 text-white font-bold text-[10px] px-2 py-0.5">
+            <Check className="size-3 mr-0.5" /> Separado
+          </Badge>
+          {(item.expand?.separated_by || item.separated_at) && (
+            <UserActionBadge
+              user={item.expand?.separated_by}
+              date={item.separated_at}
+              prefix="por"
+              showTime={true}
+              compact={true}
+            />
+          )}
+        </div>
       )}
       {item.status === 'Falta' && (
         <Badge variant="destructive" className="font-bold text-[10px] px-2 py-0.5">

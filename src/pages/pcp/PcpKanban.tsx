@@ -177,7 +177,7 @@ export default function PcpKanban() {
 
   const fetchOrders = async () => {
     const res = await pb.collection('pcp_orders').getFullList({
-      expand: 'product_id,client_id,operator_id,promised_by',
+      expand: 'product_id,client_id,operator_id,promised_by,bottleneck_by',
       sort: '-manual_priority,-created',
     })
     setOrders(res)

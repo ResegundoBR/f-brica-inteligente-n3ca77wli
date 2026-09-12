@@ -17,6 +17,7 @@ import { SupplierGroupSection } from './SupplierGroupSection'
 import { useMemo } from 'react'
 import { findOtherOpDemands } from '@/services/material-consolidation'
 import { ConsolidatedDemandBadge } from './ConsolidatedDemandBlock'
+import { UserActionBadge } from '@/components/UserActionBadge'
 
 interface CotacoesTableProps {
   items: MaterialShortage[]
@@ -74,7 +75,13 @@ function CotacoesRow({
         </div>
       </TableCell>
       <TableCell className="text-xs text-muted-foreground">
-        {item.expand?.requested_by?.name || '-'}
+        <UserActionBadge
+          user={item.expand?.requested_by}
+          date={item.created}
+          prefix="por"
+          compact={true}
+          fallbackText="-"
+        />
       </TableCell>
       <TableCell className="text-xs text-muted-foreground">
         {item.expand?.order_id?.order_number || '-'}

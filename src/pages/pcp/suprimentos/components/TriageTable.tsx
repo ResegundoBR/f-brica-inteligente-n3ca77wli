@@ -13,6 +13,7 @@ import { useShortageStore } from '@/stores/useShortageStore'
 import { useNewRequests } from '@/hooks/use-new-requests'
 import { format, parseISO } from 'date-fns'
 import { cn } from '@/lib/utils'
+import { UserActionBadge } from '@/components/UserActionBadge'
 
 import { useMemo } from 'react'
 import { findOtherOpDemands } from '@/services/material-consolidation'
@@ -104,7 +105,13 @@ export function TriageTable({ items, allShortages, onRowClick }: TriageTableProp
                   )}
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">
-                  {item.expand?.requested_by?.name || '-'}
+                  <UserActionBadge
+                    user={item.expand?.requested_by}
+                    date={item.created}
+                    prefix="por"
+                    compact={true}
+                    fallbackText="-"
+                  />
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">
                   {item.expand?.order_id?.order_number || '-'}

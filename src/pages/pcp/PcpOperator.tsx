@@ -1106,7 +1106,7 @@ export default function PcpOperator() {
       const records = await pb.collection('pcp_orders').getFullList<PcpOrder>({
         filter: 'status != "Concluído"',
         sort: 'delivery_date',
-        expand: 'product_id',
+        expand: 'product_id,bottleneck_by,promised_by',
       })
 
       const productIds = Array.from(new Set(records.map((o) => o.product_id).filter(Boolean)))
@@ -1411,6 +1411,7 @@ export default function PcpOperator() {
     missingItems?: any[],
   ) => {
     const newStatus = reason === 'Nenhum' ? (op.started_at ? 'Em Andamento' : 'Fila') : 'Parado'
+    const bottleneckByUserId = reason === 'Nenhum' ? null : user?.id || null
     setOrders((prev) =>
       prev.map((o) =>
         o.id === op.id
@@ -1419,6 +1420,7 @@ export default function PcpOperator() {
               status: newStatus,
               bottleneck_reason: reason as any,
               bottleneck_details: details,
+              bottleneck_by: bottleneckByUserId || undefined,
             } as PcpOrder)
           : o,
       ),
@@ -1443,7 +1445,25 @@ export default function PcpOperator() {
         status: reason === 'Nenhum' ? (op.started_at ? 'Em Andamento' : 'Fila') : 'Parado',
         bottleneck_reason: reason,
         bottleneck_details: details,
+        bottleneck_by: bottleneckByUserId,
       })
+
+      // Registrar log em pcp_order_logs
+      try {
+        await pb.collection('pcp_order_logs').create({
+          order_id: op.id,
+          user_id: user?.id || null,
+          stage: op.stage,
+          action: reason === 'Nenhum' ? 'Gargalo Resolvido' : 'Gargalo Sinalizado',
+          details:
+            reason === 'Nenhum'
+              ? 'Gargalo removido'
+              : `Motivo: ${reason}${details ? ` - ${details}` : ''}`,
+        })
+      } catch (logErr) {
+        console.warn('Falha ao registrar log de gargalo:', logErr)
+      }
+
       toast({
         title: reason === 'Nenhum' ? 'Gargalo Resolvido' : 'Gargalo Sinalizado',
         description: 'A equipe foi notificada.',

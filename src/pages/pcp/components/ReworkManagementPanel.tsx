@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { PcpRework } from '@/types'
+import { UserActionBadge } from '@/components/UserActionBadge'
 import {
   RotateCcw,
   Clock,
@@ -517,18 +518,33 @@ export function ReworkManagementPanel({ reworks, loading = false }: ReworkManage
 
                         <TableCell className="align-top py-3">
                           <div className="flex flex-col text-xs">
-                            <span className="font-medium text-slate-800 dark:text-slate-200">
-                              {r.expand?.signaled_by?.name || 'Não identificado'}
-                            </span>
+                            {r.expand?.signaled_by ? (
+                              <UserActionBadge
+                                user={r.expand.signaled_by}
+                                date={r.signaled_at || r.created}
+                                prefix="por"
+                                compact={true}
+                              />
+                            ) : (
+                              <span className="text-muted-foreground">Não identificado</span>
+                            )}
                           </div>
                         </TableCell>
 
                         <TableCell className="align-top py-3">
                           <div className="flex flex-col text-xs">
-                            <span className="font-medium text-slate-800 dark:text-slate-200">
-                              {r.expand?.executed_by?.name ||
-                                (r.status === 'Concluído' ? 'Operador' : '-')}
-                            </span>
+                            {r.expand?.executed_by ? (
+                              <UserActionBadge
+                                user={r.expand.executed_by}
+                                date={r.finished_at}
+                                prefix="por"
+                                compact={true}
+                              />
+                            ) : (
+                              <span className="text-muted-foreground">
+                                {r.status === 'Concluído' ? 'Operador' : '-'}
+                              </span>
+                            )}
                           </div>
                         </TableCell>
 

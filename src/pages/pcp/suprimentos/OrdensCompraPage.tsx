@@ -168,7 +168,7 @@ export default function OrdensCompraPage() {
             <TableHeader className="bg-slate-50 dark:bg-slate-800/50">
               <TableRow>
                 <TableHead className="w-[100px]">OC Nº</TableHead>
-                <TableHead>Fornecedor</TableHead>
+                <TableHead>Fornecedor / Responsável</TableHead>
                 <TableHead className="w-[140px]">Status</TableHead>
                 <TableHead className="w-[120px]">Previsão</TableHead>
                 <TableHead className="w-[110px]">Acompanhamento</TableHead>

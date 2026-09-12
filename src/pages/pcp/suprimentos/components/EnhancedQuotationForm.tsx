@@ -14,6 +14,7 @@ import { SupplierFormDialog } from './SupplierFormDialog'
 import { useMemo } from 'react'
 import { findOtherOpDemands } from '@/services/material-consolidation'
 import { ConsolidatedDemandBlock } from './ConsolidatedDemandBlock'
+import { UserActionBadge } from '@/components/UserActionBadge'
 
 interface EnhancedQuotationFormProps {
   item: MaterialShortage
@@ -48,6 +49,7 @@ export function EnhancedQuotationForm({
       const quots = await pb.collection('quotations').getFullList<Quotation>({
         filter: `material_shortage_id = "${item.id}"`,
         sort: 'price',
+        expand: 'quoted_by',
       })
       setQuotations(quots)
     } catch {
@@ -75,6 +77,7 @@ export function EnhancedQuotationForm({
         st_value: parsedSt && Number.isFinite(parsedSt) ? parsedSt : undefined,
         ipi_value: parsedIpi && Number.isFinite(parsedIpi) ? parsedIpi : undefined,
         delivery_days: deliveryDays ? parseInt(deliveryDays) : undefined,
+        quoted_by: pb.authStore.record?.id || undefined,
         selected: false,
       })
       await loadQuotations()
@@ -265,7 +268,15 @@ export function EnhancedQuotationForm({
                   {q.selected ? 'Sel.' : 'Sel.'}
                 </Button>
                 <div className="flex-1">
-                  <p className="text-sm font-medium">{q.supplier}</p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium">{q.supplier}</p>
+                    <UserActionBadge
+                      user={q.expand?.quoted_by}
+                      date={q.created}
+                      prefix="por"
+                      compact={true}
+                    />
+                  </div>
                   <p className="text-xs text-muted-foreground">
                     R$ {q.price.toFixed(2)}
                     {q.st_value ? ` • ST: R$ ${q.st_value.toFixed(2)}` : ''}

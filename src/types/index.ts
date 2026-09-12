@@ -395,6 +395,17 @@ export interface Quotation {
   }
 }
 
+export interface MasterComponent {
+  id: string
+  code: string
+  description: string
+  unit?: string
+  active?: boolean
+  source?: 'inventory' | 'catalog' | 'manual' | 'imported'
+  created: string
+  updated: string
+}
+
 export interface Inventory {
   id: string
   code: string
@@ -402,8 +413,12 @@ export interface Inventory {
   quantity: number
   min_quantity?: number
   unit?: string
+  component_id?: string
   created: string
   updated: string
+  expand?: {
+    component_id?: MasterComponent
+  }
 }
 
 export interface InventoryMovement {

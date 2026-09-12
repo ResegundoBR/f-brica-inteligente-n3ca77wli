@@ -2,9 +2,9 @@ import { useState, useEffect, useRef } from 'react'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Search, FileText } from 'lucide-react'
+import { Search, FileText, Database } from 'lucide-react'
 import pb from '@/lib/pocketbase/client'
-import type { Inventory, MaterialShortage } from '@/types'
+import type { Inventory, MaterialShortage, MasterComponent } from '@/types'
 import { cn } from '@/lib/utils'
 
 interface SearchProductItem {
@@ -12,6 +12,7 @@ interface SearchProductItem {
   code: string
   description: string
   quantity?: number
+  source?: string
   inventoryItem?: Inventory
 }
 
@@ -37,17 +38,62 @@ export function ProductSearchBar({
     let cancelled = false
 
     Promise.all([
-      pb.collection('inventory').getFullList<Inventory>({ sort: 'description' }),
-      pb.collection('material_shortages').getFullList<MaterialShortage>({
-        fields: 'id,code,description',
-      }),
+      pb
+        .collection('components')
+        .getFullList<MasterComponent>({ sort: 'description' })
+        .catch(() => [] as MasterComponent[]),
+      pb
+        .collection('inventory')
+        .getFullList<Inventory>({ sort: 'description' })
+        .catch(() => [] as Inventory[]),
+      pb
+        .collection('material_shortages')
+        .getFullList<MaterialShortage>({
+          fields: 'id,code,description',
+        })
+        .catch(() => [] as MaterialShortage[]),
     ])
-      .then(([inv, shorts]) => {
+      .then(([components, inv, shorts]) => {
         if (cancelled) return
         const list: SearchProductItem[] = []
         const seen = new Set<string>()
 
-        // 1. Itens do estoque
+        // Mapa de estoque para junção informativa rápida
+        const invByCompId = new Map<string, Inventory>()
+        const invByCode = new Map<string, Inventory>()
+        const invByDesc = new Map<string, Inventory>()
+
+        for (const item of inv) {
+          if (item.component_id) invByCompId.set(item.component_id, item)
+          if (item.code) invByCode.set(item.code.toLowerCase().trim(), item)
+          if (item.description) invByDesc.set(item.description.toLowerCase().trim(), item)
+        }
+
+        // 1. Prioridade máxima: Cadastro mestre unificado (components)
+        for (const comp of components) {
+          const invItem =
+            invByCompId.get(comp.id) ||
+            (comp.code ? invByCode.get(comp.code.toLowerCase().trim()) : undefined) ||
+            invByDesc.get(comp.description.toLowerCase().trim())
+
+          const c = (comp.code || invItem?.code || '').trim().toLowerCase()
+          const d = (comp.description || '').trim().toLowerCase()
+          const key = c ? `c:${c}` : `d:${d}`
+
+          if (!seen.has(key)) {
+            seen.add(key)
+            list.push({
+              id: invItem?.id || comp.id,
+              code: comp.code || invItem?.code || '',
+              description: comp.description,
+              quantity: invItem?.quantity,
+              source: comp.source === 'catalog' ? 'Catálogo' : invItem ? 'Estoque' : 'Mestre',
+              inventoryItem: invItem,
+            })
+          }
+        }
+
+        // 2. Itens do estoque legados não referenciados
         for (const item of inv) {
           const c = (item.code || '').trim().toLowerCase()
           const d = (item.description || '').trim().toLowerCase()
@@ -59,12 +105,13 @@ export function ProductSearchBar({
               code: item.code || '',
               description: item.description || '',
               quantity: item.quantity,
+              source: 'Estoque',
               inventoryItem: item,
             })
           }
         }
 
-        // 2. Itens de material shortages (quando não estiverem no inventário ou para complementar)
+        // 3. Itens de material shortages históricos
         for (const s of shorts) {
           const c = (s.code || '').trim().toLowerCase()
           const d = (s.description || '').trim().toLowerCase()
@@ -75,6 +122,7 @@ export function ProductSearchBar({
               id: s.id,
               code: s.code || '',
               description: s.description || '',
+              source: 'Histórico',
             })
           }
         }
@@ -167,9 +215,24 @@ export function ProductSearchBar({
                 </span>
               </div>
               <div className="flex items-center gap-1.5 flex-shrink-0">
-                {item.quantity !== undefined && (
-                  <Badge variant="outline" className="text-[10px]">
+                {item.source && (
+                  <Badge
+                    variant={item.source === 'Estoque' ? 'secondary' : 'outline'}
+                    className="text-[9px] px-1.5 py-0"
+                  >
+                    {item.source}
+                  </Badge>
+                )}
+                {item.quantity !== undefined ? (
+                  <Badge variant="outline" className="text-[10px] font-mono">
                     Saldo: {item.quantity}
+                  </Badge>
+                ) : (
+                  <Badge
+                    variant="secondary"
+                    className="text-[9px] text-muted-foreground font-normal"
+                  >
+                    Sem estoque
                   </Badge>
                 )}
                 <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[11px] text-blue-600">

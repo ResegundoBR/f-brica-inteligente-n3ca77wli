@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from 'react'
 import pb from '@/lib/pocketbase/client'
 import { Input } from '@/components/ui/input'
-import type { Product, MaterialShortage } from '@/types'
+import type { Product, MaterialShortage, MasterComponent } from '@/types'
 
 interface Suggestion {
   code: string
   desc: string
+  source?: string
 }
 
 interface MaterialDescriptionAutocompleteProps {
@@ -25,27 +26,65 @@ function fetchAllSuggestions(): Promise<Suggestion[]> {
   if (suggestionsCache) return Promise.resolve(suggestionsCache)
   if (suggestionsPromise) return suggestionsPromise
   suggestionsPromise = Promise.all([
-    pb.collection('products').getFullList<Product>(),
-    pb.collection('material_shortages').getFullList<MaterialShortage>({
-      fields: 'code,description',
-    }),
+    pb
+      .collection('components')
+      .getFullList<MasterComponent>({
+        sort: 'description',
+      })
+      .catch(() => [] as MasterComponent[]),
+    pb
+      .collection('products')
+      .getFullList<Product>()
+      .catch(() => [] as Product[]),
+    pb
+      .collection('material_shortages')
+      .getFullList<MaterialShortage>({
+        fields: 'code,description',
+      })
+      .catch(() => [] as MaterialShortage[]),
   ])
-    .then(([prods, shorts]) => {
+    .then(([components, prods, shorts]) => {
       const all: Suggestion[] = []
-      prods.forEach((p) => {
-        if (p.data?.composition) {
-          p.data.composition.forEach((c: any) => {
-            if (c.description) all.push({ code: c.code || '', desc: c.description })
+
+      // 1. Mestre de componentes (prioridade primária unificada)
+      components.forEach((comp) => {
+        if (comp.description) {
+          all.push({
+            code: comp.code || '',
+            desc: comp.description,
+            source:
+              comp.source === 'catalog'
+                ? 'Catálogo'
+                : comp.source === 'inventory'
+                  ? 'Estoque'
+                  : 'Mestre',
           })
         }
       })
-      shorts.forEach((s) => {
-        if (s.description) all.push({ code: s.code || '', desc: s.description })
+
+      // 2. Composição de produtos (compatibilidade aditiva)
+      prods.forEach((p) => {
+        if (p.data?.composition) {
+          p.data.composition.forEach((c: any) => {
+            if (c.description) {
+              all.push({ code: c.code || '', desc: c.description, source: 'Catálogo' })
+            }
+          })
+        }
       })
+
+      // 3. Faltas anteriores
+      shorts.forEach((s) => {
+        if (s.description) {
+          all.push({ code: s.code || '', desc: s.description, source: 'Histórico' })
+        }
+      })
+
       const seen = new Set<string>()
       const unique = all.filter((c) => {
-        if (seen.has(c.desc)) return false
-        seen.add(c.desc)
+        const key = `${(c.code || '').toLowerCase()}|${c.desc.toLowerCase()}`
+        if (seen.has(key)) return false
+        seen.add(key)
         return true
       })
       suggestionsCache = unique
@@ -145,9 +184,16 @@ export function MaterialDescriptionAutocomplete({
               }}
             >
               {s.code && (
-                <span className="text-muted-foreground font-medium text-xs shrink-0">{s.code}</span>
+                <span className="text-muted-foreground font-mono text-xs shrink-0 bg-muted px-1.5 py-0.5 rounded">
+                  {s.code}
+                </span>
               )}
               <span className="flex-1 truncate">{s.desc}</span>
+              {s.source && (
+                <span className="text-[10px] text-muted-foreground shrink-0 uppercase tracking-wider font-semibold border border-border px-1 rounded">
+                  {s.source}
+                </span>
+              )}
             </button>
           ))}
         </div>

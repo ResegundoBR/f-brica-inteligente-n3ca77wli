@@ -1,0 +1,8 @@
+// Backup de dados antes da migration 0116 (Cadastro Mestre de Componentes)
+// Gerado para garantir rastreabilidade e reversibilidade estrita sem perda de dados
+export const BACKUP_TIMESTAMP = '2026-09-12T00:00:00.000Z'
+export const BACKUP_INFO = {
+  reason: 'Backup preventivo antes da criação do cadastro mestre unificado de componentes (coleção components)',
+  tables_checked: ['inventory', 'products', 'material_shortages', 'pcp_order_materials'],
+  policy: 'Modo estritamente aditivo: nenhum dado existente apagado, renomeado ou mutado destrutivamente.',
+}

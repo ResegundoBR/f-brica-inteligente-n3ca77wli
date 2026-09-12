@@ -33,6 +33,7 @@ import {
   OrdemCompraItem,
   PcpOrder,
   User,
+  MasterComponent,
 } from '@/types'
 import { format, parseISO, isValid } from 'date-fns'
 import {
@@ -93,6 +94,7 @@ export function ProductDossierModal({
     inventoryItem?: Inventory | null
   } | null>(null)
 
+  const [allMasterComponents, setAllMasterComponents] = useState<MasterComponent[]>([])
   const [allInventory, setAllInventory] = useState<Inventory[]>([])
   const [allShortages, setAllShortages] = useState<MaterialShortage[]>([])
   const [allOcItems, setAllOcItems] = useState<OrdemCompraItem[]>([])
@@ -109,22 +111,39 @@ export function ProductDossierModal({
     setIsLoading(true)
 
     Promise.all([
-      pb.collection('inventory').getFullList<Inventory>({ sort: 'description' }),
-      pb.collection('material_shortages').getFullList<MaterialShortage>({
-        sort: '-created',
-        expand: 'order_id,order_id.product_id,received_by,requested_by',
-      }),
-      pb.collection('ordem_compra_itens').getFullList<OrdemCompraItem>({
-        sort: '-created',
-        expand: 'oc_id,oc_id.user_id,material_shortage_id',
-      }),
-      pb.collection('inventory_movements').getFullList<InventoryMovement>({
-        sort: '-created',
-        expand: 'inventory_id,order_id,user_id',
-      }),
+      pb
+        .collection('components')
+        .getFullList<MasterComponent>({ sort: 'description' })
+        .catch(() => [] as MasterComponent[]),
+      pb
+        .collection('inventory')
+        .getFullList<Inventory>({ sort: 'description' })
+        .catch(() => [] as Inventory[]),
+      pb
+        .collection('material_shortages')
+        .getFullList<MaterialShortage>({
+          sort: '-created',
+          expand: 'order_id,order_id.product_id,received_by,requested_by',
+        })
+        .catch(() => [] as MaterialShortage[]),
+      pb
+        .collection('ordem_compra_itens')
+        .getFullList<OrdemCompraItem>({
+          sort: '-created',
+          expand: 'oc_id,oc_id.user_id,material_shortage_id',
+        })
+        .catch(() => [] as OrdemCompraItem[]),
+      pb
+        .collection('inventory_movements')
+        .getFullList<InventoryMovement>({
+          sort: '-created',
+          expand: 'inventory_id,order_id,user_id',
+        })
+        .catch(() => [] as InventoryMovement[]),
     ])
-      .then(([inv, shortages, ocItens, movements]) => {
+      .then(([components, inv, shortages, ocItens, movements]) => {
         if (cancelled) return
+        setAllMasterComponents(components)
         setAllInventory(inv)
         setAllShortages(shortages)
         setAllOcItems(ocItens)
@@ -177,7 +196,7 @@ export function ProductDossierModal({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // Lista unificada para busca: todos do inventário + todos de shortages
+  // Lista unificada para busca: Mestre de componentes (components) + inventário + shortages
   const searchableProducts = useMemo(() => {
     const list: Array<{
       key: string
@@ -185,11 +204,46 @@ export function ProductDossierModal({
       description: string
       inventoryItem?: Inventory
       quantity?: number
+      source?: string
     }> = []
 
     const seenKeys = new Set<string>()
 
-    // Primeiro adicionar itens de estoque
+    const invByCompId = new Map<string, Inventory>()
+    const invByCode = new Map<string, Inventory>()
+    const invByDesc = new Map<string, Inventory>()
+
+    for (const inv of allInventory) {
+      if (inv.component_id) invByCompId.set(inv.component_id, inv)
+      if (inv.code) invByCode.set(inv.code.toLowerCase().trim(), inv)
+      if (inv.description) invByDesc.set(inv.description.toLowerCase().trim(), inv)
+    }
+
+    // 1. Componentes do Mestre
+    for (const comp of allMasterComponents) {
+      const invMatch =
+        invByCompId.get(comp.id) ||
+        (comp.code ? invByCode.get(comp.code.toLowerCase().trim()) : undefined) ||
+        invByDesc.get(comp.description.toLowerCase().trim())
+
+      const descKey = (comp.description || '').trim().toLowerCase()
+      const codeKey = (comp.code || invMatch?.code || '').trim().toLowerCase()
+      const key = codeKey ? `code:${codeKey}` : `desc:${descKey}`
+
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key)
+        list.push({
+          key,
+          code: comp.code || invMatch?.code || '',
+          description: comp.description,
+          inventoryItem: invMatch,
+          quantity: invMatch?.quantity,
+          source: comp.source === 'catalog' ? 'Catálogo' : invMatch ? 'Estoque' : 'Mestre',
+        })
+      }
+    }
+
+    // 2. Itens de estoque restantes
     for (const inv of allInventory) {
       const descKey = (inv.description || '').trim().toLowerCase()
       const codeKey = (inv.code || '').trim().toLowerCase()
@@ -202,18 +256,18 @@ export function ProductDossierModal({
           description: inv.description || '',
           inventoryItem: inv,
           quantity: inv.quantity,
+          source: 'Estoque',
         })
       }
     }
 
-    // Depois itens de shortages que possam não estar ainda no inventário
+    // 3. Shortages restantes
     for (const s of allShortages) {
       const descKey = (s.description || '').trim().toLowerCase()
       const codeKey = (s.code || '').trim().toLowerCase()
       const key = codeKey ? `code:${codeKey}` : `desc:${descKey}`
       if (!seenKeys.has(key) && (s.description || s.code)) {
         seenKeys.add(key)
-        // Checar se bate com algum inventário pela descrição
         const matchInv = allInventory.find(
           (i) =>
             (s.code && i.code && i.code.trim().toLowerCase() === s.code.trim().toLowerCase()) ||
@@ -225,12 +279,13 @@ export function ProductDossierModal({
           description: s.description || matchInv?.description || '',
           inventoryItem: matchInv,
           quantity: matchInv?.quantity,
+          source: 'Histórico',
         })
       }
     }
 
     return list
-  }, [allInventory, allShortages])
+  }, [allMasterComponents, allInventory, allShortages])
 
   // Filtragem dos resultados de busca
   const searchResults = useMemo(() => {
@@ -575,18 +630,27 @@ export function ProductDossierModal({
                   className="p-2.5 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer flex items-center justify-between text-sm transition-colors"
                 >
                   <div className="flex flex-col">
-                    <span className="font-semibold text-slate-800 dark:text-slate-200">
-                      {item.description}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">
+                        {item.description}
+                      </span>
+                      {item.source && (
+                        <Badge variant="secondary" className="text-[9px] py-0 px-1.5">
+                          {item.source}
+                        </Badge>
+                      )}
+                    </div>
                     <span className="text-xs text-muted-foreground">
                       {item.code ? `Código: ${item.code}` : 'Sem código cadastrado'}
                     </span>
                   </div>
-                  {item.quantity !== undefined && (
-                    <Badge variant="outline" className="text-xs ml-2">
+                  {item.quantity !== undefined ? (
+                    <Badge variant="outline" className="text-xs font-mono">
                       Saldo: {item.quantity}
                     </Badge>
-                  )}
+                  ) : (
+                    <span className="text-[10px] text-muted-foreground italic">(Sem estoque)</span>
+                  )}{' '}
                 </div>
               ))}
             </div>

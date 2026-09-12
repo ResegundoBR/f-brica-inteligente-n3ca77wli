@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-12T14:09:39.304Z",
+  "generatedAt": "2026-09-12T14:33:39.414Z",
   "collections": [
     {
       "name": "users",
@@ -1713,6 +1713,13 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "component_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "components"
         }
       ],
       "indexes": ["CREATE UNIQUE INDEX idx_inventory_code ON inventory (code COLLATE NOCASE)"]
@@ -2505,6 +2512,69 @@
         "CREATE INDEX idx_pcp_reworks_created ON pcp_reworks (created)",
         "CREATE INDEX idx_pcp_reworks_origin ON pcp_reworks (origin_sector)",
         "CREATE INDEX idx_pcp_reworks_target ON pcp_reworks (target_sector)"
+      ]
+    },
+    {
+      "name": "components",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "code",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "unit",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "active",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "source",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["inventory", "catalog", "manual", "imported"]
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_components_code ON components (code)",
+        "CREATE INDEX idx_components_description ON components (description)",
+        "CREATE INDEX idx_components_active ON components (active)"
       ]
     }
   ]

@@ -23,7 +23,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Check, ChevronsUpDown, Plus, History, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { PcpOrder, Product, MaterialShortage } from '@/types'
+import { PcpOrder, Product, MaterialShortage, MasterComponent } from '@/types'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
 import { extractFieldErrors, type FieldErrors } from '@/lib/pocketbase/errors'
@@ -92,13 +92,32 @@ export function NewShortageModal({
   useEffect(() => {
     if (!open) return
     Promise.all([
-      pb.collection('products').getFullList<Product>(),
-      pb.collection('material_shortages').getFullList<MaterialShortage>({
-        fields: 'code,description',
-      }),
+      pb
+        .collection('components')
+        .getFullList<MasterComponent>({ sort: 'description' })
+        .catch(() => [] as MasterComponent[]),
+      pb
+        .collection('products')
+        .getFullList<Product>()
+        .catch(() => [] as Product[]),
+      pb
+        .collection('material_shortages')
+        .getFullList<MaterialShortage>({
+          fields: 'code,description',
+        })
+        .catch(() => [] as MaterialShortage[]),
     ])
-      .then(([prods, shorts]) => {
+      .then(([components, prods, shorts]) => {
         const allComp: { code: string; desc: string }[] = []
+
+        // 1. Mestre unificado de componentes
+        components.forEach((comp) => {
+          if (comp.description) {
+            allComp.push({ code: comp.code || '', desc: comp.description })
+          }
+        })
+
+        // 2. Composição de produtos
         prods.forEach((p) => {
           if (p.data?.composition) {
             p.data.composition.forEach((c: any) => {
@@ -108,13 +127,22 @@ export function NewShortageModal({
             })
           }
         })
+
+        // 3. Faltas anteriores
         shorts.forEach((s) => {
           if (s.description) {
             allComp.push({ code: s.code || '', desc: s.description })
           }
         })
-        const unique = Array.from(new Set(allComp.map((c) => c.desc))).map((desc) => {
-          return allComp.find((c) => c.desc === desc)!
+
+        const seen = new Set<string>()
+        const unique: { code: string; desc: string }[] = []
+        allComp.forEach((item) => {
+          const key = `${item.code.toLowerCase()}|${item.desc.toLowerCase()}`
+          if (!seen.has(key)) {
+            seen.add(key)
+            unique.push(item)
+          }
         })
         setGlobalSuggestions(unique)
       })

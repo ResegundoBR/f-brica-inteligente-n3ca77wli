@@ -21,9 +21,10 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Inventory } from '@/types'
-import { Warehouse, AlertTriangle, Plus, History, FileSpreadsheet } from 'lucide-react'
+import { Warehouse, AlertTriangle, Plus, History, FileSpreadsheet, Pencil } from 'lucide-react'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
 import { InventoryItemDialog } from './components/InventoryItemDialog'
+import { EditInventoryItemDialog } from './components/EditInventoryItemDialog'
 import { ProductDossierModal } from './components/ProductDossierModal'
 import { ProductSearchBar } from './components/ProductSearchBar'
 import { useToast } from '@/hooks/use-toast'
@@ -35,6 +36,7 @@ export default function EstoquePage() {
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
   const [dossierOpen, setDossierOpen] = useState(false)
   const [dossierItem, setDossierItem] = useState<Inventory | null>(null)
+  const [editItem, setEditItem] = useState<Inventory | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [newCode, setNewCode] = useState('')
   const [newDesc, setNewDesc] = useState('')
@@ -276,6 +278,18 @@ export default function EstoquePage() {
                         <Button
                           size="sm"
                           variant="outline"
+                          className="h-7 px-2 text-xs"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setEditItem(item)
+                          }}
+                          title="Editar código, descrição, estoque mínimo e unidade"
+                        >
+                          <Pencil className="size-3 mr-1" /> Editar
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
                           className="h-7 text-xs"
                           onClick={(e) => {
                             e.stopPropagation()
@@ -298,6 +312,26 @@ export default function EstoquePage() {
         item={selectedItem}
         open={!!selectedItemId}
         onOpenChange={(o) => !o && setSelectedItemId(null)}
+      />
+
+      <EditInventoryItemDialog
+        open={!!editItem}
+        onOpenChange={(open) => !open && setEditItem(null)}
+        item={
+          editItem
+            ? {
+                id: editItem.id,
+                componentId: (editItem as any).component_id,
+                code: editItem.code,
+                description: editItem.description,
+                quantity: editItem.quantity,
+                min_quantity: editItem.min_quantity,
+                unit: editItem.unit,
+                isCatalogOnly: false,
+              }
+            : null
+        }
+        onSaved={fetchInventory}
       />
 
       <ProductDossierModal

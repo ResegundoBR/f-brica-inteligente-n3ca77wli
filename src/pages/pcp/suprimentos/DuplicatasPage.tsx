@@ -39,6 +39,7 @@ import { Label } from '@/components/ui/label'
 import { UserActionBadge } from '@/components/UserActionBadge'
 import { ProductDossierModal } from './components/ProductDossierModal'
 import { InventoryItemDialog } from './components/InventoryItemDialog'
+import { EditInventoryItemDialog } from './components/EditInventoryItemDialog'
 import { useToast } from '@/hooks/use-toast'
 import { useAuth } from '@/hooks/use-auth'
 import { useRealtime } from '@/hooks/use-realtime'
@@ -884,12 +885,26 @@ export default function DuplicatasPage() {
         initialProduct={dossierItem}
       />
 
-      <InventoryItemDialog
-        item={editInventoryItem}
+      <EditInventoryItemDialog
+        item={
+          editInventoryItem
+            ? {
+                id: editInventoryItem.id,
+                componentId: (editInventoryItem as any).component_id,
+                code: editInventoryItem.code,
+                description: editInventoryItem.description,
+                quantity: editInventoryItem.quantity,
+                min_quantity: editInventoryItem.min_quantity,
+                unit: editInventoryItem.unit,
+                isCatalogOnly: false,
+              }
+            : null
+        }
         open={!!editInventoryItem}
         onOpenChange={(o) => {
           if (!o) setEditInventoryItem(null)
         }}
+        onSaved={() => loadData(true)}
       />
     </div>
   )

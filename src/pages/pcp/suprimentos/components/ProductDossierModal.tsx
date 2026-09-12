@@ -36,7 +36,8 @@ import {
 import { getMasterComponents, reactivateMasterComponent } from '@/services/components'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
-import { RotateCcw } from 'lucide-react'
+import { RotateCcw, Pencil } from 'lucide-react'
+import { EditInventoryItemDialog } from './EditInventoryItemDialog'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -122,6 +123,7 @@ export function ProductDossierModal({
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
   const [isReactivating, setIsReactivating] = useState(false)
   const [reactivateConfirmOpen, setReactivateConfirmOpen] = useState(false)
+  const [editItemDialogOpen, setEditItemDialogOpen] = useState(false)
   const searchContainerRef = useRef<HTMLDivElement>(null)
   const { toast } = useToast()
 
@@ -751,6 +753,19 @@ export function ProductDossierModal({
                         Somente Catálogo (Sem Estoque)
                       </Badge>
                     )}
+
+                    {/* Botão de Edição de Dados Cadastrais */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 px-2 text-[11px] text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400 gap-1 ml-0.5"
+                      onClick={() => setEditItemDialogOpen(true)}
+                      title="Editar código, descrição, estoque mínimo e unidade"
+                    >
+                      <Pencil className="size-3" />
+                      <span>Editar</span>
+                    </Button>
+
                     {selectedMasterComponent?.active === false && (
                       <>
                         <UserActionBadge
@@ -1162,6 +1177,95 @@ export function ProductDossierModal({
           </div>
         )}
       </DialogContent>
+
+      {/* DIÁLOGO DE EDIÇÃO DE PRODUTO / ESTOQUE */}
+      <EditInventoryItemDialog
+        open={editItemDialogOpen}
+        onOpenChange={setEditItemDialogOpen}
+        item={
+          selectedProduct
+            ? {
+                id: currentInventory?.id || selectedMasterComponent?.id || selectedProduct.id,
+                componentId: selectedMasterComponent?.id || (currentInventory as any)?.component_id,
+                code: currentInventory?.code || selectedProduct.code,
+                description: currentInventory?.description || selectedProduct.description,
+                quantity: currentInventory?.quantity ?? 0,
+                min_quantity: currentInventory?.min_quantity ?? 0,
+                unit: currentInventory?.unit || selectedMasterComponent?.unit || 'un',
+                isCatalogOnly: !currentInventory,
+              }
+            : null
+        }
+        onSaved={({
+          code: newCode,
+          description: newDesc,
+          min_quantity: newMin,
+          unit: newUnit,
+          inventory: updatedInv,
+          component: updatedComp,
+        }) => {
+          // 1. Atualizar selectedProduct na Ficha imediatamente
+          setSelectedProduct((prev) => {
+            if (!prev) return null
+            const updatedInventory = prev.inventoryItem
+              ? {
+                  ...prev.inventoryItem,
+                  code: newCode,
+                  description: newDesc,
+                  min_quantity: newMin,
+                  unit: newUnit,
+                  ...(updatedInv || {}),
+                }
+              : updatedInv || null
+
+            return {
+              ...prev,
+              code: newCode,
+              description: newDesc,
+              inventoryItem: updatedInventory,
+            }
+          })
+
+          // 2. Atualizar campo de busca para refletir a nova descrição
+          setSearchTerm(newDesc)
+
+          // 3. Atualizar listas locais para consistência sem fechar o modal
+          if (currentInventory?.id) {
+            setAllInventory((prev) =>
+              prev.map((i) =>
+                i.id === currentInventory.id
+                  ? {
+                      ...i,
+                      code: newCode,
+                      description: newDesc,
+                      min_quantity: newMin,
+                      unit: newUnit,
+                      ...(updatedInv || {}),
+                    }
+                  : i,
+              ),
+            )
+          }
+
+          const compTargetId =
+            selectedMasterComponent?.id || (currentInventory as any)?.component_id
+          if (compTargetId) {
+            setAllMasterComponents((prev) =>
+              prev.map((c) =>
+                c.id === compTargetId
+                  ? {
+                      ...c,
+                      code: newCode,
+                      description: newDesc,
+                      unit: newUnit,
+                      ...(updatedComp || {}),
+                    }
+                  : c,
+              ),
+            )
+          }
+        }}
+      />
 
       {/* CONFIRMAÇÃO DE REATIVAÇÃO */}
       <AlertDialog open={reactivateConfirmOpen} onOpenChange={setReactivateConfirmOpen}>

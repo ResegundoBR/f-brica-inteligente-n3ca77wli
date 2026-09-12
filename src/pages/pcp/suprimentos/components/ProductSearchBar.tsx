@@ -202,62 +202,53 @@ export function ProductSearchBar({
               Clique para abrir a ficha
             </span>
           </div>
-          {filtered.map((item, idx) => (
-            <div
-              key={idx}
-              onClick={() => handleSelect(item)}
-              title={item.description}
-              className="p-2.5 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer flex items-center justify-between gap-3 text-xs transition-colors"
-            >
-              <div className="flex flex-col min-w-0 flex-1">
-                <span
-                  className="font-semibold text-slate-800 dark:text-slate-200 truncate block text-xs sm:text-sm"
-                  title={item.description}
-                >
-                  {item.description}
-                </span>
-                <span className="text-[11px] text-muted-foreground truncate">
-                  {item.code ? `Código: ${item.code}` : 'Sem código cadastrado'}
-                </span>
+          {filtered.map((item, idx) => {
+            const hasStock =
+              item.quantity !== undefined &&
+              item.quantity !== null &&
+              item.quantity > 0 &&
+              !item.isCatalogOnly
+            const stockQty = item.quantity ?? 0
+            const unit = item.inventoryItem?.unit || 'un'
+            return (
+              <div
+                key={idx}
+                onClick={() => handleSelect(item)}
+                title={item.description}
+                className="p-2.5 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer flex items-center justify-between gap-3 text-xs transition-colors"
+              >
+                <div className="flex flex-col min-w-0 flex-1">
+                  <span
+                    className="font-medium text-slate-800 dark:text-slate-200 line-clamp-2 leading-snug break-words text-xs sm:text-sm"
+                    title={item.description}
+                  >
+                    {item.description}
+                  </span>
+                  <span className="text-[11px] text-muted-foreground font-mono mt-0.5">
+                    {item.code ? `Cód: ${item.code}` : 'Sem código'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {hasStock ? (
+                    <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                      {stockQty} {unit}
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-muted-foreground font-normal whitespace-nowrap">
+                      sem estoque
+                    </span>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-1.5 text-[11px] text-blue-600 hover:text-blue-700 shrink-0"
+                  >
+                    <FileText className="size-3 mr-1" /> Ficha
+                  </Button>
+                </div>
               </div>
-              <div className="flex items-center gap-1.5 shrink-0 flex-nowrap">
-                {item.source && (
-                  <Badge
-                    variant={item.source === 'Estoque' ? 'default' : 'outline'}
-                    className={`text-[9px] px-1.5 py-0 whitespace-nowrap shrink-0 ${
-                      item.source === 'Estoque'
-                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 border-transparent'
-                        : 'text-muted-foreground'
-                    }`}
-                  >
-                    {item.source}
-                  </Badge>
-                )}
-                {item.quantity !== undefined && item.quantity !== null && !item.isCatalogOnly ? (
-                  <Badge
-                    variant="outline"
-                    className="text-[10px] font-mono text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800 whitespace-nowrap shrink-0"
-                  >
-                    Saldo: {item.quantity}
-                  </Badge>
-                ) : (
-                  <Badge
-                    variant="secondary"
-                    className="text-[9px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 font-normal whitespace-nowrap shrink-0"
-                  >
-                    somente catálogo, sem estoque
-                  </Badge>
-                )}
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-6 px-1.5 text-[11px] text-blue-600 hover:text-blue-700 shrink-0"
-                >
-                  <FileText className="size-3 mr-1" /> Ficha
-                </Button>
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 

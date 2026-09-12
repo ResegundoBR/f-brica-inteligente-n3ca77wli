@@ -627,45 +627,44 @@ export function ProductDossierModal({
 
           {/* DROPDOWN DE RESULTADOS */}
           {isDropdownOpen && searchResults.length > 0 && (
-            <div className="absolute z-50 left-0 right-0 top-full mt-1 max-h-60 overflow-y-auto bg-white dark:bg-slate-900 rounded-md border shadow-lg divide-y dark:divide-slate-800">
-              {searchResults.map((item) => (
-                <div
-                  key={item.key}
-                  onClick={() => handleSelectResult(item)}
-                  className="p-2.5 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer flex items-center justify-between text-sm transition-colors"
-                >
-                  <div className="flex flex-col">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-semibold text-slate-800 dark:text-slate-200">
+            <div className="absolute z-50 left-0 right-0 top-full mt-1 min-w-[340px] sm:min-w-[480px] max-w-[95vw] max-h-64 overflow-y-auto overflow-x-hidden bg-white dark:bg-slate-900 rounded-md border shadow-xl divide-y dark:divide-slate-800">
+              {searchResults.map((item) => {
+                const hasStock =
+                  item.quantity !== undefined && item.quantity !== null && item.quantity > 0
+                const stockQty = item.quantity ?? 0
+                const unit = item.inventoryItem?.unit || 'un'
+                return (
+                  <div
+                    key={item.key}
+                    onClick={() => handleSelectResult(item)}
+                    title={item.description}
+                    className="p-2.5 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer flex items-center justify-between gap-3 text-xs transition-colors"
+                  >
+                    <div className="flex flex-col min-w-0 flex-1">
+                      <span
+                        className="font-medium text-slate-800 dark:text-slate-200 line-clamp-2 leading-snug break-words text-xs sm:text-sm"
+                        title={item.description}
+                      >
                         {item.description}
                       </span>
-                      {item.source && (
-                        <Badge variant="secondary" className="text-[9px] py-0 px-1.5">
-                          {item.source}
-                        </Badge>
+                      <span className="text-[11px] text-muted-foreground font-mono mt-0.5">
+                        {item.code ? `Cód: ${item.code}` : 'Sem código'}
+                      </span>
+                    </div>
+                    <div className="shrink-0 flex items-center">
+                      {hasStock ? (
+                        <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                          {stockQty} {unit}
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-muted-foreground font-normal whitespace-nowrap">
+                          sem estoque
+                        </span>
                       )}
                     </div>
-                    <span className="text-xs text-muted-foreground">
-                      {item.code ? `Código: ${item.code}` : 'Sem código cadastrado'}
-                    </span>
                   </div>
-                  {item.quantity !== undefined && item.quantity !== null ? (
-                    <Badge
-                      variant="outline"
-                      className="text-xs font-mono text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800"
-                    >
-                      Saldo: {item.quantity}
-                    </Badge>
-                  ) : (
-                    <Badge
-                      variant="secondary"
-                      className="text-[10px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 font-normal"
-                    >
-                      somente catálogo, sem estoque
-                    </Badge>
-                  )}{' '}
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>

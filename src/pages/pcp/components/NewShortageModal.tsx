@@ -63,11 +63,25 @@ export function NewShortageModal({
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
 
   const [comboboxOpen, setComboboxOpen] = useState(false)
-  const [suggestions, setSuggestions] = useState<{ code: string; desc: string; source?: string }[]>(
-    [],
-  )
+  const [suggestions, setSuggestions] = useState<
+    {
+      code: string
+      desc: string
+      source?: string
+      stock_quantity?: number
+      has_stock?: boolean
+      unit?: string
+    }[]
+  >([])
   const [globalSuggestions, setGlobalSuggestions] = useState<
-    { code: string; desc: string; source?: string }[]
+    {
+      code: string
+      desc: string
+      source?: string
+      stock_quantity?: number
+      has_stock?: boolean
+      unit?: string
+    }[]
   >([])
 
   useEffect(() => {
@@ -99,6 +113,17 @@ export function NewShortageModal({
     Promise.all([
       getMasterComponents().catch(() => []),
       pb
+        .collection('inventory')
+        .getFullList<{
+          id: string
+          code?: string
+          description?: string
+          quantity?: number
+          unit?: string
+          component_id?: string
+        }>()
+        .catch(() => []),
+      pb
         .collection('products')
         .getFullList<Product>()
         .catch(() => [] as Product[]),
@@ -109,42 +134,128 @@ export function NewShortageModal({
         })
         .catch(() => [] as MaterialShortage[]),
     ])
-      .then(([components, prods, shorts]) => {
-        const allComp: { code: string; desc: string; source: string }[] = []
+      .then(([components, inventoryItems, prods, shorts]) => {
+        const allComp: {
+          code: string
+          desc: string
+          source?: string
+          stock_quantity?: number
+          has_stock?: boolean
+          unit?: string
+        }[] = []
+
+        const invByCompId = new Map<
+          string,
+          { quantity?: number; unit?: string; code?: string; description?: string }
+        >()
+        const invByCode = new Map<
+          string,
+          { quantity?: number; unit?: string; code?: string; description?: string }
+        >()
+        const invByDesc = new Map<
+          string,
+          { quantity?: number; unit?: string; code?: string; description?: string }
+        >()
+
+        inventoryItems.forEach((inv) => {
+          if (inv.component_id) invByCompId.set(inv.component_id, inv)
+          if (inv.code) invByCode.set(inv.code.toLowerCase().trim(), inv)
+          if (inv.description) invByDesc.set(inv.description.toLowerCase().trim(), inv)
+        })
 
         // 1. Mestre unificado de componentes
         components.forEach((comp) => {
           if (comp.description) {
-            const src =
-              comp.source === 'inventory'
-                ? 'Estoque'
-                : comp.source === 'catalog'
-                  ? 'Catálogo'
-                  : 'Mestre'
-            allComp.push({ code: comp.code || '', desc: comp.description, source: src })
+            const invMatch =
+              invByCompId.get(comp.id) ||
+              (comp.code ? invByCode.get(comp.code.toLowerCase().trim()) : undefined) ||
+              invByDesc.get(comp.description.toLowerCase().trim())
+
+            const hasStock =
+              !!invMatch &&
+              invMatch.quantity !== undefined &&
+              invMatch.quantity !== null &&
+              invMatch.quantity > 0
+
+            allComp.push({
+              code: comp.code || invMatch?.code || '',
+              desc: comp.description,
+              stock_quantity: invMatch?.quantity,
+              has_stock: hasStock,
+              unit: comp.unit || invMatch?.unit || 'un',
+            })
           }
         })
 
-        // 2. Composição de produtos
+        // 2. Itens do inventário restantes
+        inventoryItems.forEach((inv) => {
+          if (inv.description) {
+            const hasStock = inv.quantity !== undefined && inv.quantity !== null && inv.quantity > 0
+            allComp.push({
+              code: inv.code || '',
+              desc: inv.description,
+              stock_quantity: inv.quantity,
+              has_stock: hasStock,
+              unit: inv.unit || 'un',
+            })
+          }
+        })
+
+        // 3. Composição de produtos
         prods.forEach((p) => {
           if (p.data?.composition) {
             p.data.composition.forEach((c: any) => {
               if (c.description) {
-                allComp.push({ code: c.code || '', desc: c.description, source: 'Catálogo' })
+                const invMatch =
+                  (c.code ? invByCode.get(c.code.toLowerCase().trim()) : undefined) ||
+                  invByDesc.get(c.description.toLowerCase().trim())
+                const hasStock =
+                  !!invMatch &&
+                  invMatch.quantity !== undefined &&
+                  invMatch.quantity !== null &&
+                  invMatch.quantity > 0
+                allComp.push({
+                  code: c.code || invMatch?.code || '',
+                  desc: c.description,
+                  stock_quantity: invMatch?.quantity,
+                  has_stock: hasStock,
+                  unit: invMatch?.unit || 'un',
+                })
               }
             })
           }
         })
 
-        // 3. Faltas anteriores
+        // 4. Faltas anteriores
         shorts.forEach((s) => {
           if (s.description) {
-            allComp.push({ code: s.code || '', desc: s.description, source: 'Histórico' })
+            const invMatch =
+              (s.code ? invByCode.get(s.code.toLowerCase().trim()) : undefined) ||
+              invByDesc.get(s.description.toLowerCase().trim())
+            const hasStock =
+              !!invMatch &&
+              invMatch.quantity !== undefined &&
+              invMatch.quantity !== null &&
+              invMatch.quantity > 0
+            allComp.push({
+              code: s.code || invMatch?.code || '',
+              desc: s.description,
+              stock_quantity: invMatch?.quantity,
+              has_stock: hasStock,
+              unit: invMatch?.unit || 'un',
+            })
           }
         })
 
         const seen = new Set<string>()
-        const unique: { code: string; desc: string; source: string }[] = []
+        const unique: {
+          code: string
+          desc: string
+          source?: string
+          stock_quantity?: number
+          has_stock?: boolean
+          unit?: string
+        }[] = []
         allComp.forEach((item) => {
           const key = `${item.code.toLowerCase()}|${item.desc.toLowerCase()}`
           if (!seen.has(key)) {
@@ -162,11 +273,18 @@ export function NewShortageModal({
       const op = orders.find((o) => o.id === selectedOrderId)
       if (op?.expand?.product_id?.data?.composition) {
         const comp = op.expand.product_id.data.composition
-        const formatted = comp.map((c: any) => ({
-          code: c.code || '',
-          desc: c.description || '',
-          source: 'Composição OP',
-        }))
+        const formatted = comp.map((c: any) => {
+          const matchedGlobal = globalSuggestions.find(
+            (g) => (c.code && g.code === c.code) || g.desc === c.description,
+          )
+          return {
+            code: c.code || matchedGlobal?.code || '',
+            desc: c.description || '',
+            stock_quantity: matchedGlobal?.stock_quantity,
+            has_stock: matchedGlobal?.has_stock,
+            unit: matchedGlobal?.unit || 'un',
+          }
+        })
         const uniqueOp = Array.from(new Set(formatted.map((c: any) => c.desc))).map((desc) => {
           return formatted.find((c: any) => c.desc === desc)!
         })
@@ -325,7 +443,7 @@ export function NewShortageModal({
                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-[550px] p-0" align="start">
+              <PopoverContent className="w-[550px] max-w-[95vw] p-0" align="start">
                 <Command>
                   <CommandInput
                     placeholder="Buscar item..."
@@ -334,7 +452,7 @@ export function NewShortageModal({
                       setItemDesc(val)
                     }}
                   />
-                  <CommandList>
+                  <CommandList className="max-h-64 overflow-y-auto overflow-x-hidden">
                     <CommandEmpty className="p-2">
                       <Button
                         variant="ghost"
@@ -352,46 +470,65 @@ export function NewShortageModal({
                         heading={
                           selectedOrderId !== 'none'
                             ? 'Componentes da OP / Catálogo'
-                            : 'Catálogo e Histórico'
+                            : 'Componentes'
                         }
                       >
-                        {suggestions.map((s, i) => (
-                          <CommandItem
-                            key={i}
-                            value={`${s.code} ${s.desc}`}
-                            onSelect={() => {
-                              setItemCode(s.code || '')
-                              setItemDesc(s.desc)
-                              setComboboxOpen(false)
-                            }}
-                          >
-                            <Check
-                              className={cn(
-                                'mr-2 h-4 w-4',
-                                itemDesc === s.desc ? 'opacity-100' : 'opacity-0',
-                              )}
-                            />
-                            {s.code && (
-                              <span className="text-muted-foreground mr-2 font-mono text-xs bg-muted px-1.5 py-0.5 rounded">
-                                {s.code}
-                              </span>
-                            )}
-                            <span className="flex-1 truncate">{s.desc}</span>
-                            {s.source && (
-                              <span
-                                className={`ml-2 text-[10px] shrink-0 uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded border ${
-                                  s.source === 'Estoque'
-                                    ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800'
-                                    : s.source === 'Catálogo'
-                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
-                                      : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
-                                }`}
-                              >
-                                {s.source}
-                              </span>
-                            )}
-                          </CommandItem>
-                        ))}
+                        {suggestions.map((s, i) => {
+                          const hasStock =
+                            s.has_stock ||
+                            (s.stock_quantity !== undefined &&
+                              s.stock_quantity !== null &&
+                              s.stock_quantity > 0)
+                          const stockQty = s.stock_quantity ?? 0
+                          const stockUnit = s.unit || 'un'
+                          return (
+                            <CommandItem
+                              key={i}
+                              value={`${s.code} ${s.desc}`}
+                              title={s.desc}
+                              className="flex items-center justify-between gap-3 py-2 px-3 cursor-pointer"
+                              onSelect={() => {
+                                setItemCode(s.code || '')
+                                setItemDesc(s.desc)
+                                setComboboxOpen(false)
+                              }}
+                            >
+                              <div className="flex items-start gap-2 min-w-0 flex-1">
+                                <Check
+                                  className={cn(
+                                    'mt-0.5 h-4 w-4 shrink-0',
+                                    itemDesc === s.desc ? 'opacity-100 text-primary' : 'opacity-0',
+                                  )}
+                                />
+                                <div className="flex flex-col min-w-0 flex-1">
+                                  <span
+                                    className="font-medium text-foreground line-clamp-2 leading-snug break-words text-xs sm:text-sm"
+                                    title={s.desc}
+                                  >
+                                    {s.desc}
+                                  </span>
+                                  {s.code && (
+                                    <span className="text-[11px] text-muted-foreground font-mono mt-0.5">
+                                      Cód: {s.code}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="shrink-0 flex items-center">
+                                {hasStock ? (
+                                  <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                                    {stockQty} {stockUnit}
+                                  </span>
+                                ) : (
+                                  <span className="text-[11px] text-muted-foreground font-normal whitespace-nowrap">
+                                    sem estoque
+                                  </span>
+                                )}
+                              </div>
+                            </CommandItem>
+                          )
+                        })}
                       </CommandGroup>
                     )}
                   </CommandList>

@@ -8,6 +8,9 @@ interface Suggestion {
   code: string
   desc: string
   source?: 'Estoque' | 'Catálogo' | 'Histórico' | string
+  stock_quantity?: number
+  has_stock?: boolean
+  unit?: string
 }
 
 interface MaterialDescriptionAutocompleteProps {
@@ -29,6 +32,17 @@ function fetchAllSuggestions(): Promise<Suggestion[]> {
   suggestionsPromise = Promise.all([
     getMasterComponents().catch(() => []),
     pb
+      .collection('inventory')
+      .getFullList<{
+        id: string
+        code?: string
+        description?: string
+        quantity?: number
+        unit?: string
+        component_id?: string
+      }>()
+      .catch(() => []),
+    pb
       .collection('products')
       .getFullList<Product>()
       .catch(() => [] as Product[]),
@@ -39,44 +53,109 @@ function fetchAllSuggestions(): Promise<Suggestion[]> {
       })
       .catch(() => [] as MaterialShortage[]),
   ])
-    .then(([components, prods, shorts]) => {
+    .then(([components, inventoryItems, prods, shorts]) => {
       const all: Suggestion[] = []
 
+      // Lookup do inventário para saber saldo/unidade em tempo hábil
+      const invByCompId = new Map<
+        string,
+        { quantity?: number; unit?: string; code?: string; description?: string }
+      >()
+      const invByCode = new Map<
+        string,
+        { quantity?: number; unit?: string; code?: string; description?: string }
+      >()
+      const invByDesc = new Map<
+        string,
+        { quantity?: number; unit?: string; code?: string; description?: string }
+      >()
+
+      inventoryItems.forEach((inv) => {
+        if (inv.component_id) invByCompId.set(inv.component_id, inv)
+        if (inv.code) invByCode.set(inv.code.toLowerCase().trim(), inv)
+        if (inv.description) invByDesc.set(inv.description.toLowerCase().trim(), inv)
+      })
+
       // 1. Mestre de componentes (prioridade primária unificada)
-      // Mapeia de forma explícita com badge de origem: Estoque / Catálogo / Histórico
       components.forEach((comp) => {
         if (comp.description) {
-          let sourceLabel: 'Estoque' | 'Catálogo' | 'Histórico' = 'Catálogo'
-          if (comp.source === 'inventory') {
-            sourceLabel = 'Estoque'
-          } else if (comp.source === 'catalog') {
-            sourceLabel = 'Catálogo'
-          } else {
-            sourceLabel = 'Catálogo'
-          }
+          const invMatch =
+            invByCompId.get(comp.id) ||
+            (comp.code ? invByCode.get(comp.code.toLowerCase().trim()) : undefined) ||
+            invByDesc.get(comp.description.toLowerCase().trim())
+
+          const hasStock =
+            !!invMatch &&
+            invMatch.quantity !== undefined &&
+            invMatch.quantity !== null &&
+            invMatch.quantity > 0
           all.push({
-            code: comp.code || '',
+            code: comp.code || invMatch?.code || '',
             desc: comp.description,
-            source: sourceLabel,
+            stock_quantity: invMatch?.quantity,
+            has_stock: hasStock,
+            unit: comp.unit || invMatch?.unit || 'un',
           })
         }
       })
 
-      // 2. Composição de produtos (compatibilidade aditiva)
+      // 2. Inventário restante (caso haja itens não cadastrados em components)
+      inventoryItems.forEach((inv) => {
+        if (inv.description) {
+          const hasStock = inv.quantity !== undefined && inv.quantity !== null && inv.quantity > 0
+          all.push({
+            code: inv.code || '',
+            desc: inv.description,
+            stock_quantity: inv.quantity,
+            has_stock: hasStock,
+            unit: inv.unit || 'un',
+          })
+        }
+      })
+
+      // 3. Composição de produtos (compatibilidade aditiva)
       prods.forEach((p) => {
         if (p.data?.composition) {
           p.data.composition.forEach((c: any) => {
             if (c.description) {
-              all.push({ code: c.code || '', desc: c.description, source: 'Catálogo' })
+              const invMatch =
+                (c.code ? invByCode.get(c.code.toLowerCase().trim()) : undefined) ||
+                invByDesc.get(c.description.toLowerCase().trim())
+              const hasStock =
+                !!invMatch &&
+                invMatch.quantity !== undefined &&
+                invMatch.quantity !== null &&
+                invMatch.quantity > 0
+              all.push({
+                code: c.code || invMatch?.code || '',
+                desc: c.description,
+                stock_quantity: invMatch?.quantity,
+                has_stock: hasStock,
+                unit: invMatch?.unit || 'un',
+              })
             }
           })
         }
       })
 
-      // 3. Faltas anteriores
+      // 4. Faltas anteriores
       shorts.forEach((s) => {
         if (s.description) {
-          all.push({ code: s.code || '', desc: s.description, source: 'Histórico' })
+          const invMatch =
+            (s.code ? invByCode.get(s.code.toLowerCase().trim()) : undefined) ||
+            invByDesc.get(s.description.toLowerCase().trim())
+          const hasStock =
+            !!invMatch &&
+            invMatch.quantity !== undefined &&
+            invMatch.quantity !== null &&
+            invMatch.quantity > 0
+          all.push({
+            code: s.code || invMatch?.code || '',
+            desc: s.description,
+            stock_quantity: invMatch?.quantity,
+            has_stock: hasStock,
+            unit: invMatch?.unit || 'un',
+          })
         }
       })
 
@@ -170,42 +249,56 @@ export function MaterialDescriptionAutocomplete({
         className={inputClassName}
       />
       {showDropdown && (
-        <div className="absolute z-50 w-full mt-1 max-h-60 overflow-y-auto rounded-md border bg-popover shadow-md">
-          {filtered.slice(0, 30).map((s, i) => (
-            <button
-              key={i}
-              type="button"
-              className="w-full text-left px-3 py-2 text-sm hover:bg-accent flex items-center gap-2"
-              onMouseDown={(e) => {
-                e.preventDefault()
-                onCodeChange(s.code)
-                onChange(s.desc)
-                setFocused(false)
-              }}
-            >
-              {s.code && (
-                <span className="text-muted-foreground font-mono text-xs shrink-0 bg-muted px-1.5 py-0.5 rounded">
-                  {s.code}
-                </span>
-              )}
-              <span className="flex-1 truncate">{s.desc}</span>
-              {s.source && (
-                <span
-                  className={`text-[10px] shrink-0 uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded border ${
-                    s.source === 'Estoque'
-                      ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800'
-                      : s.source === 'Catálogo'
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
-                        : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
-                  }`}
-                >
-                  {s.source}
-                </span>
-              )}
-            </button>
-          ))}
+        <div className="absolute z-50 left-0 right-0 top-full mt-1 min-w-[340px] sm:min-w-[480px] max-w-[95vw] max-h-64 overflow-y-auto overflow-x-hidden rounded-md border bg-popover text-popover-foreground shadow-xl divide-y divide-border/60">
+          {filtered.slice(0, 30).map((s, i) => {
+            const hasStock =
+              s.has_stock ||
+              (s.stock_quantity !== undefined && s.stock_quantity !== null && s.stock_quantity > 0)
+            const stockQty = s.stock_quantity ?? 0
+            const stockUnit = s.unit || 'un'
+            return (
+              <button
+                key={i}
+                type="button"
+                title={s.desc}
+                className="w-full text-left px-3 py-2 text-xs sm:text-sm hover:bg-accent/80 transition-colors flex items-center justify-between gap-3"
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  onCodeChange(s.code)
+                  onChange(s.desc)
+                  setFocused(false)
+                }}
+              >
+                <div className="flex flex-col min-w-0 flex-1">
+                  <span
+                    className="font-medium text-foreground line-clamp-2 leading-snug break-words"
+                    title={s.desc}
+                  >
+                    {s.desc}
+                  </span>
+                  {s.code && (
+                    <span className="text-[11px] text-muted-foreground font-mono mt-0.5">
+                      Cód: {s.code}
+                    </span>
+                  )}
+                </div>
+
+                <div className="shrink-0 flex items-center">
+                  {hasStock ? (
+                    <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                      {stockQty} {stockUnit}
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-muted-foreground font-normal whitespace-nowrap">
+                      sem estoque
+                    </span>
+                  )}
+                </div>
+              </button>
+            )
+          })}
         </div>
-      )}
+      )}{' '}
     </div>
   )
 }

@@ -1,12 +1,13 @@
 import { useState, useEffect, useMemo } from 'react'
 import pb from '@/lib/pocketbase/client'
 import { Input } from '@/components/ui/input'
-import type { Product, MaterialShortage, MasterComponent } from '@/types'
+import type { Product, MaterialShortage } from '@/types'
+import { getMasterComponents } from '@/services/components'
 
 interface Suggestion {
   code: string
   desc: string
-  source?: string
+  source?: 'Estoque' | 'Catálogo' | 'Histórico' | string
 }
 
 interface MaterialDescriptionAutocompleteProps {
@@ -26,12 +27,7 @@ function fetchAllSuggestions(): Promise<Suggestion[]> {
   if (suggestionsCache) return Promise.resolve(suggestionsCache)
   if (suggestionsPromise) return suggestionsPromise
   suggestionsPromise = Promise.all([
-    pb
-      .collection('components')
-      .getFullList<MasterComponent>({
-        sort: 'description',
-      })
-      .catch(() => [] as MasterComponent[]),
+    getMasterComponents().catch(() => []),
     pb
       .collection('products')
       .getFullList<Product>()
@@ -47,17 +43,21 @@ function fetchAllSuggestions(): Promise<Suggestion[]> {
       const all: Suggestion[] = []
 
       // 1. Mestre de componentes (prioridade primária unificada)
+      // Mapeia de forma explícita com badge de origem: Estoque / Catálogo / Histórico
       components.forEach((comp) => {
         if (comp.description) {
+          let sourceLabel: 'Estoque' | 'Catálogo' | 'Histórico' = 'Catálogo'
+          if (comp.source === 'inventory') {
+            sourceLabel = 'Estoque'
+          } else if (comp.source === 'catalog') {
+            sourceLabel = 'Catálogo'
+          } else {
+            sourceLabel = 'Catálogo'
+          }
           all.push({
             code: comp.code || '',
             desc: comp.description,
-            source:
-              comp.source === 'catalog'
-                ? 'Catálogo'
-                : comp.source === 'inventory'
-                  ? 'Estoque'
-                  : 'Mestre',
+            source: sourceLabel,
           })
         }
       })
@@ -190,7 +190,15 @@ export function MaterialDescriptionAutocomplete({
               )}
               <span className="flex-1 truncate">{s.desc}</span>
               {s.source && (
-                <span className="text-[10px] text-muted-foreground shrink-0 uppercase tracking-wider font-semibold border border-border px-1 rounded">
+                <span
+                  className={`text-[10px] shrink-0 uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded border ${
+                    s.source === 'Estoque'
+                      ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800'
+                      : s.source === 'Catálogo'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
+                        : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
+                  }`}
+                >
                   {s.source}
                 </span>
               )}

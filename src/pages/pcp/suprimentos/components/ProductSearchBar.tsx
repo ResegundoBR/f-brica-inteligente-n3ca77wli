@@ -2,18 +2,20 @@ import { useState, useEffect, useRef } from 'react'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Search, FileText, Database } from 'lucide-react'
+import { Search, FileText } from 'lucide-react'
 import pb from '@/lib/pocketbase/client'
-import type { Inventory, MaterialShortage, MasterComponent } from '@/types'
+import type { Inventory, MaterialShortage } from '@/types'
+import { searchUnifiedComponentsWithStock } from '@/services/components'
 import { cn } from '@/lib/utils'
 
-interface SearchProductItem {
+export interface SearchProductItem {
   id?: string
   code: string
   description: string
   quantity?: number
   source?: string
   inventoryItem?: Inventory
+  isCatalogOnly?: boolean
 }
 
 interface ProductSearchBarProps {
@@ -38,10 +40,8 @@ export function ProductSearchBar({
     let cancelled = false
 
     Promise.all([
-      pb
-        .collection('components')
-        .getFullList<MasterComponent>({ sort: 'description' })
-        .catch(() => [] as MasterComponent[]),
+      // Busca unificada com agregação de estoque no mestre
+      searchUnifiedComponentsWithStock('', 200).catch(() => []),
       pb
         .collection('inventory')
         .getFullList<Inventory>({ sort: 'description' })
@@ -53,53 +53,50 @@ export function ProductSearchBar({
         })
         .catch(() => [] as MaterialShortage[]),
     ])
-      .then(([components, inv, shorts]) => {
+      .then(([unifiedComponents, inv, shorts]) => {
         if (cancelled) return
         const list: SearchProductItem[] = []
         const seen = new Set<string>()
 
-        // Mapa de estoque para junção informativa rápida
-        const invByCompId = new Map<string, Inventory>()
-        const invByCode = new Map<string, Inventory>()
-        const invByDesc = new Map<string, Inventory>()
-
-        for (const item of inv) {
-          if (item.component_id) invByCompId.set(item.component_id, item)
-          if (item.code) invByCode.set(item.code.toLowerCase().trim(), item)
-          if (item.description) invByDesc.set(item.description.toLowerCase().trim(), item)
-        }
-
-        // 1. Prioridade máxima: Cadastro mestre unificado (components)
-        for (const comp of components) {
-          const invItem =
-            invByCompId.get(comp.id) ||
-            (comp.code ? invByCode.get(comp.code.toLowerCase().trim()) : undefined) ||
-            invByDesc.get(comp.description.toLowerCase().trim())
-
-          const c = (comp.code || invItem?.code || '').trim().toLowerCase()
+        // 1. Prioridade máxima: Cadastro mestre unificado (searchUnifiedComponentsWithStock)
+        for (const comp of unifiedComponents) {
+          const c = (comp.code || '').trim().toLowerCase()
           const d = (comp.description || '').trim().toLowerCase()
           const key = c ? `c:${c}` : `d:${d}`
 
           if (!seen.has(key)) {
             seen.add(key)
+            const matchedInv = comp.inventory_id
+              ? inv.find((i) => i.id === comp.inventory_id)
+              : inv.find(
+                  (i) =>
+                    (comp.code && i.code && i.code.trim().toLowerCase() === c) ||
+                    (comp.description && i.description && i.description.trim().toLowerCase() === d),
+                )
+
+            const hasStock = comp.has_stock && comp.stock_quantity !== undefined
+            const isCatalogOnly = !hasStock
+
             list.push({
-              id: invItem?.id || comp.id,
-              code: comp.code || invItem?.code || '',
+              id: comp.inventory_id || comp.id,
+              code: comp.code || '',
               description: comp.description,
-              quantity: invItem?.quantity,
-              source: comp.source === 'catalog' ? 'Catálogo' : invItem ? 'Estoque' : 'Mestre',
-              inventoryItem: invItem,
+              quantity: comp.stock_quantity,
+              source: isCatalogOnly ? 'Catálogo' : 'Estoque',
+              inventoryItem: matchedInv,
+              isCatalogOnly,
             })
           }
         }
 
-        // 2. Itens do estoque legados não referenciados
+        // 2. Itens do estoque legados não referenciados no mestre
         for (const item of inv) {
           const c = (item.code || '').trim().toLowerCase()
           const d = (item.description || '').trim().toLowerCase()
           const key = c ? `c:${c}` : `d:${d}`
           if (!seen.has(key)) {
             seen.add(key)
+            const hasStock = item.quantity !== undefined && item.quantity !== null
             list.push({
               id: item.id,
               code: item.code || '',
@@ -107,6 +104,7 @@ export function ProductSearchBar({
               quantity: item.quantity,
               source: 'Estoque',
               inventoryItem: item,
+              isCatalogOnly: !hasStock,
             })
           }
         }
@@ -123,6 +121,7 @@ export function ProductSearchBar({
               code: s.code || '',
               description: s.description || '',
               source: 'Histórico',
+              isCatalogOnly: true,
             })
           }
         }
@@ -217,25 +216,36 @@ export function ProductSearchBar({
               <div className="flex items-center gap-1.5 flex-shrink-0">
                 {item.source && (
                   <Badge
-                    variant={item.source === 'Estoque' ? 'secondary' : 'outline'}
-                    className="text-[9px] px-1.5 py-0"
+                    variant={item.source === 'Estoque' ? 'default' : 'outline'}
+                    className={`text-[9px] px-1.5 py-0 ${
+                      item.source === 'Estoque'
+                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 border-transparent'
+                        : 'text-muted-foreground'
+                    }`}
                   >
                     {item.source}
                   </Badge>
                 )}
-                {item.quantity !== undefined ? (
-                  <Badge variant="outline" className="text-[10px] font-mono">
+                {item.quantity !== undefined && item.quantity !== null && !item.isCatalogOnly ? (
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] font-mono text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800"
+                  >
                     Saldo: {item.quantity}
                   </Badge>
                 ) : (
                   <Badge
                     variant="secondary"
-                    className="text-[9px] text-muted-foreground font-normal"
+                    className="text-[9px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 font-normal"
                   >
-                    Sem estoque
+                    somente catálogo, sem estoque
                   </Badge>
                 )}
-                <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[11px] text-blue-600">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-1.5 text-[11px] text-blue-600 hover:text-blue-700"
+                >
                   <FileText className="size-3 mr-1" /> Ficha
                 </Button>
               </div>

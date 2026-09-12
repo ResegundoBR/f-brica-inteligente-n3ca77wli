@@ -23,7 +23,8 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Check, ChevronsUpDown, Plus, History, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { PcpOrder, Product, MaterialShortage, MasterComponent } from '@/types'
+import { PcpOrder, Product, MaterialShortage } from '@/types'
+import { getMasterComponents } from '@/services/components'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
 import { extractFieldErrors, type FieldErrors } from '@/lib/pocketbase/errors'
@@ -62,8 +63,12 @@ export function NewShortageModal({
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
 
   const [comboboxOpen, setComboboxOpen] = useState(false)
-  const [suggestions, setSuggestions] = useState<{ code: string; desc: string }[]>([])
-  const [globalSuggestions, setGlobalSuggestions] = useState<{ code: string; desc: string }[]>([])
+  const [suggestions, setSuggestions] = useState<{ code: string; desc: string; source?: string }[]>(
+    [],
+  )
+  const [globalSuggestions, setGlobalSuggestions] = useState<
+    { code: string; desc: string; source?: string }[]
+  >([])
 
   useEffect(() => {
     if (open) {
@@ -92,10 +97,7 @@ export function NewShortageModal({
   useEffect(() => {
     if (!open) return
     Promise.all([
-      pb
-        .collection('components')
-        .getFullList<MasterComponent>({ sort: 'description' })
-        .catch(() => [] as MasterComponent[]),
+      getMasterComponents().catch(() => []),
       pb
         .collection('products')
         .getFullList<Product>()
@@ -108,12 +110,18 @@ export function NewShortageModal({
         .catch(() => [] as MaterialShortage[]),
     ])
       .then(([components, prods, shorts]) => {
-        const allComp: { code: string; desc: string }[] = []
+        const allComp: { code: string; desc: string; source: string }[] = []
 
         // 1. Mestre unificado de componentes
         components.forEach((comp) => {
           if (comp.description) {
-            allComp.push({ code: comp.code || '', desc: comp.description })
+            const src =
+              comp.source === 'inventory'
+                ? 'Estoque'
+                : comp.source === 'catalog'
+                  ? 'Catálogo'
+                  : 'Mestre'
+            allComp.push({ code: comp.code || '', desc: comp.description, source: src })
           }
         })
 
@@ -122,7 +130,7 @@ export function NewShortageModal({
           if (p.data?.composition) {
             p.data.composition.forEach((c: any) => {
               if (c.description) {
-                allComp.push({ code: c.code || '', desc: c.description })
+                allComp.push({ code: c.code || '', desc: c.description, source: 'Catálogo' })
               }
             })
           }
@@ -131,12 +139,12 @@ export function NewShortageModal({
         // 3. Faltas anteriores
         shorts.forEach((s) => {
           if (s.description) {
-            allComp.push({ code: s.code || '', desc: s.description })
+            allComp.push({ code: s.code || '', desc: s.description, source: 'Histórico' })
           }
         })
 
         const seen = new Set<string>()
-        const unique: { code: string; desc: string }[] = []
+        const unique: { code: string; desc: string; source: string }[] = []
         allComp.forEach((item) => {
           const key = `${item.code.toLowerCase()}|${item.desc.toLowerCase()}`
           if (!seen.has(key)) {
@@ -154,12 +162,16 @@ export function NewShortageModal({
       const op = orders.find((o) => o.id === selectedOrderId)
       if (op?.expand?.product_id?.data?.composition) {
         const comp = op.expand.product_id.data.composition
-        const formatted = comp.map((c: any) => ({ code: c.code || '', desc: c.description || '' }))
-        const uniqueOp = Array.from(new Set(formatted.map((c) => c.desc))).map((desc) => {
-          return formatted.find((c) => c.desc === desc)!
+        const formatted = comp.map((c: any) => ({
+          code: c.code || '',
+          desc: c.description || '',
+          source: 'Composição OP',
+        }))
+        const uniqueOp = Array.from(new Set(formatted.map((c: any) => c.desc))).map((desc) => {
+          return formatted.find((c: any) => c.desc === desc)!
         })
 
-        const opDescSet = new Set(uniqueOp.map((c) => c.desc))
+        const opDescSet = new Set(uniqueOp.map((c: any) => c.desc))
         const remainingGlobal = globalSuggestions.filter((g) => !opDescSet.has(g.desc))
 
         setSuggestions([...uniqueOp, ...remainingGlobal])
@@ -360,11 +372,24 @@ export function NewShortageModal({
                               )}
                             />
                             {s.code && (
-                              <span className="text-muted-foreground mr-2 font-medium">
+                              <span className="text-muted-foreground mr-2 font-mono text-xs bg-muted px-1.5 py-0.5 rounded">
                                 {s.code}
                               </span>
                             )}
-                            {s.desc}
+                            <span className="flex-1 truncate">{s.desc}</span>
+                            {s.source && (
+                              <span
+                                className={`ml-2 text-[10px] shrink-0 uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded border ${
+                                  s.source === 'Estoque'
+                                    ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800'
+                                    : s.source === 'Catálogo'
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
+                                      : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
+                                }`}
+                              >
+                                {s.source}
+                              </span>
+                            )}
                           </CommandItem>
                         ))}
                       </CommandGroup>

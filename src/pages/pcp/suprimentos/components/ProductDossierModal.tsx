@@ -29,18 +29,13 @@ import {
   Inventory,
   InventoryMovement,
   MaterialShortage,
-  OrdemCompra,
   OrdemCompraItem,
-  PcpOrder,
   User,
   MasterComponent,
 } from '@/types'
+import { getMasterComponents } from '@/services/components'
 import { format, parseISO, isValid } from 'date-fns'
-import {
-  calculateShortageBalance,
-  findOtherOpDemands,
-  isSameItem,
-} from '@/services/material-consolidation'
+import { calculateShortageBalance, isSameItem } from '@/services/material-consolidation'
 import { cn } from '@/lib/utils'
 
 function fmtDate(val?: string) {
@@ -64,7 +59,18 @@ function fmtCurrency(val?: number) {
 export interface ProductDossierModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  initialProduct?: Inventory | MaterialShortage | null
+  initialProduct?:
+    | Inventory
+    | MaterialShortage
+    | MasterComponent
+    | {
+        id?: string
+        code?: string
+        description?: string
+        quantity?: number
+        inventoryItem?: Inventory | null
+      }
+    | null
 }
 
 export interface DossierPurchaseItem {
@@ -111,10 +117,7 @@ export function ProductDossierModal({
     setIsLoading(true)
 
     Promise.all([
-      pb
-        .collection('components')
-        .getFullList<MasterComponent>({ sort: 'description' })
-        .catch(() => [] as MasterComponent[]),
+      getMasterComponents().catch(() => [] as MasterComponent[]),
       pb
         .collection('inventory')
         .getFullList<Inventory>({ sort: 'description' })
@@ -162,13 +165,15 @@ export function ProductDossierModal({
   // Se receber produto inicial pelo props
   useEffect(() => {
     if (initialProduct && open) {
-      const code = ('code' in initialProduct ? initialProduct.code : '') || ''
-      const description = initialProduct.description || ''
+      const code = ('code' in initialProduct ? initialProduct.code || '' : '') || ''
+      const description =
+        ('description' in initialProduct ? initialProduct.description || '' : '') || ''
       const invMatch =
         allInventory.find(
           (i) =>
             (code && i.code && i.code.trim().toLowerCase() === code.trim().toLowerCase()) ||
-            (i.description &&
+            (description &&
+              i.description &&
               i.description.trim().toLowerCase() === description.trim().toLowerCase()),
         ) || ('min_quantity' in initialProduct ? (initialProduct as Inventory) : null)
 
@@ -644,12 +649,20 @@ export function ProductDossierModal({
                       {item.code ? `Código: ${item.code}` : 'Sem código cadastrado'}
                     </span>
                   </div>
-                  {item.quantity !== undefined ? (
-                    <Badge variant="outline" className="text-xs font-mono">
+                  {item.quantity !== undefined && item.quantity !== null ? (
+                    <Badge
+                      variant="outline"
+                      className="text-xs font-mono text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800"
+                    >
                       Saldo: {item.quantity}
                     </Badge>
                   ) : (
-                    <span className="text-[10px] text-muted-foreground italic">(Sem estoque)</span>
+                    <Badge
+                      variant="secondary"
+                      className="text-[10px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 font-normal"
+                    >
+                      somente catálogo, sem estoque
+                    </Badge>
                   )}{' '}
                 </div>
               ))}
@@ -677,9 +690,18 @@ export function ProductDossierModal({
                     <span className="text-xs font-mono font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-900">
                       {selectedProduct.code || 'SEM CÓDIGO'}
                     </span>
-                    {isLowStock && (
-                      <Badge variant="destructive" className="text-[10px]">
-                        Estoque Baixo
+                    {currentInventory ? (
+                      isLowStock && (
+                        <Badge variant="destructive" className="text-[10px]">
+                          Estoque Baixo
+                        </Badge>
+                      )
+                    ) : (
+                      <Badge
+                        variant="secondary"
+                        className="text-[10px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 font-medium"
+                      >
+                        Somente Catálogo (Sem Estoque)
                       </Badge>
                     )}
                   </div>
@@ -693,14 +715,20 @@ export function ProductDossierModal({
                     <span className="text-[10px] uppercase font-bold text-muted-foreground block">
                       Saldo Atual
                     </span>
-                    <span
-                      className={cn(
-                        'text-xl font-extrabold',
-                        isLowStock ? 'text-red-600' : 'text-blue-600',
-                      )}
-                    >
-                      {stockBalance} {currentInventory?.unit || 'un'}
-                    </span>
+                    {currentInventory ? (
+                      <span
+                        className={cn(
+                          'text-xl font-extrabold',
+                          isLowStock ? 'text-red-600' : 'text-blue-600',
+                        )}
+                      >
+                        {stockBalance} {currentInventory.unit || 'un'}
+                      </span>
+                    ) : (
+                      <span className="text-sm font-semibold text-amber-600 dark:text-amber-400">
+                        0 (Catálogo)
+                      </span>
+                    )}
                   </div>
                   <div className="bg-white dark:bg-slate-900 px-3 py-2 rounded-md border text-left min-w-[110px]">
                     <span className="text-[10px] uppercase font-bold text-muted-foreground block">

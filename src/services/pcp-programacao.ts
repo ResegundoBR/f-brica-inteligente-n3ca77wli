@@ -38,34 +38,47 @@ export function normalizeKeyPart(str?: string): string {
 }
 
 /**
- * Identifica se um item é tubo, barra, perfil ou similar metálico/linear.
- * Verifica a descrição e opcionalmente unidade MT/M.
+ * Identifica se um item é estritamente TUBO, BARRA ou CHAPA DE PERFIL (seção do topo).
+ * CABO, FIO, chicote, cordão e similares (mesmo com unidade MT) devem ficar nos demais componentes.
+ * Apenas itens cuja descrição contenha TUBO, BARRA ou CHAPA DE PERFIL (ou PERFIL)
+ * e que NÃO sejam cabos/fios/acessórios vão para o topo.
  */
-export function isProfileOrTubeItem(description?: string, unit?: string): boolean {
+export function isProfileOrTubeItem(description?: string, _unit?: string): boolean {
   const normDesc = normalizeKeyPart(description)
-  const normUnit = normalizeKeyPart(unit)
+  if (!normDesc) return false
 
-  // Unidade em MT / M já é forte indicador
-  if (normUnit === 'MT' || normUnit === 'METRO' || normUnit === 'METROS' || normUnit === 'M') {
-    return true
-  }
-
-  // Palavras-chave exigidas pelo gestor
-  // "descrições contendo TUBO, BARRA, CHAPA DE PERFIL etc."
-  const keywords = [
-    'TUBO',
-    'TUBULAR',
-    'BARRA',
-    'PERFIL',
-    'CHAPA DE PERFIL',
-    'CANTONEIRA',
-    'TARUGO',
-    'VIGA',
-    'TRILHO',
-    'EIXO',
+  // Termos expressamente excluídos da seção do topo (vão para Demais Componentes):
+  // Ex.: CABO ELETRICO 2X0,50MM REVESTIDO EM TECIDO PRETO (mesmo em MT), FIO, etc.
+  const excludedKeywords = [
+    'CABO',
+    'FIO',
+    'CHICOTE',
+    'CORDAO',
+    'PRENSA CABO',
+    'BUCHA GUIA PARA TUBO',
+    'TAMPA EM ACO PARA TUBO',
+    'TAMPA PARA TUBO',
+    'TERMINAL',
   ]
 
-  return keywords.some((kw) => normDesc.includes(kw))
+  const hasExcluded = excludedKeywords.some((kw) => {
+    // Verifica se a palavra excluída ocorre como palavra/expressão independente
+    const regex = new RegExp(`(^|\\s|[^A-Z0-9])${kw}($|\\s|[^A-Z0-9])`)
+    return regex.test(normDesc)
+  })
+
+  if (hasExcluded) {
+    return false
+  }
+
+  // Termos estritos para a seção do topo exigidos pelo gestor:
+  // "apenas itens realmente de TUBO, BARRA ou CHAPA DE PERFIL na seção do topo"
+  const strictAllowed = ['TUBO', 'TUBULAR', 'BARRA', 'CHAPA DE PERFIL', 'PERFIL']
+
+  return strictAllowed.some((kw) => {
+    const regex = new RegExp(`(^|\\s|[^A-Z0-9])${kw}($|\\s|[^A-Z0-9])`)
+    return regex.test(normDesc)
+  })
 }
 
 /**
@@ -91,22 +104,28 @@ export interface CompileMaterialsInput {
   orderNumbersMap?: Record<string, string> // order_id -> order_number / op_number
   masterComponents: MasterComponent[]
   inventoryItems: Inventory[]
+  // Mapeamento opcional de order_id para op_number normalizado ou id representativo do op_number
+  orderIdToOpNumberMap?: Record<string, string>
 }
 
 /**
  * Consolida materiais de OPs selecionadas:
- * (1) Agrupando por código + descrição (ou apenas descrição se não tiver código), somando quantidades.
- * (2) Casamento com cadastro mestre / inventário:
+ * (1) SALVAGUARDA DE DESDUPLICAÇÃO: OPs com o mesmo op_number contam apenas UMA VEZ na consolidação.
+ *     Se materiais de registros duplicados com o mesmo op_number foram carregados, apenas o primeiro
+ *     registro (ou id representativo) é considerado para não duplicar somas.
+ * (2) Agrupando por código + descrição (ou apenas descrição se não tiver código), somando quantidades.
+ * (3) Casamento com cadastro mestre / inventário:
  *     - Por código quando existir código
  *     - Por código + descrição (ou descrição pura) quando o código não casar ou não existir
  *     - Nunca mescla dados no backend (read-only em memória)
- * (3) Separação em Tubos/Barras/Perfis e Demais Componentes.
+ * (4) Separação em Tubos/Barras/Chapas de Perfil e Demais Componentes.
  */
 export function compileOrderMaterials({
   materials,
   orderNumbersMap = {},
   masterComponents,
   inventoryItems,
+  orderIdToOpNumberMap = {},
 }: CompileMaterialsInput): {
   profileItems: CompiledMaterialItem[]
   otherItems: CompiledMaterialItem[]
@@ -147,6 +166,26 @@ export function compileOrderMaterials({
     if (normD) masterByDesc.set(normD, comp)
   })
 
+  // Salvaguarda de desduplicação por op_number:
+  // Se houver mais de uma order_id associada ao mesmo op_number, escolhe apenas um order_id representativo
+  // para os materiais serem contabilizados na consolidação.
+  const seenOpNumbers = new Map<string, string>() // op_number -> first order_id
+  const allowedOrderIds = new Set<string>()
+
+  Object.entries(orderIdToOpNumberMap).forEach(([orderId, rawOpNumber]) => {
+    const normOp = normalizeKeyPart(rawOpNumber)
+    if (normOp) {
+      if (!seenOpNumbers.has(normOp)) {
+        seenOpNumbers.set(normOp, orderId)
+        allowedOrderIds.add(orderId)
+      }
+    } else {
+      allowedOrderIds.add(orderId)
+    }
+  })
+
+  const hasOpMap = Object.keys(orderIdToOpNumberMap).length > 0
+
   // Agrupamento dos materiais
   interface GroupAcc {
     code: string
@@ -159,6 +198,11 @@ export function compileOrderMaterials({
   const groups = new Map<string, GroupAcc>()
 
   materials.forEach((mat) => {
+    // Salvaguarda: se tivermos mapeamento de op_number e este order_id for de uma OP duplicada secundária, ignorar
+    if (hasOpMap && mat.order_id && !allowedOrderIds.has(mat.order_id)) {
+      return
+    }
+
     const code = (mat.code || '').trim()
     const desc = (mat.description || '').trim()
     const normC = normalizeKeyPart(code)
@@ -253,7 +297,9 @@ export function compileOrderMaterials({
       hasInventoryRecord && matchedInv!.quantity !== undefined && matchedInv!.quantity !== null
         ? Number(matchedInv!.quantity) || 0
         : null
-    const stockUnit = matchedInv?.unit || (isProfile ? 'MT' : group.unit) || 'UN'
+    // Mantém a unidade real do material (PC, MT, UN, etc.), respeitando o cadastro ou a OP
+    const itemUnit = group.unit || matchedInv?.unit || (isProfile ? 'MT' : 'UN')
+    const stockUnit = matchedInv?.unit || itemUnit
     const totalQty = group.totalQty
 
     let status: CompiledMaterialItem['status'] = 'no_stock_record'
@@ -288,7 +334,7 @@ export function compileOrderMaterials({
       description: group.description || matchedMaster?.description || matchedInv?.description || '',
       isProfileOrTube: isProfile,
       totalQuantity: totalQty,
-      unit: isProfile ? 'MT' : group.unit || 'UN',
+      unit: itemUnit,
       hasInventoryRecord,
       stockQuantity,
       stockUnit,

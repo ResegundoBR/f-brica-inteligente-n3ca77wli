@@ -109,9 +109,14 @@ export function CompiledMaterialsView({
       const codeEsc = `"${(item.code || '').replace(/"/g, '""')}"`
       const descEsc = `"${(item.description || '').replace(/"/g, '""')}"`
       const totalQty = String(item.totalQuantity).replace('.', ',')
+      const totalQtyWithUnit = `"${formatQuantity(item.totalQuantity, item.unit)} ${item.unit}"`
       const unitEsc = `"${item.unit}"`
       const stockQty =
         item.stockQuantity !== null ? String(item.stockQuantity).replace('.', ',') : '-'
+      const stockQtyWithUnit =
+        item.stockQuantity !== null
+          ? `"${formatQuantity(item.stockQuantity, item.stockUnit)} ${item.stockUnit}"`
+          : '"-"'
       const stockUnitEsc = `"${item.stockUnit}"`
 
       let situacao = 'Sem Estoque Cadastrado'
@@ -120,7 +125,15 @@ export function CompiledMaterialsView({
 
       const falta =
         item.status === 'shortage' ? String(item.missingQuantity).replace('.', ',') : '0'
+      const faltaWithUnit =
+        item.status === 'shortage'
+          ? `"${formatQuantity(item.missingQuantity, item.unit)} ${item.unit}"`
+          : '"0"'
       const sobra = item.status === 'covered' ? String(item.surplusQuantity).replace('.', ',') : '0'
+      const sobraWithUnit =
+        item.status === 'covered'
+          ? `"${formatQuantity(item.surplusQuantity, item.unit)} ${item.unit}"`
+          : '"0"'
       const ops = `"${item.orderNumbers.join(', ')}"`
       const match = `"${item.matchMethod}"`
 
@@ -128,13 +141,13 @@ export function CompiledMaterialsView({
         `"${category}"`,
         codeEsc,
         descEsc,
-        totalQty,
+        totalQtyWithUnit,
         unitEsc,
-        stockQty,
+        stockQtyWithUnit,
         stockUnitEsc,
         `"${situacao}"`,
-        falta,
-        sobra,
+        faltaWithUnit,
+        sobraWithUnit,
         ops,
         match,
       ].join(';')
@@ -352,7 +365,7 @@ export function CompiledMaterialsView({
               </span>
               <div>
                 <CardTitle className="text-base font-bold text-sky-950 dark:text-sky-100 flex items-center gap-2">
-                  Tubos, Barras e Perfis (Metragem Linear / MT)
+                  Tubos, Barras e Chapas de Perfil
                   <Badge
                     variant="outline"
                     className="border-sky-400 text-sky-700 dark:text-sky-300"
@@ -361,18 +374,18 @@ export function CompiledMaterialsView({
                   </Badge>
                 </CardTitle>
                 <CardDescription className="text-xs text-sky-800 dark:text-sky-300">
-                  Totalização calculada em metros (MT) com comparação direta do saldo em estoque.
+                  Totalização linear e peças com comparação direta do saldo em estoque.
                 </CardDescription>
               </div>
-            </div>
+            </div>{' '}
             <div className="text-xs font-semibold text-sky-900 dark:text-sky-200">
-              Metragem total programada:{' '}
+              Total programado:{' '}
               <span className="font-mono text-sm underline">
-                {formatQuantity(
-                  filteredProfiles.reduce((acc, p) => acc + p.totalQuantity, 0),
-                  'MT',
-                )}{' '}
-                MT
+                {formatQuantity(filteredProfiles.reduce((acc, p) => acc + p.totalQuantity, 0))}{' '}
+                {filteredProfiles.length > 0 &&
+                filteredProfiles.every((p) => p.unit === filteredProfiles[0].unit)
+                  ? filteredProfiles[0].unit
+                  : 'itens'}
               </span>
             </div>
           </div>
@@ -385,8 +398,8 @@ export function CompiledMaterialsView({
                 <TableHead className="w-[120px]">Código</TableHead>
                 <TableHead>Descrição do Material</TableHead>
                 <TableHead className="w-[130px] text-right font-semibold text-slate-900 dark:text-slate-100">
-                  Metragem Total (MT)
-                </TableHead>
+                  Total Programado
+                </TableHead>{' '}
                 <TableHead className="w-[130px] text-right">Saldo Estoque</TableHead>
                 <TableHead className="w-[160px] text-center font-bold">Falta / Comprar</TableHead>
                 <TableHead className="w-[180px] text-left">OPs que utilizam</TableHead>
@@ -649,7 +662,7 @@ function PrintableView({
       {profileItems.length > 0 && (
         <div className="mb-6">
           <h3 className="text-sm font-bold uppercase bg-gray-200 p-1.5 border border-black border-b-0">
-            1. Tubos, Barras e Perfis Metálicos (Metragens em MT)
+            1. Tubos, Barras e Chapas de Perfil
           </h3>
           <table className="w-full text-xs border border-black border-collapse">
             <thead>
@@ -686,12 +699,12 @@ function PrintableView({
                   <td className="border-r border-black p-1 text-center font-bold">
                     {item.status === 'covered' && (
                       <span className="text-green-700">
-                        COBRE (+{formatQuantity(item.surplusQuantity, item.unit)})
+                        COBRE (+{formatQuantity(item.surplusQuantity, item.unit)} {item.unit})
                       </span>
                     )}
                     {item.status === 'shortage' && (
                       <span className="text-red-700">
-                        FALTA: {formatQuantity(item.missingQuantity, item.unit)} MT
+                        FALTA: {formatQuantity(item.missingQuantity, item.unit)} {item.unit}
                       </span>
                     )}
                     {item.status === 'no_stock_record' && (
@@ -710,7 +723,6 @@ function PrintableView({
           </table>
         </div>
       )}
-
       {/* SEÇÃO DEMAIS COMPONENTES */}
       {otherItems.length > 0 && (
         <div className="mb-6">
@@ -752,18 +764,18 @@ function PrintableView({
                   <td className="border-r border-black p-1 text-center font-bold">
                     {item.status === 'covered' && (
                       <span className="text-green-700">
-                        COBRE (+{formatQuantity(item.surplusQuantity, item.unit)})
+                        COBRE (+{formatQuantity(item.surplusQuantity, item.unit)} {item.unit})
                       </span>
                     )}
                     {item.status === 'shortage' && (
                       <span className="text-red-700">
-                        FALTA: {formatQuantity(item.missingQuantity, item.unit)}
+                        FALTA: {formatQuantity(item.missingQuantity, item.unit)} {item.unit}
                       </span>
                     )}
                     {item.status === 'no_stock_record' && (
                       <span className="text-gray-600 font-normal">S/ CAD. — CONFIRMAR</span>
                     )}
-                  </td>
+                  </td>{' '}
                   <td className="border-r border-black p-1 text-[10px]">
                     {item.orderNumbers.slice(0, 3).join(', ')}
                   </td>

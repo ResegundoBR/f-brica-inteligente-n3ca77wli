@@ -33,6 +33,8 @@ import {
   Sparkles,
   Filter,
   ChevronRight,
+  AlertTriangle,
+  Info,
 } from 'lucide-react'
 import { PromisedDateBadge } from '@/components/PromisedDateBadge'
 import { Input } from '@/components/ui/input'
@@ -263,6 +265,43 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
     filaOnlyFilter,
   ])
 
+  // --------------------------------------------------------------------------
+  // DETECÇÃO DE DUPLICATAS DE OP (Salvaguarda para o Gestor)
+  // Agrupa todas as OPs pelo op_number para alertar se houver mais de um registro
+  // --------------------------------------------------------------------------
+  const duplicateOpsMap = useMemo(() => {
+    const map = new Map<string, PcpOrder[]>()
+    orders.forEach((op) => {
+      const rawOp = (op.op_number || '').trim()
+      if (!rawOp) return
+      const norm = rawOp.toUpperCase()
+      if (!map.has(norm)) {
+        map.set(norm, [])
+      }
+      map.get(norm)!.push(op)
+    })
+
+    // Filtra apenas as que têm mais de 1 registro
+    const duplicates = new Map<string, PcpOrder[]>()
+    map.forEach((list, key) => {
+      if (list.length > 1) {
+        duplicates.set(key, list)
+      }
+    })
+    return duplicates
+  }, [orders])
+
+  // Map de order_id -> op_number para salvaguarda no compileOrderMaterials
+  const orderIdToOpNumberMap = useMemo(() => {
+    const map: Record<string, string> = {}
+    orders.forEach((o) => {
+      if (o.op_number) {
+        map[o.id] = o.op_number
+      }
+    })
+    return map
+  }, [orders])
+
   // Agrupamento corrido de OPs idêntico ao de /pcp/ordens para familiaridade do gestor
   const groupedOrders = useMemo(() => {
     const groups: {
@@ -318,12 +357,29 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
       orderNumbersMap,
       masterComponents,
       inventoryItems,
+      orderIdToOpNumberMap,
     })
-  }, [selectedMaterials, orderNumbersMap, masterComponents, inventoryItems])
+  }, [selectedMaterials, orderNumbersMap, masterComponents, inventoryItems, orderIdToOpNumberMap])
 
   // Lista de objetos PcpOrder selecionados
+  // SALVAGUARDA: desduplica por op_number na lista exibida no cabeçalho/resumo do compilado
   const selectedOrdersList = useMemo(() => {
-    return orders.filter((o) => selectedOpIds.has(o.id))
+    const seenOps = new Set<string>()
+    const result: PcpOrder[] = []
+    orders.forEach((o) => {
+      if (selectedOpIds.has(o.id)) {
+        const normOp = (o.op_number || '').trim().toUpperCase()
+        if (normOp) {
+          if (!seenOps.has(normOp)) {
+            seenOps.add(normOp)
+            result.push(o)
+          }
+        } else {
+          result.push(o)
+        }
+      }
+    })
+    return result
   }, [orders, selectedOpIds])
 
   // --------------------------------------------------------------------------
@@ -444,7 +500,10 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
         {/* STATUS DA SELEÇÃO E ATALHOS RÁPIDOS */}
         <div className="flex items-center gap-2 flex-wrap">
           <div className="text-xs font-semibold px-3 py-1.5 rounded-md bg-slate-100 dark:bg-slate-800 border">
-            {selectedOpIds.size} OP(s) selecionada(s)
+            {selectedOrdersList.length}{' '}
+            {selectedOrdersList.length !== selectedOpIds.size
+              ? `OP(s) consolidadas (${selectedOpIds.size} marcadas)`
+              : 'OP(s) selecionada(s)'}
           </div>
 
           <Button
@@ -482,6 +541,62 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
           </Button>
         </div>
       </div>
+
+      {/* BANNER DE ALERTA DE OPS DUPLICADAS (SALVAGUARDA VISUAL PARA O GESTOR) */}
+      {duplicateOpsMap.size > 0 && (
+        <div className="p-4 rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-800 text-amber-900 dark:text-amber-200">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="size-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <div className="space-y-1.5 text-xs">
+              <div className="font-bold text-sm text-amber-900 dark:text-amber-100 flex items-center gap-2">
+                <span>Atenção: Foram detectados registros duplicados do mesmo número de OP</span>
+                <Badge
+                  variant="outline"
+                  className="border-amber-400 text-amber-800 dark:text-amber-300 text-[10px]"
+                >
+                  Salvaguarda Ativa: contam apenas 1x na consolidação
+                </Badge>
+              </div>
+              <p className="text-amber-800/90 dark:text-amber-300/90 leading-relaxed">
+                Para proteger os cálculos do compilado de materiais, a consolidação agrupa e
+                contabiliza cada OP apenas uma vez. Verifique abaixo os registros duplicados e suas
+                respectivas datas de criação:
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 pt-1">
+                {Array.from(duplicateOpsMap.entries()).map(([opNum, dupList]) => (
+                  <div
+                    key={opNum}
+                    className="p-2.5 rounded-lg bg-white/80 dark:bg-slate-900/80 border border-amber-200 dark:border-amber-900 space-y-1"
+                  >
+                    <div className="font-mono font-bold text-amber-950 dark:text-amber-100 flex items-center justify-between">
+                      <span>OP {opNum}</span>
+                      <Badge variant="destructive" className="text-[10px] py-0 px-1.5">
+                        {dupList.length} registros
+                      </Badge>
+                    </div>
+                    <div className="space-y-0.5 text-[11px] text-muted-foreground">
+                      {dupList.map((d, idx) => (
+                        <div
+                          key={d.id}
+                          className="flex items-center justify-between font-mono text-[10px]"
+                        >
+                          <span>
+                            #{idx + 1}:{' '}
+                            {d.created
+                              ? format(parseISO(d.created), 'dd/MM/yyyy HH:mm:ss')
+                              : 'Sem data'}
+                          </span>
+                          <span className="text-[9px] text-slate-500">ID: {d.id.slice(0, 6)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* SEÇÃO 1: COMPILADO CONSOLIDADO (EXIBIDO COM DESTAQUE QUANDO HÁ OPS SELECIONADAS) */}
       {selectedOpIds.size > 0 ? (
@@ -684,6 +799,9 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
                     ...group.items.map((op) => {
                       const isSelected = selectedOpIds.has(op.id)
                       const color = getOrderColor(op)
+                      const normOp = (op.op_number || '').trim().toUpperCase()
+                      const dupGroup = normOp ? duplicateOpsMap.get(normOp) : undefined
+                      const isDuplicate = !!dupGroup && dupGroup.length > 1
 
                       return (
                         <TableRow
@@ -691,6 +809,7 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
                           className={cn(
                             'cursor-pointer transition-colors text-xs select-none',
                             isSelected && 'ring-2 ring-blue-500 font-medium',
+                            isDuplicate && 'border-l-4 border-l-amber-500',
                             color === 'lime' && 'bg-lime-400 text-black hover:bg-lime-500',
                             color === 'neon-orange' &&
                               'bg-orange-500 text-white hover:bg-orange-600 dark:bg-orange-600 dark:hover:bg-orange-700',
@@ -725,13 +844,68 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
                             />
                           </TableCell>
 
-                          {/* Nº DA OP */}
+                          {/* Nº DA OP COM AVISO DE DUPLICATA E DATAS */}
                           <TableCell className="py-1 pl-2 font-medium">
-                            <div className="flex items-center gap-1.5">
-                              {op.manual_priority === 2 && <span title="Prazo Especial">⚡</span>}
-                              <span className="font-mono font-bold">
-                                {op.op_number ? `OP ${op.op_number}` : '-'}
-                              </span>
+                            <div className="flex flex-col items-start gap-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {op.manual_priority === 2 && <span title="Prazo Especial">⚡</span>}
+                                <span className="font-mono font-bold">
+                                  {op.op_number ? `OP ${op.op_number}` : '-'}
+                                </span>
+                                {isDuplicate && (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Badge
+                                        variant="outline"
+                                        className="text-[10px] px-1.5 py-0 border-amber-500 bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200 font-semibold gap-1 cursor-help"
+                                      >
+                                        <AlertTriangle className="size-3 text-amber-600" />
+                                        Duplicada ({dupGroup!.length}x)
+                                      </Badge>
+                                    </TooltipTrigger>
+                                    <TooltipContent className="max-w-xs text-xs space-y-1">
+                                      <p className="font-bold text-amber-600">
+                                        OP duplicada no banco: mesmo número OP {op.op_number}
+                                      </p>
+                                      <p className="text-[11px]">
+                                        Salvaguarda ativa: na consolidação de materiais conta apenas
+                                        UMA vez.
+                                      </p>
+                                      <div className="pt-1 border-t space-y-0.5">
+                                        <p className="font-semibold text-[10px]">
+                                          Datas de criação dos registros:
+                                        </p>
+                                        {dupGroup!.map((d, i) => (
+                                          <div
+                                            key={d.id}
+                                            className="text-[10px] font-mono flex justify-between gap-2"
+                                          >
+                                            <span>
+                                              #{i + 1}:{' '}
+                                              {d.created
+                                                ? format(parseISO(d.created), 'dd/MM/yyyy HH:mm:ss')
+                                                : '-'}
+                                            </span>
+                                            {d.id === op.id && (
+                                              <span className="text-blue-500 font-bold">
+                                                (este registro)
+                                              </span>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                )}
+                              </div>
+                              {isDuplicate && (
+                                <span className="text-[10px] text-amber-800 dark:text-amber-300 font-mono">
+                                  Criado em:{' '}
+                                  {op.created
+                                    ? format(parseISO(op.created), 'dd/MM/yyyy HH:mm:ss')
+                                    : '-'}
+                                </span>
+                              )}
                             </div>
                           </TableCell>
 

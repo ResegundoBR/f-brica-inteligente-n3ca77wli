@@ -21,6 +21,83 @@ export interface ExtractedOpComponent {
   measurements?: string
 }
 
+/**
+ * Extrai a medida de corte embutida na descrição de itens (especialmente tubos, barras e perfis).
+ * Padrões suportados (Reginaldo PCP):
+ * - 'XnnnMM' ou 'X nnnMM' (ex.: 'TUBO Ø22,23X100MM - UPPER P' -> '0,100M'; 'Ø22,23X500MM' -> '0,500M')
+ * - Também aceita CM (ex.: 'X50CM' -> '0,500M') e M (ex.: 'X1,5M' ou 'X1.5M' -> '1,500M')
+ * - Padrões com 'COMP:' / 'C=' / 'L=' / 'COMPRIMENTO' ou 'Xnnn MM'
+ */
+export function extractCutMeasurementFromDescription(description?: string): string {
+  if (!description) return ''
+  const text = description.trim()
+  if (!text) return ''
+
+  // 1. Padrão principal: X<num><unidade>
+  // Ex: "X100MM", "X 100MM", "X500 MM", "X1000MM", "X50CM", "X1,5M", "X 1.5M", "X2M"
+  const xPattern = /(?:[X×x]\s*)(\d+(?:[.,]\d+)?)\s*(MM|CM|M|MT)\b/i
+  const matchX = text.match(xPattern)
+  if (matchX) {
+    const rawVal = matchX[1].replace(',', '.')
+    const numVal = parseFloat(rawVal)
+    const unit = matchX[2].toUpperCase()
+
+    if (!isNaN(numVal) && numVal > 0) {
+      let meters = 0
+      if (unit === 'MM') {
+        meters = numVal / 1000
+      } else if (unit === 'CM') {
+        meters = numVal / 100
+      } else {
+        // M ou MT
+        meters = numVal
+      }
+
+      // Format in meters with 3 decimals: e.g. 0.1 -> "0,100M", 0.5 -> "0,500M", 1.5 -> "1,500M"
+      const formatted = meters.toFixed(3).replace('.', ',') + 'M'
+      return formatted
+    }
+  }
+
+  // 2. Padrão secundário: "C=100MM", "COMP: 100MM", "COMPRIMENTO 500MM"
+  const compPattern = /(?:COMPRIMENTO|COMP|C)\s*[:=]\s*(\d+(?:[.,]\d+)?)\s*(MM|CM|M|MT)\b/i
+  const matchComp = text.match(compPattern)
+  if (matchComp) {
+    const rawVal = matchComp[1].replace(',', '.')
+    const numVal = parseFloat(rawVal)
+    const unit = matchComp[2].toUpperCase()
+
+    if (!isNaN(numVal) && numVal > 0) {
+      let meters = 0
+      if (unit === 'MM') meters = numVal / 1000
+      else if (unit === 'CM') meters = numVal / 100
+      else meters = numVal
+      return meters.toFixed(3).replace('.', ',') + 'M'
+    }
+  }
+
+  // 3. Padrão direto no final ou isolado: "\b(\d+)MM\b" quando a descrição é claramente tubo/barra/perfil
+  // ex: "TUBO 22MM C/ 500MM" ou "PERFIL 1000MM"
+  const isTubularOrProfile = /TUBO|BARRA|PERFIL|CANO|EIXO|CANALETA/i.test(text)
+  if (isTubularOrProfile) {
+    const mmDirect = /(?:C\/\s*|COM\s*)(\d+(?:[.,]\d+)?)\s*(MM|CM|M|MT)\b/i.exec(text)
+    if (mmDirect) {
+      const rawVal = mmDirect[1].replace(',', '.')
+      const numVal = parseFloat(rawVal)
+      const unit = mmDirect[2].toUpperCase()
+      if (!isNaN(numVal) && numVal > 0) {
+        let meters = 0
+        if (unit === 'MM') meters = numVal / 1000
+        else if (unit === 'CM') meters = numVal / 100
+        else meters = numVal
+        return meters.toFixed(3).replace('.', ',') + 'M'
+      }
+    }
+  }
+
+  return ''
+}
+
 export interface ParsedOpPdfResult {
   header: ExtractedOpHeader
   components: ExtractedOpComponent[]
@@ -1266,6 +1343,9 @@ export function parseOpPdfDeterministic(
         .replace(/\s+/g, ' ')
         .trim()
       const measurements = activeComp.measurementTokens.join(' ').replace(/\s+/g, ' ').trim()
+      const resolvedDesc = rawDesc || activeComp.code
+      const extractedMedida = extractCutMeasurementFromDescription(resolvedDesc)
+      const finalMeasurements = measurements || extractedMedida || undefined
 
       const fullCandidateText = `${activeComp.code} ${rawDesc}`.trim()
       if (
@@ -1278,10 +1358,10 @@ export function parseOpPdfDeterministic(
           id: `comp_${Date.now()}_${components.length}`,
           sector: activeComp.sector,
           code: activeComp.code,
-          description: rawDesc || activeComp.code,
+          description: resolvedDesc,
           quantity: activeComp.qty || 1,
           unit: activeComp.unit || 'UN',
-          measurements: measurements || undefined,
+          measurements: finalMeasurements,
         })
       }
       activeComp = null
@@ -1608,6 +1688,9 @@ export function parseOpPdfDeterministic(
       if (!currentItem) return
       const desc = currentItem.descriptionLines.join(' ').replace(/\s+/g, ' ').trim()
       const measurements = currentItem.measurementLines.join(' ').replace(/\s+/g, ' ').trim()
+      const resolvedDesc = desc || currentItem.code
+      const extractedMedida = extractCutMeasurementFromDescription(resolvedDesc)
+      const finalMeasurements = measurements || extractedMedida || undefined
 
       const fullCandidate = `${currentItem.code} ${desc}`.trim()
       if (
@@ -1620,10 +1703,10 @@ export function parseOpPdfDeterministic(
           id: `comp_${Date.now()}_${components.length}`,
           sector: currentItem.sector,
           code: currentItem.code,
-          description: desc || currentItem.code,
+          description: resolvedDesc,
           quantity: currentItem.quantity || 1,
           unit: currentItem.unit || 'UN',
-          measurements: measurements || undefined,
+          measurements: finalMeasurements,
         })
       }
       currentItem = null
@@ -1810,6 +1893,7 @@ export function parseOpPdfDeterministic(
           }
 
           if (desc && (code || qty > 0)) {
+            const extractedMedida = extractCutMeasurementFromDescription(desc)
             components.push({
               id: `comp_${Date.now()}_${components.length}`,
               sector: currentSector,
@@ -1817,7 +1901,7 @@ export function parseOpPdfDeterministic(
               description: desc,
               quantity: qty || 1,
               unit,
-              measurements: measurements || undefined,
+              measurements: measurements || extractedMedida || undefined,
             })
             continue
           }
@@ -1850,13 +1934,16 @@ export function parseOpPdfDeterministic(
 
           if (colQty > 0) {
             flushCurrentItem()
+            const fullDesc = descTokens.join(' ').trim() || firstCol
+            const extractedMedida = extractCutMeasurementFromDescription(fullDesc)
             components.push({
               id: `comp_${Date.now()}_${components.length}`,
               sector: currentSector,
               code: firstCol,
-              description: descTokens.join(' ').trim() || firstCol,
+              description: fullDesc,
               quantity: colQty,
               unit: colUnit,
+              measurements: extractedMedida || undefined,
             })
             continue
           }
@@ -1932,6 +2019,7 @@ export function parseOpPdfDeterministic(
         const qty = parseQuantity(fallbackMatch[3])
         if (desc.length > 2 && qty > 0) {
           flushCurrentItem()
+          const extractedMedida = extractCutMeasurementFromDescription(desc)
           components.push({
             id: `comp_${Date.now()}_${components.length}`,
             sector: currentSector,
@@ -1939,6 +2027,7 @@ export function parseOpPdfDeterministic(
             description: desc,
             quantity: qty,
             unit: 'UN',
+            measurements: extractedMedida || undefined,
           })
           continue
         }
@@ -2070,12 +2159,21 @@ export function comparePdfWithCatalog(
         divergenceReasons.push(`Setor ERP (${pdfItem.sector}) ≠ Catálogo (${match.etapa})`)
 
       const isSame = divergenceReasons.length === 0
+      const descForMedida = pdfItem.description || match.description || ''
+      const autoMedida =
+        pdfItem.measurements ||
+        match.measurements ||
+        extractCutMeasurementFromDescription(descForMedida) ||
+        ''
 
       rows.push({
         id: `row_${pdfItem.id}`,
         code: pdfItem.code || match.code,
         sector: pdfItem.sector,
-        pdfItem,
+        pdfItem: {
+          ...pdfItem,
+          measurements: pdfItem.measurements || autoMedida || undefined,
+        },
         catalogItem: match,
         status: isSame ? 'same' : 'divergent',
         divergenceReasons: isSame ? undefined : divergenceReasons,
@@ -2086,14 +2184,19 @@ export function comparePdfWithCatalog(
         resolvedDescription: pdfItem.description || match.description,
         resolvedQuantity: pdfItem.quantity,
         resolvedUnit: pdfItem.unit || 'UN',
-        resolvedMeasurements: pdfItem.measurements || match.measurements || '',
+        resolvedMeasurements: autoMedida,
       })
     } else {
+      const autoMedida =
+        pdfItem.measurements || extractCutMeasurementFromDescription(pdfItem.description) || ''
       rows.push({
         id: `row_${pdfItem.id}`,
         code: pdfItem.code,
         sector: pdfItem.sector,
-        pdfItem,
+        pdfItem: {
+          ...pdfItem,
+          measurements: pdfItem.measurements || autoMedida || undefined,
+        },
         catalogItem: undefined,
         status: 'new',
         divergenceReasons: ['Item presente na OP (ERP), mas ausente no Catálogo Técnico'],
@@ -2104,7 +2207,7 @@ export function comparePdfWithCatalog(
         resolvedDescription: pdfItem.description,
         resolvedQuantity: pdfItem.quantity,
         resolvedUnit: pdfItem.unit || 'UN',
-        resolvedMeasurements: pdfItem.measurements || '',
+        resolvedMeasurements: autoMedida,
       })
     }
   }
@@ -2113,6 +2216,8 @@ export function comparePdfWithCatalog(
     if (!catalogMatched.has(catItem.id)) {
       const catSector = normalizeSector(catItem.etapa || 'FABRICAÇÃO')
       const catQty = parseQuantity(catItem.quantity)
+      const autoMedida =
+        catItem.measurements || extractCutMeasurementFromDescription(catItem.description) || ''
 
       rows.push({
         id: `row_cat_${catItem.id}`,
@@ -2129,7 +2234,7 @@ export function comparePdfWithCatalog(
         resolvedDescription: catItem.description,
         resolvedQuantity: catQty,
         resolvedUnit: 'UN',
-        resolvedMeasurements: catItem.measurements || '',
+        resolvedMeasurements: autoMedida,
       })
     }
   }

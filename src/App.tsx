@@ -15,6 +15,7 @@ import AdminLogs from './pages/admin/AdminLogs'
 import PcpKanban from './pages/pcp/PcpKanban'
 import PcpDashboard from './pages/pcp/PcpDashboard'
 import PcpOrders from './pages/pcp/PcpOrders'
+import PcpProgramacao from './pages/pcp/PcpProgramacao'
 import { PcpInbox } from './pages/pcp/PcpInbox'
 import SolicitacoesPage from './pages/pcp/suprimentos/SolicitacoesPage'
 import CotacoesPage from './pages/pcp/suprimentos/CotacoesPage'
@@ -169,6 +170,14 @@ const App = () => (
                 element={
                   <RoleGuard module="ordens_producao">
                     <PcpOrders />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/pcp/programacao"
+                element={
+                  <RoleGuard module="ordens_producao">
+                    <PcpProgramacao />
                   </RoleGuard>
                 }
               />

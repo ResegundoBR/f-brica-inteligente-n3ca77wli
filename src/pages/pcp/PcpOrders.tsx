@@ -47,6 +47,8 @@ import { MessageNotificationBell } from '@/components/MessageNotificationBell'
 import { Button } from '@/components/ui/button'
 import { PcpOrderDetails } from './components/PcpOrderDetails'
 import { PcpFilters } from './components/PcpFilters'
+import PcpProgramacao from './PcpProgramacao'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useOrderMessages } from '@/hooks/use-order-messages'
 import { OrderMessageBell } from '@/components/OrderMessageBell'
 import { OrderMessagesPanel } from '@/components/OrderMessagesPanel'
@@ -333,424 +335,450 @@ export default function PcpOrders() {
 
   return (
     <div className="flex flex-col gap-4 p-4">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Ordens de Produção</h1>
-          <p className="text-muted-foreground">Gerencie as OPs e integre documentos externos.</p>
+      <Tabs defaultValue="ordens" className="w-full">
+        <div className="flex items-center justify-between border-b pb-2 mb-4">
+          <TabsList className="bg-slate-100 dark:bg-slate-800 p-1">
+            <TabsTrigger value="ordens" className="gap-2 text-sm font-semibold">
+              <span>📋</span> Ordens de Produção
+            </TabsTrigger>
+            <TabsTrigger
+              value="programacao"
+              className="gap-2 text-sm font-semibold text-blue-700 dark:text-blue-300"
+            >
+              <span>📅</span> Programação
+            </TabsTrigger>
+          </TabsList>
         </div>
-        <div className="flex flex-col md:flex-row md:items-center gap-4">
-          <div className="relative w-full max-w-sm">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar por cliente ou OP..."
-              className="pl-8"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+
+        <TabsContent value="programacao" className="mt-0">
+          <PcpProgramacao embeddedInOrdersTab />
+        </TabsContent>
+
+        <TabsContent value="ordens" className="mt-0 space-y-4">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">Ordens de Produção</h1>
+              <p className="text-muted-foreground">
+                Gerencie as OPs e integre documentos externos.
+              </p>
+            </div>
+            <div className="flex flex-col md:flex-row md:items-center gap-4">
+              <div className="relative w-full max-w-sm">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar por cliente ou OP..."
+                  className="pl-8"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+              <PcpFilters
+                opType={opTypeFilter}
+                setOpType={setOpTypeFilter}
+                client={clientFilter}
+                setClient={setClientFilter}
+                clientType={clientTypeFilter}
+                setClientType={setClientTypeFilter}
+                deadline={deadlineFilter}
+                setDeadline={setDeadlineFilter}
+                status={statusFilter}
+                setStatus={setStatusFilter}
+                stage={stageFilter}
+                setStage={setStageFilter}
+              />
+              <Button
+                variant={showConcluded ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setShowConcluded(!showConcluded)}
+                className="gap-2"
+              >
+                {showConcluded ? 'Em aberto' : 'Concluídas'}
+              </Button>
+              <Button
+                variant={prazoEspecialOnly ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setPrazoEspecialOnly(!prazoEspecialOnly)}
+                className={cn(
+                  'gap-2',
+                  prazoEspecialOnly && 'bg-lime-500 hover:bg-lime-600 text-black border-lime-600',
+                )}
+              >
+                <span>⚡</span>
+                Prazo Especial
+              </Button>
+              <Button
+                variant={promisedOnly ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setPromisedOnly(!promisedOnly)}
+                className={cn(
+                  'gap-1.5',
+                  promisedOnly &&
+                    'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700',
+                )}
+              >
+                <span>🎯</span>
+                Datas Prometidas
+              </Button>
+              <Button
+                variant={pendingOnly ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setPendingOnly(!pendingOnly)}
+                className="gap-2"
+              >
+                <Bell className="size-4" />
+                Mensagens Pendentes
+              </Button>
+              <MessageNotificationBell />
+              <Button
+                onClick={() => {
+                  setEditingOp(null)
+                  setIsOpen(true)
+                }}
+              >
+                Nova OP
+              </Button>
+              <PcpOrderForm
+                open={isOpen}
+                onOpenChange={(open) => {
+                  setIsOpen(open)
+                  if (!open) setEditingOp(null)
+                }}
+                onSuccess={loadData}
+                editingOrder={editingOp}
+                editObservations={editingOp ? observations[editingOp.id] || [] : []}
+              />
+            </div>
           </div>
-          <PcpFilters
-            opType={opTypeFilter}
-            setOpType={setOpTypeFilter}
-            client={clientFilter}
-            setClient={setClientFilter}
-            clientType={clientTypeFilter}
-            setClientType={setClientTypeFilter}
-            deadline={deadlineFilter}
-            setDeadline={setDeadlineFilter}
-            status={statusFilter}
-            setStatus={setStatusFilter}
-            stage={stageFilter}
-            setStage={setStageFilter}
-          />
-          <Button
-            variant={showConcluded ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setShowConcluded(!showConcluded)}
-            className="gap-2"
-          >
-            {showConcluded ? 'Em aberto' : 'Concluídas'}
-          </Button>
-          <Button
-            variant={prazoEspecialOnly ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setPrazoEspecialOnly(!prazoEspecialOnly)}
-            className={cn(
-              'gap-2',
-              prazoEspecialOnly && 'bg-lime-500 hover:bg-lime-600 text-black border-lime-600',
-            )}
-          >
-            <span>⚡</span>
-            Prazo Especial
-          </Button>
-          <Button
-            variant={promisedOnly ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setPromisedOnly(!promisedOnly)}
-            className={cn(
-              'gap-1.5',
-              promisedOnly && 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700',
-            )}
-          >
-            <span>🎯</span>
-            Datas Prometidas
-          </Button>
-          <Button
-            variant={pendingOnly ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setPendingOnly(!pendingOnly)}
-            className="gap-2"
-          >
-            <Bell className="size-4" />
-            Mensagens Pendentes
-          </Button>
-          <MessageNotificationBell />
-          <Button
-            onClick={() => {
-              setEditingOp(null)
-              setIsOpen(true)
-            }}
-          >
-            Nova OP
-          </Button>
-          <PcpOrderForm
-            open={isOpen}
-            onOpenChange={(open) => {
-              setIsOpen(open)
-              if (!open) setEditingOp(null)
-            }}
-            onSuccess={loadData}
-            editingOrder={editingOp}
-            editObservations={editingOp ? observations[editingOp.id] || [] : []}
-          />
-        </div>
-      </div>
 
-      <StatusLegend />
+          <StatusLegend />
 
-      <div className="rounded-md border bg-card">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Nº da OP</TableHead>
-              <TableHead>Produto</TableHead>
-              <TableHead>Qtd</TableHead>
-              <TableHead>Data de Entrega</TableHead>
-              <TableHead>Status / Etapa</TableHead>
-              <TableHead>Prazo</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {groupedOrders.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center">
-                  Nenhuma OP encontrada.
-                </TableCell>
-              </TableRow>
-            ) : (
-              groupedOrders.flatMap((group) => [
-                <TableRow
-                  key={`header-${group.normalized_key}`}
-                  className={cn(
-                    'hover:opacity-90 border-y transition-colors',
-                    getHeaderColor(group.op_type),
-                  )}
-                >
-                  <TableCell colSpan={6} className="font-semibold text-sm py-1">
-                    <div className="flex items-center gap-4">
-                      <span>Pedido: {group.order_number}</span>
-                      <span className="opacity-50">|</span>
-                      <span>Cliente: {group.client_name}</span>
-                      <Badge className="bg-white/20 text-white border-none hover:bg-white/30">
-                        {group.op_type}
-                      </Badge>
-                    </div>
-                  </TableCell>
-                </TableRow>,
-                ...group.items.map((op) => (
-                  <TableRow
-                    key={op.id}
-                    className={cn(
-                      'cursor-pointer transition-colors',
-                      getOrderColor(op) === 'lime' && 'bg-lime-400 text-black hover:bg-lime-500',
-                      getOrderColor(op) === 'neon-orange' &&
-                        'bg-orange-500 text-white hover:bg-orange-600 dark:bg-orange-600 dark:hover:bg-orange-700',
-                      getOrderColor(op) === 'yellow' &&
-                        'bg-yellow-400 text-slate-900 hover:bg-yellow-500 dark:bg-yellow-500 dark:hover:bg-yellow-600',
-                      (getOrderColor(op) === 'purple' || getOrderColor(op) === 'blue') &&
-                        'bg-white dark:bg-slate-900 hover:bg-muted/30',
-                    )}
-                    onClick={() => setSelectedOp(op)}
-                  >
-                    <TableCell className="py-1 pl-6 font-medium">
-                      <div className="flex items-center gap-1.5">
-                        {op.manual_priority === 2 && <span title="Prazo Especial">⚡</span>}
-                        {op.op_number || '-'}
-                        {(() => {
-                          const msgState = getOrderMessageInfo(op.id).indicatorState
-                          return msgState !== 'none' ? (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setMessageOrder({
-                                  id: op.id,
-                                  orderNumber: op.order_number,
-                                  opNumber: op.op_number || '',
-                                })
-                              }}
-                              className="inline-flex items-center"
-                            >
-                              <OrderMessageBell state={msgState} size="sm" />
-                            </button>
-                          ) : null
-                        })()}
-                      </div>
-                    </TableCell>
-                    <TableCell className="py-1">
-                      <div className="flex flex-col items-start gap-1">
-                        <span className="text-sm">
-                          {op.op_type === 'Assistência'
-                            ? op.manual_product_name
-                            : op.op_type === 'Especial'
-                              ? op.manual_product_name || 'Produto Especial'
-                              : op.expand?.product_id?.name || '-'}
-                        </span>
-                        {(observations[op.id] || []).length > 0 && (
-                          <div className="flex flex-col gap-1 mt-1 w-full max-w-sm">
-                            {(observations[op.id] || []).map((obs) => (
-                              <span
-                                key={obs.id}
-                                className={cn(
-                                  'text-[10px] whitespace-pre-wrap leading-tight border-l-2 pl-2',
-                                  getOrderColor(op) === 'lime'
-                                    ? 'text-black border-lime-700'
-                                    : getOrderColor(op) === 'neon-orange'
-                                      ? 'text-orange-50 border-orange-400'
-                                      : getOrderColor(op) === 'yellow'
-                                        ? 'text-slate-800 border-yellow-600'
-                                        : 'text-muted-foreground border-slate-200 dark:border-slate-800',
-                                )}
-                              >
-                                <span
-                                  className={cn(
-                                    'font-medium',
-                                    getOrderColor(op) === 'lime'
-                                      ? 'text-black'
-                                      : getOrderColor(op) === 'neon-orange'
-                                        ? 'text-white'
-                                        : getOrderColor(op) === 'yellow'
-                                          ? 'text-slate-900'
-                                          : 'text-slate-700 dark:text-slate-300',
-                                  )}
-                                >
-                                  {' '}
-                                  {obs.sector}:
-                                </span>{' '}
-                                {obs.content}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="py-1">
-                      <div className="flex flex-col">
-                        <span className="font-medium">{op.quantity}</span>
-                        {(op.delivered_quantity || 0) > 0 && (
-                          <span
-                            className={cn(
-                              'text-[10px] whitespace-nowrap font-medium',
-                              getOrderColor(op) === 'lime' ||
-                                getOrderColor(op) === 'neon-orange' ||
-                                getOrderColor(op) === 'yellow'
-                                ? 'opacity-90'
-                                : 'text-blue-600 dark:text-blue-400',
-                            )}
-                          >
-                            Exp. {op.delivered_quantity}/{op.quantity} (pend{' '}
-                            {Math.max(0, op.quantity - (op.delivered_quantity || 0))})
-                          </span>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="py-1">
-                      <div className="flex items-center gap-2">
-                        <div className="flex flex-col gap-1 items-start">
-                          <span>
-                            {op.delivery_date && !isNaN(parseISO(op.delivery_date).getTime())
-                              ? format(parseISO(op.delivery_date), 'dd/MM/yyyy')
-                              : '-'}
-                          </span>
-                          {op.promised_date && (
-                            <PromisedDateBadge
-                              promisedDate={op.promised_date}
-                              status={op.status}
-                              size="sm"
-                            />
-                          )}
-                        </div>
-                        {getOrderColor(op) === 'purple' && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Clock className="size-4 text-purple-500" />
-                            </TooltipTrigger>
-                            <TooltipContent>Entrega atrasada</TooltipContent>
-                          </Tooltip>
-                        )}
-                        {getOrderColor(op) === 'neon-orange' && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Clock className="size-4 text-orange-500" />
-                            </TooltipTrigger>
-                            <TooltipContent>Ordem Parada / Gargalo</TooltipContent>
-                          </Tooltip>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="py-1" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex flex-col gap-1">
-                        <Select
-                          value={op.status}
-                          onValueChange={(val) => updateOrder(op.id, 'status', val)}
-                        >
-                          <SelectTrigger
-                            className={cn(
-                              'h-7 text-xs border-none shadow-none font-medium px-2 py-0 bg-transparent',
-                              getOrderColor(op) === 'lime' ||
-                                getOrderColor(op) === 'neon-orange' ||
-                                getOrderColor(op) === 'yellow'
-                                ? 'hover:bg-black/10 focus:ring-0'
-                                : 'hover:bg-slate-100 dark:hover:bg-slate-800',
-                            )}
-                          >
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Fila">Fila</SelectItem>
-                            <SelectItem value="Em Andamento">Em Andamento</SelectItem>
-                            <SelectItem value="Parado">Parado</SelectItem>
-                            <SelectItem value="Concluído">Concluído</SelectItem>
-                          </SelectContent>
-                        </Select>
-
-                        <Select
-                          value={op.stage}
-                          onValueChange={(val) => updateOrder(op.id, 'stage', val)}
-                        >
-                          <SelectTrigger
-                            className={cn(
-                              'h-6 text-xs border-none shadow-none px-2 py-0 bg-transparent',
-                              getOrderColor(op) === 'lime' ||
-                                getOrderColor(op) === 'neon-orange' ||
-                                getOrderColor(op) === 'yellow'
-                                ? 'hover:bg-black/10 focus:ring-0 text-inherit opacity-90'
-                                : 'text-muted-foreground hover:bg-slate-100 dark:hover:bg-slate-800',
-                            )}
-                          >
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent className="max-h-60">
-                            {STAGES.map((s) => (
-                              <SelectItem key={s} value={s}>
-                                {s}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </TableCell>
-                    <TableCell className="py-1">
-                      <span
-                        className={cn(
-                          'text-sm font-medium whitespace-nowrap',
-                          getOrderColor(op) === 'lime'
-                            ? 'text-black'
-                            : getOrderColor(op) === 'purple'
-                              ? 'text-purple-500'
-                              : getOrderColor(op) === 'neon-orange' ||
-                                  getOrderColor(op) === 'yellow'
-                                ? 'text-inherit opacity-90'
-                                : 'text-slate-600 dark:text-slate-400',
-                        )}
-                      >
-                        {formatDeadline(op.delivery_date, op.status)}
-                      </span>
+          <div className="rounded-md border bg-card">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nº da OP</TableHead>
+                  <TableHead>Produto</TableHead>
+                  <TableHead>Qtd</TableHead>
+                  <TableHead>Data de Entrega</TableHead>
+                  <TableHead>Status / Etapa</TableHead>
+                  <TableHead>Prazo</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {groupedOrders.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center">
+                      Nenhuma OP encontrada.
                     </TableCell>
                   </TableRow>
-                )),
-              ])
-            )}
-          </TableBody>
-        </Table>
-      </div>
+                ) : (
+                  groupedOrders.flatMap((group) => [
+                    <TableRow
+                      key={`header-${group.normalized_key}`}
+                      className={cn(
+                        'hover:opacity-90 border-y transition-colors',
+                        getHeaderColor(group.op_type),
+                      )}
+                    >
+                      <TableCell colSpan={6} className="font-semibold text-sm py-1">
+                        <div className="flex items-center gap-4">
+                          <span>Pedido: {group.order_number}</span>
+                          <span className="opacity-50">|</span>
+                          <span>Cliente: {group.client_name}</span>
+                          <Badge className="bg-white/20 text-white border-none hover:bg-white/30">
+                            {group.op_type}
+                          </Badge>
+                        </div>
+                      </TableCell>
+                    </TableRow>,
+                    ...group.items.map((op) => (
+                      <TableRow
+                        key={op.id}
+                        className={cn(
+                          'cursor-pointer transition-colors',
+                          getOrderColor(op) === 'lime' &&
+                            'bg-lime-400 text-black hover:bg-lime-500',
+                          getOrderColor(op) === 'neon-orange' &&
+                            'bg-orange-500 text-white hover:bg-orange-600 dark:bg-orange-600 dark:hover:bg-orange-700',
+                          getOrderColor(op) === 'yellow' &&
+                            'bg-yellow-400 text-slate-900 hover:bg-yellow-500 dark:bg-yellow-500 dark:hover:bg-yellow-600',
+                          (getOrderColor(op) === 'purple' || getOrderColor(op) === 'blue') &&
+                            'bg-white dark:bg-slate-900 hover:bg-muted/30',
+                        )}
+                        onClick={() => setSelectedOp(op)}
+                      >
+                        <TableCell className="py-1 pl-6 font-medium">
+                          <div className="flex items-center gap-1.5">
+                            {op.manual_priority === 2 && <span title="Prazo Especial">⚡</span>}
+                            {op.op_number || '-'}
+                            {(() => {
+                              const msgState = getOrderMessageInfo(op.id).indicatorState
+                              return msgState !== 'none' ? (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setMessageOrder({
+                                      id: op.id,
+                                      orderNumber: op.order_number,
+                                      opNumber: op.op_number || '',
+                                    })
+                                  }}
+                                  className="inline-flex items-center"
+                                >
+                                  <OrderMessageBell state={msgState} size="sm" />
+                                </button>
+                              ) : null
+                            })()}
+                          </div>
+                        </TableCell>
+                        <TableCell className="py-1">
+                          <div className="flex flex-col items-start gap-1">
+                            <span className="text-sm">
+                              {op.op_type === 'Assistência'
+                                ? op.manual_product_name
+                                : op.op_type === 'Especial'
+                                  ? op.manual_product_name || 'Produto Especial'
+                                  : op.expand?.product_id?.name || '-'}
+                            </span>
+                            {(observations[op.id] || []).length > 0 && (
+                              <div className="flex flex-col gap-1 mt-1 w-full max-w-sm">
+                                {(observations[op.id] || []).map((obs) => (
+                                  <span
+                                    key={obs.id}
+                                    className={cn(
+                                      'text-[10px] whitespace-pre-wrap leading-tight border-l-2 pl-2',
+                                      getOrderColor(op) === 'lime'
+                                        ? 'text-black border-lime-700'
+                                        : getOrderColor(op) === 'neon-orange'
+                                          ? 'text-orange-50 border-orange-400'
+                                          : getOrderColor(op) === 'yellow'
+                                            ? 'text-slate-800 border-yellow-600'
+                                            : 'text-muted-foreground border-slate-200 dark:border-slate-800',
+                                    )}
+                                  >
+                                    <span
+                                      className={cn(
+                                        'font-medium',
+                                        getOrderColor(op) === 'lime'
+                                          ? 'text-black'
+                                          : getOrderColor(op) === 'neon-orange'
+                                            ? 'text-white'
+                                            : getOrderColor(op) === 'yellow'
+                                              ? 'text-slate-900'
+                                              : 'text-slate-700 dark:text-slate-300',
+                                      )}
+                                    >
+                                      {' '}
+                                      {obs.sector}:
+                                    </span>{' '}
+                                    {obs.content}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="py-1">
+                          <div className="flex flex-col">
+                            <span className="font-medium">{op.quantity}</span>
+                            {(op.delivered_quantity || 0) > 0 && (
+                              <span
+                                className={cn(
+                                  'text-[10px] whitespace-nowrap font-medium',
+                                  getOrderColor(op) === 'lime' ||
+                                    getOrderColor(op) === 'neon-orange' ||
+                                    getOrderColor(op) === 'yellow'
+                                    ? 'opacity-90'
+                                    : 'text-blue-600 dark:text-blue-400',
+                                )}
+                              >
+                                Exp. {op.delivered_quantity}/{op.quantity} (pend{' '}
+                                {Math.max(0, op.quantity - (op.delivered_quantity || 0))})
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="py-1">
+                          <div className="flex items-center gap-2">
+                            <div className="flex flex-col gap-1 items-start">
+                              <span>
+                                {op.delivery_date && !isNaN(parseISO(op.delivery_date).getTime())
+                                  ? format(parseISO(op.delivery_date), 'dd/MM/yyyy')
+                                  : '-'}
+                              </span>
+                              {op.promised_date && (
+                                <PromisedDateBadge
+                                  promisedDate={op.promised_date}
+                                  status={op.status}
+                                  size="sm"
+                                />
+                              )}
+                            </div>
+                            {getOrderColor(op) === 'purple' && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Clock className="size-4 text-purple-500" />
+                                </TooltipTrigger>
+                                <TooltipContent>Entrega atrasada</TooltipContent>
+                              </Tooltip>
+                            )}
+                            {getOrderColor(op) === 'neon-orange' && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Clock className="size-4 text-orange-500" />
+                                </TooltipTrigger>
+                                <TooltipContent>Ordem Parada / Gargalo</TooltipContent>
+                              </Tooltip>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="py-1" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex flex-col gap-1">
+                            <Select
+                              value={op.status}
+                              onValueChange={(val) => updateOrder(op.id, 'status', val)}
+                            >
+                              <SelectTrigger
+                                className={cn(
+                                  'h-7 text-xs border-none shadow-none font-medium px-2 py-0 bg-transparent',
+                                  getOrderColor(op) === 'lime' ||
+                                    getOrderColor(op) === 'neon-orange' ||
+                                    getOrderColor(op) === 'yellow'
+                                    ? 'hover:bg-black/10 focus:ring-0'
+                                    : 'hover:bg-slate-100 dark:hover:bg-slate-800',
+                                )}
+                              >
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Fila">Fila</SelectItem>
+                                <SelectItem value="Em Andamento">Em Andamento</SelectItem>
+                                <SelectItem value="Parado">Parado</SelectItem>
+                                <SelectItem value="Concluído">Concluído</SelectItem>
+                              </SelectContent>
+                            </Select>
 
-      <PcpOrderDetails
-        op={selectedOp}
-        observations={selectedOp ? observations[selectedOp.id] || [] : []}
-        onClose={() => setSelectedOp(null)}
-        onEdit={() => {
-          if (!selectedOp) return
-          setEditingOp(selectedOp)
-          setSelectedOp(null)
-          setIsOpen(true)
-        }}
-        onDelete={() => {
-          if (!selectedOp) return
-          setDeleteOp(selectedOp)
-        }}
-        isAdmin={isAdmin}
-        onOrderUpdated={(updated) => {
-          setSelectedOp(updated)
-          loadData()
-        }}
-        onOpenMessages={(op) =>
-          setMessageOrder({
-            id: op.id,
-            orderNumber: op.order_number,
-            opNumber: op.op_number || '',
-          })
-        }
-      />
+                            <Select
+                              value={op.stage}
+                              onValueChange={(val) => updateOrder(op.id, 'stage', val)}
+                            >
+                              <SelectTrigger
+                                className={cn(
+                                  'h-6 text-xs border-none shadow-none px-2 py-0 bg-transparent',
+                                  getOrderColor(op) === 'lime' ||
+                                    getOrderColor(op) === 'neon-orange' ||
+                                    getOrderColor(op) === 'yellow'
+                                    ? 'hover:bg-black/10 focus:ring-0 text-inherit opacity-90'
+                                    : 'text-muted-foreground hover:bg-slate-100 dark:hover:bg-slate-800',
+                                )}
+                              >
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent className="max-h-60">
+                                {STAGES.map((s) => (
+                                  <SelectItem key={s} value={s}>
+                                    {s}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </TableCell>
+                        <TableCell className="py-1">
+                          <span
+                            className={cn(
+                              'text-sm font-medium whitespace-nowrap',
+                              getOrderColor(op) === 'lime'
+                                ? 'text-black'
+                                : getOrderColor(op) === 'purple'
+                                  ? 'text-purple-500'
+                                  : getOrderColor(op) === 'neon-orange' ||
+                                      getOrderColor(op) === 'yellow'
+                                    ? 'text-inherit opacity-90'
+                                    : 'text-slate-600 dark:text-slate-400',
+                            )}
+                          >
+                            {formatDeadline(op.delivery_date, op.status)}
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    )),
+                  ])
+                )}
+              </TableBody>
+            </Table>
+          </div>
 
-      <AlertDialog open={!!deleteOp} onOpenChange={(open) => !open && setDeleteOp(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Excluir OP</AlertDialogTitle>
-            <AlertDialogDescription>
-              Tem certeza que deseja excluir a OP {deleteOp?.op_number || deleteOp?.order_number}?
-              Esta ação não pode ser desfeita.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={async () => {
-                if (!deleteOp) return
-                try {
-                  await pb.collection('pcp_orders').delete(deleteOp.id)
-                  toast({ title: 'OP excluída com sucesso!' })
-                  setDeleteOp(null)
-                  setSelectedOp(null)
-                  loadData()
-                } catch (err) {
-                  toast({ title: 'Erro ao excluir OP', variant: 'destructive' })
-                }
-              }}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Excluir
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+          <PcpOrderDetails
+            op={selectedOp}
+            observations={selectedOp ? observations[selectedOp.id] || [] : []}
+            onClose={() => setSelectedOp(null)}
+            onEdit={() => {
+              if (!selectedOp) return
+              setEditingOp(selectedOp)
+              setSelectedOp(null)
+              setIsOpen(true)
+            }}
+            onDelete={() => {
+              if (!selectedOp) return
+              setDeleteOp(selectedOp)
+            }}
+            isAdmin={isAdmin}
+            onOrderUpdated={(updated) => {
+              setSelectedOp(updated)
+              loadData()
+            }}
+            onOpenMessages={(op) =>
+              setMessageOrder({
+                id: op.id,
+                orderNumber: op.order_number,
+                opNumber: op.op_number || '',
+              })
+            }
+          />
 
-      <OrderMessagesPanel
-        orderId={messageOrder?.id || null}
-        orderNumber={messageOrder?.orderNumber || ''}
-        opNumber={messageOrder?.opNumber || ''}
-        open={!!messageOrder}
-        onOpenChange={(open) => !open && setMessageOrder(null)}
-        onMessagesRead={markOrderAsRead}
-      />
+          <AlertDialog open={!!deleteOp} onOpenChange={(open) => !open && setDeleteOp(null)}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Excluir OP</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Tem certeza que deseja excluir a OP{' '}
+                  {deleteOp?.op_number || deleteOp?.order_number}? Esta ação não pode ser desfeita.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={async () => {
+                    if (!deleteOp) return
+                    try {
+                      await pb.collection('pcp_orders').delete(deleteOp.id)
+                      toast({ title: 'OP excluída com sucesso!' })
+                      setDeleteOp(null)
+                      setSelectedOp(null)
+                      loadData()
+                    } catch (err) {
+                      toast({ title: 'Erro ao excluir OP', variant: 'destructive' })
+                    }
+                  }}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  Excluir
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <OrderMessagesPanel
+            orderId={messageOrder?.id || null}
+            orderNumber={messageOrder?.orderNumber || ''}
+            opNumber={messageOrder?.opNumber || ''}
+            open={!!messageOrder}
+            onOpenChange={(open) => !open && setMessageOrder(null)}
+            onMessagesRead={markOrderAsRead}
+          />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

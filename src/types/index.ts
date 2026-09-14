@@ -262,6 +262,7 @@ export interface PcpOrder {
   promised_by?: string
   promised_at?: string
   manual_priority?: number
+  manual_sequence?: number
   started_at?: string
   finished_at?: string
   operator_id?: string

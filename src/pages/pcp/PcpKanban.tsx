@@ -27,17 +27,24 @@ import {
   Clock,
   Sparkles,
   MessageSquare,
+  ArrowUp,
+  ArrowDown,
+  GripVertical,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
-import { format, parseISO, differenceInDays, startOfDay, isValid } from 'date-fns'
+import { format, parseISO, differenceInDays, startOfDay } from 'date-fns'
 import {
   formatDeadline,
   isOrderOverdue,
   filterByDeadline,
   isStageDelayed,
   normalizeSearchText,
+  sortFilaProductionOrders,
+  formatLocalDate,
+  parseLocalDate,
 } from '@/lib/pcp-utils'
+import { isPcpManager } from '@/lib/message-sector'
 import { OutsourcingPanel } from './components/OutsourcingPanel'
 import { PcpFilters } from './components/PcpFilters'
 import { MessageNotificationBell } from '@/components/MessageNotificationBell'
@@ -114,10 +121,9 @@ export function getOrderColor(order: any) {
   ) {
     return 'neon-orange'
   }
-  const daysDiff = differenceInDays(
-    startOfDay(parseISO(order.delivery_date)),
-    startOfDay(new Date()),
-  )
+  const targetDate = parseLocalDate(order.delivery_date)
+  if (!targetDate) return 'blue'
+  const daysDiff = differenceInDays(startOfDay(targetDate), startOfDay(new Date()))
   if (order.status !== 'Concluído' && daysDiff < 0) {
     return 'purple'
   }
@@ -172,6 +178,10 @@ export default function PcpKanban() {
       user.email === 'reginaldo.segundo@planagroup.com.br'
     )
   }, [user])
+
+  const canManageSequence = useMemo(() => {
+    return isAdmin || isPcpManager(user as any)
+  }, [isAdmin, user])
 
   const [promisedModalOpen, setPromisedModalOpen] = useState(false)
   const [isEmergencyContext, setIsEmergencyContext] = useState(false)
@@ -273,6 +283,85 @@ export default function PcpKanban() {
     }
   }
 
+  // Reordenação por drag and drop ou botões na coluna Fila
+  const handleReorderFila = async (activeId: string, overId: string) => {
+    if (activeId === overId) return
+
+    // Buscar a lista atual de Fila já ordenada
+    const filaList = sortFilaProductionOrders(filteredOrders.filter((o) => o.status === 'Fila'))
+
+    // Identificar a partição gerenciada (sem manual_priority 1 ou 2, e sem promised_date)
+    const isManaged = (o: any) =>
+      o.manual_priority !== 1 && o.manual_priority !== 2 && !o.promised_date
+
+    const managedOrders = filaList.filter(isManaged)
+    const oldIndex = managedOrders.findIndex((o) => o.id === activeId)
+    const newIndex = managedOrders.findIndex((o) => o.id === overId)
+
+    if (oldIndex === -1 || newIndex === -1) {
+      // Se um dos cards for prioritário fixo, não move o grupo prioritário
+      toast({
+        title: 'Posição fixa',
+        description: 'Emergenciais, Prazos especiais e Datas Prometidas ficam fixos no topo.',
+      })
+      return
+    }
+
+    // Criar nova ordem otimista
+    const newManaged = [...managedOrders]
+    const [movedItem] = newManaged.splice(oldIndex, 1)
+    newManaged.splice(newIndex, 0, movedItem)
+
+    // Atualizar estado local otimista de orders
+    const indexMap = new Map<string, number>()
+    newManaged.forEach((item, idx) => {
+      indexMap.set(item.id, idx + 1)
+    })
+
+    setOrders((prev) =>
+      prev.map((o) => {
+        if (indexMap.has(o.id)) {
+          return { ...o, manual_sequence: indexMap.get(o.id) }
+        }
+        return o
+      }),
+    )
+
+    // Persistir no backend em lote
+    try {
+      await Promise.all(
+        newManaged.map((item, idx) =>
+          pb.collection('pcp_orders').update(item.id, { manual_sequence: idx + 1 }),
+        ),
+      )
+      toast({
+        title: 'Sequência atualizada',
+        description: 'A nova fila de produção foi sincronizada com o Portal do Operador.',
+      })
+    } catch (err) {
+      console.error('Erro ao salvar manual_sequence:', err)
+      toast({
+        title: 'Erro ao salvar sequência',
+        description: 'Não foi possível persistir a nova ordem da fila.',
+        variant: 'destructive',
+      })
+      fetchOrders()
+    }
+  }
+
+  const handleMoveFilaOrder = async (orderId: string, direction: 'up' | 'down') => {
+    const filaList = sortFilaProductionOrders(filteredOrders.filter((o) => o.status === 'Fila'))
+    const isManaged = (o: any) =>
+      o.manual_priority !== 1 && o.manual_priority !== 2 && !o.promised_date
+    const managedOrders = filaList.filter(isManaged)
+    const currentIndex = managedOrders.findIndex((o) => o.id === orderId)
+    if (currentIndex === -1) return
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
+    if (targetIndex < 0 || targetIndex >= managedOrders.length) return
+    const targetId = managedOrders[targetIndex].id
+    await handleReorderFila(orderId, targetId)
+  }
+
   // Mapa de contagem de itens por pedido para o filtro rápido de itens
   const orderItemsCountMap = useMemo(() => {
     const map = new Map<string, number>()
@@ -327,7 +416,7 @@ export default function PcpKanban() {
       const clientName = o.expand?.client_id?.name || o.client_name || ''
       const productName =
         o.op_type === 'Assistência' ? o.manual_product_name || '' : o.expand?.product_id?.name || ''
-      const date = o.delivery_date ? format(parseISO(o.delivery_date), 'dd/MM/yyyy') : ''
+      const date = o.delivery_date ? formatLocalDate(o.delivery_date) : ''
       const orderNum = o.order_number || ''
       const opNum = o.op_number || ''
       const obsSector = o.observation_sector || ''
@@ -341,8 +430,8 @@ export default function PcpKanban() {
       const today = startOfDay(new Date())
       const overdueList = list.filter((o) => {
         if (o.status === 'Concluído' || !o.delivery_date) return false
-        const d = parseISO(o.delivery_date)
-        if (isNaN(d.getTime())) return false
+        const d = parseLocalDate(o.delivery_date)
+        if (!d || isNaN(d.getTime())) return false
         return differenceInDays(startOfDay(d), today) < 0
       })
 
@@ -408,6 +497,7 @@ export default function PcpKanban() {
   }, [filteredOrders])
 
   const stuckOrders = filteredOrders.filter((o) => o.status === 'Parado')
+  const [dragOverCardId, setDragOverCardId] = useState<string | null>(null)
 
   return (
     <div className="flex flex-col h-[calc(100vh-1rem)] p-3 md:p-4 overflow-hidden bg-slate-50/50 dark:bg-background">
@@ -687,12 +777,19 @@ export default function PcpKanban() {
         {viewMode === 'status' && (
           <div className="flex gap-4 overflow-x-auto h-full pb-4 w-full">
             {STATUSES.map((status) => {
-              const statusOrders = filteredOrders.filter((o) => o.status === status)
+              const rawOrders = filteredOrders.filter((o) => o.status === status)
+              // Na coluna Fila, aplicamos a ordenação canônica com prioridades e manual_sequence
+              const statusOrders =
+                status === 'Fila' ? sortFilaProductionOrders(rawOrders) : rawOrders
+
               return (
                 <div
                   key={status}
                   onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => handleDropStatus(e, status)}
+                  onDrop={(e) => {
+                    setDragOverCardId(null)
+                    handleDropStatus(e, status)
+                  }}
                   className={cn(
                     'w-80 shrink-0 flex flex-col max-h-full rounded-xl border bg-slate-100/50 dark:bg-slate-900/50 p-3',
                     status === 'Parado' &&
@@ -706,28 +803,89 @@ export default function PcpKanban() {
                         {statusOrders.length}
                       </Badge>
                     </div>
+                    {status === 'Fila' && canManageSequence && (
+                      <span className="text-[10px] text-muted-foreground font-medium">
+                        Arraste p/ ordenar
+                      </span>
+                    )}
                   </div>
 
                   <ScrollArea className="flex-1 -mx-3 px-3">
                     <div className="flex flex-col gap-2 pb-4">
-                      {statusOrders.map((order) => (
-                        <KanbanCard
-                          key={order.id}
-                          order={order}
-                          observations={observations[order.id] || []}
-                          shortages={shortagesByOrder[order.id] || []}
-                          onDragStart={handleDragStart}
-                          onClick={() => setSelectedOrder(order)}
-                          onMessageClick={() =>
-                            setMessageOrder({
-                              id: order.id,
-                              orderNumber: order.order_number,
-                              opNumber: order.op_number || '',
-                            })
-                          }
-                          messageState={getOrderMessageInfo(order.id).indicatorState}
-                        />
-                      ))}
+                      {statusOrders.map((order, orderIdx) => {
+                        const isFila = status === 'Fila'
+                        const isPrioritary =
+                          order.manual_priority === 1 ||
+                          order.manual_priority === 2 ||
+                          !!order.promised_date
+                        const isReorderable = isFila && !isPrioritary && canManageSequence
+
+                        // Para os botões subir/descer na fila gerenciada
+                        const managedFilaOrders = statusOrders.filter(
+                          (o) =>
+                            o.manual_priority !== 1 && o.manual_priority !== 2 && !o.promised_date,
+                        )
+                        const managedIdx = managedFilaOrders.findIndex((o) => o.id === order.id)
+                        const canMoveUp = isReorderable && managedIdx > 0
+                        const canMoveDown =
+                          isReorderable &&
+                          managedIdx !== -1 &&
+                          managedIdx < managedFilaOrders.length - 1
+
+                        return (
+                          <div
+                            key={order.id}
+                            className={cn(
+                              'relative transition-all',
+                              dragOverCardId === order.id && 'ring-2 ring-primary rounded-lg',
+                            )}
+                            onDragOver={(e) => {
+                              if (isReorderable) {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                setDragOverCardId(order.id)
+                              }
+                            }}
+                            onDragLeave={() => {
+                              if (dragOverCardId === order.id) setDragOverCardId(null)
+                            }}
+                            onDrop={(e) => {
+                              if (isReorderable) {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                setDragOverCardId(null)
+                                const activeId = e.dataTransfer.getData('orderId')
+                                if (activeId && activeId !== order.id) {
+                                  handleReorderFila(activeId, order.id)
+                                }
+                              }
+                            }}
+                          >
+                            <KanbanCard
+                              order={order}
+                              observations={observations[order.id] || []}
+                              shortages={shortagesByOrder[order.id] || []}
+                              onDragStart={handleDragStart}
+                              onClick={() => setSelectedOrder(order)}
+                              onMessageClick={() =>
+                                setMessageOrder({
+                                  id: order.id,
+                                  orderNumber: order.order_number,
+                                  opNumber: order.op_number || '',
+                                })
+                              }
+                              messageState={getOrderMessageInfo(order.id).indicatorState}
+                              isFila={isFila}
+                              isReorderable={isReorderable}
+                              canMoveUp={canMoveUp}
+                              canMoveDown={canMoveDown}
+                              onMoveUp={() => handleMoveFilaOrder(order.id, 'up')}
+                              onMoveDown={() => handleMoveFilaOrder(order.id, 'down')}
+                              queueIndex={orderIdx + 1}
+                            />
+                          </div>
+                        )
+                      })}
                       {statusOrders.length === 0 && (
                         <div className="text-center text-sm text-muted-foreground py-8 border-2 border-dashed rounded-lg">
                           Nenhuma OP
@@ -1359,7 +1517,7 @@ export default function PcpKanban() {
                         <div className="flex items-center justify-between">
                           <span className="text-muted-foreground">Data prometida:</span>
                           <span className="font-bold text-foreground">
-                            {format(parseISO(selectedOrder.promised_date), 'dd/MM/yyyy')}
+                            {formatLocalDate(selectedOrder.promised_date)}
                           </span>
                         </div>
                         {selectedOrder.promised_note && (
@@ -1654,7 +1812,7 @@ export default function PcpKanban() {
               toast({
                 title: promised_date ? 'Data Prometida salva' : 'Data Prometida removida',
                 description: promised_date
-                  ? `Data definida para ${format(parseISO(promised_date), 'dd/MM/yyyy')}`
+                  ? `Data definida para ${formatLocalDate(promised_date)}`
                   : 'A OP voltou a seguir o fluxo regular.',
               })
             } catch (err) {
@@ -1680,6 +1838,13 @@ function KanbanCard({
   onClick,
   onMessageClick,
   messageState = 'none',
+  isFila = false,
+  isReorderable = false,
+  canMoveUp = false,
+  canMoveDown = false,
+  onMoveUp,
+  onMoveDown,
+  queueIndex,
 }: any) {
   const color = getOrderColor(order)
   const isEmergency = order.manual_priority === 1
@@ -1714,18 +1879,67 @@ function KanbanCard({
       onDragStart={(e) => onDragStart(e, order.id)}
       onClick={onClick}
       className={cn(
-        'cursor-grab active:cursor-grabbing hover:shadow-md transition-all border-l-4 group',
+        'cursor-grab active:cursor-grabbing hover:shadow-md transition-all border-l-4 group relative',
         borderClass,
         cardBgClass,
       )}
     >
       <CardContent className="p-3 flex flex-col gap-1">
         <div className="flex items-start justify-between">
-          <span className="font-semibold text-sm flex items-center gap-1">
-            {isPrazoEspecial && <span title="Prazo Especial">⚡</span>}
-            {order.order_number}
-          </span>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5 min-w-0">
+            {isFila && queueIndex != null && (
+              <span
+                className="text-[10px] font-mono px-1 rounded bg-black/10 dark:bg-white/10 text-muted-foreground shrink-0 font-semibold"
+                title={`Posição #${queueIndex} na fila`}
+              >
+                #{queueIndex}
+              </span>
+            )}
+            {isReorderable && (
+              <span title="Arrastar para reordenar" className="inline-flex">
+                <GripVertical className="size-3.5 text-muted-foreground/60 shrink-0 cursor-grab" />
+              </span>
+            )}
+            <span className="font-semibold text-sm flex items-center gap-1 truncate">
+              {isPrazoEspecial && <span title="Prazo Especial">⚡</span>}
+              {order.order_number}
+            </span>
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            {isReorderable && (
+              <div className="flex items-center gap-0.5 mr-1" onClick={(e) => e.stopPropagation()}>
+                <button
+                  type="button"
+                  disabled={!canMoveUp}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onMoveUp?.()
+                  }}
+                  title="Subir na fila"
+                  className={cn(
+                    'p-0.5 rounded hover:bg-black/10 dark:hover:bg-white/10 transition-colors',
+                    !canMoveUp && 'opacity-30 cursor-not-allowed',
+                  )}
+                >
+                  <ArrowUp className="size-3" />
+                </button>
+                <button
+                  type="button"
+                  disabled={!canMoveDown}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onMoveDown?.()
+                  }}
+                  title="Descer na fila"
+                  className={cn(
+                    'p-0.5 rounded hover:bg-black/10 dark:hover:bg-white/10 transition-colors',
+                    !canMoveDown && 'opacity-30 cursor-not-allowed',
+                  )}
+                >
+                  <ArrowDown className="size-3" />
+                </button>
+              </div>
+            )}
             {order.promised_date && (
               <PromisedDateBadge
                 promisedDate={order.promised_date}

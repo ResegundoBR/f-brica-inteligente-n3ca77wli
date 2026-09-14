@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Calendar, Trash2 } from 'lucide-react'
+import { toDateFieldValue } from '@/lib/pcp-utils'
 
 interface PromisedDateModalProps {
   open: boolean
@@ -39,8 +40,8 @@ export function PromisedDateModal({
 
   useEffect(() => {
     if (open) {
-      // Normalizar formato da data para YYYY-MM-DD para o <input type="date">
-      const initialDate = currentDate ? currentDate.split('T')[0].split(' ')[0] : ''
+      // Normalizar formato da data para YYYY-MM-DD para o <input type="date"> sem desvio de fuso
+      const initialDate = toDateFieldValue(currentDate)
       setDate(initialDate)
       setNote(currentNote || '')
       setError(null)

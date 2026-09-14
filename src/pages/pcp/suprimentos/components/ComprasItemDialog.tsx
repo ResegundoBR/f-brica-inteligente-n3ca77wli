@@ -26,6 +26,7 @@ import pb from '@/lib/pocketbase/client'
 import { useMemo } from 'react'
 import { findOtherOpDemands } from '@/services/material-consolidation'
 import { ConsolidatedDemandBlock } from './ConsolidatedDemandBlock'
+import { toDateFieldValue } from '@/lib/pcp-utils'
 
 interface ComprasItemDialogProps {
   item: MaterialShortage | null
@@ -76,7 +77,7 @@ export function ComprasItemDialog({
       fetchQuotations()
       setSupplier(item.supplier || '')
       setUnitPrice(item.unit_price ? String(item.unit_price) : '')
-      setExpectedDate(item.expected_date || '')
+      setExpectedDate(toDateFieldValue(item.expected_date))
       setItemQuantity(item.quantity)
     }
   }, [open, item, fetchQuotations])
@@ -90,7 +91,7 @@ export function ComprasItemDialog({
       setUnitPrice(String(selected.price))
       if (selected.delivery_days && selected.delivery_days > 0) {
         const date = new Date(Date.now() + selected.delivery_days * 86400000)
-        setExpectedDate(date.toISOString().split('T')[0])
+        setExpectedDate(toDateFieldValue(date))
       }
       toast.success('Cotação selecionada e campos preenchidos')
       onUpdate()
@@ -107,7 +108,7 @@ export function ComprasItemDialog({
         supplier,
         quantity: itemQuantity || item.quantity,
         ...(unitPrice && { unit_price: Number(unitPrice) }),
-        ...(expectedDate && { expected_date: expectedDate }),
+        ...(expectedDate && { expected_date: `${toDateFieldValue(expectedDate)} 12:00:00.000Z` }),
       })
       toast.success('Dados salvos com sucesso')
       onUpdate()

@@ -33,7 +33,7 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import { useToast } from '@/components/ui/use-toast'
-import { format, parseISO } from 'date-fns'
+import { toDateFieldValue } from '@/lib/pcp-utils'
 import { Plus, Trash, Check, ChevronsUpDown, FileUp, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getErrorMessage } from '@/lib/pocketbase/errors'
@@ -226,7 +226,7 @@ export function PcpOrderForm({
       client_id: '',
       op_type: 'Linha',
       quantity: 1,
-      delivery_date: format(new Date(), 'yyyy-MM-dd'),
+      delivery_date: toDateFieldValue(new Date()),
       manual_priority: 0,
       estimates: {},
       observations: [],
@@ -279,8 +279,8 @@ export function PcpOrderForm({
 
       if (editingOrder) {
         const deliveryDate = editingOrder.delivery_date
-          ? format(parseISO(editingOrder.delivery_date), 'yyyy-MM-dd')
-          : format(new Date(), 'yyyy-MM-dd')
+          ? toDateFieldValue(editingOrder.delivery_date)
+          : toDateFieldValue(new Date())
 
         const estimates: Record<string, any> = {}
         if (editingOrder.outsourcing_data) {
@@ -318,7 +318,7 @@ export function PcpOrderForm({
           client_id: '',
           op_type: 'Linha',
           quantity: 1,
-          delivery_date: format(new Date(), 'yyyy-MM-dd'),
+          delivery_date: toDateFieldValue(new Date()),
           manual_priority: 0,
           estimates: {},
           observations: [],
@@ -591,7 +591,7 @@ export function PcpOrderForm({
         client_name: client?.name || '',
         op_type: data.op_type,
         quantity: data.quantity,
-        delivery_date: new Date(data.delivery_date).toISOString(),
+        delivery_date: `${toDateFieldValue(data.delivery_date)} 12:00:00.000Z`,
         status: 'Fila',
         stage: 'Projetos',
         manual_priority: data.manual_priority,
@@ -675,7 +675,7 @@ export function PcpOrderForm({
         client_name: client?.name || '',
         op_type: data.op_type,
         quantity: data.quantity,
-        delivery_date: new Date(data.delivery_date).toISOString(),
+        delivery_date: `${toDateFieldValue(data.delivery_date)} 12:00:00.000Z`,
         manual_priority: data.manual_priority,
       }
 

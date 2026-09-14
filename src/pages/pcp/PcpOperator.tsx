@@ -42,6 +42,8 @@ import {
   getStageDelay,
   formatOpIdentifier,
   normalizeSearchText,
+  sortFilaProductionOrders,
+  formatLocalDate,
 } from '@/lib/pcp-utils'
 import { getMaterialAvailabilityStatus } from '@/lib/material-status'
 import { isBefore, startOfDay, parseISO } from 'date-fns'
@@ -530,8 +532,7 @@ function OperatorCard({
                     : 'text-slate-500 dark:text-slate-300',
                 )}
               >
-                Entrega:{' '}
-                {parseISO(op.delivery_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
+                Entrega: {formatLocalDate(op.delivery_date)}
               </span>
             )}
             {op.promised_date && (
@@ -1611,7 +1612,7 @@ export default function PcpOperator() {
     return proc.estimated_hours - elapsed
   }
 
-  const sortOrders = (orderList: PcpOrder[]) => {
+  const sortExecucaoOrders = (orderList: PcpOrder[]) => {
     return [...orderList].sort((a, b) => {
       const pA = a.manual_priority || 999
       const pB = b.manual_priority || 999
@@ -1647,8 +1648,8 @@ export default function PcpOperator() {
     (o) => o.status === 'Em Andamento' || (o.status === 'Parado' && o.started_at),
   )
 
-  const sortedFila = sortOrders(filaOrders)
-  const sortedExecucao = sortOrders(execucaoOrders)
+  const sortedFila = sortFilaProductionOrders(filaOrders)
+  const sortedExecucao = sortExecucaoOrders(execucaoOrders)
 
   const [soundAlertsOn, setSoundAlertsOn] = useState(() => {
     if (typeof window === 'undefined') return true

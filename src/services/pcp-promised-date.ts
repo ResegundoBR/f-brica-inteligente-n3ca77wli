@@ -1,5 +1,5 @@
 import pb from '@/lib/pocketbase/client'
-import { format, parseISO, isValid } from 'date-fns'
+import { formatLocalDate } from '@/lib/pcp-utils'
 
 interface SetPromisedDateOptions {
   orderId: string
@@ -15,13 +15,7 @@ interface SetPromisedDateOptions {
 
 function formatDateDisplay(dateStr?: string | null): string {
   if (!dateStr) return 'nenhuma'
-  try {
-    const d = parseISO(dateStr.split('T')[0])
-    if (isValid(d)) return format(d, 'dd/MM/yyyy')
-  } catch {
-    /* intentionally ignored */
-  }
-  return dateStr
+  return formatLocalDate(dateStr)
 }
 
 export async function setPromisedDateOnOrder({
@@ -35,8 +29,9 @@ export async function setPromisedDateOnOrder({
 }: SetPromisedDateOptions) {
   const nowIso = new Date().toISOString()
 
+  const cleanDate = newPromisedDate ? newPromisedDate.trim().split('T')[0].split(' ')[0] : ''
   const payload: Record<string, any> = {
-    promised_date: newPromisedDate ? `${newPromisedDate} 00:00:00.000Z` : '',
+    promised_date: cleanDate ? `${cleanDate} 12:00:00.000Z` : '',
     promised_note: note || '',
   }
 

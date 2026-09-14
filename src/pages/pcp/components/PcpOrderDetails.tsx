@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/sheet'
 import { Label } from '@/components/ui/label'
 import { format, parseISO, isBefore, startOfDay, isValid } from 'date-fns'
+import { formatLocalDate, parseLocalDate } from '@/lib/pcp-utils'
 import {
   Paperclip,
   AlertCircle,
@@ -89,16 +90,16 @@ export function PcpOrderDetails({
   }, [op?.id])
 
   const today = startOfDay(new Date())
-  const deliveryDateObj = op?.delivery_date ? parseISO(op.delivery_date) : null
-  const isValidDeliveryDate = deliveryDateObj && isValid(deliveryDateObj)
+  const deliveryDateObj = op?.delivery_date ? parseLocalDate(op.delivery_date) : null
+  const isValidDeliveryDate = deliveryDateObj !== null
 
   const isDelayed =
     op && isValidDeliveryDate
-      ? op.status !== 'Concluído' && isBefore(startOfDay(deliveryDateObj), today)
+      ? op.status !== 'Concluído' && isBefore(startOfDay(deliveryDateObj!), today)
       : false
 
-  const promisedDateObj = op?.promised_date ? parseISO(op.promised_date) : null
-  const isValidPromisedDate = promisedDateObj && isValid(promisedDateObj)
+  const promisedDateObj = op?.promised_date ? parseLocalDate(op.promised_date) : null
+  const isValidPromisedDate = promisedDateObj !== null
 
   const handlePromisedConfirm = async ({
     promised_date,
@@ -123,7 +124,7 @@ export function PcpOrderDetails({
       toast({
         title: promised_date ? 'Data Prometida salva' : 'Data Prometida removida',
         description: promised_date
-          ? `Data definida para ${format(parseISO(promised_date), 'dd/MM/yyyy')}`
+          ? `Data definida para ${formatLocalDate(promised_date)}`
           : 'A OP voltou a seguir o fluxo regular.',
       })
       fetchLogs()
@@ -292,7 +293,7 @@ export function PcpOrderDetails({
               <div>
                 <Label className="text-muted-foreground">Data de Entrega</Label>
                 <p className="font-medium text-sm mt-1 flex items-center gap-2">
-                  {isValidDeliveryDate ? format(deliveryDateObj, 'dd/MM/yyyy') : '-'}
+                  {isValidDeliveryDate ? formatLocalDate(op.delivery_date) : '-'}
                   {isDelayed && <span className="text-red-500 text-xs font-bold">(Atrasado)</span>}
                 </p>
               </div>
@@ -334,7 +335,7 @@ export function PcpOrderDetails({
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">Data prometida:</span>
                       <span className="font-bold text-foreground">
-                        {isValidPromisedDate ? format(promisedDateObj, 'dd/MM/yyyy') : '-'}
+                        {isValidPromisedDate ? formatLocalDate(op.promised_date) : '-'}
                       </span>
                     </div>
                     {op.promised_note && (

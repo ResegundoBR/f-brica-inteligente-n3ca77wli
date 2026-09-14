@@ -17,12 +17,75 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+/**
+ * Utilitários canônicos de data sem shift de fuso horário:
+ * parseLocalDate: 'YYYY-MM-DD' → Date local ao meio-dia seguro
+ * formatLocalDate: 'YYYY-MM-DD' (ou ISO com data) → 'DD/MM/YYYY' direto, sem conversão UTC
+ * toDateFieldValue: Date ou string → 'YYYY-MM-DD' usando getFullYear/getMonth/getDate locais (nunca toISOString)
+ */
+export function parseLocalDate(dateStr: string | undefined | null): Date | null {
+  if (!dateStr) return null
+  const clean = dateStr.trim().split('T')[0].split(' ')[0]
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(clean)
+  if (!match) {
+    const fallback = new Date(dateStr)
+    return isNaN(fallback.getTime()) ? null : fallback
+  }
+  const year = parseInt(match[1], 10)
+  const month = parseInt(match[2], 10) - 1
+  const day = parseInt(match[3], 10)
+  return new Date(year, month, day, 12, 0, 0)
+}
+
+export function formatLocalDate(dateStr: string | undefined | null): string {
+  if (!dateStr) return '-'
+  const clean = dateStr.trim().split('T')[0].split(' ')[0]
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(clean)
+  if (match) {
+    const [, year, month, day] = match
+    return `${day}/${month}/${year}`
+  }
+  // Se for timestamp com hora, tenta extrair data
+  try {
+    const d = new Date(dateStr)
+    if (!isNaN(d.getTime())) {
+      const day = String(d.getDate()).padStart(2, '0')
+      const month = String(d.getMonth() + 1).padStart(2, '0')
+      const year = d.getFullYear()
+      return `${day}/${month}/${year}`
+    }
+  } catch {
+    /* fallback */
+  }
+  return dateStr
+}
+
+export function toDateFieldValue(date: Date | string | undefined | null): string {
+  if (!date) return ''
+  if (typeof date === 'string') {
+    const clean = date.trim().split('T')[0].split(' ')[0]
+    if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) return clean
+    const parsed = new Date(date)
+    if (isNaN(parsed.getTime())) return ''
+    const year = parsed.getFullYear()
+    const month = String(parsed.getMonth() + 1).padStart(2, '0')
+    const day = String(parsed.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+  if (isNaN(date.getTime())) return ''
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 export function formatDeadline(deliveryDateStr: string | undefined | null, status: string): string {
   if (status === 'Concluído') return '-'
   if (!deliveryDateStr) return '-'
   const date = parseISO(deliveryDateStr)
   if (isNaN(date.getTime())) return '-'
-  const daysDiff = differenceInDays(startOfDay(date), startOfDay(new Date()))
+  const localDate = parseLocalDate(deliveryDateStr) || date
+  const daysDiff = differenceInDays(startOfDay(localDate), startOfDay(new Date()))
   if (daysDiff < 0) return `${Math.abs(daysDiff)} dia${Math.abs(daysDiff) === 1 ? '' : 's'} vencido`
   if (daysDiff === 0) return 'Vence hoje'
   return `${daysDiff} dia${daysDiff === 1 ? '' : 's'} restante${daysDiff === 1 ? '' : 's'}`
@@ -219,6 +282,62 @@ export function getStageDelay(
   return { delayed: true, formatted: formatDelayDuration(delayHours) }
 }
 
+/**
+ * Ordenação canônica da fila de produção (Painel Kanban e Portal do Operador):
+ * 1º Emergenciais (manual_priority === 1)
+ * 2º Prazo especial (manual_priority === 2)
+ * 3º Data prometida (promised_date preenchida, mais próxima primeiro)
+ * 4º manual_sequence (sequência definida pelo gestor, menor índice primeiro)
+ * 5º delivery_date / criação
+ */
+export function sortFilaProductionOrders<
+  T extends {
+    manual_priority?: number
+    promised_date?: string | null
+    manual_sequence?: number | null
+    delivery_date?: string | null
+    created?: string
+  },
+>(ordersList: T[]): T[] {
+  return [...ordersList].sort((a, b) => {
+    // 1º Emergenciais (manual_priority === 1)
+    const isEmergA = a.manual_priority === 1 ? 0 : 1
+    const isEmergB = b.manual_priority === 1 ? 0 : 1
+    if (isEmergA !== isEmergB) return isEmergA - isEmergB
+
+    // 2º Prazo especial (manual_priority === 2)
+    const isPrazoA = a.manual_priority === 2 ? 0 : 1
+    const isPrazoB = b.manual_priority === 2 ? 0 : 1
+    if (isPrazoA !== isPrazoB) return isPrazoA - isPrazoB
+
+    // 3º Data prometida (preenchida, mais próxima primeiro)
+    const hasPromisedA = !!a.promised_date
+    const hasPromisedB = !!b.promised_date
+    if (hasPromisedA && !hasPromisedB) return -1
+    if (!hasPromisedA && hasPromisedB) return 1
+    if (hasPromisedA && hasPromisedB) {
+      const timeA = new Date(a.promised_date!).getTime()
+      const timeB = new Date(b.promised_date!).getTime()
+      if (timeA !== timeB) return timeA - timeB
+    }
+
+    // 4º manual_sequence definido pelo gestor (menor primeiro, indefinidos vão para o final)
+    const seqA = a.manual_sequence != null ? a.manual_sequence : 999999
+    const seqB = b.manual_sequence != null ? b.manual_sequence : 999999
+    if (seqA !== seqB) return seqA - seqB
+
+    // 5º delivery_date mais próxima
+    const dateA = a.delivery_date ? new Date(a.delivery_date).getTime() : Infinity
+    const dateB = b.delivery_date ? new Date(b.delivery_date).getTime() : Infinity
+    if (dateA !== dateB) return dateA - dateB
+
+    // Desempate por data de criação
+    const createdA = a.created ? new Date(a.created).getTime() : 0
+    const createdB = b.created ? new Date(b.created).getTime() : 0
+    return createdA - createdB
+  })
+}
+
 export function formatOpIdentifier(order: any): string {
   const orderNum = order.order_number || ''
   const opNum = order.op_number || ''
@@ -261,8 +380,18 @@ export function getPromisedDateInfo(
   const day = String(date.getUTCDate()).padStart(2, '0')
   const month = String(date.getUTCMonth() + 1).padStart(2, '0')
 
+  // Usar parseLocalDate para extrair dia e mês visualmente corretos
+  const clean = promisedDateStr.trim().split('T')[0].split(' ')[0]
+  let displayDay = day
+  let displayMonth = month
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(clean)
+  if (match) {
+    displayDay = match[3]
+    displayMonth = match[2]
+  }
+
   return {
-    formattedDate: `${day}/${month}`,
+    formattedDate: `${displayDay}/${displayMonth}`,
     isOverdue,
     isDueSoon,
     isConcluded,

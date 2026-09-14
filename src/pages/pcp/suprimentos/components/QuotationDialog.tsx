@@ -41,6 +41,7 @@ import { useToast } from '@/hooks/use-toast'
 import { useMemo } from 'react'
 import { findOtherOpDemands } from '@/services/material-consolidation'
 import { ConsolidatedDemandBlock } from './ConsolidatedDemandBlock'
+import { toDateFieldValue } from '@/lib/pcp-utils'
 import { UserActionBadge } from '@/components/UserActionBadge'
 
 export function QuotationDialog({
@@ -189,7 +190,9 @@ export function QuotationDialog({
       if (directSupplier.trim()) data.supplier = directSupplier.trim()
       const numPrice = Number(directPrice)
       if (directPrice && Number.isFinite(numPrice) && numPrice > 0) data.unit_price = numPrice
-      if (directExpectedDate) data.expected_date = directExpectedDate
+      if (directExpectedDate) {
+        data.expected_date = `${toDateFieldValue(directExpectedDate)} 12:00:00.000Z`
+      }
       await sendDirectToCompra(item.id, data)
       toast({ title: 'Item enviado direto para Compras' })
       onOpenChange(false)

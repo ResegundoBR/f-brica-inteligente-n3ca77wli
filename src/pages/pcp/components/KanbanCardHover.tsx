@@ -3,8 +3,13 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Badge } from '@/components/ui/badge'
 import { Clock, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { formatDeadline, isOrderOverdue, getStageDelay, formatOpIdentifier } from '@/lib/pcp-utils'
-import { format, parseISO } from 'date-fns'
+import {
+  formatDeadline,
+  isOrderOverdue,
+  getStageDelay,
+  formatOpIdentifier,
+  formatLocalDate,
+} from '@/lib/pcp-utils'
 
 export function KanbanCardHover({
   order,

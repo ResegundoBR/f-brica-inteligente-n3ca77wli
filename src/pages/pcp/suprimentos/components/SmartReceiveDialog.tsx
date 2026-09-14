@@ -24,6 +24,7 @@ import pb from '@/lib/pocketbase/client'
 import { distributeMaterials, type TraceabilityInfo } from '@/services/material-distribution'
 import { useToast } from '@/hooks/use-toast'
 import { getErrorMessage } from '@/lib/pocketbase/errors'
+import { toDateFieldValue } from '@/lib/pcp-utils'
 
 interface SmartReceiveDialogProps {
   item: MaterialShortage | null
@@ -54,8 +55,8 @@ export function SmartReceiveDialog({
     setLoading(true)
     setTotalReceived('')
     setDistributions({})
-    setPurchaseDate(item.purchase_date ? item.purchase_date.substring(0, 10) : '')
-    setArrivalDate(new Date().toISOString().split('T')[0])
+    setPurchaseDate(toDateFieldValue(item.purchase_date))
+    setArrivalDate(toDateFieldValue(new Date()))
     setUnitPrice(item.unit_price ? String(item.unit_price) : '')
     setFreight('')
     const fetchRelated = async () => {
@@ -118,8 +119,8 @@ export function SmartReceiveDialog({
       const traceabilityInfo: TraceabilityInfo = {
         code: item?.code || '',
         description: item?.description || '',
-        purchase_date: purchaseDate || undefined,
-        arrival_date: arrivalDate || undefined,
+        purchase_date: purchaseDate ? `${toDateFieldValue(purchaseDate)} 12:00:00.000Z` : undefined,
+        arrival_date: arrivalDate ? `${toDateFieldValue(arrivalDate)} 12:00:00.000Z` : undefined,
         unit_price: numUnitPrice > 0 ? numUnitPrice : undefined,
         freight: numFreight > 0 ? numFreight : undefined,
       }

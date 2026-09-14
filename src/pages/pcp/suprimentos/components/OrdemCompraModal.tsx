@@ -29,6 +29,7 @@ import { Plus, Trash2, Loader2, Link2, Sparkles } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { MaterialShortage } from '@/types'
 import { findOtherOpDemands } from '@/services/material-consolidation'
+import { toDateFieldValue } from '@/lib/pcp-utils'
 
 export interface OCItemInput {
   description: string
@@ -158,7 +159,10 @@ export function OrdemCompraModal({
   const handleConfirm = async () => {
     setSaving(true)
     try {
-      await onConfirm(items, deliveryTerms, expectedDate, paymentTerms, deliveryType)
+      const cleanExpectedDate = expectedDate
+        ? `${toDateFieldValue(expectedDate)} 12:00:00.000Z`
+        : ''
+      await onConfirm(items, deliveryTerms, cleanExpectedDate, paymentTerms, deliveryType)
       onOpenChange(false)
     } catch {
       /* handled by parent */

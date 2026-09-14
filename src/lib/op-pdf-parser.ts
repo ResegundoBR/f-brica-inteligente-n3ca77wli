@@ -22,16 +22,100 @@ export interface ExtractedOpComponent {
 }
 
 /**
- * Extrai a medida de corte embutida na descrição de itens (especialmente tubos, barras e perfis).
+ * Verifica se a unidade informada é linear (medida em metros: M, MT, METRO, etc.).
+ * Itens medidos em PC, UN, PÇ, etc. NÃO são lineares.
+ */
+export function isLinearUnit(rawUnit?: string): boolean {
+  if (!rawUnit) return false
+  const clean = rawUnit.trim().toUpperCase()
+  return (
+    clean === 'M' ||
+    clean === 'MT' ||
+    clean === 'MTS' ||
+    clean === 'METRO' ||
+    clean === 'METROS' ||
+    clean === 'ML'
+  )
+}
+
+/**
+ * Verifica se o item deve ter extração/preenchimento automático de MEDIDA DE CORTE.
+ * Regra do gestor Reginaldo PCP:
+ * - Apenas itens lineares medidos em MT/M (TUBO, BARRA, PERFIL, CABO etc.).
+ * - Para itens com unidade PC ou UN, a medida de corte DEVE ficar VAZIA, NUNCA preenchida a partir
+ *   de dimensões da descrição (ex.: 'SOQUETE G9 Ø18X26MM' em PC tem X26MM como cota física, não corte).
+ * - Se a unidade não for fornecida (ou for ambígua), aceita se a descrição for explicitamente
+ *   de material linear longo (TUBO, BARRA, PERFIL, CABO, CANALETA, TRILHO, CANO) e NÃO for PC/UN.
+ */
+export function shouldExtractCutMeasurement(rawUnit?: string, description?: string): boolean {
+  if (rawUnit) {
+    const clean = rawUnit.trim().toUpperCase()
+    // Se a unidade for PC, UN, PÇ, CJ, PAR, etc., NUNCA extrair medida de corte
+    if (
+      clean === 'PC' ||
+      clean === 'UN' ||
+      clean === 'PÇ' ||
+      clean === 'PECA' ||
+      clean === 'PEÇA' ||
+      clean === 'PECAS' ||
+      clean === 'PEÇAS' ||
+      clean === 'UNIDADE' ||
+      clean === 'CJ' ||
+      clean === 'CONJUNTO' ||
+      clean === 'PAR' ||
+      clean === 'PARES' ||
+      clean === 'KIT' ||
+      clean === 'JOGO' ||
+      clean === 'JG' ||
+      clean === 'ROLO' ||
+      clean === 'RL' ||
+      clean === 'L' ||
+      clean === 'LT' ||
+      clean === 'KG'
+    ) {
+      return false
+    }
+
+    if (isLinearUnit(clean)) {
+      return true
+    }
+  }
+
+  // Se não foi informada a unidade ou veio vazia, verifica se a descrição é estritamente material linear
+  if (description) {
+    const desc = description.toUpperCase()
+    const isLinearMaterial = /\b(TUBO|BARRA|PERFIL|CABO|CANO|CANALETA|TRILHO|EIXO|FIO)\b/i.test(
+      desc,
+    )
+    // Se tiver indicador de peça física montada como soquete, parafuso, tampa, bucha, abraçadeira, etc., recusar
+    const isDiscretePiece =
+      /\b(SOQUETE|PARAFUSO|PORCA|ARRUELA|TAMPA|TAMP[AÃ]O|BUCHA|ABRA[CÇ]ADEIRA|TERMINAL|CONECTOR|PLUG|INTERRUPTOR|LAMPADA|L[AÂ]MPADA|FONTE|DRIVER)\b/i.test(
+        desc,
+      )
+    return isLinearMaterial && !isDiscretePiece
+  }
+
+  return false
+}
+
+/**
+ * Extrai a medida de corte embutida na descrição de itens lineares (especialmente tubos, barras, perfis e cabos).
  * Padrões suportados (Reginaldo PCP):
  * - 'XnnnMM' ou 'X nnnMM' (ex.: 'TUBO Ø22,23X100MM - UPPER P' -> '0,100M'; 'Ø22,23X500MM' -> '0,500M')
  * - Também aceita CM (ex.: 'X50CM' -> '0,500M') e M (ex.: 'X1,5M' ou 'X1.5M' -> '1,500M')
  * - Padrões com 'COMP:' / 'C=' / 'L=' / 'COMPRIMENTO' ou 'Xnnn MM'
+ *
+ * Parâmetro unit opcional: se fornecido e for PC/UN (não-linear), retorna vazio imediatamente.
  */
-export function extractCutMeasurementFromDescription(description?: string): string {
+export function extractCutMeasurementFromDescription(description?: string, unit?: string): string {
   if (!description) return ''
   const text = description.trim()
   if (!text) return ''
+
+  // Guard: se a unidade for fornecida e não for linear, NUNCA extrair medida
+  if (unit !== undefined && !shouldExtractCutMeasurement(unit, text)) {
+    return ''
+  }
 
   // 1. Padrão principal: X<num><unidade>
   // Ex: "X100MM", "X 100MM", "X500 MM", "X1000MM", "X50CM", "X1,5M", "X 1.5M", "X2M"
@@ -40,13 +124,13 @@ export function extractCutMeasurementFromDescription(description?: string): stri
   if (matchX) {
     const rawVal = matchX[1].replace(',', '.')
     const numVal = parseFloat(rawVal)
-    const unit = matchX[2].toUpperCase()
+    const matchedUnit = matchX[2].toUpperCase()
 
     if (!isNaN(numVal) && numVal > 0) {
       let meters = 0
-      if (unit === 'MM') {
+      if (matchedUnit === 'MM') {
         meters = numVal / 1000
-      } else if (unit === 'CM') {
+      } else if (matchedUnit === 'CM') {
         meters = numVal / 100
       } else {
         // M ou MT
@@ -65,12 +149,12 @@ export function extractCutMeasurementFromDescription(description?: string): stri
   if (matchComp) {
     const rawVal = matchComp[1].replace(',', '.')
     const numVal = parseFloat(rawVal)
-    const unit = matchComp[2].toUpperCase()
+    const matchedUnit = matchComp[2].toUpperCase()
 
     if (!isNaN(numVal) && numVal > 0) {
       let meters = 0
-      if (unit === 'MM') meters = numVal / 1000
-      else if (unit === 'CM') meters = numVal / 100
+      if (matchedUnit === 'MM') meters = numVal / 1000
+      else if (matchedUnit === 'CM') meters = numVal / 100
       else meters = numVal
       return meters.toFixed(3).replace('.', ',') + 'M'
     }
@@ -78,17 +162,17 @@ export function extractCutMeasurementFromDescription(description?: string): stri
 
   // 3. Padrão direto no final ou isolado: "\b(\d+)MM\b" quando a descrição é claramente tubo/barra/perfil
   // ex: "TUBO 22MM C/ 500MM" ou "PERFIL 1000MM"
-  const isTubularOrProfile = /TUBO|BARRA|PERFIL|CANO|EIXO|CANALETA/i.test(text)
+  const isTubularOrProfile = /TUBO|BARRA|PERFIL|CANO|EIXO|CANALETA|CABO/i.test(text)
   if (isTubularOrProfile) {
     const mmDirect = /(?:C\/\s*|COM\s*)(\d+(?:[.,]\d+)?)\s*(MM|CM|M|MT)\b/i.exec(text)
     if (mmDirect) {
       const rawVal = mmDirect[1].replace(',', '.')
       const numVal = parseFloat(rawVal)
-      const unit = mmDirect[2].toUpperCase()
+      const matchedUnit = mmDirect[2].toUpperCase()
       if (!isNaN(numVal) && numVal > 0) {
         let meters = 0
-        if (unit === 'MM') meters = numVal / 1000
-        else if (unit === 'CM') meters = numVal / 100
+        if (matchedUnit === 'MM') meters = numVal / 1000
+        else if (matchedUnit === 'CM') meters = numVal / 100
         else meters = numVal
         return meters.toFixed(3).replace('.', ',') + 'M'
       }
@@ -1344,7 +1428,10 @@ export function parseOpPdfDeterministic(
         .trim()
       const measurements = activeComp.measurementTokens.join(' ').replace(/\s+/g, ' ').trim()
       const resolvedDesc = rawDesc || activeComp.code
-      const extractedMedida = extractCutMeasurementFromDescription(resolvedDesc)
+      const extractedMedida = extractCutMeasurementFromDescription(
+        resolvedDesc,
+        activeComp.unit || 'UN',
+      )
       const finalMeasurements = measurements || extractedMedida || undefined
 
       const fullCandidateText = `${activeComp.code} ${rawDesc}`.trim()
@@ -1689,7 +1776,10 @@ export function parseOpPdfDeterministic(
       const desc = currentItem.descriptionLines.join(' ').replace(/\s+/g, ' ').trim()
       const measurements = currentItem.measurementLines.join(' ').replace(/\s+/g, ' ').trim()
       const resolvedDesc = desc || currentItem.code
-      const extractedMedida = extractCutMeasurementFromDescription(resolvedDesc)
+      const extractedMedida = extractCutMeasurementFromDescription(
+        resolvedDesc,
+        currentItem.unit || 'UN',
+      )
       const finalMeasurements = measurements || extractedMedida || undefined
 
       const fullCandidate = `${currentItem.code} ${desc}`.trim()
@@ -1893,7 +1983,7 @@ export function parseOpPdfDeterministic(
           }
 
           if (desc && (code || qty > 0)) {
-            const extractedMedida = extractCutMeasurementFromDescription(desc)
+            const extractedMedida = extractCutMeasurementFromDescription(desc, unit)
             components.push({
               id: `comp_${Date.now()}_${components.length}`,
               sector: currentSector,
@@ -1935,7 +2025,7 @@ export function parseOpPdfDeterministic(
           if (colQty > 0) {
             flushCurrentItem()
             const fullDesc = descTokens.join(' ').trim() || firstCol
-            const extractedMedida = extractCutMeasurementFromDescription(fullDesc)
+            const extractedMedida = extractCutMeasurementFromDescription(fullDesc, colUnit)
             components.push({
               id: `comp_${Date.now()}_${components.length}`,
               sector: currentSector,
@@ -2019,7 +2109,7 @@ export function parseOpPdfDeterministic(
         const qty = parseQuantity(fallbackMatch[3])
         if (desc.length > 2 && qty > 0) {
           flushCurrentItem()
-          const extractedMedida = extractCutMeasurementFromDescription(desc)
+          const extractedMedida = extractCutMeasurementFromDescription(desc, 'UN')
           components.push({
             id: `comp_${Date.now()}_${components.length}`,
             sector: currentSector,
@@ -2160,11 +2250,14 @@ export function comparePdfWithCatalog(
 
       const isSame = divergenceReasons.length === 0
       const descForMedida = pdfItem.description || match.description || ''
-      const autoMedida =
-        pdfItem.measurements ||
-        match.measurements ||
-        extractCutMeasurementFromDescription(descForMedida) ||
-        ''
+      const itemUnit = pdfItem.unit || 'UN'
+      const isLinear = isLinearUnit(itemUnit)
+      const rawAutoMedida = extractCutMeasurementFromDescription(descForMedida, itemUnit)
+      // Para itens lineares, aceita pdfItem.measurements, match.measurements ou extração
+      // Para itens em PC/UN, a medida automática NUNCA é preenchida a partir da descrição
+      const autoMedida = isLinear
+        ? pdfItem.measurements || match.measurements || rawAutoMedida || ''
+        : ''
 
       rows.push({
         id: `row_${pdfItem.id}`,
@@ -2172,7 +2265,7 @@ export function comparePdfWithCatalog(
         sector: pdfItem.sector,
         pdfItem: {
           ...pdfItem,
-          measurements: pdfItem.measurements || autoMedida || undefined,
+          measurements: isLinear ? pdfItem.measurements || autoMedida || undefined : undefined,
         },
         catalogItem: match,
         status: isSame ? 'same' : 'divergent',
@@ -2183,19 +2276,21 @@ export function comparePdfWithCatalog(
         resolvedCode: pdfItem.code || match.code,
         resolvedDescription: pdfItem.description || match.description,
         resolvedQuantity: pdfItem.quantity,
-        resolvedUnit: pdfItem.unit || 'UN',
+        resolvedUnit: itemUnit,
         resolvedMeasurements: autoMedida,
       })
     } else {
-      const autoMedida =
-        pdfItem.measurements || extractCutMeasurementFromDescription(pdfItem.description) || ''
+      const itemUnit = pdfItem.unit || 'UN'
+      const isLinear = isLinearUnit(itemUnit)
+      const rawAutoMedida = extractCutMeasurementFromDescription(pdfItem.description, itemUnit)
+      const autoMedida = isLinear ? pdfItem.measurements || rawAutoMedida || '' : ''
       rows.push({
         id: `row_${pdfItem.id}`,
         code: pdfItem.code,
         sector: pdfItem.sector,
         pdfItem: {
           ...pdfItem,
-          measurements: pdfItem.measurements || autoMedida || undefined,
+          measurements: isLinear ? pdfItem.measurements || autoMedida || undefined : undefined,
         },
         catalogItem: undefined,
         status: 'new',
@@ -2206,7 +2301,7 @@ export function comparePdfWithCatalog(
         resolvedCode: pdfItem.code,
         resolvedDescription: pdfItem.description,
         resolvedQuantity: pdfItem.quantity,
-        resolvedUnit: pdfItem.unit || 'UN',
+        resolvedUnit: itemUnit,
         resolvedMeasurements: autoMedida,
       })
     }
@@ -2216,8 +2311,9 @@ export function comparePdfWithCatalog(
     if (!catalogMatched.has(catItem.id)) {
       const catSector = normalizeSector(catItem.etapa || 'FABRICAÇÃO')
       const catQty = parseQuantity(catItem.quantity)
-      const autoMedida =
-        catItem.measurements || extractCutMeasurementFromDescription(catItem.description) || ''
+      // Como o item só está no catálogo e não veio do PDF da OP, usamos sua unidade ou inferência
+      const rawAutoMedida = extractCutMeasurementFromDescription(catItem.description)
+      const autoMedida = catItem.measurements || rawAutoMedida || ''
 
       rows.push({
         id: `row_cat_${catItem.id}`,

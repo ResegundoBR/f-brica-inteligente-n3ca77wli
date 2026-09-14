@@ -49,6 +49,7 @@ import {
   normalizeSector,
   comparePdfWithCatalog,
   extractCutMeasurementFromDescription,
+  isLinearUnit,
 } from '@/lib/op-pdf-parser'
 
 const SECTOR_COLORS: Record<PcpOrderMaterialSector, { bg: string; text: string; badge: string }> = {
@@ -112,6 +113,7 @@ export function OpPdfReviewModal({
   const [editableHeader, setEditableHeader] = useState<ExtractedOpHeader>(initialHeader)
   const [rowSectors, setRowSectors] = useState<Record<string, PcpOrderMaterialSector>>({})
   const [rowMeasurements, setRowMeasurements] = useState<Record<string, string>>({})
+  const [rowQuantities, setRowQuantities] = useState<Record<string, number>>({})
   const [activeSectorTab, setActiveSectorTab] = useState<string>('ALL')
   const [statusFilter, setStatusFilter] = useState<string>('ALL')
 
@@ -119,21 +121,32 @@ export function OpPdfReviewModal({
   useEffect(() => {
     const initSec: Record<string, PcpOrderMaterialSector> = {}
     const initMeas: Record<string, string> = {}
+    const initQty: Record<string, number> = {}
+
+    const opQtyVal = Number(initialHeader.quantity) > 0 ? Number(initialHeader.quantity) : 1
+
     initialRows.forEach((r) => {
       initSec[r.id] = normalizeSector(r.sector)
-      const autoMedida =
-        r.pdfItem?.measurements ||
-        (r.pdfItem?.description
-          ? extractCutMeasurementFromDescription(r.pdfItem.description)
-          : '') ||
-        r.resolvedMeasurements ||
-        ''
+      const isLinear = isLinearUnit(r.pdfItem?.unit || r.resolvedUnit)
+      const autoMedida = isLinear
+        ? r.pdfItem?.measurements ||
+          (r.pdfItem?.description
+            ? extractCutMeasurementFromDescription(r.pdfItem.description, r.pdfItem.unit)
+            : '') ||
+          r.resolvedMeasurements ||
+          ''
+        : ''
       initMeas[r.id] = autoMedida
+
+      const rawPdfQty = Number(r.pdfItem?.quantity ?? r.resolvedQuantity) || 1
+      const normalized = Math.round((rawPdfQty / opQtyVal) * 10000) / 10000
+      initQty[r.id] = normalized
     })
     setRowSectors(initSec)
     setRowMeasurements(initMeas)
+    setRowQuantities(initQty)
     setRows(initialRows)
-  }, [initialRows])
+  }, [initialRows, initialHeader.quantity])
 
   useEffect(() => {
     setEditableHeader(initialHeader)
@@ -240,6 +253,23 @@ export function OpPdfReviewModal({
     )
   }
 
+  // Handle Quantity Change for a row (normalized per piece)
+  const handleQuantityChange = (rowId: string, newQty: number) => {
+    const nextQty = { ...rowQuantities, [rowId]: newQty }
+    setRowQuantities(nextQty)
+
+    setRows((prev) =>
+      prev.map((r) =>
+        r.id === rowId
+          ? {
+              ...r,
+              resolvedQuantity: newQty,
+            }
+          : r,
+      ),
+    )
+  }
+
   const toggleApplyToOp = (id: string) => {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, applyToOp: !r.applyToOp } : r)))
   }
@@ -278,17 +308,21 @@ export function OpPdfReviewModal({
       .filter((r) => r.applyToOp)
       .map((r) => {
         const sectorVal = rowSectors[r.id] || r.resolvedSector || r.sector
-        const measVal =
-          rowMeasurements[r.id] !== undefined
+        const itemUnit = r.resolvedUnit || r.pdfItem?.unit || 'UN'
+        const isLinear = isLinearUnit(itemUnit)
+        const measVal = isLinear
+          ? rowMeasurements[r.id] !== undefined
             ? rowMeasurements[r.id]
             : r.resolvedMeasurements || r.pdfItem?.measurements || ''
+          : ''
+        const qtyVal = rowQuantities[r.id] !== undefined ? rowQuantities[r.id] : r.resolvedQuantity
 
         return {
           sector: sectorVal,
           code: r.resolvedCode || '',
           description: r.resolvedDescription,
-          quantity: r.resolvedQuantity,
-          unit: r.resolvedUnit || 'UN',
+          quantity: qtyVal,
+          unit: itemUnit,
           measurements: measVal,
         }
       })
@@ -303,10 +337,15 @@ export function OpPdfReviewModal({
 
       for (const row of itemsToUpdateCatalog) {
         const sectorVal = rowSectors[row.id] || row.resolvedSector || row.sector
-        const measVal =
-          rowMeasurements[row.id] !== undefined
+        const itemUnit = row.resolvedUnit || row.pdfItem?.unit || 'UN'
+        const isLinear = isLinearUnit(itemUnit)
+        const measVal = isLinear
+          ? rowMeasurements[row.id] !== undefined
             ? rowMeasurements[row.id]
             : row.resolvedMeasurements || row.pdfItem?.measurements || ''
+          : ''
+        const qtyVal =
+          rowQuantities[row.id] !== undefined ? rowQuantities[row.id] : row.resolvedQuantity
 
         if (row.status === 'divergent' && row.catalogItem) {
           const idx = updatedComp.findIndex((c) => c.id === row.catalogItem?.id)
@@ -315,9 +354,10 @@ export function OpPdfReviewModal({
               ...updatedComp[idx],
               code: row.resolvedCode,
               description: row.resolvedDescription,
-              quantity: row.resolvedQuantity,
+              quantity: qtyVal,
               etapa: sectorVal,
               measurements: measVal || updatedComp[idx].measurements || '',
+              unit: itemUnit,
             }
           }
         } else if (row.status === 'new') {
@@ -325,9 +365,10 @@ export function OpPdfReviewModal({
             id: `cat_new_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
             code: row.resolvedCode,
             description: row.resolvedDescription,
-            quantity: row.resolvedQuantity,
+            quantity: qtyVal,
             etapa: sectorVal,
             measurements: measVal,
+            unit: itemUnit,
             index: '',
             category_id: '',
           })
@@ -629,11 +670,12 @@ export function OpPdfReviewModal({
             <Table>
               <TableHeader>
                 <TableRow className="bg-slate-100/70 dark:bg-slate-800/70 text-xs font-bold">
-                  <TableHead className="w-[130px]">Etapa / Setor</TableHead>
-                  <TableHead className="w-[110px]">Status</TableHead>
-                  <TableHead className="w-[26%]">Item na OP (PDF ERP)</TableHead>
-                  <TableHead className="w-[130px]">Medida de Corte</TableHead>
-                  <TableHead className="w-[26%]">Item no Catálogo Técnico</TableHead>
+                  <TableHead className="w-[125px]">Etapa / Setor</TableHead>
+                  <TableHead className="w-[105px]">Status</TableHead>
+                  <TableHead className="w-[24%]">Item na OP (PDF ERP)</TableHead>
+                  <TableHead className="w-[105px]">Qtd / Peça</TableHead>
+                  <TableHead className="w-[125px]">Medida de Corte</TableHead>
+                  <TableHead className="w-[24%]">Item no Catálogo Técnico</TableHead>
                   <TableHead className="w-[90px] text-center">Incluir na OP</TableHead>
                   <TableHead className="w-[100px] text-center">Atualizar Catálogo</TableHead>
                 </TableRow>
@@ -642,7 +684,7 @@ export function OpPdfReviewModal({
                 {filteredRows.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={7}
+                      colSpan={8}
                       className="text-center py-8 text-muted-foreground text-sm"
                     >
                       Nenhum item com os filtros selecionados.
@@ -654,10 +696,20 @@ export function OpPdfReviewModal({
                       rowSectors[row.id] || normalizeSector(row.sector)
                     const sectorStyle = SECTOR_COLORS[currentSector] || SECTOR_COLORS.FABRICAÇÃO
                     const hasDivergence = row.status === 'divergent' || row.status === 'new'
-                    const currentMeasurement =
-                      rowMeasurements[row.id] !== undefined
+                    const opQty =
+                      Number(editableHeader.quantity) > 0 ? Number(editableHeader.quantity) : 1
+                    const pdfQtyNormalized = row.pdfItem
+                      ? Math.round((Number(row.pdfItem.quantity) / opQty) * 10000) / 10000
+                      : row.resolvedQuantity
+                    const currentQty =
+                      rowQuantities[row.id] !== undefined ? rowQuantities[row.id] : pdfQtyNormalized
+                    const itemUnit = row.resolvedUnit || row.pdfItem?.unit || 'UN'
+                    const isLinear = isLinearUnit(itemUnit)
+                    const currentMeasurement = isLinear
+                      ? rowMeasurements[row.id] !== undefined
                         ? rowMeasurements[row.id]
                         : row.resolvedMeasurements || row.pdfItem?.measurements || ''
+                      : ''
 
                     return (
                       <TableRow
@@ -730,7 +782,7 @@ export function OpPdfReviewModal({
                                   variant="secondary"
                                   className="text-[10px] px-1.5 py-0 font-bold"
                                 >
-                                  {row.pdfItem.quantity} {row.pdfItem.unit || 'UN'}
+                                  Total OP: {row.pdfItem.quantity} {row.pdfItem.unit || 'UN'}
                                 </Badge>
                               </div>
                               <p className="font-medium text-slate-900 dark:text-slate-100 text-xs">
@@ -744,22 +796,67 @@ export function OpPdfReviewModal({
                           )}
                         </TableCell>
 
-                        {/* Medida de Corte (Editável) */}
+                        {/* Quantidade por peça (Editável) */}
                         <TableCell className="border-l border-slate-200 dark:border-slate-800">
                           {row.pdfItem ? (
                             <div className="flex flex-col gap-1">
                               <Input
-                                value={currentMeasurement}
-                                onChange={(e) => handleMeasurementChange(row.id, e.target.value)}
-                                placeholder="Ex: 0,100M"
-                                className="h-7 text-xs font-mono w-[115px] bg-white dark:bg-slate-900"
+                                type="number"
+                                step="any"
+                                min="0"
+                                value={currentQty}
+                                onChange={(e) => {
+                                  const val = parseFloat(e.target.value)
+                                  handleQuantityChange(row.id, isNaN(val) ? 0 : Math.max(0, val))
+                                }}
+                                className="h-7 text-xs font-mono w-[85px] bg-white dark:bg-slate-900"
                               />
-                              {currentMeasurement && (
-                                <span className="text-[9px] text-muted-foreground font-mono">
-                                  Grava measurements
-                                </span>
-                              )}
+                              <span className="text-[9px] text-muted-foreground font-mono">
+                                {opQty > 1 ? `${row.pdfItem.quantity} ÷ ${opQty}` : 'p/ 1 peça'}
+                              </span>
                             </div>
+                          ) : (
+                            <span className="text-muted-foreground text-[10px]">—</span>
+                          )}
+                        </TableCell>
+
+                        {/* Medida de Corte (Editável SOMENTE para itens lineares) */}
+                        <TableCell className="border-l border-slate-200 dark:border-slate-800">
+                          {row.pdfItem ? (
+                            isLinear ? (
+                              <div className="flex flex-col gap-1">
+                                <Input
+                                  value={currentMeasurement}
+                                  onChange={(e) => handleMeasurementChange(row.id, e.target.value)}
+                                  placeholder="Ex: 0,100M"
+                                  className="h-7 text-xs font-mono w-[110px] bg-white dark:bg-slate-900"
+                                />
+                                {currentMeasurement ? (
+                                  <span className="text-[9px] text-muted-foreground font-mono">
+                                    Grava corte
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] text-amber-600 dark:text-amber-400 font-mono">
+                                    Item linear s/ corte
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1 text-muted-foreground">
+                                <Input
+                                  disabled
+                                  value="—"
+                                  className="h-7 text-xs font-mono w-[65px] bg-slate-100 dark:bg-slate-800 text-center cursor-not-allowed opacity-60"
+                                  title="Peça unitária (PC/UN) não possui medida de corte linear"
+                                />
+                                <span
+                                  className="text-[9px] text-muted-foreground"
+                                  title="Peça unitária"
+                                >
+                                  PC/UN
+                                </span>
+                              </div>
+                            )
                           ) : (
                             <span className="text-muted-foreground text-[10px]">
                               {row.catalogItem?.measurements || '—'}

@@ -66,6 +66,7 @@ import {
   parseQuantity,
   normalizeSector,
   extractCutMeasurementFromDescription,
+  isLinearUnit,
   type ExtractedOpComponent,
   type ComponentComparisonRow,
 } from '@/lib/op-pdf-parser'
@@ -113,6 +114,7 @@ export default function PcpVinculosPdf() {
   const [comparisonRows, setComparisonRows] = useState<ComponentComparisonRow[]>([])
   const [rowSectors, setRowSectors] = useState<Record<string, PcpOrderMaterialSector>>({})
   const [rowMeasurements, setRowMeasurements] = useState<Record<string, string>>({})
+  const [rowQuantities, setRowQuantities] = useState<Record<string, number>>({})
   const [fabricationApprovedIds, setFabricationApprovedIds] = useState<Set<string>>(new Set())
   const [isApplying, setIsApplying] = useState(false)
   const [confirmDialogData, setConfirmDialogData] = useState<{
@@ -367,20 +369,32 @@ export default function PcpVinculosPdf() {
 
     if (!selectedOpToLink) return
 
-    // Initialize sectors and measurements from materials / auto-extraction
+    // Initialize sectors, measurements and normalized quantities from materials / auto-extraction
     const initialSectors: Record<string, PcpOrderMaterialSector> = {}
     const initialMeasurements: Record<string, string> = {}
+    const initialQuantities: Record<string, number> = {}
+
+    const opQtyVal =
+      Number(selectedOpToLink.order.quantity) > 0 ? Number(selectedOpToLink.order.quantity) : 1
 
     selectedOpToLink.materials.forEach((m, idx) => {
       const rowId = `row_${m.id || `mat_${idx}`}`
       const rawSector = m.sector || 'FABRICAÇÃO'
       initialSectors[rowId] = normalizeSector(rawSector)
-      const autoMedida = m.measurements || extractCutMeasurementFromDescription(m.description) || ''
+      const isLinear = isLinearUnit(m.unit)
+      const autoMedida = isLinear
+        ? m.measurements || extractCutMeasurementFromDescription(m.description, m.unit) || ''
+        : ''
       initialMeasurements[rowId] = autoMedida
+
+      const rawPdfQty = Number(m.quantity) || 1
+      const normalized = Math.round((rawPdfQty / opQtyVal) * 10000) / 10000
+      initialQuantities[rowId] = normalized
     })
 
     setRowSectors(initialSectors)
     setRowMeasurements(initialMeasurements)
+    setRowQuantities(initialQuantities)
 
     const rows = runComparison(
       selectedOpToLink.materials,
@@ -421,6 +435,24 @@ export default function PcpVinculosPdf() {
             ...r,
             resolvedMeasurements: newMeas,
             pdfItem: r.pdfItem ? { ...r.pdfItem, measurements: newMeas } : undefined,
+          }
+        }
+        return r
+      }),
+    )
+  }
+
+  // Change quantity per piece for a row
+  const handleQuantityChange = (rowId: string, newQty: number) => {
+    const updatedQuantities = { ...rowQuantities, [rowId]: newQty }
+    setRowQuantities(updatedQuantities)
+
+    setComparisonRows((prev) =>
+      prev.map((r) => {
+        if (r.id === rowId) {
+          return {
+            ...r,
+            resolvedQuantity: newQty,
           }
         }
         return r
@@ -510,21 +542,28 @@ export default function PcpVinculosPdf() {
         if (catSector === 'FABRICAÇÃO' || currentSector === 'FABRICAÇÃO') {
           const isApproved = fabricationApprovedIds.has(matchingRow.id)
           if (isApproved && matchingRow.pdfItem) {
-            // Apply PDF item normalized by 1 piece with edited measurements and sector
-            const normalizedQty =
+            // Apply PDF item normalized by 1 piece with edited measurements, quantity and sector
+            const isLinear = isLinearUnit(matchingRow.pdfItem.unit)
+            const fallbackQty =
               Math.round((Number(matchingRow.pdfItem.quantity) / opQty) * 10000) / 10000
-            const activeMeasurements =
-              rowMeasurements[matchingRow.id] !== undefined
+            const activeQty =
+              rowQuantities[matchingRow.id] !== undefined
+                ? rowQuantities[matchingRow.id]
+                : fallbackQty
+            const activeMeasurements = isLinear
+              ? rowMeasurements[matchingRow.id] !== undefined
                 ? rowMeasurements[matchingRow.id]
                 : matchingRow.pdfItem.measurements || catItem.measurements || ''
+              : ''
 
             newComp.push({
               ...catItem,
               code: matchingRow.pdfItem.code || catItem.code,
               description: matchingRow.pdfItem.description || catItem.description,
-              quantity: normalizedQty,
+              quantity: activeQty,
               etapa: currentSector,
               measurements: activeMeasurements,
+              unit: matchingRow.pdfItem.unit,
               origem: originLabel,
               data_importacao: importDate,
             })
@@ -554,20 +593,25 @@ export default function PcpVinculosPdf() {
       if (!row.pdfItem) continue
       const currentSector = rowSectors[row.id] || row.sector
       const normSec = normalizeSector(currentSector)
-      const activeMeasurements =
-        rowMeasurements[row.id] !== undefined
+      const isLinear = isLinearUnit(row.pdfItem.unit)
+      const activeMeasurements = isLinear
+        ? rowMeasurements[row.id] !== undefined
           ? rowMeasurements[row.id]
           : row.pdfItem.measurements || ''
+        : ''
+
+      const fallbackQty = Math.round((Number(row.pdfItem.quantity) / opQty) * 10000) / 10000
+      const activeQty = rowQuantities[row.id] !== undefined ? rowQuantities[row.id] : fallbackQty
 
       if (normSec === 'PREPARAÇÃO' && emptyAcabamento) {
         // Auto import
-        const normalizedQty = Math.round((Number(row.pdfItem.quantity) / opQty) * 10000) / 10000
         newComp.push({
           id: `comp_pdf_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
           code: row.pdfItem.code || '',
           description: row.pdfItem.description,
-          quantity: normalizedQty,
+          quantity: activeQty,
           measurements: activeMeasurements,
+          unit: row.pdfItem.unit,
           etapa: 'PREPARAÇÃO',
           category_id: '',
           origem: originLabel,
@@ -578,13 +622,13 @@ export default function PcpVinculosPdf() {
         newCount++
       } else if (normSec === 'MONTAGEM' && emptyMontagem) {
         // Auto import
-        const normalizedQty = Math.round((Number(row.pdfItem.quantity) / opQty) * 10000) / 10000
         newComp.push({
           id: `comp_pdf_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
           code: row.pdfItem.code || '',
           description: row.pdfItem.description,
-          quantity: normalizedQty,
+          quantity: activeQty,
           measurements: activeMeasurements,
+          unit: row.pdfItem.unit,
           etapa: 'MONTAGEM',
           category_id: '',
           origem: originLabel,
@@ -595,13 +639,13 @@ export default function PcpVinculosPdf() {
         newCount++
       } else if (normSec === 'EXPEDIÇÃO' && emptyExpedicao) {
         // Auto import
-        const normalizedQty = Math.round((Number(row.pdfItem.quantity) / opQty) * 10000) / 10000
         newComp.push({
           id: `comp_pdf_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
           code: row.pdfItem.code || '',
           description: row.pdfItem.description,
-          quantity: normalizedQty,
+          quantity: activeQty,
           measurements: activeMeasurements,
+          unit: row.pdfItem.unit,
           etapa: 'EXPEDIÇÃO',
           category_id: '',
           origem: originLabel,
@@ -613,13 +657,13 @@ export default function PcpVinculosPdf() {
       } else if (normSec === 'FABRICAÇÃO' && row.status === 'new') {
         // Only if manager approved!
         if (fabricationApprovedIds.has(row.id)) {
-          const normalizedQty = Math.round((Number(row.pdfItem.quantity) / opQty) * 10000) / 10000
           newComp.push({
             id: `comp_pdf_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
             code: row.pdfItem.code || '',
             description: row.pdfItem.description,
-            quantity: normalizedQty,
+            quantity: activeQty,
             measurements: activeMeasurements,
+            unit: row.pdfItem.unit,
             etapa: 'FABRICAÇÃO',
             category_id: '',
             origem: originLabel,
@@ -1542,14 +1586,15 @@ export default function PcpVinculosPdf() {
                       <TableHeader className="bg-muted/60 text-xs sticky top-0 z-10 shadow-sm">
                         <TableRow>
                           <TableHead className="w-[45px] text-center">Aprovar</TableHead>
-                          <TableHead className="w-[140px]">Etapa / Setor</TableHead>
-                          <TableHead className="w-[100px]">Cód. Item</TableHead>
-                          <TableHead className="w-[28%]">
+                          <TableHead className="w-[130px]">Etapa / Setor</TableHead>
+                          <TableHead className="w-[95px]">Cód. Item</TableHead>
+                          <TableHead className="w-[24%]">
                             PDF da OP (Total OP: {opQty} un)
                           </TableHead>
-                          <TableHead className="w-[140px]">Medida de Corte</TableHead>
-                          <TableHead className="w-[28%]">Catálogo Técnico (1 Peça)</TableHead>
-                          <TableHead className="w-[130px] text-center">Classificação</TableHead>
+                          <TableHead className="w-[115px]">Qtd / Peça</TableHead>
+                          <TableHead className="w-[135px]">Medida de Corte</TableHead>
+                          <TableHead className="w-[24%]">Catálogo Técnico (1 Peça)</TableHead>
+                          <TableHead className="w-[125px] text-center">Classificação</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1580,10 +1625,17 @@ export default function PcpVinculosPdf() {
                               ? Math.round((Number(row.pdfItem.quantity) / opQty) * 10000) / 10000
                               : 0
 
-                            const currentMeasurement =
-                              rowMeasurements[row.id] !== undefined
+                            const isLinear = isLinearUnit(row.pdfItem?.unit)
+                            const currentQty =
+                              rowQuantities[row.id] !== undefined
+                                ? rowQuantities[row.id]
+                                : pdfQtyNormalized
+
+                            const currentMeasurement = isLinear
+                              ? rowMeasurements[row.id] !== undefined
                                 ? rowMeasurements[row.id]
                                 : row.pdfItem?.measurements || ''
+                              : ''
 
                             return (
                               <TableRow
@@ -1705,14 +1757,12 @@ export default function PcpVinculosPdf() {
                                             {row.pdfItem.quantity} {row.pdfItem.unit || 'UN'}
                                           </strong>
                                         </span>
-                                        {opQty > 1 && (
-                                          <>
-                                            <span>•</span>
-                                            <span className="text-purple-700 dark:text-purple-300 font-semibold bg-purple-50 dark:bg-purple-950 px-1 rounded">
-                                              ÷ {opQty} = <strong>{pdfQtyNormalized} / peça</strong>
-                                            </span>
-                                          </>
-                                        )}
+                                        <Badge
+                                          variant="outline"
+                                          className="text-[9px] py-0 px-1 font-semibold"
+                                        >
+                                          {row.pdfItem.unit || 'UN'}
+                                        </Badge>
                                       </div>
                                     </div>
                                   ) : (
@@ -1722,24 +1772,74 @@ export default function PcpVinculosPdf() {
                                   )}
                                 </TableCell>
 
-                                {/* MEDIDA DE CORTE (EDITÁVEL) */}
+                                {/* QUANTIDADE POR PEÇA (EDITÁVEL) */}
                                 <TableCell className="py-2.5">
                                   {row.pdfItem ? (
                                     <div className="flex flex-col gap-1">
                                       <Input
-                                        value={currentMeasurement}
-                                        onChange={(e) =>
-                                          handleMeasurementChange(row.id, e.target.value)
-                                        }
-                                        placeholder="Ex: 0,100M"
-                                        className="h-7 text-xs font-mono w-[120px] bg-white dark:bg-slate-900"
+                                        type="number"
+                                        step="any"
+                                        min="0"
+                                        value={currentQty}
+                                        onChange={(e) => {
+                                          const val = parseFloat(e.target.value)
+                                          handleQuantityChange(
+                                            row.id,
+                                            isNaN(val) ? 0 : Math.max(0, val),
+                                          )
+                                        }}
+                                        className="h-7 text-xs font-mono w-[85px] bg-white dark:bg-slate-900"
                                       />
-                                      {currentMeasurement && (
-                                        <span className="text-[9px] text-muted-foreground font-mono">
-                                          Grava measurements
-                                        </span>
-                                      )}
+                                      <span className="text-[9px] text-muted-foreground font-mono">
+                                        {opQty > 1
+                                          ? `${row.pdfItem.quantity} ÷ ${opQty}`
+                                          : 'p/ 1 peça'}
+                                      </span>
                                     </div>
+                                  ) : (
+                                    <span className="text-muted-foreground text-[10px]">—</span>
+                                  )}
+                                </TableCell>
+
+                                {/* MEDIDA DE CORTE (EDITÁVEL SOMENTE P/ ITENS LINEARES) */}
+                                <TableCell className="py-2.5">
+                                  {row.pdfItem ? (
+                                    isLinear ? (
+                                      <div className="flex flex-col gap-1">
+                                        <Input
+                                          value={currentMeasurement}
+                                          onChange={(e) =>
+                                            handleMeasurementChange(row.id, e.target.value)
+                                          }
+                                          placeholder="Ex: 0,100M"
+                                          className="h-7 text-xs font-mono w-[110px] bg-white dark:bg-slate-900"
+                                        />
+                                        {currentMeasurement ? (
+                                          <span className="text-[9px] text-muted-foreground font-mono">
+                                            Grava corte
+                                          </span>
+                                        ) : (
+                                          <span className="text-[9px] text-amber-600 dark:text-amber-400 font-mono">
+                                            Item linear s/ corte
+                                          </span>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center gap-1 text-muted-foreground">
+                                        <Input
+                                          disabled
+                                          value="—"
+                                          className="h-7 text-xs font-mono w-[70px] bg-slate-100 dark:bg-slate-800 text-center cursor-not-allowed opacity-60"
+                                          title="Peça unitária (PC/UN) não possui medida de corte linear"
+                                        />
+                                        <span
+                                          className="text-[9px] text-muted-foreground"
+                                          title="Peça unitária"
+                                        >
+                                          PC/UN
+                                        </span>
+                                      </div>
+                                    )
                                   ) : (
                                     <span className="text-muted-foreground text-[10px]">
                                       {row.catalogItem?.measurements || '—'}

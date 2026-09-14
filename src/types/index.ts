@@ -63,6 +63,8 @@ export interface CompositionItem {
   buy_or_make?: 'buy' | 'make'
   supplier_id?: string
   unit_cost?: number
+  origem?: string
+  data_importacao?: string
 }
 
 export interface ReviewPoint {

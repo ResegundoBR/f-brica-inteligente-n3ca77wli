@@ -482,11 +482,18 @@ export function TabComposition({
                             />
                           </TableCell>
                           <TableCell>
-                            <Input
-                              value={item.description}
-                              onChange={(e) => updateItem(item.id, 'description', e.target.value)}
-                              className="h-8 text-sm"
-                            />
+                            <div className="flex flex-col gap-1">
+                              <Input
+                                value={item.description}
+                                onChange={(e) => updateItem(item.id, 'description', e.target.value)}
+                                className="h-8 text-sm"
+                              />
+                              {item.origem && (
+                                <span className="text-[10px] text-purple-700 dark:text-purple-300 font-mono">
+                                  Origem: {item.origem}
+                                </span>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell>
                             <Input

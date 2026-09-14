@@ -11,12 +11,12 @@ import {
   ArrowRight,
   ExternalLink,
   RefreshCw,
-  Eye,
   Info,
-  Check,
   ChevronRight,
   Sparkles,
+  ShieldCheck,
 } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -103,11 +103,18 @@ export default function PcpVinculosPdf() {
   const [productSearch, setProductSearch] = useState('')
   const [comparisonStep, setComparisonStep] = useState<'select' | 'compare'>('select')
   const [comparisonRows, setComparisonRows] = useState<ComponentComparisonRow[]>([])
+  const [fabricationApprovedIds, setFabricationApprovedIds] = useState<Set<string>>(new Set())
   const [isApplying, setIsApplying] = useState(false)
   const [confirmDialogData, setConfirmDialogData] = useState<{
     op: PcpOrder
     product: Product
     newCompositionCount: number
+    newCount: number
+    divergentApprovedCount: number
+    keptCatalogCount: number
+    autoImportedCount: number
+    divergentPendingCount: number
+    itemsToSave: CompositionItem[]
   } | null>(null)
 
   // Load all necessary data (strict read-only load)
@@ -319,6 +326,7 @@ export default function PcpVinculosPdf() {
   // Choose product and calculate comparison
   const handleSelectProduct = (prod: Product) => {
     setChosenProduct(prod)
+    setFabricationApprovedIds(new Set())
 
     if (!selectedOpToLink) return
 
@@ -339,20 +347,226 @@ export default function PcpVinculosPdf() {
     setComparisonStep('compare')
   }
 
+  // Toggle approval checkbox for fabrication item
+  const toggleFabricationApproval = (rowId: string) => {
+    setFabricationApprovedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(rowId)) {
+        next.delete(rowId)
+      } else {
+        next.add(rowId)
+      }
+      return next
+    })
+  }
+
+  // Build the proposed composition and counts according to Reginaldo's exact rules
+  const buildProposedComposition = () => {
+    if (!selectedOpToLink || !chosenProduct) return null
+
+    const prod = chosenProduct
+    const op = selectedOpToLink.order
+    const opQty = Number(op.quantity) > 0 ? Number(op.quantity) : 1
+    const importDate = new Date().toISOString()
+    const opNumberLabel = op.op_number || op.order_number || ''
+    const originLabel = `PDF OP ${opNumberLabel} (${new Date().toLocaleDateString('pt-BR')})`
+
+    const existingComp: CompositionItem[] = Array.isArray(prod.data?.composition)
+      ? [...prod.data.composition]
+      : []
+
+    // Helper to check if a stage exists in catalog
+    const isStageEmptyInCatalog = (stage: string) => {
+      const normStage = (stage || '')
+        .toUpperCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+      return !existingComp.some((c) => {
+        const cEtapa = (c.etapa || '')
+          .toUpperCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+        const cDesc = (c.description || '').toLowerCase()
+        if (cDesc.includes('não tem composição') || cDesc.includes('nao tem composicao'))
+          return false
+        return (
+          cEtapa === normStage ||
+          (normStage === 'PREPARACAO' && (cEtapa.includes('PREPAR') || cEtapa.includes('ACABAM')))
+        )
+      })
+    }
+
+    const emptyAcabamento = isStageEmptyInCatalog('PREPARAÇÃO')
+    const emptyMontagem = isStageEmptyInCatalog('MONTAGEM')
+    const emptyExpedicao = isStageEmptyInCatalog('EXPEDIÇÃO')
+
+    // Clean existing catalog items (remove placeholder if any)
+    const baseCatalogItems = existingComp.filter((c) => {
+      const d = (c.description || '').toLowerCase()
+      return !d.includes('não tem composição') && !d.includes('nao tem composicao')
+    })
+
+    const newComp: CompositionItem[] = []
+    let newCount = 0
+    let divergentApprovedCount = 0
+    let divergentPendingCount = 0
+    let keptCatalogCount = 0
+    let autoImportedCount = 0
+
+    // 1. Process CATALOG items:
+    // "Só no Catálogo: JAMAIS removidos"
+    // "Divergentes: só altera com aprovação item a item via checkbox"
+    for (const catItem of baseCatalogItems) {
+      const catSector = normalizeSector(catItem.etapa || 'FABRICAÇÃO')
+      const matchingRow = comparisonRows.find((r) => r.catalogItem?.id === catItem.id)
+
+      if (!matchingRow || matchingRow.status === 'removed' || matchingRow.status === 'same') {
+        // Kept intact from catalog
+        newComp.push({ ...catItem })
+        keptCatalogCount++
+      } else if (matchingRow.status === 'divergent') {
+        if (catSector === 'FABRICAÇÃO') {
+          const isApproved = fabricationApprovedIds.has(matchingRow.id)
+          if (isApproved && matchingRow.pdfItem) {
+            // Apply PDF item normalized by 1 piece
+            const normalizedQty =
+              Math.round((Number(matchingRow.pdfItem.quantity) / opQty) * 10000) / 10000
+            newComp.push({
+              ...catItem,
+              code: matchingRow.pdfItem.code || catItem.code,
+              description: matchingRow.pdfItem.description || catItem.description,
+              quantity: normalizedQty,
+              etapa: 'FABRICAÇÃO',
+              measurements: matchingRow.pdfItem.measurements || catItem.measurements || '',
+              origem: originLabel,
+              data_importacao: importDate,
+            })
+            divergentApprovedCount++
+          } else {
+            // Not approved: keep catalog intact!
+            newComp.push({ ...catItem })
+            divergentPendingCount++
+            keptCatalogCount++
+          }
+        } else {
+          // If in other sectors and sector was NOT empty, keep catalog unless approved
+          newComp.push({ ...catItem })
+          keptCatalogCount++
+        }
+      } else {
+        newComp.push({ ...catItem })
+        keptCatalogCount++
+      }
+    }
+
+    // 2. Process PDF items:
+    // (1) ACABAMENTO, MONTAGEM e EXPEDIÇÃO: se o produto não tiver composição nesses setores,
+    // importar automaticamente os itens correspondentes do PDF (agrupados por etapa)
+    // (2) FABRICAÇÃO: novos no PDF entram SOMENTE se o gestor marcar
+    for (const row of comparisonRows) {
+      if (!row.pdfItem) continue
+      const normSec = normalizeSector(row.sector)
+
+      if (normSec === 'PREPARAÇÃO' && emptyAcabamento) {
+        // Auto import
+        const normalizedQty = Math.round((Number(row.pdfItem.quantity) / opQty) * 10000) / 10000
+        newComp.push({
+          id: `comp_pdf_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          code: row.pdfItem.code || '',
+          description: row.pdfItem.description,
+          quantity: normalizedQty,
+          measurements: row.pdfItem.measurements || '',
+          etapa: 'PREPARAÇÃO',
+          category_id: '',
+          origem: originLabel,
+          data_importacao: importDate,
+          index: String(newComp.length + 1),
+        })
+        autoImportedCount++
+        newCount++
+      } else if (normSec === 'MONTAGEM' && emptyMontagem) {
+        // Auto import
+        const normalizedQty = Math.round((Number(row.pdfItem.quantity) / opQty) * 10000) / 10000
+        newComp.push({
+          id: `comp_pdf_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          code: row.pdfItem.code || '',
+          description: row.pdfItem.description,
+          quantity: normalizedQty,
+          measurements: row.pdfItem.measurements || '',
+          etapa: 'MONTAGEM',
+          category_id: '',
+          origem: originLabel,
+          data_importacao: importDate,
+          index: String(newComp.length + 1),
+        })
+        autoImportedCount++
+        newCount++
+      } else if (normSec === 'EXPEDIÇÃO' && emptyExpedicao) {
+        // Auto import
+        const normalizedQty = Math.round((Number(row.pdfItem.quantity) / opQty) * 10000) / 10000
+        newComp.push({
+          id: `comp_pdf_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          code: row.pdfItem.code || '',
+          description: row.pdfItem.description,
+          quantity: normalizedQty,
+          measurements: row.pdfItem.measurements || '',
+          etapa: 'EXPEDIÇÃO',
+          category_id: '',
+          origem: originLabel,
+          data_importacao: importDate,
+          index: String(newComp.length + 1),
+        })
+        autoImportedCount++
+        newCount++
+      } else if (normSec === 'FABRICAÇÃO' && row.status === 'new') {
+        // Only if manager approved!
+        if (fabricationApprovedIds.has(row.id)) {
+          const normalizedQty = Math.round((Number(row.pdfItem.quantity) / opQty) * 10000) / 10000
+          newComp.push({
+            id: `comp_pdf_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            code: row.pdfItem.code || '',
+            description: row.pdfItem.description,
+            quantity: normalizedQty,
+            measurements: row.pdfItem.measurements || '',
+            etapa: 'FABRICAÇÃO',
+            category_id: '',
+            origem: originLabel,
+            data_importacao: importDate,
+            index: String(newComp.length + 1),
+          })
+          newCount++
+        }
+      }
+    }
+
+    return {
+      itemsToSave: newComp,
+      newCount,
+      divergentApprovedCount,
+      keptCatalogCount,
+      autoImportedCount,
+      divergentPendingCount,
+      opQty,
+    }
+  }
+
   // Open explicit confirmation before applying
   const handleRequestApply = () => {
     if (!selectedOpToLink || !chosenProduct) return
 
-    // Calculate how many items will be in the updated composition
-    const existingComp = chosenProduct.data?.composition || []
-    // Build combined new composition
-    // 1. Items from comparison that are from OP or preserved from catalog
-    // If user clicks "Aplicar composição da OP no produto", we merge OP items into product
-    const opMaterials = selectedOpToLink.materials
+    const summary = buildProposedComposition()
+    if (!summary) return
+
     setConfirmDialogData({
       op: selectedOpToLink.order,
       product: chosenProduct,
-      newCompositionCount: opMaterials.length > 0 ? opMaterials.length : existingComp.length,
+      newCompositionCount: summary.itemsToSave.length,
+      newCount: summary.newCount,
+      divergentApprovedCount: summary.divergentApprovedCount,
+      keptCatalogCount: summary.keptCatalogCount,
+      autoImportedCount: summary.autoImportedCount,
+      divergentPendingCount: summary.divergentPendingCount,
+      itemsToSave: summary.itemsToSave,
     })
   }
 
@@ -364,86 +578,25 @@ export default function PcpVinculosPdf() {
     try {
       const prod = chosenProduct
       const op = selectedOpToLink.order
-      const opMats = selectedOpToLink.materials
+      const finalComposition = confirmDialogData.itemsToSave
 
-      // 1. Build the updated composition array following the exact same structure used in PcpOrderForm.handleApplyPdfDecisions
-      const existingComp: CompositionItem[] = Array.isArray(prod.data?.composition)
-        ? [...prod.data.composition]
-        : []
-
-      const cleanCode = (c?: string) => (c || '').trim().replace(/^0+/, '').toLowerCase()
-      const cleanDesc = (d?: string) => (d || '').trim().toLowerCase()
-
-      const newComp: CompositionItem[] = [...existingComp]
-
-      // If existing catalog has placeholder "NÃO TEM COMPOSIÇÃO NO SISTEMA", remove it
-      const placeholderIdx = newComp.findIndex((c) => {
-        const d = (c.description || '').toLowerCase()
-        return d.includes('não tem composição') || d.includes('nao tem composicao')
-      })
-      if (placeholderIdx !== -1) {
-        newComp.splice(placeholderIdx, 1)
-      }
-
-      // Merge or add each material from the OP
-      for (const mat of opMats) {
-        const matCode = cleanCode(mat.code)
-        const matDesc = cleanDesc(mat.description)
-        const matSector = normalizeSector(mat.sector || 'FABRICAÇÃO')
-
-        const existingIdx = newComp.findIndex((c) => {
-          const cCode = cleanCode(c.code)
-          if (matCode && cCode && (matCode === cCode || mat.code.trim() === c.code.trim())) {
-            return true
-          }
-          if (matDesc && cleanDesc(c.description) === matDesc) {
-            return true
-          }
-          return false
-        })
-
-        if (existingIdx !== -1) {
-          // Update item in catalog
-          newComp[existingIdx] = {
-            ...newComp[existingIdx],
-            code: mat.code || newComp[existingIdx].code,
-            description: mat.description || newComp[existingIdx].description,
-            quantity: mat.quantity,
-            etapa: matSector,
-            measurements: mat.measurements || newComp[existingIdx].measurements || '',
-          }
-        } else {
-          // Add new component
-          newComp.push({
-            id: `comp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-            code: mat.code || '',
-            description: mat.description,
-            quantity: mat.quantity,
-            etapa: matSector,
-            measurements: mat.measurements || '',
-            index: String(newComp.length + 1),
-            category_id: '',
-          })
-        }
-      }
-
-      // 2. Persist to PocketBase: update product.data.composition
+      // 1. Persist to PocketBase: update product.data.composition
       await pb.collection('products').update(prod.id, {
         data: {
           ...prod.data,
-          composition: newComp,
+          composition: finalComposition,
         },
       })
 
-      // 3. Persist to PocketBase: update pcp_orders.product_id
+      // 2. Persist to PocketBase: update pcp_orders.product_id
       await pb.collection('pcp_orders').update(op.id, {
         product_id: prod.id,
         op_type: 'Linha',
       })
 
       toast({
-        title: 'Vínculo realizado com sucesso!',
-        description: `A OP ${op.op_number || op.order_number} foi vinculada ao produto "${prod.name}" e sua composição foi atualizada no catálogo (${newComp.length} itens).`,
+        title: 'Composição Aplicada com Sucesso!',
+        description: `OP ${op.op_number || op.order_number} vinculada a "${prod.name}". Composição salva com ${finalComposition.length} itens (Modo Híbrido Aditivo).`,
       })
 
       setConfirmDialogData(null)
@@ -451,8 +604,8 @@ export default function PcpVinculosPdf() {
       loadData()
     } catch (err: any) {
       toast({
-        title: 'Erro ao aplicar vínculo',
-        description: err.message || 'Ocorreu um erro ao gravar o vínculo e a composição.',
+        title: 'Erro ao aplicar composição',
+        description: err.message || 'Ocorreu um erro ao gravar a composição híbrida.',
         variant: 'destructive',
       })
     } finally {
@@ -1145,157 +1298,421 @@ export default function PcpVinculosPdf() {
             </div>
           )}
 
-          {/* PASSO 2: COMPARAÇÃO MATERIAIS DA OP VS COMPOSIÇÃO DO CATÁLOGO */}
-          {comparisonStep === 'compare' && chosenProduct && (
-            <div className="p-5 space-y-4 overflow-y-auto flex-1">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setComparisonStep('select')}
-                  className="text-xs h-8"
-                >
-                  ← Escolher outro produto
-                </Button>
+          {/* PASSO 2: COMPARAÇÃO MATERIAIS DA OP VS COMPOSIÇÃO DO CATÁLOGO (MODO HÍBRIDO E ADITIVO) */}
+          {comparisonStep === 'compare' &&
+            chosenProduct &&
+            (() => {
+              const opQty =
+                Number(selectedOpToLink?.order.quantity) > 0
+                  ? Number(selectedOpToLink?.order.quantity)
+                  : 1
+              const existingComp = chosenProduct.data?.composition || []
+              const isStageEmptyInCatalog = (stage: string) => {
+                const normStage = (stage || '')
+                  .toUpperCase()
+                  .normalize('NFD')
+                  .replace(/[\u0300-\u036f]/g, '')
+                return !existingComp.some((c) => {
+                  const cEtapa = (c.etapa || '')
+                    .toUpperCase()
+                    .normalize('NFD')
+                    .replace(/[\u0300-\u036f]/g, '')
+                  const cDesc = (c.description || '').toLowerCase()
+                  if (cDesc.includes('não tem composição') || cDesc.includes('nao tem composicao'))
+                    return false
+                  return (
+                    cEtapa === normStage ||
+                    (normStage === 'PREPARACAO' &&
+                      (cEtapa.includes('PREPAR') || cEtapa.includes('ACABAM')))
+                  )
+                })
+              }
+              const emptyAcabamento = isStageEmptyInCatalog('PREPARAÇÃO')
+              const emptyMontagem = isStageEmptyInCatalog('MONTAGEM')
+              const emptyExpedicao = isStageEmptyInCatalog('EXPEDIÇÃO')
 
-                <div className="flex items-center gap-2">
-                  <Badge
-                    variant="outline"
-                    className="bg-emerald-50 text-emerald-700 border-emerald-300 text-xs"
-                  >
-                    {comparisonRows.filter((r) => r.status === 'same').length} Iguais
-                  </Badge>
-                  <Badge
-                    variant="outline"
-                    className="bg-amber-50 text-amber-800 border-amber-300 text-xs"
-                  >
-                    {comparisonRows.filter((r) => r.status === 'divergent').length} Divergentes
-                  </Badge>
-                  <Badge
-                    variant="outline"
-                    className="bg-blue-50 text-blue-700 border-blue-300 text-xs"
-                  >
-                    {comparisonRows.filter((r) => r.status === 'new').length} Novos da OP
-                  </Badge>
-                  <Badge
-                    variant="outline"
-                    className="bg-slate-100 text-slate-700 border-slate-300 text-xs"
-                  >
-                    {comparisonRows.filter((r) => r.status === 'removed').length} Só no Catálogo
-                  </Badge>
-                </div>
-              </div>
+              const countSame = comparisonRows.filter((r) => r.status === 'same').length
+              const countDivergent = comparisonRows.filter((r) => r.status === 'divergent').length
+              const countNew = comparisonRows.filter((r) => r.status === 'new').length
+              const countRemoved = comparisonRows.filter((r) => r.status === 'removed').length
 
-              {/* TABELA DE COMPARAÇÃO */}
-              <div className="border rounded-lg overflow-hidden max-h-[380px] overflow-y-auto">
-                <Table>
-                  <TableHeader className="bg-muted/50 text-xs sticky top-0">
-                    <TableRow>
-                      <TableHead className="w-[100px]">Setor / Etapa</TableHead>
-                      <TableHead className="w-[120px]">Cód. Item</TableHead>
-                      <TableHead>Item na OP (Importado)</TableHead>
-                      <TableHead>Item no Catálogo Técnico</TableHead>
-                      <TableHead className="w-[110px] text-center">Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {comparisonRows.length === 0 ? (
-                      <TableRow>
-                        <TableCell
-                          colSpan={5}
-                          className="text-center py-8 text-muted-foreground text-xs"
-                        >
-                          Nenhum componente encontrado na OP nem no catálogo.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      comparisonRows.map((row) => (
-                        <TableRow key={row.id} className="text-xs hover:bg-muted/30">
-                          <TableCell className="font-semibold text-[11px]">{row.sector}</TableCell>
-                          <TableCell className="font-mono text-xs">{row.code || '—'}</TableCell>
-                          <TableCell>
-                            {row.pdfItem ? (
-                              <div className="flex flex-col gap-0.5">
-                                <span className="font-medium text-slate-900 dark:text-slate-100">
-                                  {row.pdfItem.description}
-                                </span>
-                                <span className="text-[10px] text-muted-foreground font-mono">
-                                  Qtd:{' '}
-                                  <strong>
-                                    {row.pdfItem.quantity} {row.pdfItem.unit || 'UN'}
-                                  </strong>
-                                  {row.pdfItem.measurements
-                                    ? ` • Medida: ${row.pdfItem.measurements}`
-                                    : ''}
-                                </span>
-                              </div>
-                            ) : (
-                              <span className="text-muted-foreground italic text-[11px]">
-                                — Ausente na OP —
-                              </span>
+              return (
+                <div className="p-5 space-y-4 overflow-y-auto flex-1">
+                  {/* REGRAS EXPLICATIVAS DO MODO HÍBRIDO E ADITIVO */}
+                  <div className="p-3.5 rounded-lg border border-purple-200 bg-purple-50/70 dark:bg-purple-950/30 text-xs text-purple-950 dark:text-purple-200 space-y-2">
+                    <div className="flex items-center gap-2 font-bold text-sm text-purple-900 dark:text-purple-100">
+                      <ShieldCheck className="size-4 text-purple-600" />
+                      <span>Modo Híbrido & Aditivo — Regras de Segurança PCP</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] leading-relaxed">
+                      <div className="p-2 rounded bg-white/60 dark:bg-slate-900/60 border border-purple-100 dark:border-purple-900">
+                        <strong>1. Acabamento, Montagem e Expedição:</strong>
+                        <p className="text-muted-foreground mt-0.5">
+                          Setores vazios no catálogo recebem automaticamente os itens
+                          correspondentes do PDF, normalizados por 1 peça (
+                          {opQty > 1 ? `divididos por ${opQty}` : 'já em 1 peça'}).
+                        </p>
+                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              'text-[10px]',
+                              emptyAcabamento
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                                : 'bg-slate-100 text-slate-600',
                             )}
-                          </TableCell>
-                          <TableCell>
-                            {row.catalogItem ? (
-                              <div className="flex flex-col gap-0.5">
-                                <span className="font-medium text-slate-900 dark:text-slate-100">
-                                  {row.catalogItem.description}
-                                </span>
-                                <span className="text-[10px] text-muted-foreground font-mono">
-                                  Qtd: <strong>{row.catalogItem.quantity}</strong>
-                                  {row.catalogItem.measurements
-                                    ? ` • Medida: ${row.catalogItem.measurements}`
-                                    : ''}
-                                </span>
-                              </div>
-                            ) : (
-                              <span className="text-amber-700 dark:text-amber-300 italic text-[11px] font-medium">
-                                + Novo (será adicionado ao catálogo)
-                              </span>
+                          >
+                            Acabamento:{' '}
+                            {emptyAcabamento ? 'Vazio (Importa Auto)' : 'Já possui itens'}
+                          </Badge>
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              'text-[10px]',
+                              emptyMontagem
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                                : 'bg-slate-100 text-slate-600',
                             )}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            {row.status === 'same' && (
-                              <Badge
-                                variant="outline"
-                                className="bg-emerald-50 text-emerald-700 border-emerald-300 text-[10px]"
-                              >
-                                Igual
-                              </Badge>
+                          >
+                            Montagem: {emptyMontagem ? 'Vazio (Importa Auto)' : 'Já possui itens'}
+                          </Badge>
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              'text-[10px]',
+                              emptyExpedicao
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                                : 'bg-slate-100 text-slate-600',
                             )}
-                            {row.status === 'divergent' && (
-                              <Badge
-                                variant="outline"
-                                className="bg-amber-100 text-amber-900 border-amber-300 text-[10px] font-bold"
-                              >
-                                Divergente
-                              </Badge>
-                            )}
-                            {row.status === 'new' && (
-                              <Badge
-                                variant="outline"
-                                className="bg-blue-100 text-blue-800 border-blue-300 text-[10px] font-bold"
-                              >
-                                Novo
-                              </Badge>
-                            )}
-                            {row.status === 'removed' && (
-                              <Badge
-                                variant="outline"
-                                className="bg-slate-100 text-slate-700 border-slate-300 text-[10px]"
-                              >
-                                Só Catálogo
-                              </Badge>
-                            )}
-                          </TableCell>
+                          >
+                            Expedição: {emptyExpedicao ? 'Vazio (Importa Auto)' : 'Já possui itens'}
+                          </Badge>
+                        </div>
+                      </div>
+                      <div className="p-2 rounded bg-white/60 dark:bg-slate-900/60 border border-purple-100 dark:border-purple-900">
+                        <strong>2. Fabricação (Nunca Sobrescreve):</strong>
+                        <p className="text-muted-foreground mt-0.5">
+                          Itens existentes no Catálogo <strong>JAMAIS são removidos</strong>. Itens
+                          'Divergentes' só alteram com aprovação via checkbox. Itens 'Novos' só
+                          entram se você marcar.
+                        </p>
+                        <div className="flex items-center gap-2 mt-1.5 text-[10px] text-purple-800 dark:text-purple-300 font-medium">
+                          <span>
+                            • Normalização ativa: <strong>{opQty} un. da OP → 1 peça</strong>
+                          </span>
+                          <span>• Rastreabilidade com data de importação</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setComparisonStep('select')}
+                      className="text-xs h-8"
+                    >
+                      ← Escolher outro produto
+                    </Button>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge
+                        variant="outline"
+                        className="bg-emerald-50 text-emerald-700 border-emerald-300 text-xs"
+                      >
+                        {countSame} Iguais (Nada a fazer)
+                      </Badge>
+                      <Badge
+                        variant="outline"
+                        className="bg-amber-50 text-amber-800 border-amber-300 text-xs font-semibold"
+                      >
+                        {countDivergent} Divergentes (Exige aprovação)
+                      </Badge>
+                      <Badge
+                        variant="outline"
+                        className="bg-blue-50 text-blue-700 border-blue-300 text-xs"
+                      >
+                        {countNew} Novos no PDF
+                      </Badge>
+                      <Badge
+                        variant="outline"
+                        className="bg-slate-100 text-slate-700 border-slate-300 text-xs"
+                      >
+                        {countRemoved} Só no Catálogo (Preservados)
+                      </Badge>
+                    </div>
+                  </div>
+
+                  {/* TABELA DE COMPARAÇÃO LADO A LADO POR ITEM */}
+                  <div className="border rounded-lg overflow-hidden max-h-[420px] overflow-y-auto">
+                    <Table>
+                      <TableHeader className="bg-muted/60 text-xs sticky top-0 z-10 shadow-sm">
+                        <TableRow>
+                          <TableHead className="w-[45px] text-center">Aprovar</TableHead>
+                          <TableHead className="w-[100px]">Setor / Etapa</TableHead>
+                          <TableHead className="w-[110px]">Cód. Item</TableHead>
+                          <TableHead className="w-[30%]">
+                            PDF da OP (Total OP: {opQty} un)
+                          </TableHead>
+                          <TableHead className="w-[30%]">Catálogo Técnico (1 Peça)</TableHead>
+                          <TableHead className="w-[130px] text-center">Classificação</TableHead>
                         </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-          )}
+                      </TableHeader>
+                      <TableBody>
+                        {comparisonRows.length === 0 ? (
+                          <TableRow>
+                            <TableCell
+                              colSpan={6}
+                              className="text-center py-8 text-muted-foreground text-xs"
+                            >
+                              Nenhum componente encontrado na OP nem no catálogo.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          comparisonRows.map((row) => {
+                            const normSec = normalizeSector(row.sector)
+                            const isFabricacao = normSec === 'FABRICAÇÃO'
+                            const isAutoImportSector =
+                              (normSec === 'PREPARAÇÃO' && emptyAcabamento) ||
+                              (normSec === 'MONTAGEM' && emptyMontagem) ||
+                              (normSec === 'EXPEDIÇÃO' && emptyExpedicao)
+
+                            const isChecked = fabricationApprovedIds.has(row.id)
+                            const showCheckbox =
+                              isFabricacao && (row.status === 'divergent' || row.status === 'new')
+
+                            const pdfQtyNormalized = row.pdfItem
+                              ? Math.round((Number(row.pdfItem.quantity) / opQty) * 10000) / 10000
+                              : 0
+
+                            return (
+                              <TableRow
+                                key={row.id}
+                                className={cn(
+                                  'text-xs transition-colors',
+                                  isChecked && 'bg-purple-50/50 dark:bg-purple-950/20',
+                                  row.status === 'divergent' &&
+                                    !isChecked &&
+                                    'bg-amber-50/30 dark:bg-amber-950/10',
+                                  row.status === 'removed' && 'bg-slate-50/40 dark:bg-slate-900/20',
+                                )}
+                              >
+                                {/* CHECKBOX DE APROVAÇÃO EXPLÍCITA */}
+                                <TableCell className="text-center py-2.5">
+                                  {showCheckbox ? (
+                                    <div className="flex items-center justify-center">
+                                      <Checkbox
+                                        id={`check-${row.id}`}
+                                        checked={isChecked}
+                                        onCheckedChange={() => toggleFabricationApproval(row.id)}
+                                        className="data-[state=checked]:bg-purple-600 data-[state=checked]:border-purple-600"
+                                        title={
+                                          row.status === 'divergent'
+                                            ? 'Marque para aprovar substituição dos dados do catálogo pelos do PDF'
+                                            : 'Marque para adicionar este componente novo na Fabricação'
+                                        }
+                                      />
+                                    </div>
+                                  ) : isAutoImportSector && row.pdfItem ? (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <div className="flex items-center justify-center">
+                                          <CheckCircle2 className="size-4 text-emerald-600" />
+                                        </div>
+                                      </TooltipTrigger>
+                                      <TooltipContent className="text-xs">
+                                        Importação automática: setor vazio no catálogo
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  ) : row.status === 'removed' ? (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <div className="flex items-center justify-center">
+                                          <ShieldCheck className="size-4 text-slate-500" />
+                                        </div>
+                                      </TooltipTrigger>
+                                      <TooltipContent className="text-xs">
+                                        Item preservado do catálogo (JAMAIS removido)
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  ) : (
+                                    <span className="text-muted-foreground text-[10px]">—</span>
+                                  )}
+                                </TableCell>
+
+                                {/* SETOR */}
+                                <TableCell className="font-semibold text-[11px] py-2.5">
+                                  <div className="flex flex-col">
+                                    <span>{row.sector}</span>
+                                    {isAutoImportSector && row.pdfItem && (
+                                      <span className="text-[9px] text-emerald-700 dark:text-emerald-400 font-normal">
+                                        Auto-importar
+                                      </span>
+                                    )}
+                                  </div>
+                                </TableCell>
+
+                                {/* CÓDIGO */}
+                                <TableCell className="font-mono text-xs py-2.5">
+                                  {row.code || '—'}
+                                </TableCell>
+
+                                {/* PDF ITEM */}
+                                <TableCell className="py-2.5">
+                                  {row.pdfItem ? (
+                                    <div className="flex flex-col gap-0.5">
+                                      <span className="font-medium text-slate-900 dark:text-slate-100">
+                                        {row.pdfItem.description}
+                                      </span>
+                                      <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-mono flex-wrap">
+                                        <span>
+                                          Total OP:{' '}
+                                          <strong>
+                                            {row.pdfItem.quantity} {row.pdfItem.unit || 'UN'}
+                                          </strong>
+                                        </span>
+                                        {opQty > 1 && (
+                                          <>
+                                            <span>•</span>
+                                            <span className="text-purple-700 dark:text-purple-300 font-semibold bg-purple-50 dark:bg-purple-950 px-1 rounded">
+                                              ÷ {opQty} = <strong>{pdfQtyNormalized} / peça</strong>
+                                            </span>
+                                          </>
+                                        )}
+                                        {row.pdfItem.measurements && (
+                                          <>
+                                            <span>•</span>
+                                            <span>Medida: {row.pdfItem.measurements}</span>
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <span className="text-muted-foreground italic text-[11px]">
+                                      — Não consta no PDF da OP —
+                                    </span>
+                                  )}
+                                </TableCell>
+
+                                {/* CATÁLOGO ITEM */}
+                                <TableCell className="py-2.5">
+                                  {row.catalogItem ? (
+                                    <div className="flex flex-col gap-0.5">
+                                      <span className="font-medium text-slate-900 dark:text-slate-100">
+                                        {row.catalogItem.description}
+                                      </span>
+                                      <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-mono flex-wrap">
+                                        <span>
+                                          Qtd: <strong>{row.catalogItem.quantity}</strong> (1 peça)
+                                        </span>
+                                        {row.catalogItem.measurements && (
+                                          <>
+                                            <span>•</span>
+                                            <span>Medida: {row.catalogItem.measurements}</span>
+                                          </>
+                                        )}
+                                        {row.catalogItem.origem && (
+                                          <Badge
+                                            variant="outline"
+                                            className="text-[9px] py-0 px-1 text-muted-foreground"
+                                          >
+                                            {row.catalogItem.origem}
+                                          </Badge>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <span className="text-blue-700 dark:text-blue-300 italic text-[11px] font-medium">
+                                      {isAutoImportSector
+                                        ? '+ Novo (será importado automaticamente p/ o setor)'
+                                        : isFabricacao
+                                          ? isChecked
+                                            ? '+ Novo (Aprovado pelo gestor)'
+                                            : '+ Novo no PDF (sugestão — marque para incluir)'
+                                          : '+ Novo no PDF'}
+                                    </span>
+                                  )}
+                                </TableCell>
+
+                                {/* CLASSIFICAÇÃO / STATUS */}
+                                <TableCell className="text-center py-2.5">
+                                  {row.status === 'same' && (
+                                    <Badge
+                                      variant="outline"
+                                      className="bg-emerald-50 text-emerald-700 border-emerald-300 text-[10px]"
+                                    >
+                                      Iguais
+                                    </Badge>
+                                  )}
+                                  {row.status === 'divergent' && (
+                                    <div className="flex flex-col items-center gap-1">
+                                      <Badge
+                                        variant="outline"
+                                        className="bg-amber-100 text-amber-900 border-amber-300 text-[10px] font-bold"
+                                      >
+                                        Divergente
+                                      </Badge>
+                                      {isFabricacao && (
+                                        <span
+                                          className={cn(
+                                            'text-[9px] font-medium',
+                                            isChecked
+                                              ? 'text-purple-700 font-bold'
+                                              : 'text-amber-800',
+                                          )}
+                                        >
+                                          {isChecked ? 'Alterar aprovado' : 'Mantém catálogo'}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+                                  {row.status === 'new' && (
+                                    <div className="flex flex-col items-center gap-1">
+                                      <Badge
+                                        variant="outline"
+                                        className="bg-blue-100 text-blue-800 border-blue-300 text-[10px] font-bold"
+                                      >
+                                        Novos no PDF
+                                      </Badge>
+                                      {isFabricacao && (
+                                        <span
+                                          className={cn(
+                                            'text-[9px] font-medium',
+                                            isChecked
+                                              ? 'text-purple-700 font-bold'
+                                              : 'text-slate-500',
+                                          )}
+                                        >
+                                          {isChecked ? 'Incluir aprovado' : 'Sugestão (desmarcado)'}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+                                  {row.status === 'removed' && (
+                                    <div className="flex flex-col items-center gap-0.5">
+                                      <Badge
+                                        variant="outline"
+                                        className="bg-slate-100 text-slate-800 border-slate-300 text-[10px] font-semibold"
+                                      >
+                                        Só no Catálogo
+                                      </Badge>
+                                      <span className="text-[9px] text-emerald-700 dark:text-emerald-400 font-bold">
+                                        JAMAIS removido
+                                      </span>
+                                    </div>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            )
+                          })
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )
+            })()}
 
           <DialogFooter className="p-4 border-t bg-slate-50/60 dark:bg-slate-900/60 flex flex-col sm:flex-row items-center justify-between gap-3">
             <Button
@@ -1342,43 +1759,77 @@ export default function PcpVinculosPdf() {
           if (!open) setConfirmDialogData(null)
         }}
       >
-        <AlertDialogContent>
+        <AlertDialogContent className="max-w-xl">
           <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2 text-slate-900 dark:text-slate-100">
+            <AlertDialogTitle className="flex items-center gap-2 text-slate-900 dark:text-slate-100 text-base md:text-lg">
               <AlertTriangle className="size-5 text-amber-500" />
               Confirmar gravação da composição no Catálogo?
             </AlertDialogTitle>
-            <AlertDialogDescription className="text-xs space-y-2 pt-2 text-slate-700 dark:text-slate-300">
-              <p>
-                Você está prestes a atualizar o produto{' '}
-                <strong>{confirmDialogData?.product.name}</strong> (código{' '}
-                <strong>{confirmDialogData?.product.code || 'S/ Cód'}</strong>) com os componentes
-                extraídos da{' '}
-                <strong>
-                  OP {confirmDialogData?.op.op_number || confirmDialogData?.op.order_number}
-                </strong>
-                .
-              </p>
-              <div className="p-3 bg-muted rounded-lg border text-[11px] font-mono space-y-1">
-                <div>
-                  • Total de componentes a registrar:{' '}
-                  <strong>{confirmDialogData?.newCompositionCount}</strong>
+            <AlertDialogDescription asChild>
+              <div className="text-xs space-y-3 pt-2 text-slate-700 dark:text-slate-300">
+                <p>
+                  Você está prestes a atualizar o produto{' '}
+                  <strong className="text-slate-900 dark:text-slate-100">
+                    {confirmDialogData?.product.name}
+                  </strong>{' '}
+                  (código <strong>{confirmDialogData?.product.code || 'S/ Cód'}</strong>) com base
+                  na{' '}
+                  <strong className="text-slate-900 dark:text-slate-100">
+                    OP {confirmDialogData?.op.op_number || confirmDialogData?.op.order_number}
+                  </strong>{' '}
+                  ({confirmDialogData?.op.quantity} un.).
+                </p>
+
+                {/* RESUMO VERBATIM SOLICITADO PELO GESTOR REGINALDO */}
+                <div className="p-3 bg-purple-50 dark:bg-purple-950/40 rounded-lg border border-purple-200 dark:border-purple-900 text-xs text-purple-950 dark:text-purple-200 space-y-2">
+                  <div className="font-bold flex items-center gap-1.5 text-purple-900 dark:text-purple-100 text-sm">
+                    <ShieldCheck className="size-4 text-purple-600" />
+                    <span>Resumo da Operação Híbrida & Aditiva:</span>
+                  </div>
+                  <div className="font-semibold text-slate-900 dark:text-slate-100 text-xs bg-white/70 dark:bg-slate-900/70 p-2.5 rounded border border-purple-100 dark:border-purple-900 space-y-1">
+                    <div className="text-purple-700 dark:text-purple-300 font-bold text-sm">
+                      "{confirmDialogData?.newCount} itens novos,{' '}
+                      {confirmDialogData?.divergentApprovedCount} divergentes a aprovar,{' '}
+                      {confirmDialogData?.keptCatalogCount} mantidos do catálogo"
+                    </div>
+                    {confirmDialogData && confirmDialogData.divergentPendingCount > 0 && (
+                      <div className="text-[11px] text-amber-700 dark:text-amber-300 font-normal">
+                        ({confirmDialogData.divergentPendingCount} item(ns) divergente(s) não
+                        marcado(s) permanecerão com os dados originais do catálogo)
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="text-[11px] font-mono space-y-1 text-slate-700 dark:text-slate-300 pt-1">
+                    <div>
+                      • Total final na composição:{' '}
+                      <strong>
+                        {confirmDialogData?.newCompositionCount} componente(s) por 1 peça
+                      </strong>
+                    </div>
+                    <div>
+                      • Normalização: quantidades da OP divididas por{' '}
+                      <strong>{confirmDialogData?.op.quantity || 1}</strong>
+                    </div>
+                    <div>
+                      • Rastreabilidade: itens importados marcados com data de importação (
+                      {new Date().toLocaleDateString('pt-BR')})
+                    </div>
+                    <div>
+                      • Vínculo na OP: <strong>pcp_orders.product_id</strong> = "
+                      {confirmDialogData?.product.id}"
+                    </div>
+                    <div>
+                      • Modo de operação: <strong>Estritamente aditivo</strong> (nenhum dado de
+                      catálogo é apagado)
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  • Campo atualizado: <strong>products.data.composition</strong>
-                </div>
-                <div>
-                  • Vínculo na OP: <strong>pcp_orders.product_id</strong> = "
-                  {confirmDialogData?.product.id}"
-                </div>
-                <div>
-                  • Modo de operação: <strong>Estritamente aditivo</strong> (nenhuma outra OP nem
-                  histórico é apagado)
-                </div>
+
+                <p className="font-semibold text-slate-900 dark:text-slate-100">
+                  Deseja prosseguir e aplicar esta composição de 1 peça no catálogo agora?
+                </p>
               </div>
-              <p className="font-semibold text-slate-900 dark:text-slate-100">
-                Deseja prosseguir e salvar esta composição no catálogo agora?
-              </p>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

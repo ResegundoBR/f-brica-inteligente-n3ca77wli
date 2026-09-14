@@ -58,6 +58,7 @@ export interface CompositionItem {
   description: string
   quantity: number | string
   measurements: string
+  unit?: string
   etapa?: string
   category_id?: string
   buy_or_make?: 'buy' | 'make'

@@ -347,6 +347,13 @@ export default function PcpOrders() {
             >
               <span>📅</span> Programação
             </TabsTrigger>
+            <TabsTrigger
+              value="vinculos"
+              className="gap-2 text-sm font-semibold text-purple-700 dark:text-purple-300"
+              onClick={() => window.location.assign('/pcp/vinculos-pdf')}
+            >
+              <span>🔗</span> Vínculos de PDF
+            </TabsTrigger>
           </TabsList>
         </div>
 

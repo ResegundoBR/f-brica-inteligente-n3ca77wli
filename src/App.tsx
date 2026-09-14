@@ -16,6 +16,7 @@ import PcpKanban from './pages/pcp/PcpKanban'
 import PcpDashboard from './pages/pcp/PcpDashboard'
 import PcpOrders from './pages/pcp/PcpOrders'
 import PcpProgramacao from './pages/pcp/PcpProgramacao'
+import PcpVinculosPdf from './pages/pcp/PcpVinculosPdf'
 import { PcpInbox } from './pages/pcp/PcpInbox'
 import SolicitacoesPage from './pages/pcp/suprimentos/SolicitacoesPage'
 import CotacoesPage from './pages/pcp/suprimentos/CotacoesPage'
@@ -178,6 +179,14 @@ const App = () => (
                 element={
                   <RoleGuard module="ordens_producao">
                     <PcpProgramacao />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/pcp/vinculos-pdf"
+                element={
+                  <RoleGuard module="pcp">
+                    <PcpVinculosPdf />
                   </RoleGuard>
                 }
               />

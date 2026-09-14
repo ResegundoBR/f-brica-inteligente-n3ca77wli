@@ -50,6 +50,7 @@ import {
 import { PcpFilters } from './components/PcpFilters'
 import { CompiledMaterialsView } from './components/CompiledMaterialsView'
 import { compileOrderMaterials } from '@/services/pcp-programacao'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 interface PcpProgramacaoProps {
   embeddedInOrdersTab?: boolean
@@ -476,6 +477,38 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
 
   return (
     <div className="flex flex-col gap-6 p-4 md:p-6 max-w-[1600px] mx-auto w-full">
+      {/* NAVEGAÇÃO ENTRE ABAS DO PCP SE NÃO EMBARCADO */}
+      {!embeddedInOrdersTab && (
+        <div className="flex items-center justify-between border-b pb-2">
+          <Tabs
+            value="programacao"
+            className="w-auto"
+            onValueChange={(val) => {
+              if (val === 'ordens') window.location.assign('/pcp/ordens')
+              if (val === 'vinculos') window.location.assign('/pcp/vinculos-pdf')
+            }}
+          >
+            <TabsList className="bg-slate-100 dark:bg-slate-800 p-1">
+              <TabsTrigger value="ordens" className="gap-2 text-sm font-semibold">
+                <span>📋</span> Ordens de Produção
+              </TabsTrigger>
+              <TabsTrigger
+                value="programacao"
+                className="gap-2 text-sm font-semibold text-blue-700 dark:text-blue-300"
+              >
+                <span>📅</span> Programação
+              </TabsTrigger>
+              <TabsTrigger
+                value="vinculos"
+                className="gap-2 text-sm font-semibold text-purple-700 dark:text-purple-300"
+              >
+                <span>🔗</span> Vínculos de PDF
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
+      )}
+
       {/* CABEÇALHO DA ABA PROGRAMAÇÃO */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-4">
         <div>

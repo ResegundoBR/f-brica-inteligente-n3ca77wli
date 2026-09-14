@@ -34,11 +34,21 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Product, PcpOrderMaterialSector } from '@/types'
-import type {
-  ExtractedOpHeader,
-  ExtractedOpComponent,
-  ComponentComparisonRow,
-  ComparisonStatus,
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  type ExtractedOpHeader,
+  type ExtractedOpComponent,
+  type ComponentComparisonRow,
+  type ComparisonStatus,
+  normalizeSector,
+  comparePdfWithCatalog,
+  extractCutMeasurementFromDescription,
 } from '@/lib/op-pdf-parser'
 
 const SECTOR_COLORS: Record<PcpOrderMaterialSector, { bg: string; text: string; badge: string }> = {
@@ -100,11 +110,28 @@ export function OpPdfReviewModal({
 }: OpPdfReviewModalProps) {
   const [rows, setRows] = useState<ComponentComparisonRow[]>(initialRows)
   const [editableHeader, setEditableHeader] = useState<ExtractedOpHeader>(initialHeader)
+  const [rowSectors, setRowSectors] = useState<Record<string, PcpOrderMaterialSector>>({})
+  const [rowMeasurements, setRowMeasurements] = useState<Record<string, string>>({})
   const [activeSectorTab, setActiveSectorTab] = useState<string>('ALL')
   const [statusFilter, setStatusFilter] = useState<string>('ALL')
 
-  // Keep state updated if props change
+  // Initialize sector & cut measurement overrides from initial rows and deterministic extraction
   useEffect(() => {
+    const initSec: Record<string, PcpOrderMaterialSector> = {}
+    const initMeas: Record<string, string> = {}
+    initialRows.forEach((r) => {
+      initSec[r.id] = normalizeSector(r.sector)
+      const autoMedida =
+        r.pdfItem?.measurements ||
+        (r.pdfItem?.description
+          ? extractCutMeasurementFromDescription(r.pdfItem.description)
+          : '') ||
+        r.resolvedMeasurements ||
+        ''
+      initMeas[r.id] = autoMedida
+    })
+    setRowSectors(initSec)
+    setRowMeasurements(initMeas)
     setRows(initialRows)
   }, [initialRows])
 
@@ -128,6 +155,90 @@ export function OpPdfReviewModal({
       return true
     })
   }, [rows, activeSectorTab, statusFilter])
+
+  // Recalculate comparison when sector or measurement changes
+  const runComparison = (
+    currentRows: ComponentComparisonRow[],
+    prod: Product | undefined | null,
+    sectorsMap: Record<string, PcpOrderMaterialSector>,
+    measMap: Record<string, string>,
+  ) => {
+    if (!prod) return currentRows
+
+    // Reconstruct ExtractedOpComponent list with current sector and measurement overrides
+    const pdfComponents: ExtractedOpComponent[] = currentRows
+      .filter((r) => r.pdfItem)
+      .map((r, idx) => {
+        const chosenSector = sectorsMap[r.id] || normalizeSector(r.sector)
+        const chosenMeas =
+          measMap[r.id] !== undefined
+            ? measMap[r.id]
+            : r.pdfItem?.measurements || r.resolvedMeasurements || ''
+
+        return {
+          id: r.pdfItem?.id || `pdf_${idx}`,
+          sector: chosenSector,
+          code: r.pdfItem?.code || '',
+          description: r.pdfItem?.description || '',
+          quantity: r.pdfItem?.quantity || 1,
+          unit: r.pdfItem?.unit || 'UN',
+          measurements: chosenMeas,
+        }
+      })
+
+    const freshRows = comparePdfWithCatalog(pdfComponents, prod)
+    // Preserve existing applyToOp and updateCatalog decisions where possible
+    return freshRows.map((fr) => {
+      const prev = currentRows.find((cr) => cr.id === fr.id)
+      return {
+        ...fr,
+        applyToOp: prev ? prev.applyToOp : fr.status !== 'removed',
+        updateCatalog: prev ? prev.updateCatalog : false,
+      }
+    })
+  }
+
+  // Handle Sector Change for a row
+  const handleSectorChange = (rowId: string, newSector: PcpOrderMaterialSector) => {
+    const nextSectors = { ...rowSectors, [rowId]: newSector }
+    setRowSectors(nextSectors)
+
+    if (selectedProduct) {
+      const recalculated = runComparison(rows, selectedProduct, nextSectors, rowMeasurements)
+      setRows(recalculated)
+    } else {
+      setRows((prev) =>
+        prev.map((r) =>
+          r.id === rowId
+            ? {
+                ...r,
+                sector: newSector,
+                resolvedSector: newSector,
+                pdfItem: r.pdfItem ? { ...r.pdfItem, sector: newSector } : undefined,
+              }
+            : r,
+        ),
+      )
+    }
+  }
+
+  // Handle Cut Measurement Change for a row
+  const handleMeasurementChange = (rowId: string, newMeas: string) => {
+    const nextMeas = { ...rowMeasurements, [rowId]: newMeas }
+    setRowMeasurements(nextMeas)
+
+    setRows((prev) =>
+      prev.map((r) =>
+        r.id === rowId
+          ? {
+              ...r,
+              resolvedMeasurements: newMeas,
+              pdfItem: r.pdfItem ? { ...r.pdfItem, measurements: newMeas } : undefined,
+            }
+          : r,
+      ),
+    )
+  }
 
   const toggleApplyToOp = (id: string) => {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, applyToOp: !r.applyToOp } : r)))
@@ -165,14 +276,22 @@ export function OpPdfReviewModal({
     // 1. Gather materials to be inserted into pcp_order_materials for this OP
     const materialsForOp = rows
       .filter((r) => r.applyToOp)
-      .map((r) => ({
-        sector: r.resolvedSector,
-        code: r.resolvedCode || '',
-        description: r.resolvedDescription,
-        quantity: r.resolvedQuantity,
-        unit: r.resolvedUnit || 'UN',
-        measurements: r.resolvedMeasurements || '',
-      }))
+      .map((r) => {
+        const sectorVal = rowSectors[r.id] || r.resolvedSector || r.sector
+        const measVal =
+          rowMeasurements[r.id] !== undefined
+            ? rowMeasurements[r.id]
+            : r.resolvedMeasurements || r.pdfItem?.measurements || ''
+
+        return {
+          sector: sectorVal,
+          code: r.resolvedCode || '',
+          description: r.resolvedDescription,
+          quantity: r.resolvedQuantity,
+          unit: r.resolvedUnit || 'UN',
+          measurements: measVal,
+        }
+      })
 
     // 2. Build updated catalog composition if user chose to update any item
     let catalogUpdates: { productId: string; newComposition: any[] } | undefined
@@ -183,6 +302,12 @@ export function OpPdfReviewModal({
       const updatedComp = [...existingComp]
 
       for (const row of itemsToUpdateCatalog) {
+        const sectorVal = rowSectors[row.id] || row.resolvedSector || row.sector
+        const measVal =
+          rowMeasurements[row.id] !== undefined
+            ? rowMeasurements[row.id]
+            : row.resolvedMeasurements || row.pdfItem?.measurements || ''
+
         if (row.status === 'divergent' && row.catalogItem) {
           const idx = updatedComp.findIndex((c) => c.id === row.catalogItem?.id)
           if (idx !== -1) {
@@ -191,8 +316,8 @@ export function OpPdfReviewModal({
               code: row.resolvedCode,
               description: row.resolvedDescription,
               quantity: row.resolvedQuantity,
-              etapa: row.resolvedSector,
-              measurements: row.resolvedMeasurements || updatedComp[idx].measurements || '',
+              etapa: sectorVal,
+              measurements: measVal || updatedComp[idx].measurements || '',
             }
           }
         } else if (row.status === 'new') {
@@ -201,8 +326,8 @@ export function OpPdfReviewModal({
             code: row.resolvedCode,
             description: row.resolvedDescription,
             quantity: row.resolvedQuantity,
-            etapa: row.resolvedSector,
-            measurements: row.resolvedMeasurements || '',
+            etapa: sectorVal,
+            measurements: measVal,
             index: '',
             category_id: '',
           })
@@ -504,19 +629,20 @@ export function OpPdfReviewModal({
             <Table>
               <TableHeader>
                 <TableRow className="bg-slate-100/70 dark:bg-slate-800/70 text-xs font-bold">
-                  <TableHead className="w-[120px]">Setor</TableHead>
+                  <TableHead className="w-[130px]">Etapa / Setor</TableHead>
                   <TableHead className="w-[110px]">Status</TableHead>
-                  <TableHead className="w-[30%]">Item na OP (PDF ERP)</TableHead>
-                  <TableHead className="w-[30%]">Item no Catálogo Técnico</TableHead>
-                  <TableHead className="w-[100px] text-center">Incluir na OP</TableHead>
-                  <TableHead className="w-[110px] text-center">Atualizar Catálogo</TableHead>
+                  <TableHead className="w-[26%]">Item na OP (PDF ERP)</TableHead>
+                  <TableHead className="w-[130px]">Medida de Corte</TableHead>
+                  <TableHead className="w-[26%]">Item no Catálogo Técnico</TableHead>
+                  <TableHead className="w-[90px] text-center">Incluir na OP</TableHead>
+                  <TableHead className="w-[100px] text-center">Atualizar Catálogo</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredRows.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={6}
+                      colSpan={7}
                       className="text-center py-8 text-muted-foreground text-sm"
                     >
                       Nenhum item com os filtros selecionados.
@@ -524,8 +650,14 @@ export function OpPdfReviewModal({
                   </TableRow>
                 ) : (
                   filteredRows.map((row) => {
-                    const sectorStyle = SECTOR_COLORS[row.sector] || SECTOR_COLORS.FABRICAÇÃO
+                    const currentSector: PcpOrderMaterialSector =
+                      rowSectors[row.id] || normalizeSector(row.sector)
+                    const sectorStyle = SECTOR_COLORS[currentSector] || SECTOR_COLORS.FABRICAÇÃO
                     const hasDivergence = row.status === 'divergent' || row.status === 'new'
+                    const currentMeasurement =
+                      rowMeasurements[row.id] !== undefined
+                        ? rowMeasurements[row.id]
+                        : row.resolvedMeasurements || row.pdfItem?.measurements || ''
 
                     return (
                       <TableRow
@@ -538,13 +670,40 @@ export function OpPdfReviewModal({
                             'bg-slate-50/60 dark:bg-slate-900/40 opacity-75',
                         )}
                       >
-                        {/* Sector */}
+                        {/* Sector (Editável) */}
                         <TableCell>
-                          <Badge
-                            className={cn('text-[10px] px-2 py-0.5 font-bold', sectorStyle.badge)}
-                          >
-                            {row.sector}
-                          </Badge>
+                          {row.pdfItem ? (
+                            <Select
+                              value={currentSector}
+                              onValueChange={(val) =>
+                                handleSectorChange(row.id, val as PcpOrderMaterialSector)
+                              }
+                            >
+                              <SelectTrigger className="h-7 text-[11px] font-semibold w-[120px] bg-white dark:bg-slate-900">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="FABRICAÇÃO" className="text-xs">
+                                  FABRICAÇÃO
+                                </SelectItem>
+                                <SelectItem value="PREPARAÇÃO" className="text-xs">
+                                  PREPARAÇÃO
+                                </SelectItem>
+                                <SelectItem value="MONTAGEM" className="text-xs">
+                                  MONTAGEM
+                                </SelectItem>
+                                <SelectItem value="EXPEDIÇÃO" className="text-xs">
+                                  EXPEDIÇÃO
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <Badge
+                              className={cn('text-[10px] px-2 py-0.5 font-bold', sectorStyle.badge)}
+                            >
+                              {row.sector}
+                            </Badge>
+                          )}
                         </TableCell>
 
                         {/* Status */}
@@ -577,15 +736,33 @@ export function OpPdfReviewModal({
                               <p className="font-medium text-slate-900 dark:text-slate-100 text-xs">
                                 {row.pdfItem.description}
                               </p>
-                              {row.pdfItem.measurements && (
-                                <span className="text-[10px] text-muted-foreground">
-                                  Medida: {row.pdfItem.measurements}
-                                </span>
-                              )}
                             </div>
                           ) : (
                             <span className="text-muted-foreground italic text-[11px]">
                               — Não consta no PDF da OP —
+                            </span>
+                          )}
+                        </TableCell>
+
+                        {/* Medida de Corte (Editável) */}
+                        <TableCell className="border-l border-slate-200 dark:border-slate-800">
+                          {row.pdfItem ? (
+                            <div className="flex flex-col gap-1">
+                              <Input
+                                value={currentMeasurement}
+                                onChange={(e) => handleMeasurementChange(row.id, e.target.value)}
+                                placeholder="Ex: 0,100M"
+                                className="h-7 text-xs font-mono w-[115px] bg-white dark:bg-slate-900"
+                              />
+                              {currentMeasurement && (
+                                <span className="text-[9px] text-muted-foreground font-mono">
+                                  Grava measurements
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground text-[10px]">
+                              {row.catalogItem?.measurements || '—'}
                             </span>
                           )}
                         </TableCell>

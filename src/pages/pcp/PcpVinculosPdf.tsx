@@ -48,6 +48,13 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useToast } from '@/hooks/use-toast'
 import { useRealtime } from '@/hooks/use-realtime'
@@ -58,6 +65,7 @@ import {
   comparePdfWithCatalog,
   parseQuantity,
   normalizeSector,
+  extractCutMeasurementFromDescription,
   type ExtractedOpComponent,
   type ComponentComparisonRow,
 } from '@/lib/op-pdf-parser'
@@ -103,6 +111,8 @@ export default function PcpVinculosPdf() {
   const [productSearch, setProductSearch] = useState('')
   const [comparisonStep, setComparisonStep] = useState<'select' | 'compare'>('select')
   const [comparisonRows, setComparisonRows] = useState<ComponentComparisonRow[]>([])
+  const [rowSectors, setRowSectors] = useState<Record<string, PcpOrderMaterialSector>>({})
+  const [rowMeasurements, setRowMeasurements] = useState<Record<string, string>>({})
   const [fabricationApprovedIds, setFabricationApprovedIds] = useState<Set<string>>(new Set())
   const [isApplying, setIsApplying] = useState(false)
   const [confirmDialogData, setConfirmDialogData] = useState<{
@@ -323,6 +333,33 @@ export default function PcpVinculosPdf() {
     }
   }
 
+  // Recalculate comparison rows based on overridden sectors and measurements
+  const runComparison = (
+    baseMats: PcpOrderMaterial[],
+    prod: Product,
+    secOverrides: Record<string, PcpOrderMaterialSector>,
+    measOverrides: Record<string, string>,
+  ) => {
+    const pdfComponents: ExtractedOpComponent[] = baseMats.map((m, idx) => {
+      const rowId = `row_${m.id || `mat_${idx}`}`
+      const chosenSector = secOverrides[rowId] || m.sector || 'FABRICAÇÃO'
+      const chosenMeas =
+        measOverrides[rowId] !== undefined ? measOverrides[rowId] : m.measurements || ''
+
+      return {
+        id: m.id || `mat_${idx}`,
+        sector: chosenSector,
+        code: m.code || '',
+        description: m.description || '',
+        quantity: m.quantity || 1,
+        unit: m.unit || 'UN',
+        measurements: chosenMeas,
+      }
+    })
+
+    return comparePdfWithCatalog(pdfComponents, prod)
+  }
+
   // Choose product and calculate comparison
   const handleSelectProduct = (prod: Product) => {
     setChosenProduct(prod)
@@ -330,21 +367,65 @@ export default function PcpVinculosPdf() {
 
     if (!selectedOpToLink) return
 
-    // Transform OP materials into ExtractedOpComponent shape for comparePdfWithCatalog
-    const pdfComponents: ExtractedOpComponent[] = selectedOpToLink.materials.map((m, idx) => ({
-      id: m.id || `mat_${idx}`,
-      sector: m.sector || 'FABRICAÇÃO',
-      code: m.code || '',
-      description: m.description || '',
-      quantity: m.quantity || 1,
-      unit: m.unit || 'UN',
-      measurements: m.measurements || '',
-    }))
+    // Initialize sectors and measurements from materials / auto-extraction
+    const initialSectors: Record<string, PcpOrderMaterialSector> = {}
+    const initialMeasurements: Record<string, string> = {}
 
-    // Run existing comparison engine
-    const rows = comparePdfWithCatalog(pdfComponents, prod)
+    selectedOpToLink.materials.forEach((m, idx) => {
+      const rowId = `row_${m.id || `mat_${idx}`}`
+      const rawSector = m.sector || 'FABRICAÇÃO'
+      initialSectors[rowId] = normalizeSector(rawSector)
+      const autoMedida = m.measurements || extractCutMeasurementFromDescription(m.description) || ''
+      initialMeasurements[rowId] = autoMedida
+    })
+
+    setRowSectors(initialSectors)
+    setRowMeasurements(initialMeasurements)
+
+    const rows = runComparison(
+      selectedOpToLink.materials,
+      prod,
+      initialSectors,
+      initialMeasurements,
+    )
     setComparisonRows(rows)
     setComparisonStep('compare')
+  }
+
+  // Change sector for a row and immediately recalculate comparison
+  const handleSectorChange = (rowId: string, newSector: PcpOrderMaterialSector) => {
+    const updatedSectors = { ...rowSectors, [rowId]: newSector }
+    setRowSectors(updatedSectors)
+
+    if (selectedOpToLink && chosenProduct) {
+      const updatedRows = runComparison(
+        selectedOpToLink.materials,
+        chosenProduct,
+        updatedSectors,
+        rowMeasurements,
+      )
+      setComparisonRows(updatedRows)
+    }
+  }
+
+  // Change cut measurement for a row
+  const handleMeasurementChange = (rowId: string, newMeas: string) => {
+    const updatedMeas = { ...rowMeasurements, [rowId]: newMeas }
+    setRowMeasurements(updatedMeas)
+
+    // Update in-memory comparisonRows so UI and tooltips reflect the new measurement
+    setComparisonRows((prev) =>
+      prev.map((r) => {
+        if (r.id === rowId) {
+          return {
+            ...r,
+            resolvedMeasurements: newMeas,
+            pdfItem: r.pdfItem ? { ...r.pdfItem, measurements: newMeas } : undefined,
+          }
+        }
+        return r
+      }),
+    )
   }
 
   // Toggle approval checkbox for fabrication item
@@ -425,19 +506,25 @@ export default function PcpVinculosPdf() {
         newComp.push({ ...catItem })
         keptCatalogCount++
       } else if (matchingRow.status === 'divergent') {
-        if (catSector === 'FABRICAÇÃO') {
+        const currentSector = rowSectors[matchingRow.id] || matchingRow.sector || catSector
+        if (catSector === 'FABRICAÇÃO' || currentSector === 'FABRICAÇÃO') {
           const isApproved = fabricationApprovedIds.has(matchingRow.id)
           if (isApproved && matchingRow.pdfItem) {
-            // Apply PDF item normalized by 1 piece
+            // Apply PDF item normalized by 1 piece with edited measurements and sector
             const normalizedQty =
               Math.round((Number(matchingRow.pdfItem.quantity) / opQty) * 10000) / 10000
+            const activeMeasurements =
+              rowMeasurements[matchingRow.id] !== undefined
+                ? rowMeasurements[matchingRow.id]
+                : matchingRow.pdfItem.measurements || catItem.measurements || ''
+
             newComp.push({
               ...catItem,
               code: matchingRow.pdfItem.code || catItem.code,
               description: matchingRow.pdfItem.description || catItem.description,
               quantity: normalizedQty,
-              etapa: 'FABRICAÇÃO',
-              measurements: matchingRow.pdfItem.measurements || catItem.measurements || '',
+              etapa: currentSector,
+              measurements: activeMeasurements,
               origem: originLabel,
               data_importacao: importDate,
             })
@@ -465,7 +552,12 @@ export default function PcpVinculosPdf() {
     // (2) FABRICAÇÃO: novos no PDF entram SOMENTE se o gestor marcar
     for (const row of comparisonRows) {
       if (!row.pdfItem) continue
-      const normSec = normalizeSector(row.sector)
+      const currentSector = rowSectors[row.id] || row.sector
+      const normSec = normalizeSector(currentSector)
+      const activeMeasurements =
+        rowMeasurements[row.id] !== undefined
+          ? rowMeasurements[row.id]
+          : row.pdfItem.measurements || ''
 
       if (normSec === 'PREPARAÇÃO' && emptyAcabamento) {
         // Auto import
@@ -475,7 +567,7 @@ export default function PcpVinculosPdf() {
           code: row.pdfItem.code || '',
           description: row.pdfItem.description,
           quantity: normalizedQty,
-          measurements: row.pdfItem.measurements || '',
+          measurements: activeMeasurements,
           etapa: 'PREPARAÇÃO',
           category_id: '',
           origem: originLabel,
@@ -492,7 +584,7 @@ export default function PcpVinculosPdf() {
           code: row.pdfItem.code || '',
           description: row.pdfItem.description,
           quantity: normalizedQty,
-          measurements: row.pdfItem.measurements || '',
+          measurements: activeMeasurements,
           etapa: 'MONTAGEM',
           category_id: '',
           origem: originLabel,
@@ -509,7 +601,7 @@ export default function PcpVinculosPdf() {
           code: row.pdfItem.code || '',
           description: row.pdfItem.description,
           quantity: normalizedQty,
-          measurements: row.pdfItem.measurements || '',
+          measurements: activeMeasurements,
           etapa: 'EXPEDIÇÃO',
           category_id: '',
           origem: originLabel,
@@ -527,7 +619,7 @@ export default function PcpVinculosPdf() {
             code: row.pdfItem.code || '',
             description: row.pdfItem.description,
             quantity: normalizedQty,
-            measurements: row.pdfItem.measurements || '',
+            measurements: activeMeasurements,
             etapa: 'FABRICAÇÃO',
             category_id: '',
             origem: originLabel,
@@ -1445,17 +1537,18 @@ export default function PcpVinculosPdf() {
                   </div>
 
                   {/* TABELA DE COMPARAÇÃO LADO A LADO POR ITEM */}
-                  <div className="border rounded-lg overflow-hidden max-h-[420px] overflow-y-auto">
+                  <div className="border rounded-lg overflow-hidden max-h-[440px] overflow-y-auto">
                     <Table>
                       <TableHeader className="bg-muted/60 text-xs sticky top-0 z-10 shadow-sm">
                         <TableRow>
                           <TableHead className="w-[45px] text-center">Aprovar</TableHead>
-                          <TableHead className="w-[100px]">Setor / Etapa</TableHead>
-                          <TableHead className="w-[110px]">Cód. Item</TableHead>
-                          <TableHead className="w-[30%]">
+                          <TableHead className="w-[140px]">Etapa / Setor</TableHead>
+                          <TableHead className="w-[100px]">Cód. Item</TableHead>
+                          <TableHead className="w-[28%]">
                             PDF da OP (Total OP: {opQty} un)
                           </TableHead>
-                          <TableHead className="w-[30%]">Catálogo Técnico (1 Peça)</TableHead>
+                          <TableHead className="w-[140px]">Medida de Corte</TableHead>
+                          <TableHead className="w-[28%]">Catálogo Técnico (1 Peça)</TableHead>
                           <TableHead className="w-[130px] text-center">Classificação</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -1463,7 +1556,7 @@ export default function PcpVinculosPdf() {
                         {comparisonRows.length === 0 ? (
                           <TableRow>
                             <TableCell
-                              colSpan={6}
+                              colSpan={7}
                               className="text-center py-8 text-muted-foreground text-xs"
                             >
                               Nenhum componente encontrado na OP nem no catálogo.
@@ -1471,12 +1564,13 @@ export default function PcpVinculosPdf() {
                           </TableRow>
                         ) : (
                           comparisonRows.map((row) => {
-                            const normSec = normalizeSector(row.sector)
-                            const isFabricacao = normSec === 'FABRICAÇÃO'
+                            const currentSector: PcpOrderMaterialSector =
+                              rowSectors[row.id] || normalizeSector(row.sector)
+                            const isFabricacao = currentSector === 'FABRICAÇÃO'
                             const isAutoImportSector =
-                              (normSec === 'PREPARAÇÃO' && emptyAcabamento) ||
-                              (normSec === 'MONTAGEM' && emptyMontagem) ||
-                              (normSec === 'EXPEDIÇÃO' && emptyExpedicao)
+                              (currentSector === 'PREPARAÇÃO' && emptyAcabamento) ||
+                              (currentSector === 'MONTAGEM' && emptyMontagem) ||
+                              (currentSector === 'EXPEDIÇÃO' && emptyExpedicao)
 
                             const isChecked = fabricationApprovedIds.has(row.id)
                             const showCheckbox =
@@ -1485,6 +1579,11 @@ export default function PcpVinculosPdf() {
                             const pdfQtyNormalized = row.pdfItem
                               ? Math.round((Number(row.pdfItem.quantity) / opQty) * 10000) / 10000
                               : 0
+
+                            const currentMeasurement =
+                              rowMeasurements[row.id] !== undefined
+                                ? rowMeasurements[row.id]
+                                : row.pdfItem?.measurements || ''
 
                             return (
                               <TableRow
@@ -1541,16 +1640,50 @@ export default function PcpVinculosPdf() {
                                   )}
                                 </TableCell>
 
-                                {/* SETOR */}
-                                <TableCell className="font-semibold text-[11px] py-2.5">
-                                  <div className="flex flex-col">
-                                    <span>{row.sector}</span>
-                                    {isAutoImportSector && row.pdfItem && (
-                                      <span className="text-[9px] text-emerald-700 dark:text-emerald-400 font-normal">
-                                        Auto-importar
-                                      </span>
-                                    )}
-                                  </div>
+                                {/* SETOR / ETAPA (EDITÁVEL) */}
+                                <TableCell className="py-2.5">
+                                  {row.pdfItem ? (
+                                    <div className="flex flex-col gap-1">
+                                      <Select
+                                        value={currentSector}
+                                        onValueChange={(val) =>
+                                          handleSectorChange(row.id, val as PcpOrderMaterialSector)
+                                        }
+                                      >
+                                        <SelectTrigger className="h-7 text-[11px] font-semibold w-[125px] bg-white dark:bg-slate-900">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="FABRICAÇÃO" className="text-xs">
+                                            FABRICAÇÃO
+                                          </SelectItem>
+                                          <SelectItem value="PREPARAÇÃO" className="text-xs">
+                                            PREPARAÇÃO
+                                          </SelectItem>
+                                          <SelectItem value="MONTAGEM" className="text-xs">
+                                            MONTAGEM
+                                          </SelectItem>
+                                          <SelectItem value="EXPEDIÇÃO" className="text-xs">
+                                            EXPEDIÇÃO
+                                          </SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                      {isAutoImportSector && (
+                                        <span className="text-[9px] text-emerald-700 dark:text-emerald-400 font-normal">
+                                          Auto-importar
+                                        </span>
+                                      )}
+                                      {isFabricacao && (
+                                        <span className="text-[9px] text-purple-700 dark:text-purple-400 font-normal">
+                                          Aprovação manual
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="font-semibold text-[11px] text-slate-700 dark:text-slate-300">
+                                      {row.sector}
+                                    </span>
+                                  )}
                                 </TableCell>
 
                                 {/* CÓDIGO */}
@@ -1580,17 +1713,36 @@ export default function PcpVinculosPdf() {
                                             </span>
                                           </>
                                         )}
-                                        {row.pdfItem.measurements && (
-                                          <>
-                                            <span>•</span>
-                                            <span>Medida: {row.pdfItem.measurements}</span>
-                                          </>
-                                        )}
                                       </div>
                                     </div>
                                   ) : (
                                     <span className="text-muted-foreground italic text-[11px]">
                                       — Não consta no PDF da OP —
+                                    </span>
+                                  )}
+                                </TableCell>
+
+                                {/* MEDIDA DE CORTE (EDITÁVEL) */}
+                                <TableCell className="py-2.5">
+                                  {row.pdfItem ? (
+                                    <div className="flex flex-col gap-1">
+                                      <Input
+                                        value={currentMeasurement}
+                                        onChange={(e) =>
+                                          handleMeasurementChange(row.id, e.target.value)
+                                        }
+                                        placeholder="Ex: 0,100M"
+                                        className="h-7 text-xs font-mono w-[120px] bg-white dark:bg-slate-900"
+                                      />
+                                      {currentMeasurement && (
+                                        <span className="text-[9px] text-muted-foreground font-mono">
+                                          Grava measurements
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="text-muted-foreground text-[10px]">
+                                      {row.catalogItem?.measurements || '—'}
                                     </span>
                                   )}
                                 </TableCell>

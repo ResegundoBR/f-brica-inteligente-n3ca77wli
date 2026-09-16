@@ -386,8 +386,28 @@ export function parseQuantity(raw: string | number): number {
   return Math.round(parsed * 10000) / 10000
 }
 
+/**
+ * Normaliza uma string de texto removendo espaços entre letras únicas isoladas (letter-spacing do ERP).
+ * Exemplo: '* F A B R I C A O *' -> '* FABRICAO *'
+ *          '* P R E P A R A O *' -> '* PREPARAO *'
+ *          '* M O N T A G E M *' -> '* MONTAGEM *'
+ *          '* E X P E D I O *'   -> '* EXPEDIO *'
+ */
+export function collapseSpacedLetters(text: string): string {
+  if (!text) return ''
+  // Substitui sequências de letras únicas separadas por um ou mais espaços
+  // Repete até colapsar todas as letras contíguas espaçadas
+  return text.replace(
+    /(?<=(?:^|[^a-zA-Z0-9À-ÿ]))([a-zA-Z0-9À-ÿ])(?:\s+([a-zA-Z0-9À-ÿ]))+(?=(?:[^a-zA-Z0-9À-ÿ]|$))/g,
+    (fullMatch) => {
+      return fullMatch.replace(/\s+/g, '')
+    },
+  )
+}
+
 export function normalizeSector(rawSector: string): PcpOrderMaterialSector {
-  const norm = (rawSector || '')
+  const unspaced = collapseSpacedLetters(rawSector || '')
+  const norm = unspaced
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toUpperCase()
@@ -489,13 +509,15 @@ export function isInvalidComponentCandidate(text: string): boolean {
     return true
   }
 
-  // If text is composed ONLY of table header / system words
+  // If text is composed ONLY of table header / system words (ignoring single spaced letters from sector titles like F A B R I C A O)
   const words = norm
     .replace(/[^A-Z0-9\s/]/g, ' ')
     .split(/\s+/)
     .filter(Boolean)
   if (
     words.length > 0 &&
+    // Se a linha for composta predominantemente por letras isoladas (ex: F A B R I C A O), não é header label word
+    !words.every((w) => w.length === 1) &&
     words.every((w) => KNOWN_HEADER_LABEL_WORDS.has(w) || /^(?:DE|E|DO|DA|DOS|DAS|\/)$/.test(w))
   ) {
     return true
@@ -573,12 +595,14 @@ export function parseOpPdfDeterministic(
   let currentSector: PcpOrderMaterialSector = 'FABRICAÇÃO'
   const sectorKeywords: { regex: RegExp; sector: PcpOrderMaterialSector }[] = [
     {
-      regex: /(?:^|\b)(?:SETOR|ETAPA|FASE\s+DE\s+|FASE\s+)?(?:[-:]\s*)?FABRICACAO\b/i,
+      // Suporta FABRICACAO e FABRICAO (quando sem acento / sem ç)
+      regex: /(?:^|\b)(?:SETOR|ETAPA|FASE\s+DE\s+|FASE\s+)?(?:[-:]\s*)?FABRICA(?:CA)?O\b/i,
       sector: 'FABRICAÇÃO',
     },
     {
+      // Suporta PREPARACAO e PREPARAO (quando sem acento / sem ç)
       regex:
-        /(?:^|\b)(?:SETOR|ETAPA|FASE\s+DE\s+|FASE\s+)?(?:[-:]\s*)?PREPARACAO(?:\s*\(ACABAMENTO\))?\b/i,
+        /(?:^|\b)(?:SETOR|ETAPA|FASE\s+DE\s+|FASE\s+)?(?:[-:]\s*)?PREPARA(?:CA)?O(?:\s*\(ACABAMENTO\))?\b/i,
       sector: 'PREPARAÇÃO',
     },
     {
@@ -594,7 +618,8 @@ export function parseOpPdfDeterministic(
       sector: 'MONTAGEM',
     },
     {
-      regex: /(?:^|\b)(?:SETOR|ETAPA|FASE\s+DE\s+|FASE\s+)?(?:[-:]\s*)?EXPEDICAO\b/i,
+      // Suporta EXPEDICAO e EXPEDIO (quando sem acento / sem ç)
+      regex: /(?:^|\b)(?:SETOR|ETAPA|FASE\s+DE\s+|FASE\s+)?(?:[-:]\s*)?EXPEDI(?:CA)?O\b/i,
       sector: 'EXPEDIÇÃO',
     },
     {
@@ -605,7 +630,9 @@ export function parseOpPdfDeterministic(
 
   const matchSectorInText = (text: string): PcpOrderMaterialSector | null => {
     if (!text) return null
-    const norm = text
+    // Colapsa letras espaçadas (ex: '* F A B R I C A O *' -> '* FABRICAO *')
+    const unspaced = collapseSpacedLetters(text)
+    const norm = unspaced
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
       .toUpperCase()
@@ -1652,7 +1679,8 @@ export function parseOpPdfDeterministic(
       }
 
       // If line is just "Obs: ..." or bar code text (e.g. asterisks or numeric strings without qty), ignore
-      if (/^Obs:/i.test(lineStr) || /^\*\s*$/.test(lineStr)) {
+      // (Lines with sector like "* F A B R I C A O *" were already handled above by matchSectorInText)
+      if (/^Obs:/i.test(lineStr) || /^\*[\s*]*$/.test(lineStr)) {
         continue
       }
 

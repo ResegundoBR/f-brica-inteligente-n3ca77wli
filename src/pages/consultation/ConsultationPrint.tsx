@@ -206,7 +206,7 @@ export default function ConsultationPrint() {
       {/* Folha A4 centralizada no preview de tela, 100% na impressão */}
       <div className="print-container max-w-[210mm] mx-auto bg-white my-6 print:my-0 p-8 sm:p-10 print:p-0 shadow-lg print:shadow-none border border-neutral-200 print:border-none font-sans leading-relaxed text-black">
         {/* Cabeçalho do documento */}
-        <header className="border-b-2 border-black pb-4 mb-5">
+        <div className="border-b-2 border-black pb-4 mb-5">
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1">
               <span className="text-[10px] font-bold tracking-widest uppercase text-neutral-600 block mb-0.5">
@@ -257,7 +257,7 @@ export default function ConsultationPrint() {
               {product.description}
             </p>
           )}
-        </header>
+        </div>
 
         {/* Seção 1: Composição do Produto */}
         <section className="mb-6">
@@ -473,12 +473,12 @@ export default function ConsultationPrint() {
         </section>
 
         {/* Rodapé fixo / padrão da página */}
-        <footer className="page-break-inside-avoid border-t-2 border-black pt-3 mt-6 text-neutral-600 text-[10px] flex items-center justify-between">
+        <div className="page-break-inside-avoid border-t-2 border-black pt-3 mt-6 text-neutral-600 text-[10px] flex items-center justify-between">
           <div className="font-semibold text-black">Consulta Catálogo Técnico — Fábrica</div>
           <div className="font-mono text-neutral-500">
             Produto: {product.code || product.name} | Emissão: {emissionDateFormatted}
           </div>
-        </footer>
+        </div>
       </div>
     </div>
   )

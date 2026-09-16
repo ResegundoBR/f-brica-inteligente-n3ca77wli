@@ -108,11 +108,12 @@
     size: A4 portrait;
     margin: 1.5cm;
   }
-  body * {
+  /* Quando existir .print-area na página, esconde os demais elementos e exibe apenas a .print-area */
+  body:has(.print-area) * {
     visibility: hidden;
   }
-  .print-area,
-  .print-area * {
+  body:has(.print-area) .print-area,
+  body:has(.print-area) .print-area * {
     visibility: visible;
   }
   .print-area {
@@ -124,6 +125,12 @@
     padding: 0;
     background: white;
     color: black;
+  }
+
+  /* Garante visibilidade e reset de página para a impressão da Consulta Catálogo */
+  .consulta-print-root,
+  .consulta-print-root * {
+    visibility: visible !important;
   }
 }
 

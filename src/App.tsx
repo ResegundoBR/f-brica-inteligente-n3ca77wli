@@ -36,6 +36,7 @@ import PcpOcorrencias from './pages/pcp/PcpOcorrencias'
 import PcpMelhorias from './pages/pcp/PcpMelhorias'
 import ConsultationList from './pages/consultation/ConsultationList'
 import ConsultationDetail from './pages/consultation/ConsultationDetail'
+import ConsultationPrint from './pages/consultation/ConsultationPrint'
 import Login from './pages/Login'
 import ChangePassword from './pages/ChangePassword'
 import { AuthProvider } from './hooks/use-auth'
@@ -107,6 +108,14 @@ const App = () => (
                 element={
                   <RoleGuard module="catalog_consultation">
                     <ConsultationDetail />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/consulta/:id/impressao"
+                element={
+                  <RoleGuard module="catalog_consultation">
+                    <ConsultationPrint />
                   </RoleGuard>
                 }
               />

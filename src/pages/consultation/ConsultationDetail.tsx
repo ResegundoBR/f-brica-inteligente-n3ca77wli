@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { ArrowLeft, Package, Send } from 'lucide-react'
+import { ArrowLeft, Package, Send, Printer } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
@@ -143,8 +143,18 @@ export default function ConsultationDetail() {
           size="icon"
           className="shrink-0 mt-0.5"
           onClick={() => navigate('/consulta')}
+          title="Voltar para a lista"
         >
           <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="outline"
+          className="shrink-0 mt-0.5 gap-1.5"
+          onClick={() => window.open(`/consulta/${product.id}/impressao`, '_blank')}
+          title="Imprimir ou gerar PDF deste produto"
+        >
+          <Printer className="h-4 w-4" />
+          <span className="hidden sm:inline">Imprimir / PDF</span>
         </Button>
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2">

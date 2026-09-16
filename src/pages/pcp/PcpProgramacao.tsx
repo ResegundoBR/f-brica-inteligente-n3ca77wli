@@ -69,6 +69,11 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
   const [selectedMaterials, setSelectedMaterials] = useState<PcpOrderMaterial[]>([])
   const [isLoadingMaterials, setIsLoadingMaterials] = useState(false)
 
+  // Controle de logs para regras de OPs programáveis (apenas Fila + Separação + sem logs)
+  const [orderIdsWithLogs, setOrderIdsWithLogs] = useState<Set<string>>(new Set())
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false)
+  const [showInExecutionConsultation, setShowInExecutionConsultation] = useState(false)
+
   // Filtros da lista de OPs
   const [opTypeFilter, setOpTypeFilter] = useState('all')
   const [clientFilter, setClientFilter] = useState('all')
@@ -139,8 +144,57 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
     loadData()
   }, [])
 
+  // Carrega batch de pcp_order_logs para verificar se as OPs já tiveram qualquer atividade
+  useEffect(() => {
+    if (orders.length === 0) {
+      setOrderIdsWithLogs(new Set())
+      return
+    }
+
+    let isMounted = true
+    const fetchOrderLogs = async () => {
+      setIsLoadingLogs(true)
+      try {
+        const orderIds = orders.map((o) => o.id)
+        const chunkSize = 25
+        const idsWithLogs = new Set<string>()
+
+        for (let i = 0; i < orderIds.length; i += chunkSize) {
+          const chunk = orderIds.slice(i, i + chunkSize)
+          const filterStr = chunk.map((id) => `order_id = "${id}"`).join(' || ')
+          const batch = await pb.collection('pcp_order_logs').getFullList<{ order_id: string }>({
+            filter: filterStr,
+            fields: 'order_id',
+          })
+          batch.forEach((log) => {
+            if (log.order_id) idsWithLogs.add(log.order_id)
+          })
+        }
+
+        if (isMounted) {
+          setOrderIdsWithLogs(idsWithLogs)
+        }
+      } catch (err) {
+        console.error('Erro ao verificar logs das OPs:', err)
+      } finally {
+        if (isMounted) {
+          setIsLoadingLogs(false)
+        }
+      }
+    }
+
+    fetchOrderLogs()
+    return () => {
+      isMounted = false
+    }
+  }, [orders])
+
   useRealtime('pcp_orders', () => loadData())
   useRealtime('inventory', () => loadData())
+  useRealtime('pcp_order_logs', () => {
+    // Recarrega os dados gerais para atualizar status/logs se houver mudança
+    loadData()
+  })
   useRealtime('pcp_order_materials', () => {
     // Recarrega materiais selecionados se houver realtime
     if (selectedOpIds.size > 0) {
@@ -217,10 +271,42 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
     }
   }
 
-  // Filtragem das OPs para exibição na lista corrida
+  // Regra de elegibilidade para programação:
+  // "apenas aquelas que estão na fila da Separação, que não tiveram nenhuma atividade feita ainda"
+  // status === 'Fila' && stage === 'Separação' && sem registro em pcp_order_logs
+  const isOrderSelectable = (op: PcpOrder) => {
+    return op.status === 'Fila' && op.stage === 'Separação' && !orderIdsWithLogs.has(op.id)
+  }
+
+  // Divisão entre OPs selecionáveis (programáveis) e em execução / com atividade
+  const { selectableOrders, inExecutionOrders } = useMemo(() => {
+    const selectable: PcpOrder[] = []
+    const inExecution: PcpOrder[] = []
+
+    orders.forEach((op) => {
+      if (isOrderSelectable(op)) {
+        selectable.push(op)
+      } else {
+        inExecution.push(op)
+      }
+    })
+
+    return { selectableOrders: selectable, inExecutionOrders: inExecution }
+  }, [orders, orderIdsWithLogs])
+
+  // Conjunto de OPs a serem listadas na tabela:
+  // Se showInExecutionConsultation for falso (padrão): lista apenas as OPs selecionáveis/programáveis.
+  // Se o usuário ativar a visualização de consulta de OPs em execução: inclui ambas (ou apenas consulta).
+  const displayedOrdersSource = useMemo(() => {
+    if (showInExecutionConsultation) {
+      return orders
+    }
+    return selectableOrders
+  }, [orders, selectableOrders, showInExecutionConsultation])
+
+  // Filtragem das OPs para exibição na lista corrida (aplica os filtros existentes sobre a lista)
   const filteredOrders = useMemo(() => {
-    return orders.filter((op) => {
-      // Regra de programação de produção: foca nas OPs ativas/em aberto (Fila, Em Andamento, Parado)
+    return displayedOrdersSource.filter((op) => {
       // Se o usuário optar por ver apenas OPs com status "Fila":
       if (filaOnlyFilter && op.status !== 'Fila') return false
 
@@ -253,7 +339,7 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
       return true
     })
   }, [
-    orders,
+    displayedOrdersSource,
     search,
     opTypeFilter,
     clientFilter,
@@ -385,23 +471,43 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
 
   // --------------------------------------------------------------------------
   // AÇÕES DE SELEÇÃO DE CHECKBOXES
+  // Apenas OPs elegíveis (isOrderSelectable) podem ser marcadas/programadas
   // --------------------------------------------------------------------------
-  const toggleOrderSelection = (opId: string) => {
+  const toggleOrderSelection = (op: PcpOrder) => {
+    if (!isOrderSelectable(op)) {
+      toast({
+        title: 'OP não programável',
+        description: 'Esta OP já está em execução ou possui atividade anterior registrada.',
+        variant: 'destructive',
+      })
+      return
+    }
+
     const next = new Set(selectedOpIds)
-    if (next.has(opId)) {
-      next.delete(opId)
+    if (next.has(op.id)) {
+      next.delete(op.id)
     } else {
-      next.add(opId)
+      next.add(op.id)
     }
     setSelectedOpIds(next)
     loadSelectedMaterials(Array.from(next))
   }
 
   const toggleGroupSelection = (items: PcpOrder[]) => {
-    const next = new Set(selectedOpIds)
-    const allSelected = items.every((i) => next.has(i.id))
+    // Considera apenas as OPs que são selecionáveis no lote
+    const selectableInGroup = items.filter(isOrderSelectable)
+    if (selectableInGroup.length === 0) {
+      toast({
+        title: 'Nenhuma OP programável no lote',
+        description: 'Todas as OPs deste lote já estão em execução ou possuem atividades.',
+      })
+      return
+    }
 
-    items.forEach((i) => {
+    const next = new Set(selectedOpIds)
+    const allSelected = selectableInGroup.every((i) => next.has(i.id))
+
+    selectableInGroup.forEach((i) => {
       if (allSelected) {
         next.delete(i.id)
       } else {
@@ -414,28 +520,47 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
   }
 
   // Atalho 1: Selecionar todas da fila
+  // Requisito: deve considerar apenas a fila filtrada pela regra (Separação + sem logs)
   const handleSelectAllFila = () => {
-    const filaOrders = orders.filter((o) => o.status === 'Fila')
+    const eligibleFilaOrders = selectableOrders
+    if (eligibleFilaOrders.length === 0) {
+      toast({
+        title: 'Fila vazia',
+        description: 'Não há OPs na fila de Separação sem atividades no momento.',
+      })
+      return
+    }
+
     const next = new Set(selectedOpIds)
-    filaOrders.forEach((o) => next.add(o.id))
+    eligibleFilaOrders.forEach((o) => next.add(o.id))
 
     setSelectedOpIds(next)
     loadSelectedMaterials(Array.from(next))
     toast({
-      title: 'Fila Selecionada',
-      description: `${filaOrders.length} OP(s) com status "Fila" foram adicionadas à programação.`,
+      title: 'Fila de Separação Selecionada',
+      description: `${eligibleFilaOrders.length} OP(s) aptas para programação foram adicionadas.`,
     })
   }
 
-  // Atalho 1.1: Selecionar todas as OPs atualmente visíveis pelo filtro
+  // Atalho 1.1: Selecionar todas as OPs atualmente visíveis pelo filtro (apenas as programáveis)
   const handleSelectAllFiltered = () => {
+    const eligibleFiltered = filteredOrders.filter(isOrderSelectable)
+    if (eligibleFiltered.length === 0) {
+      toast({
+        title: 'Nenhuma OP programável visível',
+        description:
+          'As OPs visíveis já estão em execução ou não atendem aos critérios de seleção.',
+      })
+      return
+    }
+
     const next = new Set(selectedOpIds)
-    filteredOrders.forEach((o) => next.add(o.id))
+    eligibleFiltered.forEach((o) => next.add(o.id))
     setSelectedOpIds(next)
     loadSelectedMaterials(Array.from(next))
     toast({
       title: 'OPs Filtradas Selecionadas',
-      description: `${filteredOrders.length} OP(s) filtradas foram adicionadas à programação.`,
+      description: `${eligibleFiltered.length} OP(s) programáveis foram adicionadas.`,
     })
   }
 
@@ -544,10 +669,10 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
             size="sm"
             onClick={handleSelectAllFila}
             className="gap-1.5 text-xs h-9 border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950"
-            title="Seleciona todas as OPs com status Fila"
+            title="Selecionar todas as OPs aptas da fila de Separação (sem atividades anteriores)"
           >
             <Sparkles className="size-3.5 text-blue-600" />
-            Selecionar todas da fila
+            Selecionar fila de Separação ({selectableOrders.length})
           </Button>
 
           <Button
@@ -555,10 +680,10 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
             size="sm"
             onClick={handleSelectAllFiltered}
             className="gap-1.5 text-xs h-9"
-            title="Selecionar todas as OPs visíveis na lista abaixo"
+            title="Selecionar todas as OPs programáveis visíveis na lista abaixo"
           >
             <CheckSquare className="size-3.5" />
-            Selecionar filtradas ({filteredOrders.length})
+            Selecionar filtradas ({filteredOrders.filter(isOrderSelectable).length})
           </Button>
 
           <Button
@@ -666,6 +791,29 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
         </div>
       )}
 
+      {/* AVISO DISCRETO DE OPS JÁ EM EXECUÇÃO / COM ATIVIDADE */}
+      {inExecutionOrders.length > 0 && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 py-2 rounded-lg bg-slate-100/90 dark:bg-slate-800/80 border text-xs text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <Info className="size-4 text-slate-500 shrink-0" />
+            <span>
+              <strong className="text-foreground">{inExecutionOrders.length} OP(s)</strong> já em
+              execução ou com atividade registrada — não programáveis.
+            </span>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowInExecutionConsultation(!showInExecutionConsultation)}
+            className="h-7 text-xs px-2.5 hover:bg-background text-slate-700 dark:text-slate-300 font-medium"
+          >
+            {showInExecutionConsultation
+              ? 'Ocultar OPs em execução (apenas programáveis)'
+              : 'Visualizar OPs em execução (apenas consulta)'}
+          </Button>
+        </div>
+      )}
+
       {/* SEÇÃO 2: LISTA CORRIDA DAS OPS COM CHECKBOXES E FILTROS */}
       <div className="space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
@@ -673,11 +821,19 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
             <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
               <span>Lista de Ordens de Produção</span>
               <Badge variant="secondary" className="text-xs">
-                {filteredOrders.length} disponível(is)
+                {filteredOrders.length}{' '}
+                {showInExecutionConsultation ? 'exibida(s)' : 'programável(is)'}
               </Badge>
+              {isLoadingLogs && (
+                <span className="text-[11px] text-muted-foreground animate-pulse font-normal">
+                  (verificando logs...)
+                </span>
+              )}
             </h2>
             <p className="text-xs text-muted-foreground">
-              Selecione as OPs individualmente pelos checkboxes ou pelo cabeçalho do pedido.
+              {showInExecutionConsultation
+                ? 'Exibindo OPs da fábrica. Apenas OPs na fila de Separação sem atividades possuem checkbox para seleção/programação.'
+                : 'Apenas OPs na fila de Separação que ainda não tiveram nenhuma atividade podem ser selecionadas e programadas.'}
             </p>
           </div>
 
@@ -780,34 +936,54 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
                 </TableRow>
               ) : (
                 groupedOrders.flatMap((group) => {
-                  const allGroupSelected = group.items.every((it) => selectedOpIds.has(it.id))
-                  const someGroupSelected = group.items.some((it) => selectedOpIds.has(it.id))
+                  const selectableItems = group.items.filter(isOrderSelectable)
+                  const hasSelectable = selectableItems.length > 0
+                  const allSelectableChosen =
+                    hasSelectable && selectableItems.every((it) => selectedOpIds.has(it.id))
+                  const someSelectableChosen =
+                    hasSelectable && selectableItems.some((it) => selectedOpIds.has(it.id))
 
                   return [
-                    // CABEÇALHO DO PEDIDO COM CHECKBOX DO GRUPO
+                    // CABEÇALHO DO PEDIDO COM CHECKBOX DO GRUPO (APENAS SE HOUVER OPS SELECIONÁVEIS)
                     <TableRow
                       key={`header-${group.normalized_key}`}
                       className={cn(
-                        'hover:opacity-95 border-y transition-colors select-none cursor-pointer',
+                        'border-y transition-colors select-none',
+                        hasSelectable ? 'hover:opacity-95 cursor-pointer' : 'opacity-90',
                         getHeaderColor(group.op_type),
                       )}
-                      onClick={() => toggleGroupSelection(group.items)}
+                      onClick={() => {
+                        if (hasSelectable) toggleGroupSelection(group.items)
+                      }}
                     >
                       <TableCell
                         className="py-1.5 text-center"
                         onClick={(e) => {
                           e.stopPropagation()
-                          toggleGroupSelection(group.items)
+                          if (hasSelectable) toggleGroupSelection(group.items)
                         }}
                       >
-                        <Checkbox
-                          checked={
-                            allGroupSelected ? true : someGroupSelected ? 'indeterminate' : false
-                          }
-                          onCheckedChange={() => toggleGroupSelection(group.items)}
-                          aria-label={`Selecionar pedido ${group.order_number}`}
-                          className="border-white data-[state=checked]:bg-white data-[state=checked]:text-blue-900"
-                        />
+                        {hasSelectable ? (
+                          <Checkbox
+                            checked={
+                              allSelectableChosen
+                                ? true
+                                : someSelectableChosen
+                                  ? 'indeterminate'
+                                  : false
+                            }
+                            onCheckedChange={() => toggleGroupSelection(group.items)}
+                            aria-label={`Selecionar OPs programáveis do pedido ${group.order_number}`}
+                            className="border-white data-[state=checked]:bg-white data-[state=checked]:text-blue-900"
+                          />
+                        ) : (
+                          <span
+                            className="text-[10px] text-white/60 font-mono"
+                            title="Apenas consulta"
+                          >
+                            —
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell colSpan={6} className="font-semibold text-xs py-1.5">
                         <div className="flex items-center gap-3 flex-wrap">
@@ -817,19 +993,33 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
                           <span className="opacity-50">|</span>
                           <span className="text-[11px] opacity-90">
                             {group.items.length} OP(s) no lote
+                            {hasSelectable && selectableItems.length !== group.items.length && (
+                              <span className="ml-1 opacity-75">
+                                ({selectableItems.length} programável)
+                              </span>
+                            )}
                           </span>
                           <Badge className="bg-white/20 text-white border-none hover:bg-white/30 text-[10px]">
                             {group.op_type}
                           </Badge>
-                          <span className="text-[10px] underline ml-auto opacity-80 hover:opacity-100">
-                            {allGroupSelected ? 'Desmarcar lote' : 'Selecionar lote completo'}
-                          </span>
+                          {hasSelectable ? (
+                            <span className="text-[10px] underline ml-auto opacity-80 hover:opacity-100">
+                              {allSelectableChosen
+                                ? 'Desmarcar lote'
+                                : `Selecionar programáveis (${selectableItems.length})`}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] ml-auto opacity-75 italic">
+                              Em execução / apenas consulta
+                            </span>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>,
 
-                    // LINHAS INDIVIDUAIS DE CADA OP COM CHECKBOX
+                    // LINHAS INDIVIDUAIS DE CADA OP
                     ...group.items.map((op) => {
+                      const selectable = isOrderSelectable(op)
                       const isSelected = selectedOpIds.has(op.id)
                       const color = getOrderColor(op)
                       const normOp = (op.op_number || '').trim().toUpperCase()
@@ -840,7 +1030,8 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
                         <TableRow
                           key={op.id}
                           className={cn(
-                            'cursor-pointer transition-colors text-xs select-none',
+                            'transition-colors text-xs select-none',
+                            selectable ? 'cursor-pointer' : 'cursor-default opacity-85',
                             isSelected && 'ring-2 ring-blue-500 font-medium',
                             isDuplicate && 'border-l-4 border-l-amber-500',
                             color === 'lime' && 'bg-lime-400 text-black hover:bg-lime-500',
@@ -853,28 +1044,52 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
                                 ? 'bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/50'
                                 : 'bg-white dark:bg-slate-900 hover:bg-muted/40'),
                           )}
-                          onClick={() => toggleOrderSelection(op.id)}
+                          onClick={() => {
+                            if (selectable) toggleOrderSelection(op)
+                          }}
                         >
-                          {/* CHECKBOX POR LINHA */}
+                          {/* CHECKBOX POR LINHA (OU TRAÇO/AVISO SE NÃO SELECIONÁVEL) */}
                           <TableCell
                             className="py-1 text-center"
                             onClick={(e) => {
                               e.stopPropagation()
-                              toggleOrderSelection(op.id)
+                              if (selectable) toggleOrderSelection(op)
                             }}
                           >
-                            <Checkbox
-                              checked={isSelected}
-                              onCheckedChange={() => toggleOrderSelection(op.id)}
-                              aria-label={`Selecionar OP ${op.op_number || op.order_number}`}
-                              className={cn(
-                                color === 'lime' || color === 'yellow'
-                                  ? 'border-slate-900'
-                                  : color === 'neon-orange'
-                                    ? 'border-white'
-                                    : 'border-slate-400',
-                              )}
-                            />
+                            {selectable ? (
+                              <Checkbox
+                                checked={isSelected}
+                                onCheckedChange={() => toggleOrderSelection(op)}
+                                aria-label={`Selecionar OP ${op.op_number || op.order_number}`}
+                                className={cn(
+                                  color === 'lime' || color === 'yellow'
+                                    ? 'border-slate-900'
+                                    : color === 'neon-orange'
+                                      ? 'border-white'
+                                      : 'border-slate-400',
+                                )}
+                              />
+                            ) : (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="inline-flex items-center justify-center text-muted-foreground hover:text-foreground cursor-help">
+                                    <span className="text-xs font-mono font-bold text-slate-400">
+                                      —
+                                    </span>
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent className="text-xs max-w-xs">
+                                  <p className="font-semibold">Não programável</p>
+                                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                                    {op.status !== 'Fila'
+                                      ? `Status atual: ${op.status} (já em execução)`
+                                      : op.stage !== 'Separação'
+                                        ? `Etapa atual: ${op.stage} (fora da Separação)`
+                                        : 'Esta OP já possui atividades anteriores registradas em log.'}
+                                  </p>
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
                           </TableCell>
 
                           {/* Nº DA OP COM AVISO DE DUPLICATA E DATAS */}

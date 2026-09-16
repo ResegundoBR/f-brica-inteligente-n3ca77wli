@@ -10,6 +10,7 @@ import { SmartReceiveDialog } from './components/SmartReceiveDialog'
 import { RecebimentoTable } from './components/RecebimentoTable'
 import { useToast } from '@/hooks/use-toast'
 import { getErrorMessage } from '@/lib/pocketbase/errors'
+import { checkAndUpdateAffectedOcs } from '@/services/oc-receiving-automation'
 
 export default function RecebimentoPage() {
   const [shortages, setShortages] = useState<MaterialShortage[]>([])
@@ -89,6 +90,11 @@ export default function RecebimentoPage() {
       toast({
         title: 'Recebimento confirmado',
         description: `${numQty} unidade(s) recebidas. Total: ${newReceivedQty}/${total}.`,
+      })
+
+      // Automatizar atualização de status de OC vinculada se todos os itens estiverem totalmente recebidos
+      await checkAndUpdateAffectedOcs([item.id], {
+        customToast: (opts) => toast({ title: opts.title, description: opts.description }),
       })
 
       setReceiveInputs((prev) => {

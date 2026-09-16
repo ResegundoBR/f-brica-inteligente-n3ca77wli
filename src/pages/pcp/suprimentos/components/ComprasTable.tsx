@@ -10,17 +10,19 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { MaterialShortage } from '@/types'
-import { Pencil } from 'lucide-react'
+import { Pencil, Trash2 } from 'lucide-react'
 import { useSupplierGroups } from '@/hooks/use-supplier-groups'
 import { SupplierGroupSection } from './SupplierGroupSection'
 import { useMemo } from 'react'
 import { findOtherOpDemands } from '@/services/material-consolidation'
 import { ConsolidatedDemandBadge } from './ConsolidatedDemandBlock'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 interface ComprasTableProps {
   items: MaterialShortage[]
   allShortages?: MaterialShortage[]
   onEdit: (item: MaterialShortage) => void
+  onDelete?: (item: MaterialShortage) => void
   selectedIds: Set<string>
   onToggleSelect: (id: string) => void
   onToggleSelectAll: () => void
@@ -35,12 +37,14 @@ function ComprasRow({
   item,
   consolidation,
   onEdit,
+  onDelete,
   selectedIds,
   onToggleSelect,
 }: {
   item: MaterialShortage
   consolidation?: ReturnType<typeof findOtherOpDemands>
   onEdit: (item: MaterialShortage) => void
+  onDelete?: (item: MaterialShortage) => void
   selectedIds: Set<string>
   onToggleSelect: (id: string) => void
 }) {
@@ -77,9 +81,37 @@ function ComprasRow({
         {item.expected_date ? format(parseISO(item.expected_date), 'dd/MM/yy') : '-'}
       </TableCell>
       <TableCell>
-        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => onEdit(item)}>
-          <Pencil className="w-3.5 h-3.5" />
-        </Button>
+        <div className="flex items-center gap-1 justify-end">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 w-7 p-0"
+                onClick={() => onEdit(item)}
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Editar item</TooltipContent>
+          </Tooltip>
+
+          {onDelete && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
+                  onClick={() => onDelete(item)}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Remover linha / cancelar</TooltipContent>
+            </Tooltip>
+          )}
+        </div>
       </TableCell>
     </TableRow>
   )
@@ -109,7 +141,7 @@ function TableCols({
         <TableHead className="text-right w-[100px]">Vl. Unit.</TableHead>
         <TableHead className="text-right w-[110px]">Vl. Total</TableHead>
         <TableHead className="w-[100px]">Prazo</TableHead>
-        <TableHead className="w-[60px]"></TableHead>
+        <TableHead className="w-[80px] text-right">Ações</TableHead>
       </TableRow>
     </TableHeader>
   )
@@ -119,6 +151,7 @@ export function ComprasTable({
   items,
   allShortages,
   onEdit,
+  onDelete,
   selectedIds,
   onToggleSelect,
   onToggleSelectAll,
@@ -149,6 +182,7 @@ export function ComprasTable({
                 item={item}
                 consolidation={consolidationsMap.get(item.id)}
                 onEdit={onEdit}
+                onDelete={onDelete}
                 selectedIds={selectedIds}
                 onToggleSelect={onToggleSelect}
               />
@@ -182,6 +216,7 @@ export function ComprasTable({
                     item={item}
                     consolidation={consolidationsMap.get(item.id)}
                     onEdit={onEdit}
+                    onDelete={onDelete}
                     selectedIds={selectedIds}
                     onToggleSelect={onToggleSelect}
                   />

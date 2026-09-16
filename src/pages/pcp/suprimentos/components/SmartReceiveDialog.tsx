@@ -25,6 +25,7 @@ import { distributeMaterials, type TraceabilityInfo } from '@/services/material-
 import { useToast } from '@/hooks/use-toast'
 import { getErrorMessage } from '@/lib/pocketbase/errors'
 import { toDateFieldValue } from '@/lib/pcp-utils'
+import { checkAndUpdateAffectedOcs } from '@/services/oc-receiving-automation'
 
 interface SmartReceiveDialogProps {
   item: MaterialShortage | null
@@ -129,6 +130,13 @@ export function SmartReceiveDialog({
         title: 'Distribuição concluída',
         description: `${received} unidade(s) recebidas. ${totalDistributed} distribuídas. ${surplus} em estoque.`,
       })
+
+      // Automatizar atualização de status de OCs afetadas se todos os itens estiverem totalmente recebidos
+      const affectedIds = [...distArray.map((d) => d.shortage_id), ...(item?.id ? [item.id] : [])]
+      await checkAndUpdateAffectedOcs(affectedIds, {
+        customToast: (opts) => toast({ title: opts.title, description: opts.description }),
+      })
+
       onUpdate()
       onOpenChange(false)
     } catch (err: unknown) {

@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/select'
 import { ComprasTable } from './components/ComprasTable'
 import { ComprasItemDialog } from './components/ComprasItemDialog'
+import { DeleteShortageDialog } from './components/DeleteShortageDialog'
 import { OrdemCompraModal, type OCItemInput } from './components/OrdemCompraModal'
 import { ProductDossierModal } from './components/ProductDossierModal'
 import { ProductSearchBar } from './components/ProductSearchBar'
@@ -28,6 +29,7 @@ import { toast } from 'sonner'
 export default function ComprasPage() {
   const [shortages, setShortages] = useState<MaterialShortage[]>([])
   const [editItem, setEditItem] = useState<MaterialShortage | null>(null)
+  const [deleteItem, setDeleteItem] = useState<MaterialShortage | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [dossierOpen, setDossierOpen] = useState(false)
   const [dossierItem, setDossierItem] = useState<MaterialShortage | null>(null)
@@ -318,6 +320,7 @@ export default function ComprasPage() {
           items={comprasItems}
           allShortages={shortages}
           onEdit={setEditItem}
+          onDelete={setDeleteItem}
           selectedIds={selectedIds}
           onToggleSelect={toggleSelect}
           onToggleSelectAll={toggleSelectAll}
@@ -332,6 +335,25 @@ export default function ComprasPage() {
         open={!!editItem}
         onOpenChange={(o) => !o && setEditItem(null)}
         onUpdate={fetchShortages}
+        onDeleteRequest={(item) => {
+          setEditItem(null)
+          setDeleteItem(item)
+        }}
+      />
+      <DeleteShortageDialog
+        item={deleteItem}
+        open={!!deleteItem}
+        onOpenChange={(o) => !o && setDeleteItem(null)}
+        onSuccess={() => {
+          if (deleteItem) {
+            setSelectedIds((prev) => {
+              const next = new Set(prev)
+              next.delete(deleteItem.id)
+              return next
+            })
+          }
+          fetchShortages()
+        }}
       />
       <OrdemCompraModal
         open={ocModalOpen}

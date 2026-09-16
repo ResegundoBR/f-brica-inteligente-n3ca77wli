@@ -20,7 +20,7 @@ import { Label } from '@/components/ui/label'
 import { MaterialShortage, Quotation } from '@/types'
 import { getQuotationsByShortage, selectQuotation } from '@/services/quotations'
 import { toast } from 'sonner'
-import { Loader2, Save, Check } from 'lucide-react'
+import { Loader2, Save, Check, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import pb from '@/lib/pocketbase/client'
 import { useMemo } from 'react'
@@ -34,6 +34,7 @@ interface ComprasItemDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onUpdate: () => void
+  onDeleteRequest?: (item: MaterialShortage) => void
 }
 
 export function ComprasItemDialog({
@@ -42,6 +43,7 @@ export function ComprasItemDialog({
   open,
   onOpenChange,
   onUpdate,
+  onDeleteRequest,
 }: ComprasItemDialogProps) {
   const [quotations, setQuotations] = useState<Quotation[]>([])
   const [loading, setLoading] = useState(false)
@@ -247,12 +249,28 @@ export function ComprasItemDialog({
             </div>
           </div>
         )}
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+        <DialogFooter className="flex-col sm:flex-row gap-2">
+          {onDeleteRequest && item && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onDeleteRequest(item)}
+              disabled={saving}
+              className="sm:mr-auto text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 dark:border-red-900/40 dark:hover:bg-red-950/30"
+            >
+              <Trash2 className="w-4 h-4 mr-1 text-red-500" />
+              Remover / Cancelar
+            </Button>
+          )}
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancelar
           </Button>
           <Button onClick={handleSave} disabled={saving}>
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            {saving ? (
+              <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4 mr-1" />
+            )}
             Salvar
           </Button>
         </DialogFooter>

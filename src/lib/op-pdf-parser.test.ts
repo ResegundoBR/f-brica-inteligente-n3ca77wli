@@ -8,6 +8,24 @@ import {
   extractCutMeasurementFromDescription,
 } from './op-pdf-parser'
 
+// @ts-expect-error
+import nodeFs from 'node:fs'
+// @ts-expect-error
+import nodePath from 'node:path'
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
+
+declare const process: any
+
+describe('Direct test of real PDF in op-pdf-parser.test.ts', () => {
+  it('runs against talaoop-b7677.pdf', async () => {
+    const pdfPath = nodePath.resolve(process.cwd(), 'src/assets/talaoop-b7677.pdf')
+    const data = new Uint8Array(nodeFs.readFileSync(pdfPath))
+    const doc = await pdfjsLib.getDocument({ data }).promise
+    expect(doc.numPages).toBe(2)
+    throw new Error('TEST_EXECUTES')
+  })
+})
+
 describe('collapseSpacedLetters and normalizeSector', () => {
   it('collapses single spaced letters in ERP sector titles', () => {
     expect(collapseSpacedLetters('* F A B R I C A O *')).toBe('* FABRICAO *')

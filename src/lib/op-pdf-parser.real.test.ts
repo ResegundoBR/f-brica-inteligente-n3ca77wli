@@ -98,8 +98,16 @@ describe('Inspect real PDF tokens', () => {
       (c, idx) =>
         `${idx + 1}. [${c.sector}] ${c.code} - ${c.description} | Qtd: ${c.quantity} ${c.unit}`,
     )
+    console.log('--- ALL POSITIONED LINES SUMMARY ---')
+    allPositionedLines.forEach((l, idx) => {
+      console.log(`L${idx} [P${l.pageIndex} y=${l.y.toFixed(1)}] "${l.lineStr}"`)
+    })
+    console.log(`--- EXTRACTED COMPONENTS (${result.components.length}) ---`)
+    summary.forEach((s) => console.log(s))
+    console.log('--- HEADER ---')
+    console.log(JSON.stringify(result.header, null, 2))
     throw new Error(
-      `DEBUG_OUTPUT:\nHeader: ${JSON.stringify(result.header)}\nCount: ${result.components.length}\nItems:\n${summary.join('\n')}\nLines:\n${allLines.slice(0, 35).join('\n')}`,
+      `DEBUG_FAIL: count=${result.components.length}, header=${JSON.stringify(result.header)}`,
     )
   })
 })

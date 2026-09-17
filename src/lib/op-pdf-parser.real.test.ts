@@ -96,23 +96,6 @@ describe('Real PDF parser validation (src/assets/talaoop-b7677.pdf)', () => {
     const allLines = pages.flat()
     const allPositionedLines = positionedPages.flat()
 
-    console.log('=== EXTRACTED LINES FROM REAL PDF ===')
-    allLines.forEach((l, idx) => console.log(`[${idx}] ${l}`))
-
-    console.log('=== POSITIONED LINES (first 25 lines) ===')
-    allPositionedLines.slice(0, 25).forEach((pl, idx) => {
-      console.log(
-        `PL[${idx}] page=${pl.pageIndex} y=${pl.y.toFixed(1)} line="${pl.lineStr}" tokens=${JSON.stringify(
-          pl.tokens.map((t) => ({ s: t.str, x: Math.round(t.x) })),
-        )}`,
-      )
-    })
-
-    console.log('Total positioned lines:', allPositionedLines.length)
-    allPositionedLines.forEach((pl, idx) => {
-      console.log(`PLine[${idx}] y=${pl.y.toFixed(1)} text="${pl.lineStr}"`)
-    })
-
     const parsed = parseOpPdfDeterministic(allLines, allPositionedLines)
 
     // Expected Header:

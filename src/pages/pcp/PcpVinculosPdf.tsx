@@ -550,11 +550,10 @@ export default function PcpVinculosPdf() {
               rowQuantities[matchingRow.id] !== undefined
                 ? rowQuantities[matchingRow.id]
                 : fallbackQty
-            const activeMeasurements = isLinear
-              ? rowMeasurements[matchingRow.id] !== undefined
+            const activeMeasurements =
+              rowMeasurements[matchingRow.id] !== undefined
                 ? rowMeasurements[matchingRow.id]
                 : matchingRow.pdfItem.measurements || catItem.measurements || ''
-              : ''
 
             newComp.push({
               ...catItem,
@@ -594,11 +593,10 @@ export default function PcpVinculosPdf() {
       const currentSector = rowSectors[row.id] || row.sector
       const normSec = normalizeSector(currentSector)
       const isLinear = isLinearUnit(row.pdfItem.unit)
-      const activeMeasurements = isLinear
-        ? rowMeasurements[row.id] !== undefined
+      const activeMeasurements =
+        rowMeasurements[row.id] !== undefined
           ? rowMeasurements[row.id]
           : row.pdfItem.measurements || ''
-        : ''
 
       const fallbackQty = Math.round((Number(row.pdfItem.quantity) / opQty) * 10000) / 10000
       const activeQty = rowQuantities[row.id] !== undefined ? rowQuantities[row.id] : fallbackQty
@@ -1631,11 +1629,10 @@ export default function PcpVinculosPdf() {
                                 ? rowQuantities[row.id]
                                 : pdfQtyNormalized
 
-                            const currentMeasurement = isLinear
-                              ? rowMeasurements[row.id] !== undefined
+                            const currentMeasurement =
+                              rowMeasurements[row.id] !== undefined
                                 ? rowMeasurements[row.id]
                                 : row.pdfItem?.measurements || ''
-                              : ''
 
                             return (
                               <TableRow
@@ -1801,45 +1798,43 @@ export default function PcpVinculosPdf() {
                                   )}
                                 </TableCell>
 
-                                {/* MEDIDA DE CORTE (EDITÁVEL SOMENTE P/ ITENS LINEARES) */}
+                                {/* MEDIDA DE CORTE (EDITÁVEL) */}
                                 <TableCell className="py-2.5">
                                   {row.pdfItem ? (
-                                    isLinear ? (
-                                      <div className="flex flex-col gap-1">
+                                    <div className="flex flex-col gap-1">
+                                      <div className="flex items-center gap-1">
                                         <Input
                                           value={currentMeasurement}
                                           onChange={(e) =>
                                             handleMeasurementChange(row.id, e.target.value)
                                           }
                                           placeholder="Ex: 0,100M"
-                                          className="h-7 text-xs font-mono w-[110px] bg-white dark:bg-slate-900"
+                                          className="h-7 text-xs font-mono w-[105px] bg-white dark:bg-slate-900"
+                                          title={
+                                            isLinear
+                                              ? 'Medida de corte (metro/linear)'
+                                              : 'Medida de corte (opcional para item PC/UN)'
+                                          }
                                         />
-                                        {currentMeasurement ? (
-                                          <span className="text-[9px] text-muted-foreground font-mono">
-                                            Grava corte
-                                          </span>
-                                        ) : (
-                                          <span className="text-[9px] text-amber-600 dark:text-amber-400 font-mono">
-                                            Item linear s/ corte
+                                        {!isLinear && (
+                                          <span
+                                            className="text-[9px] text-muted-foreground font-mono shrink-0"
+                                            title="Unidade original da OP"
+                                          >
+                                            {row.pdfItem.unit || 'PC/UN'}
                                           </span>
                                         )}
                                       </div>
-                                    ) : (
-                                      <div className="flex items-center gap-1 text-muted-foreground">
-                                        <Input
-                                          disabled
-                                          value="—"
-                                          className="h-7 text-xs font-mono w-[70px] bg-slate-100 dark:bg-slate-800 text-center cursor-not-allowed opacity-60"
-                                          title="Peça unitária (PC/UN) não possui medida de corte linear"
-                                        />
-                                        <span
-                                          className="text-[9px] text-muted-foreground"
-                                          title="Peça unitária"
-                                        >
-                                          PC/UN
+                                      {currentMeasurement ? (
+                                        <span className="text-[9px] text-muted-foreground font-mono">
+                                          Grava corte
                                         </span>
-                                      </div>
-                                    )
+                                      ) : isLinear ? (
+                                        <span className="text-[9px] text-amber-600 dark:text-amber-400 font-mono">
+                                          Item linear s/ corte
+                                        </span>
+                                      ) : null}
+                                    </div>
                                   ) : (
                                     <span className="text-muted-foreground text-[10px]">
                                       {row.catalogItem?.measurements || '—'}

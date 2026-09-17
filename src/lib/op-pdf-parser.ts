@@ -339,7 +339,8 @@ export async function extractTextFromPdfFile(file: File): Promise<PdfExtractionR
 
 function normalizeDate(raw: string): string | undefined {
   if (!raw) return undefined
-  const clean = raw.trim()
+  // Remove espaços internos (ex: '03 / 11 / 2026' -> '03/11/2026')
+  const clean = raw.replace(/\s+/g, '')
   const dmyMatch = clean.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/)
   if (dmyMatch) {
     const day = dmyMatch[1].padStart(2, '0')
@@ -692,9 +693,18 @@ export function parseOpPdfDeterministic(
             labelTokenIndices: [t],
           })
         }
+        // "Data/Hora Emissão"
+        else if (/^DATA\/HORA\b|^EMISS[AÃ]O\b/i.test(str)) {
+          // Marca label de emissão para não confundir com data de entrega
+        }
         // "Datas de Entrega" or "Data de Entrega" or "Entrega"
-        else if (/^DATAS?\b|^ENTREGA\b/i.test(str)) {
-          // Check multi-word phrase e.g. "Datas" "de" "Entrega"
+        else if (
+          /(?:DATAS?\s+(?:DE\s+)?ENTREGA|ENTREGA)/i.test(str) ||
+          (/^DATAS?\b/i.test(str) &&
+            t + 1 < pLine.tokens.length &&
+            /(?:DE|ENTREGA)/i.test(pLine.tokens[t + 1].str))
+        ) {
+          // Multi-word phrase e.g. "Datas" "de" "Entrega"
           let combinedWidth = token.width || 30
           let endIdx = t
           if (t + 1 < pLine.tokens.length && /^(?:DE|ENTREGA)\b/i.test(pLine.tokens[t + 1].str)) {
@@ -705,10 +715,11 @@ export function parseOpPdfDeterministic(
               combinedWidth += (pLine.tokens[t + 2].width || 35) + 5
             }
           }
+          const startToken = pLine.tokens[t]
           foundLabels.push({
             type: 'data_entrega',
-            minX: token.x,
-            maxX: token.x + combinedWidth,
+            minX: startToken.x,
+            maxX: startToken.x + combinedWidth,
             labelTokenIndices: Array.from({ length: endIdx - t + 1 }, (_, k) => t + k),
           })
         }
@@ -822,7 +833,9 @@ export function parseOpPdfDeterministic(
               }
               case 'data_entrega': {
                 if (!header.delivery_date) {
-                  const dateMatch = combinedStr.match(
+                  // Pode haver espaços entre dígitos da data em PDFs (ex: 03 / 11 / 2026)
+                  const unspacedDateStr = combinedStr.replace(/\s+/g, '')
+                  const dateMatch = unspacedDateStr.match(
                     /(\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}[./-]\d{1,2}[./-]\d{1,2})/,
                   )
                   if (dateMatch) {

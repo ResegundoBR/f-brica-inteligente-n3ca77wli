@@ -93,10 +93,20 @@ describe('Real PDF parser validation (src/assets/talaoop-b7677.pdf)', () => {
     )
 
     const { pages, positionedPages } = await extractTokensFromPdfBuffer(arrayBuffer)
+    console.log('NUM PAGES:', pages.length)
+    pages.forEach((p, idx) => {
+      console.log(`PAGE ${idx} lines:`)
+      p.forEach((line, lIdx) => console.log(`  [${lIdx}] ${line}`))
+    })
     const allLines = pages.flat()
     const allPositionedLines = positionedPages.flat()
 
     const parsed = parseOpPdfDeterministic(allLines, allPositionedLines)
+    console.log('PARSED COMPONENTS COUNT:', parsed.components.length)
+    console.log(
+      'PARSED CODES:',
+      parsed.components.map((c) => ({ code: c.code, sector: c.sector, desc: c.description })),
+    )
 
     // Expected Header:
     // Número da OP 000494/2026; Pedido 00014002 (ou 14002); Data de Entrega 03/11/2026; Cliente 4LIGHT; Quantidade = 1

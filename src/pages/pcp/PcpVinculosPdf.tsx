@@ -359,7 +359,20 @@ export default function PcpVinculosPdf() {
       }
     })
 
-    return comparePdfWithCatalog(pdfComponents, prod)
+    const freshRows = comparePdfWithCatalog(pdfComponents, prod)
+    return freshRows.map((fr) => {
+      const userMeas = measOverrides[fr.id]
+      return {
+        ...fr,
+        resolvedMeasurements: userMeas !== undefined ? userMeas : fr.resolvedMeasurements,
+        pdfItem: fr.pdfItem
+          ? {
+              ...fr.pdfItem,
+              measurements: userMeas !== undefined ? userMeas : fr.pdfItem.measurements,
+            }
+          : undefined,
+      }
+    })
   }
 
   // Choose product and calculate comparison

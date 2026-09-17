@@ -200,11 +200,19 @@ export function OpPdfReviewModal({
       })
 
     const freshRows = comparePdfWithCatalog(pdfComponents, prod)
-    // Preserve existing applyToOp and updateCatalog decisions where possible
+    // Preserve existing applyToOp and updateCatalog decisions, and keep user-edited measurements
     return freshRows.map((fr) => {
       const prev = currentRows.find((cr) => cr.id === fr.id)
+      const userMeas = measMap[fr.id]
       return {
         ...fr,
+        resolvedMeasurements: userMeas !== undefined ? userMeas : fr.resolvedMeasurements,
+        pdfItem: fr.pdfItem
+          ? {
+              ...fr.pdfItem,
+              measurements: userMeas !== undefined ? userMeas : fr.pdfItem.measurements,
+            }
+          : undefined,
         applyToOp: prev ? prev.applyToOp : fr.status !== 'removed',
         updateCatalog: prev ? prev.updateCatalog : false,
       }

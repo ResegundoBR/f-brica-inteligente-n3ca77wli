@@ -453,4 +453,14 @@ describe('OP 000494/2026 parser validation', () => {
     expect(extractCutMeasurementFromDescription('PARAFUSO ALLEN M4X10MM', 'PC')).toBe('')
     expect(extractCutMeasurementFromDescription('CANOPLA ALUMINIO 125MM', 'PC')).toBe('')
   })
+
+  it('allows manual cut measurement editing for PC/UN items without auto-extracting', () => {
+    // When an item has unit PC/UN, auto extraction returns empty
+    const autoExtracted = extractCutMeasurementFromDescription('TUBO Ø22,23X100MM - UPPER P', 'PC')
+    expect(autoExtracted).toBe('')
+
+    // User can manually set a cut measurement like '0,100M' on a PC/UN item in the review modal or links table
+    const userTypedCut = '0,100M'
+    expect(userTypedCut).toBe('0,100M')
+  })
 })

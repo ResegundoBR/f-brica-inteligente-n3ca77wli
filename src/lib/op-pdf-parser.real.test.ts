@@ -101,6 +101,7 @@ describe('Real PDF parser validation (src/assets/talaoop-b7677.pdf)', () => {
     const allLines = pages.flat()
     const allPositionedLines = positionedPages.flat()
 
+    console.log('POSITIONED LINES COUNT:', allPositionedLines.length)
     const parsed = parseOpPdfDeterministic(allLines, allPositionedLines)
     console.log('PARSED COMPONENTS COUNT:', parsed.components.length)
     console.log(

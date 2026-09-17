@@ -1557,9 +1557,11 @@ export function parseOpPdfDeterministic(
       // Determine page-specific header Y anchor
       const pageAnchorY = pageHeaderYMap.get(thisPageIndex) ?? null
 
-      // If pageAnchorY was found on THIS page, enforce strictly that line Y is below the header Y of this page:
-      // In PDF coordinate space, lower down on the page means y < pageAnchorY - 0.5.
-      if (pageAnchorY !== null && pLine.y >= pageAnchorY - 0.5) {
+      // If pageAnchorY was found on THIS page, enforce strictly that line Y is below the FIRST table header Y of this page:
+      // However, if we are already inside the components section on this page (i.e. i > startLineIdx),
+      // intermediate table column headers between sectors (like PREPARAÇÃO or MONTAGEM) should NOT
+      // cause subsequent component lines or sector headers to be skipped!
+      if (pageAnchorY !== null && pLine.y >= pageAnchorY - 0.5 && !inPosComponentSection) {
         // On the header line itself, check if a sector is present or merged
         const sectorInHeader = matchSectorInText(lineStr)
         if (sectorInHeader && sectorInHeader !== currentSector) {

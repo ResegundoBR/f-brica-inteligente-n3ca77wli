@@ -3,6 +3,7 @@
   "description": "A frontend React Vite TypeScript Shadcn UI template for Skip projects",
   "private": true,
   "version": "0.0.331",
+  "build_timestamp": "2026-03-31T00:00:00.000Z",
   "type": "module",
   "scripts": {
     "start": "vite dev",

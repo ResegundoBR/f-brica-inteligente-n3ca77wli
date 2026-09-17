@@ -851,7 +851,12 @@ export function parseOpPdfDeterministic(
               case 'op': {
                 if (!header.op_number) {
                   const opMatch = combinedStr.match(/^([A-Za-z0-9\-./]{3,20})$/)
-                  if (opMatch && !isLabelWord(opMatch[1])) {
+                  if (
+                    opMatch &&
+                    !isLabelWord(opMatch[1]) &&
+                    !/^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/.test(opMatch[1]) &&
+                    !/^\*[\s*0-9/]*\*$/.test(opMatch[1])
+                  ) {
                     header.op_number = opMatch[1]
                   }
                 }
@@ -888,11 +893,31 @@ export function parseOpPdfDeterministic(
 
   // 1. OP Number fallback
   if (!header.op_number) {
-    const opMatch = fullText.match(
-      /(?:N[úu]mero\s+[Dd]a\s+OP|N[º°]?\s*da\s*OP|N[º°]?\s*OP|OP\s*N[º°]?|Ordem\s+de\s+Produ[çc][aã]o\s*(?:N[º°]?)?|OP)\s*[:.-]?\s*([A-Za-z0-9\-./]+)/i,
+    // Procura por "Número Da OP: 000494/2026" ou similar
+    const explicitOpMatch = fullText.match(
+      /(?:N[úu]mero\s+[Dd]a\s+OP|N[º°]?\s*da\s*OP|N[º°]?\s*OP|OP\s*N[º°]?|Ordem\s+de\s+Produ[çc][aã]o\s*(?:N[º°]?)?)\s*[:.-]?\s*([A-Za-z0-9\-./]{3,20})/i,
     )
+    if (explicitOpMatch && explicitOpMatch[1] && !isLabelWord(explicitOpMatch[1])) {
+      const candidate = explicitOpMatch[1].trim()
+      if (
+        !/^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/.test(candidate) &&
+        !/^\*[\s*0-9/]*\*$/.test(candidate)
+      ) {
+        header.op_number = candidate
+      }
+    }
+  }
+
+  if (!header.op_number) {
+    const opMatch = fullText.match(/(?:^|\b)OP\s*[:.-]?\s*([A-Za-z0-9\-./]{3,20})/i)
     if (opMatch && opMatch[1] && !isLabelWord(opMatch[1])) {
-      header.op_number = opMatch[1].trim()
+      const candidate = opMatch[1].trim()
+      if (
+        !/^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/.test(candidate) &&
+        !/^\*[\s*0-9/]*\*$/.test(candidate)
+      ) {
+        header.op_number = candidate
+      }
     }
   }
 

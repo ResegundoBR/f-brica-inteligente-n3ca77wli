@@ -115,20 +115,6 @@ describe('Real PDF parser validation (src/assets/talaoop-b7677.pdf)', () => {
 
     const parsed = parseOpPdfDeterministic(allLines, allPositionedLines)
 
-    console.log('=== PARSED HEADER ===', parsed.header)
-    console.log('=== PARSED COMPONENTS COUNT ===', parsed.components.length)
-    console.log(
-      '=== PARSED COMPONENTS SUMMARY ===',
-      parsed.components.map((c) => ({
-        code: c.code,
-        sector: c.sector,
-        desc: c.description,
-        qty: c.quantity,
-        unit: c.unit,
-        medida: c.measurements,
-      })),
-    )
-
     // Expected Header:
     // Número da OP 000494/2026; Pedido 00014002 (ou 14002); Data de Entrega 03/11/2026; Cliente 4LIGHT; Quantidade = 1
     expect(parsed.header.op_number).toBe('000494/2026')

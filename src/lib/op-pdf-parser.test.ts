@@ -4,6 +4,7 @@ import {
   collapseSpacedLetters,
   normalizeSector,
   PdfPositionedLine,
+  PdfPositionedToken,
   isLinearUnit,
   extractCutMeasurementFromDescription,
 } from './op-pdf-parser'
@@ -22,7 +23,87 @@ describe('Direct test of real PDF in op-pdf-parser.test.ts', () => {
     const data = new Uint8Array(nodeFs.readFileSync(pdfPath))
     const doc = await pdfjsLib.getDocument({ data }).promise
     expect(doc.numPages).toBe(2)
-    throw new Error('TEST_EXECUTES')
+    // Let's parse it and throw with debug!
+    const positionedPages: PdfPositionedLine[][] = []
+    const pagesText: string[][] = []
+
+    for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
+      const page = await doc.getPage(pageNum)
+      const textContent = await page.getTextContent()
+
+      const items = textContent.items as Array<{
+        str: string
+        transform: number[]
+        width: number
+        height: number
+      }>
+
+      const lineBuckets: { y: number; items: typeof items }[] = []
+      const Y_THRESHOLD = 3.5
+
+      for (const item of items) {
+        if (!item.str && item.str !== ' ') continue
+        const itemY = item.transform[5]
+        let bucket = lineBuckets.find((b: any) => Math.abs(b.y - itemY) <= Y_THRESHOLD)
+        if (!bucket) {
+          bucket = { y: itemY, items: [] }
+          lineBuckets.push(bucket)
+        }
+        bucket.items.push(item)
+      }
+
+      lineBuckets.sort((a: any, b: any) => b.y - a.y)
+
+      const pageLines: string[] = []
+      const pagePositionedLines: PdfPositionedLine[] = []
+
+      for (const bucket of lineBuckets) {
+        bucket.items.sort((a: any, b: any) => a.transform[4] - b.transform[4])
+        const tokens: PdfPositionedToken[] = bucket.items
+          .map((it: any) => ({
+            str: it.str.trim(),
+            x: it.transform[4],
+            y: it.transform[5],
+            width: it.width,
+            height: it.height,
+          }))
+          .filter((t: any) => t.str.length > 0)
+
+        const lineStr = bucket.items
+          .map((it: any) => it.str)
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+
+        if (lineStr) {
+          pageLines.push(lineStr)
+          pagePositionedLines.push({
+            y: bucket.y,
+            tokens,
+            lineStr,
+            pageIndex: pageNum - 1,
+          })
+        }
+      }
+      pagesText.push(pageLines)
+      positionedPages.push(pagePositionedLines)
+    }
+
+    const allLines = pagesText.flat()
+    const allPositionedLines = positionedPages.flat()
+    const result = parseOpPdfDeterministic(allLines, allPositionedLines)
+
+    const dump = {
+      count: result.components.length,
+      comps: result.components.map(
+        (c) => `[${c.sector}] ${c.code} (${c.quantity} ${c.unit}) - ${c.description}`,
+      ),
+      allLines: allPositionedLines.map(
+        (l, i) =>
+          `L${i}(p${l.pageIndex}, y=${l.y.toFixed(1)}): "${l.lineStr}" | tokens: [${l.tokens.map((t) => `${t.str}(${t.x.toFixed(0)})`).join(', ')}]`,
+      ),
+    }
+    throw new Error(`DUMP_REAL: ` + JSON.stringify(dump, null, 2))
   })
 })
 

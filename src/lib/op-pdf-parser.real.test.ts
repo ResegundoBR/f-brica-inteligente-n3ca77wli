@@ -1,4 +1,4 @@
-import { describe, it } from 'vitest'
+import { describe, it, expect } from 'vitest'
 // @ts-expect-error
 import nodeFs from 'node:fs'
 // @ts-expect-error
@@ -106,8 +106,15 @@ describe('Inspect real PDF tokens', () => {
     summary.forEach((s) => console.log(s))
     console.log('--- HEADER ---')
     console.log(JSON.stringify(result.header, null, 2))
-    throw new Error(
-      `DEBUG_FAIL: count=${result.components.length}, header=${JSON.stringify(result.header)}`,
-    )
+    // Force a test failure with extracted info in the error message so QA reports it!
+    const debugDump = {
+      count: result.components.length,
+      comps: result.components.map((c) => `[${c.sector}] ${c.code} (${c.quantity} ${c.unit})`),
+      linesCount: allPositionedLines.length,
+      sampleLines: allPositionedLines.map(
+        (l, i) => `L${i}(p${l.pageIndex}, y=${l.y}): "${l.lineStr}"`,
+      ),
+    }
+    expect(JSON.stringify(debugDump, null, 2)).toBe('MATCH_ALL_20')
   })
 })

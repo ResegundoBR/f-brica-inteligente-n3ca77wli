@@ -1434,7 +1434,26 @@ export function parseOpPdfDeterministic(
         continue
       }
 
-      const { bounds, hasCod, hasDescOrQtd } = extractTableBoundsFromLine(pLine)
+      // Check single line first
+      let { bounds, hasCod, hasDescOrQtd } = extractTableBoundsFromLine(pLine)
+
+      // In real PDFs, CÓD might be on line N and PRODUTO DESCRIÇÃO... on line N+1 with small y delta!
+      if (hasCod && !hasDescOrQtd && idx + 1 < positionedLines.length) {
+        const nextPLine = positionedLines[idx + 1]
+        if (nextPLine.pageIndex === pPageIndex && Math.abs(pLine.y - nextPLine.y) <= 18) {
+          const combinedTokens = [...pLine.tokens, ...nextPLine.tokens]
+          const combinedLine: PdfPositionedLine = {
+            ...pLine,
+            tokens: combinedTokens,
+            lineStr: `${pLine.lineStr} ${nextPLine.lineStr}`,
+          }
+          const combinedRes = extractTableBoundsFromLine(combinedLine)
+          if (combinedRes.hasCod && combinedRes.hasDescOrQtd) {
+            bounds = combinedRes.bounds
+            hasDescOrQtd = true
+          }
+        }
+      }
 
       // Must have CÓD PRODUTO and at least DESCRIÇÃO or QTD
       if (hasCod && hasDescOrQtd) {

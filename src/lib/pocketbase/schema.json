@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-19T13:45:59.684Z",
+  "generatedAt": "2026-09-19T13:50:55.753Z",
   "collections": [
     {
       "name": "users",
@@ -2594,6 +2594,130 @@
         "CREATE INDEX idx_components_code ON components (code)",
         "CREATE INDEX idx_components_description ON components (description)",
         "CREATE INDEX idx_components_active ON components (active)"
+      ]
+    },
+    {
+      "name": "material_separations",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "title",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["Pendente", "Em_Separacao", "Concluida", "Cancelada"]
+        },
+        {
+          "name": "date",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "op_numbers",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "order_ids",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "items",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "separated_items",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "shortage_items",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "separated_count",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "shortage_count",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "total_items_count",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created_by",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "finished_by",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "finished_at",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_material_separations_status ON material_separations (status)",
+        "CREATE INDEX idx_material_separations_created ON material_separations (created DESC)"
       ]
     }
   ]

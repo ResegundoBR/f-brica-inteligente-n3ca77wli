@@ -22,6 +22,7 @@ import {
   Layers,
   Cylinder,
   Boxes,
+  Send,
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { PcpOrder } from '@/types'
@@ -39,6 +40,7 @@ interface CompiledMaterialsViewProps {
     noStockCount: number
   }
   isLoadingMaterials?: boolean
+  onSendToSeparation?: () => void
 }
 
 export function CompiledMaterialsView({
@@ -47,6 +49,7 @@ export function CompiledMaterialsView({
   otherItems,
   totals,
   isLoadingMaterials,
+  onSendToSeparation,
 }: CompiledMaterialsViewProps) {
   const [filterText, setFilterText] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'shortage' | 'covered' | 'no_stock'>(
@@ -209,17 +212,29 @@ export function CompiledMaterialsView({
           </p>
         </div>
 
-        {/* BOTÕES DE EXPORTAÇÃO */}
+        {/* BOTÕES DE EXPORTAÇÃO E ENVIAR PARA SEPARAÇÃO */}
         <div className="flex items-center gap-2 flex-wrap">
+          {onSendToSeparation && (
+            <Button
+              onClick={onSendToSeparation}
+              size="sm"
+              className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-md animate-pulse hover:animate-none"
+              title="Gravar rodada e enviar compilado para separação pelo Operador"
+            >
+              <Send className="size-4" />
+              ENVIAR PARA SEPARAÇÃO
+            </Button>
+          )}
+
           <Button
             onClick={handleExportSpreadsheet}
             variant="secondary"
             size="sm"
-            className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white border-none shadow"
+            className="gap-2 bg-slate-700 hover:bg-slate-600 text-white border-none shadow"
             title="Exportar planilha (.csv) do compilado para conferência física no estoque"
           >
             <FileDown className="size-4" />
-            Exportar Planilha (Excel/CSV)
+            Exportar Planilha
           </Button>
 
           <Button
@@ -230,7 +245,7 @@ export function CompiledMaterialsView({
             title="Imprimir ou salvar como PDF para conferência física no galpão"
           >
             <Printer className="size-4 text-slate-700" />
-            Exportar PDF / Imprimir
+            Imprimir PDF
           </Button>
         </div>
       </div>

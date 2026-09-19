@@ -49,6 +49,8 @@ import {
 } from '@/lib/pcp-utils'
 import { PcpFilters } from './components/PcpFilters'
 import { CompiledMaterialsView } from './components/CompiledMaterialsView'
+import { SendToSeparationModal } from './components/SendToSeparationModal'
+import { SeparationRoundsManager } from './components/SeparationRoundsManager'
 import { compileOrderMaterials } from '@/services/pcp-programacao'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
@@ -85,6 +87,7 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
   const [prazoEspecialOnly, setPrazoEspecialOnly] = useState(false)
   const [promisedOnly, setPromisedOnly] = useState(false)
   const [filaOnlyFilter, setFilaOnlyFilter] = useState(false)
+  const [sendSeparationOpen, setSendSeparationOpen] = useState(false)
 
   const { toast } = useToast()
 
@@ -1216,13 +1219,16 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
       {/* (1) SEÇÃO DO COMPILADO CONSOLIDADO (ABAIXO DA LISTA DE OPS) */}
       <div id="secao-compilado-materiais" className="scroll-mt-20 pt-2">
         {selectedOpIds.size > 0 ? (
-          <CompiledMaterialsView
-            selectedOrders={selectedOrdersList}
-            profileItems={compiledData.profileItems}
-            otherItems={compiledData.otherItems}
-            totals={compiledData.totals}
-            isLoadingMaterials={isLoadingMaterials}
-          />
+          <div className="space-y-6">
+            <CompiledMaterialsView
+              selectedOrders={selectedOrdersList}
+              profileItems={compiledData.profileItems}
+              otherItems={compiledData.otherItems}
+              totals={compiledData.totals}
+              isLoadingMaterials={isLoadingMaterials}
+              onSendToSeparation={() => setSendSeparationOpen(true)}
+            />
+          </div>
         ) : (
           <div className="rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-800 p-8 text-center bg-slate-50/50 dark:bg-slate-900/30">
             <div className="max-w-md mx-auto space-y-3">
@@ -1249,6 +1255,27 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
           </div>
         )}
       </div>
+
+      {/* SEÇÃO DE ACOMPANHAMENTO DE RODADAS DE SEPARAÇÃO (STATUS PARA O GESTOR) */}
+      <div className="pt-4 border-t">
+        <SeparationRoundsManager />
+      </div>
+
+      {/* MODAL DE ENVIO PARA SEPARAÇÃO */}
+      <SendToSeparationModal
+        open={sendSeparationOpen}
+        onOpenChange={setSendSeparationOpen}
+        compiledItems={[...compiledData.profileItems, ...compiledData.otherItems]}
+        selectedOps={selectedOrdersList.map((o) => o.op_number || o.order_number).filter(Boolean)}
+        selectedOrderIds={Array.from(selectedOpIds)}
+        onSuccess={() => {
+          // Após enviar com sucesso, scroll suave até a tabela de rodadas
+          toast({
+            title: 'Separação Registrada',
+            description: 'Acompanhe o status na tabela de Rodadas de Separação abaixo.',
+          })
+        }}
+      />
 
       {/* BARRA FIXA DISCRETA TIPO 'X OP(s) selecionada(s) — ver compilado' */}
       {selectedOpIds.size > 0 && (

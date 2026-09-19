@@ -52,6 +52,7 @@ import { PromisedDateBadge } from '@/components/PromisedDateBadge'
 import { MaterialDescriptionAutocomplete } from '@/pages/pcp/components/MaterialDescriptionAutocomplete'
 import { SeparationMaterialsModal } from '@/pages/pcp/components/SeparationMaterialsModal'
 import { StockWithdrawalModal } from '@/pages/pcp/components/StockWithdrawalModal'
+import { OperatorSeparationTab } from './components/OperatorSeparationTab'
 import { useOrderMessages } from '@/hooks/use-order-messages'
 import { useUnreadMessages } from '@/hooks/use-unread-messages'
 import { OrderMessagesPanel } from '@/components/OrderMessagesPanel'
@@ -1146,6 +1147,7 @@ export default function PcpOperator() {
   const [reqOrderId, setReqOrderId] = useState('none')
   const [separationOp, setSeparationOp] = useState<PcpOrder | null>(null)
   const [withdrawalOp, setWithdrawalOp] = useState<PcpOrder | null>(null)
+  const [operatorMainTab, setOperatorMainTab] = useState<'operacoes' | 'separacao'>('operacoes')
 
   const loadData = async () => {
     try {
@@ -1865,189 +1867,217 @@ export default function PcpOperator() {
           </Dialog>
         </div>
       </div>
-      <div className="flex flex-wrap pb-2 gap-2 mb-2">
-        {(Object.keys(SECTORS) as SectorName[]).map((sector) => (
-          <Button
-            key={sector}
-            variant={selectedSector === sector ? 'default' : 'outline'}
-            onClick={() => setSelectedSector(sector)}
-            className={cn(
-              'text-sm md:text-lg px-4 md:px-6 h-10 md:h-12 rounded-full font-bold transition-all whitespace-nowrap border-2',
-              selectedSector === sector &&
-                'shadow-md ring-2 ring-primary/20 bg-slate-900 dark:bg-slate-100',
-            )}
-          >
-            {sector}
-          </Button>
-        ))}
-        <Button
-          variant="outline"
-          onClick={toggleSoundAlerts}
-          title={
-            soundAlertsOn
-              ? 'Alerta sonoro ativo: clique para desativar'
-              : 'Alerta sonoro desativado: clique para ativar'
-          }
-          className="ml-auto text-xs sm:text-sm md:text-base h-10 md:h-12 px-3 md:px-4 rounded-full font-bold border-2 gap-2 whitespace-nowrap"
+      {/* ABAS PRINCIPAIS DO PORTAL DO OPERADOR: OPERAÇÕES / SEPARAÇÃO */}
+      <div className="border-b pb-3 mb-2 flex items-center justify-between flex-wrap gap-2">
+        <Tabs
+          value={operatorMainTab}
+          onValueChange={(v) => setOperatorMainTab(v as 'operacoes' | 'separacao')}
+          className="w-auto"
         >
-          {soundAlertsOn ? (
-            <Volume2 className="size-4 md:size-5 text-green-600 dark:text-green-400" />
-          ) : (
-            <VolumeX className="size-4 md:size-5 text-slate-400" />
-          )}
-          {soundAlertsOn ? 'Alerta: ON' : 'Alerta: OFF'}
-        </Button>
+          <TabsList className="bg-slate-200 dark:bg-slate-800 p-1 h-11">
+            <TabsTrigger value="operacoes" className="text-sm font-bold gap-2 px-4">
+              <span>⚙️</span> Fila de Operações
+            </TabsTrigger>
+            <TabsTrigger
+              value="separacao"
+              className="text-sm font-bold gap-2 px-4 data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-emerald-700 dark:text-emerald-400"
+            >
+              <Package className="h-4 w-4" />
+              Separação de Materiais
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
-      <div className="relative mb-4">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-5 text-slate-400" />
-        <Input
-          type="text"
-          placeholder="Buscar por pedido, OP, cliente ou produto..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="h-12 pl-11 pr-10 text-base"
-        />
-        {searchTerm && (
-          <button
-            onClick={() => setSearchTerm('')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-          >
-            <X className="size-5" />
-          </button>
-        )}
-      </div>
+      {operatorMainTab === 'separacao' ? (
+        <OperatorSeparationTab />
+      ) : (
+        <>
+          <div className="flex flex-wrap pb-2 gap-2 mb-2">
+            {(Object.keys(SECTORS) as SectorName[]).map((sector) => (
+              <Button
+                key={sector}
+                variant={selectedSector === sector ? 'default' : 'outline'}
+                onClick={() => setSelectedSector(sector)}
+                className={cn(
+                  'text-sm md:text-lg px-4 md:px-6 h-10 md:h-12 rounded-full font-bold transition-all whitespace-nowrap border-2',
+                  selectedSector === sector &&
+                    'shadow-md ring-2 ring-primary/20 bg-slate-900 dark:bg-slate-100',
+                )}
+              >
+                {sector}
+              </Button>
+            ))}
+            <Button
+              variant="outline"
+              onClick={toggleSoundAlerts}
+              title={
+                soundAlertsOn
+                  ? 'Alerta sonoro ativo: clique para desativar'
+                  : 'Alerta sonoro desativado: clique para ativar'
+              }
+              className="ml-auto text-xs sm:text-sm md:text-base h-10 md:h-12 px-3 md:px-4 rounded-full font-bold border-2 gap-2 whitespace-nowrap"
+            >
+              {soundAlertsOn ? (
+                <Volume2 className="size-4 md:size-5 text-green-600 dark:text-green-400" />
+              ) : (
+                <VolumeX className="size-4 md:size-5 text-slate-400" />
+              )}
+              {soundAlertsOn ? 'Alerta: ON' : 'Alerta: OFF'}
+            </Button>
+          </div>
 
-      <Tabs defaultValue="fila">
-        <TabsList className="lg:hidden w-full mb-4 h-12 grid grid-cols-2 bg-slate-200/80 dark:bg-slate-900 border border-slate-300 dark:border-slate-700">
-          <TabsTrigger
-            value="fila"
-            className="text-sm sm:text-base font-bold data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 dark:text-slate-300 dark:data-[state=active]:text-slate-100"
-          >
-            Fila ({sortedFila.length})
-          </TabsTrigger>
-          <TabsTrigger
-            value="execucao"
-            className="text-sm sm:text-base font-bold data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 dark:text-slate-300 dark:data-[state=active]:text-slate-100"
-          >
-            Em Execução ({sortedExecucao.length})
-          </TabsTrigger>
-        </TabsList>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-          <TabsContent
-            value="fila"
-            forceMount
-            className="flex flex-col gap-4 data-[state=inactive]:hidden lg:data-[state=inactive]:flex mt-0"
-          >
-            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-2">
-              <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2 text-slate-800 dark:text-slate-100">
-                Fila para Iniciar
-              </h2>
-              <Badge variant="secondary" className="text-lg px-3">
-                {sortedFila.length}
-              </Badge>
-            </div>
-            {sortedFila.length === 0 ? (
-              <div className="p-8 text-center border-2 border-dashed rounded-xl border-slate-200 dark:border-slate-800 text-slate-400 font-medium">
-                Nenhuma OP na fila deste setor.
-              </div>
-            ) : (
-              sortedFila.map((op) => (
-                <OperatorCard
-                  key={op.id}
-                  op={op}
-                  process={processes.find(
-                    (p) => p.product_id === op.product_id && p.kanban_stage === op.stage,
-                  )}
-                  allProcesses={processes}
-                  selectedSector={selectedSector}
-                  onStart={() => handleStart(op)}
-                  onFinishConfirm={(ns) => handleFinishConfirm(op, ns)}
-                  onBottleneck={(reason, details, items) =>
-                    handleBottleneck(op, reason, details, items)
-                  }
-                  onReworkSubmit={(targetSector, targetStage, description) =>
-                    handleReworkSubmit(op, targetSector, targetStage, description)
-                  }
-                  shortages={shortagesByOrder[op.id] || []}
-                  onForceStart={() => handleForceStart(op)}
-                  onReportMaterial={() => handleReportMaterial(op)}
-                  onOpenSeparation={() => setSeparationOp(op)}
-                  onOpenWithdrawal={() => setWithdrawalOp(op)}
-                  hasComposition={(orderMaterialsCountMap[op.id] || 0) > 0}
-                  messageState={getOrderMessageInfo(op.id).indicatorState}
-                  messageCount={getOrderMessageInfo(op.id).count}
-                  onMessageClick={() =>
-                    setMessageOrder({
-                      id: op.id,
-                      orderNumber: op.order_number,
-                      opNumber: op.op_number || '',
-                    })
-                  }
-                  acabamentoColor={acabamentoColorsByOrder[op.id]}
-                />
-              ))
+          <div className="relative mb-4">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-5 text-slate-400" />
+            <Input
+              type="text"
+              placeholder="Buscar por pedido, OP, cliente ou produto..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="h-12 pl-11 pr-10 text-base"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+              >
+                <X className="size-5" />
+              </button>
             )}
-          </TabsContent>
+          </div>
 
-          <TabsContent
-            value="execucao"
-            forceMount
-            className="flex flex-col gap-4 data-[state=inactive]:hidden lg:data-[state=inactive]:flex mt-0"
-          >
-            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-2">
-              <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2 text-slate-800 dark:text-slate-100">
-                Em Execução
-              </h2>
-              <Badge variant="default" className="text-lg px-3 bg-blue-600 hover:bg-blue-600">
-                {sortedExecucao.length}
-              </Badge>
+          <Tabs defaultValue="fila">
+            <TabsList className="lg:hidden w-full mb-4 h-12 grid grid-cols-2 bg-slate-200/80 dark:bg-slate-900 border border-slate-300 dark:border-slate-700">
+              <TabsTrigger
+                value="fila"
+                className="text-sm sm:text-base font-bold data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 dark:text-slate-300 dark:data-[state=active]:text-slate-100"
+              >
+                Fila ({sortedFila.length})
+              </TabsTrigger>
+              <TabsTrigger
+                value="execucao"
+                className="text-sm sm:text-base font-bold data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 dark:text-slate-300 dark:data-[state=active]:text-slate-100"
+              >
+                Em Execução ({sortedExecucao.length})
+              </TabsTrigger>
+            </TabsList>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+              <TabsContent
+                value="fila"
+                forceMount
+                className="flex flex-col gap-4 data-[state=inactive]:hidden lg:data-[state=inactive]:flex mt-0"
+              >
+                <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-2">
+                  <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2 text-slate-800 dark:text-slate-100">
+                    Fila para Iniciar
+                  </h2>
+                  <Badge variant="secondary" className="text-lg px-3">
+                    {sortedFila.length}
+                  </Badge>
+                </div>
+                {sortedFila.length === 0 ? (
+                  <div className="p-8 text-center border-2 border-dashed rounded-xl border-slate-200 dark:border-slate-800 text-slate-400 font-medium">
+                    Nenhuma OP na fila deste setor.
+                  </div>
+                ) : (
+                  sortedFila.map((op) => (
+                    <OperatorCard
+                      key={op.id}
+                      op={op}
+                      process={processes.find(
+                        (p) => p.product_id === op.product_id && p.kanban_stage === op.stage,
+                      )}
+                      allProcesses={processes}
+                      selectedSector={selectedSector}
+                      onStart={() => handleStart(op)}
+                      onFinishConfirm={(ns) => handleFinishConfirm(op, ns)}
+                      onBottleneck={(reason, details, items) =>
+                        handleBottleneck(op, reason, details, items)
+                      }
+                      onReworkSubmit={(targetSector, targetStage, description) =>
+                        handleReworkSubmit(op, targetSector, targetStage, description)
+                      }
+                      shortages={shortagesByOrder[op.id] || []}
+                      onForceStart={() => handleForceStart(op)}
+                      onReportMaterial={() => handleReportMaterial(op)}
+                      onOpenSeparation={() => setSeparationOp(op)}
+                      onOpenWithdrawal={() => setWithdrawalOp(op)}
+                      hasComposition={(orderMaterialsCountMap[op.id] || 0) > 0}
+                      messageState={getOrderMessageInfo(op.id).indicatorState}
+                      messageCount={getOrderMessageInfo(op.id).count}
+                      onMessageClick={() =>
+                        setMessageOrder({
+                          id: op.id,
+                          orderNumber: op.order_number,
+                          opNumber: op.op_number || '',
+                        })
+                      }
+                      acabamentoColor={acabamentoColorsByOrder[op.id]}
+                    />
+                  ))
+                )}
+              </TabsContent>
+
+              <TabsContent
+                value="execucao"
+                forceMount
+                className="flex flex-col gap-4 data-[state=inactive]:hidden lg:data-[state=inactive]:flex mt-0"
+              >
+                <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-2">
+                  <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2 text-slate-800 dark:text-slate-100">
+                    Em Execução
+                  </h2>
+                  <Badge variant="default" className="text-lg px-3 bg-blue-600 hover:bg-blue-600">
+                    {sortedExecucao.length}
+                  </Badge>
+                </div>
+                {sortedExecucao.length === 0 ? (
+                  <div className="p-8 text-center border-2 border-dashed rounded-xl border-slate-200 dark:border-slate-800 text-slate-400 font-medium">
+                    Nenhuma OP em execução no momento.
+                  </div>
+                ) : (
+                  sortedExecucao.map((op) => (
+                    <OperatorCard
+                      key={op.id}
+                      op={op}
+                      process={processes.find(
+                        (p) => p.product_id === op.product_id && p.kanban_stage === op.stage,
+                      )}
+                      allProcesses={processes}
+                      selectedSector={selectedSector}
+                      onStart={() => handleStart(op)}
+                      onFinishConfirm={(ns) => handleFinishConfirm(op, ns)}
+                      onBottleneck={(reason, details, items) =>
+                        handleBottleneck(op, reason, details, items)
+                      }
+                      onReworkSubmit={(targetSector, targetStage, description) =>
+                        handleReworkSubmit(op, targetSector, targetStage, description)
+                      }
+                      shortages={shortagesByOrder[op.id] || []}
+                      onForceStart={() => handleForceStart(op)}
+                      onReportMaterial={() => handleReportMaterial(op)}
+                      onOpenSeparation={() => setSeparationOp(op)}
+                      onOpenWithdrawal={() => setWithdrawalOp(op)}
+                      hasComposition={(orderMaterialsCountMap[op.id] || 0) > 0}
+                      messageState={getOrderMessageInfo(op.id).indicatorState}
+                      messageCount={getOrderMessageInfo(op.id).count}
+                      onMessageClick={() =>
+                        setMessageOrder({
+                          id: op.id,
+                          orderNumber: op.order_number,
+                          opNumber: op.op_number || '',
+                        })
+                      }
+                      acabamentoColor={acabamentoColorsByOrder[op.id]}
+                    />
+                  ))
+                )}
+              </TabsContent>
             </div>
-            {sortedExecucao.length === 0 ? (
-              <div className="p-8 text-center border-2 border-dashed rounded-xl border-slate-200 dark:border-slate-800 text-slate-400 font-medium">
-                Nenhuma OP em execução no momento.
-              </div>
-            ) : (
-              sortedExecucao.map((op) => (
-                <OperatorCard
-                  key={op.id}
-                  op={op}
-                  process={processes.find(
-                    (p) => p.product_id === op.product_id && p.kanban_stage === op.stage,
-                  )}
-                  allProcesses={processes}
-                  selectedSector={selectedSector}
-                  onStart={() => handleStart(op)}
-                  onFinishConfirm={(ns) => handleFinishConfirm(op, ns)}
-                  onBottleneck={(reason, details, items) =>
-                    handleBottleneck(op, reason, details, items)
-                  }
-                  onReworkSubmit={(targetSector, targetStage, description) =>
-                    handleReworkSubmit(op, targetSector, targetStage, description)
-                  }
-                  shortages={shortagesByOrder[op.id] || []}
-                  onForceStart={() => handleForceStart(op)}
-                  onReportMaterial={() => handleReportMaterial(op)}
-                  onOpenSeparation={() => setSeparationOp(op)}
-                  onOpenWithdrawal={() => setWithdrawalOp(op)}
-                  hasComposition={(orderMaterialsCountMap[op.id] || 0) > 0}
-                  messageState={getOrderMessageInfo(op.id).indicatorState}
-                  messageCount={getOrderMessageInfo(op.id).count}
-                  onMessageClick={() =>
-                    setMessageOrder({
-                      id: op.id,
-                      orderNumber: op.order_number,
-                      opNumber: op.op_number || '',
-                    })
-                  }
-                  acabamentoColor={acabamentoColorsByOrder[op.id]}
-                />
-              ))
-            )}
-          </TabsContent>
-        </div>
-      </Tabs>
+          </Tabs>
+        </>
+      )}
       <SeparationMaterialsModal
         op={separationOp}
         open={!!separationOp}

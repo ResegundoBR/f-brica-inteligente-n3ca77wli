@@ -7,6 +7,7 @@ export interface CompiledMaterialItem {
   isProfileOrTube: boolean
   totalQuantity: number
   unit: string
+  cutMeasurement?: string | null
   // Dados de estoque vinculado
   hasInventoryRecord: boolean
   stockQuantity: number | null
@@ -18,6 +19,7 @@ export interface CompiledMaterialItem {
   // OPs de origem
   ordersCount: number
   orderNumbers: string[]
+  orderIds?: string[]
   // Vínculo mestre / estoque
   masterComponent?: MasterComponent
   inventoryItem?: Inventory
@@ -550,6 +552,7 @@ export function compileOrderMaterials(input: CompileMaterialsInput): {
       surplusQuantity,
       ordersCount: group.orderIds.size,
       orderNumbers,
+      orderIds: Array.from(group.orderIds),
       masterComponent: matchedMaster,
       inventoryItem: matchedInv,
       matchMethod,

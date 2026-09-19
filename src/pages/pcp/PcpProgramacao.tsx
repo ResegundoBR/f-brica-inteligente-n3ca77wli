@@ -88,6 +88,13 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
 
   const { toast } = useToast()
 
+  const scrollToCompiled = () => {
+    const el = document.getElementById('secao-compilado-materiais')
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }
+
   // Carrega dados gerais de apoio (somente leitura)
   const loadData = async () => {
     Promise.allSettled([
@@ -445,8 +452,18 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
       masterComponents,
       inventoryItems,
       orderIdToOpNumberMap,
+      products,
+      orders,
     })
-  }, [selectedMaterials, orderNumbersMap, masterComponents, inventoryItems, orderIdToOpNumberMap])
+  }, [
+    selectedMaterials,
+    orderNumbersMap,
+    masterComponents,
+    inventoryItems,
+    orderIdToOpNumberMap,
+    products,
+    orders,
+  ])
 
   // Lista de objetos PcpOrder selecionados
   // SALVAGUARDA: desduplica por op_number na lista exibida no cabeçalho/resumo do compilado
@@ -756,41 +773,6 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
         </div>
       )}
 
-      {/* SEÇÃO 1: COMPILADO CONSOLIDADO (EXIBIDO COM DESTAQUE QUANDO HÁ OPS SELECIONADAS) */}
-      {selectedOpIds.size > 0 ? (
-        <CompiledMaterialsView
-          selectedOrders={selectedOrdersList}
-          profileItems={compiledData.profileItems}
-          otherItems={compiledData.otherItems}
-          totals={compiledData.totals}
-          isLoadingMaterials={isLoadingMaterials}
-        />
-      ) : (
-        <div className="rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-800 p-8 text-center bg-slate-50/50 dark:bg-slate-900/30">
-          <div className="max-w-md mx-auto space-y-3">
-            <div className="size-12 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 mx-auto flex items-center justify-center">
-              <CheckSquare className="size-6" />
-            </div>
-            <h3 className="font-bold text-base text-slate-800 dark:text-slate-200">
-              Nenhuma OP selecionada para a programação
-            </h3>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              Marque os checkboxes das OPs na lista corrida abaixo (ou clique em{' '}
-              <strong>"Selecionar todas da fila"</strong>) para gerar o compilado automático de
-              tubos, barras e componentes com comparação de saldo de estoque.
-            </p>
-            <Button
-              onClick={handleSelectAllFila}
-              size="sm"
-              className="gap-2 bg-blue-600 hover:bg-blue-700 text-white"
-            >
-              <Sparkles className="size-4" />
-              Selecionar OPs da fila agora
-            </Button>
-          </div>
-        </div>
-      )}
-
       {/* AVISO DISCRETO DE OPS JÁ EM EXECUÇÃO / COM ATIVIDADE */}
       {inExecutionOrders.length > 0 && (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 py-2 rounded-lg bg-slate-100/90 dark:bg-slate-800/80 border text-xs text-muted-foreground">
@@ -814,7 +796,7 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
         </div>
       )}
 
-      {/* SEÇÃO 2: LISTA CORRIDA DAS OPS COM CHECKBOXES E FILTROS */}
+      {/* (1) LISTA DE ORDENS DE PRODUÇÃO (ACIMA) COM FILTROS E CHECKBOXES */}
       <div className="space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div>
@@ -1230,6 +1212,83 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
           </Table>
         </div>
       </div>
+
+      {/* (1) SEÇÃO DO COMPILADO CONSOLIDADO (ABAIXO DA LISTA DE OPS) */}
+      <div id="secao-compilado-materiais" className="scroll-mt-20 pt-2">
+        {selectedOpIds.size > 0 ? (
+          <CompiledMaterialsView
+            selectedOrders={selectedOrdersList}
+            profileItems={compiledData.profileItems}
+            otherItems={compiledData.otherItems}
+            totals={compiledData.totals}
+            isLoadingMaterials={isLoadingMaterials}
+          />
+        ) : (
+          <div className="rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-800 p-8 text-center bg-slate-50/50 dark:bg-slate-900/30">
+            <div className="max-w-md mx-auto space-y-3">
+              <div className="size-12 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 mx-auto flex items-center justify-center">
+                <CheckSquare className="size-6" />
+              </div>
+              <h3 className="font-bold text-base text-slate-800 dark:text-slate-200">
+                Nenhuma OP selecionada para a programação
+              </h3>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Marque os checkboxes das OPs na lista acima (ou clique em{' '}
+                <strong>"Selecionar fila de Separação"</strong>) para gerar o compilado automático
+                de tubos, barras e componentes com comparação de saldo de estoque.
+              </p>
+              <Button
+                onClick={handleSelectAllFila}
+                size="sm"
+                className="gap-2 bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                <Sparkles className="size-4" />
+                Selecionar OPs da fila agora
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* BARRA FIXA DISCRETA TIPO 'X OP(s) selecionada(s) — ver compilado' */}
+      {selectedOpIds.size > 0 && (
+        <aside
+          role="region"
+          aria-label="Atalho para o compilado consolidado"
+          className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 print:hidden transition-all duration-300 ease-out animate-in fade-in slide-in-from-bottom-4"
+        >
+          <div className="flex items-center gap-3 bg-slate-900/95 text-white shadow-2xl backdrop-blur-md px-4 py-2.5 rounded-full border border-slate-700/80 text-xs sm:text-sm">
+            <div className="flex items-center gap-2">
+              <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="font-medium">
+                <strong className="font-bold text-emerald-400">{selectedOrdersList.length}</strong>{' '}
+                OP{selectedOrdersList.length !== 1 ? 's' : ''} selecionada
+                {selectedOrdersList.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+
+            <span className="text-slate-500">|</span>
+
+            <Button
+              size="sm"
+              onClick={scrollToCompiled}
+              className="h-7 px-3 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded-full gap-1.5 shadow font-semibold"
+            >
+              <span>Ver compilado</span>
+              <ChevronRight className="size-3.5 rotate-90" />
+            </Button>
+
+            <button
+              type="button"
+              onClick={handleClearSelection}
+              className="text-[11px] text-slate-400 hover:text-rose-400 underline ml-1 cursor-pointer transition-colors"
+              title="Desmarcar todas"
+            >
+              Limpar
+            </button>
+          </div>
+        </aside>
+      )}
     </div>
   )
 }

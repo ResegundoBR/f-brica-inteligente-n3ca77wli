@@ -588,7 +588,7 @@ function MaterialRow({ item, isTube }: { item: CompiledMaterialItem; isTube?: bo
 
       {/* OPs Envolvidas */}
       <TableCell className="text-left text-[11px]">
-        <div className="flex flex-wrap gap-1 max-w-[200px]">
+        <div className="flex flex-wrap gap-1 max-w-[220px]">
           {item.orderNumbers.map((num, i) => (
             <span
               key={i}
@@ -712,7 +712,7 @@ function PrintableView({
                     )}
                   </td>
                   <td className="border-r border-black p-1 text-[10px]">
-                    {item.orderNumbers.slice(0, 3).join(', ')}
+                    {item.orderNumbers.join(', ')}
                   </td>
                   <td className="p-1 text-center border-black">
                     <span className="inline-block w-4 h-4 border border-black"></span>
@@ -777,7 +777,7 @@ function PrintableView({
                     )}
                   </td>{' '}
                   <td className="border-r border-black p-1 text-[10px]">
-                    {item.orderNumbers.slice(0, 3).join(', ')}
+                    {item.orderNumbers.join(', ')}
                   </td>
                   <td className="p-1 text-center border-black">
                     <span className="inline-block w-4 h-4 border border-black"></span>

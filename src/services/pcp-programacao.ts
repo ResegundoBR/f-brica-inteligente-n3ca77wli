@@ -1,4 +1,4 @@
-import { Inventory, MasterComponent, PcpOrderMaterial } from '@/types'
+import { Inventory, MasterComponent, PcpOrderMaterial, Product, PcpOrder } from '@/types'
 
 export interface CompiledMaterialItem {
   key: string
@@ -35,6 +35,129 @@ export function normalizeKeyPart(str?: string): string {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/\s+/g, ' ')
+}
+
+/**
+ * Remove resíduos de títulos de setor e cabeçalhos de tabela do PDF da descrição.
+ * Exemplo:
+ * - '* P R E P A R A O *' ou '* M O N T A G E M *'
+ * - 'COD PRODUTO DESCRICAO PRODUTO QTD UN SEPARACAO PRODUCAO'
+ */
+export function cleanMaterialDescription(raw?: string): string {
+  if (!raw) return ''
+  let text = raw.trim()
+  if (!text) return ''
+
+  // 1. Remover sequências de asteriscos com títulos de setor (com letras espaçadas ou juntas)
+  // ex: "* P R E P A R A O *", "* M O N T A G E M *", "* FABRICAÇÃO *"
+  text = text.replace(/\*\s*(?:[A-ZÀ-ÿ]\s+){2,}[A-ZÀ-ÿ]\s*\*/gi, ' ')
+  text = text.replace(
+    /\*\s*(?:FABRICA[CÇ]?[AÃ]?O|PREPARA[CÇ]?[AÃ]?O|MONTAGEM|EXPEDI[CÇ]?[AÃ]?O|ACABAMENTO|PINTURA|EMBALAGEM|SEPARA[CÇ]?[AÃ]?O)\s*\*/gi,
+    ' ',
+  )
+
+  // 2. Remover cabeçalhos do parser do PDF e ERP
+  // ex: "CÓD PRODUTO DESCRIÇÃO PRODUTO QTD UN SEPARAÇÃO PRODUÇÃO" e variações com/sem acento
+  const headerPatterns = [
+    /C[OÓ]D(?:IGO)?\s+PRODUTO\s+DESCRI[CÇ][AÃ]O\s+PRODUTO\s+QTD\s+UN\s+SEPARA[CÇ][AÃ]O\s+PRODU[CÇ][AÃ]O/gi,
+    /C[OÓ]D(?:IGO)?\s+PRODUTO\s+DESCRI[CÇ][AÃ]O\s+PRODUTO/gi,
+    /PRODUTO\s*\/\s*DESCRI[CÇ][AÃ]O\s+PRODUTO/gi,
+    /QTD\s+UN\s+SEPARA[CÇ][AÃ]O\s+PRODU[CÇ][AÃ]O/gi,
+    /SEPARA[CÇ][AÃ]O\s+PRODU[CÇ][AÃ]O/gi,
+    /SOLICITA[CÇ][AÃ]O\s+DE\s+MATERIAIS/gi,
+    /DOCUMENTO\s+DE\s+ESTOQUE/gi,
+    /TOTAL\s+DE\s+PE[CÇ]AS/gi,
+    /OPERA[CÇ][OÕ]ES\s+E\s+SEUS\s+MATERIAIS/gi,
+  ]
+
+  for (const pat of headerPatterns) {
+    text = text.replace(pat, ' ')
+  }
+
+  // 3. Remover resíduos como asteriscos soltos e traços no início ou fim
+  text = text
+    .replace(/^[\s*\-_–—:]+/, '')
+    .replace(/[\s*\-_–—:]+$/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  return text
+}
+
+/**
+ * Verifica se um item é linear (código ou descrição contendo TUBO, BARRA, PERFIL, CABO)
+ */
+export function isLinearMaterial(code?: string, description?: string): boolean {
+  const normC = normalizeKeyPart(code)
+  const normD = normalizeKeyPart(description)
+  const linearRegex = /\b(TUBO|TUBULAR|BARRA|PERFIL|CABO)\b/i
+  return linearRegex.test(normC) || linearRegex.test(normD)
+}
+
+/**
+ * Converte valor de medida de corte (string ou número) para metros (MT).
+ * Exemplos aceitos:
+ * - "0.500" -> 0.500 MT
+ * - "0,500" -> 0.500 MT
+ * - "0,500M" ou "0,500 M" -> 0.500 MT
+ * - "500MM" ou "500 MM" -> 0.500 MT
+ * - "50CM" ou "50 CM" -> 0.500 MT
+ * - "2M" -> 2.0 MT
+ * Retorna null se não houver medida válida > 0.
+ */
+export function parseCutMeasurementToMeters(raw?: string | number): number | null {
+  if (raw === undefined || raw === null) return null
+  if (typeof raw === 'number') {
+    return raw > 0 ? raw : null
+  }
+  const clean = String(raw).trim()
+  if (!clean) return null
+
+  // Se tem unidade explícita: MM, CM, M, MT
+  const matchWithUnit = clean.match(/^([0-9]+(?:[.,][0-9]+)?)\s*(MM|CM|M|MT)?$/i)
+  if (matchWithUnit) {
+    const numPart = parseFloat(matchWithUnit[1].replace(',', '.'))
+    const unitPart = (matchWithUnit[2] || '').toUpperCase()
+    if (isNaN(numPart) || numPart <= 0) return null
+
+    if (unitPart === 'MM') {
+      return numPart / 1000
+    }
+    if (unitPart === 'CM') {
+      return numPart / 100
+    }
+    // M ou MT ou sem unidade (se sem unidade, verificar escala)
+    if (unitPart === 'M' || unitPart === 'MT') {
+      return numPart
+    }
+    // Sem unidade: se for >= 10, é quase certamente em milímetros (ex: 500, 225, 1000)
+    // Se for < 10, é em metros (ex: 0.5, 0.475, 1.2)
+    if (numPart >= 10) {
+      return numPart / 1000
+    }
+    return numPart
+  }
+
+  // Tenta extrair qualquer padrão numérico com unidade dentro do texto (ex: "0,500MM")
+  const subMatch = clean.match(/([0-9]+(?:[.,][0-9]+)?)\s*(MM|CM|M|MT)/i)
+  if (subMatch) {
+    const numPart = parseFloat(subMatch[1].replace(',', '.'))
+    const unitPart = subMatch[2].toUpperCase()
+    if (!isNaN(numPart) && numPart > 0) {
+      if (unitPart === 'MM') return numPart / 1000
+      if (unitPart === 'CM') return numPart / 100
+      return numPart
+    }
+  }
+
+  // Fallback: tenta ler como número puro
+  const pureNum = parseFloat(clean.replace(',', '.'))
+  if (!isNaN(pureNum) && pureNum > 0) {
+    if (pureNum >= 10) return pureNum / 1000
+    return pureNum
+  }
+
+  return null
 }
 
 /**
@@ -106,6 +229,9 @@ export interface CompileMaterialsInput {
   inventoryItems: Inventory[]
   // Mapeamento opcional de order_id para op_number normalizado ou id representativo do op_number
   orderIdToOpNumberMap?: Record<string, string>
+  // Produtos e ordens para consulta da medida de corte cadastrada na composição
+  products?: Product[]
+  orders?: PcpOrder[]
 }
 
 /**
@@ -120,13 +246,7 @@ export interface CompileMaterialsInput {
  *     - Nunca mescla dados no backend (read-only em memória)
  * (4) Separação em Tubos/Barras/Chapas de Perfil e Demais Componentes.
  */
-export function compileOrderMaterials({
-  materials,
-  orderNumbersMap = {},
-  masterComponents,
-  inventoryItems,
-  orderIdToOpNumberMap = {},
-}: CompileMaterialsInput): {
+export function compileOrderMaterials(input: CompileMaterialsInput): {
   profileItems: CompiledMaterialItem[]
   otherItems: CompiledMaterialItem[]
   totals: {
@@ -138,6 +258,13 @@ export function compileOrderMaterials({
     noStockCount: number
   }
 } {
+  const {
+    materials,
+    orderNumbersMap = {},
+    masterComponents,
+    inventoryItems,
+    orderIdToOpNumberMap = {},
+  } = input
   // Mapas de busca para Estoque (inventory)
   const invByComponentId = new Map<string, Inventory>()
   const invByCode = new Map<string, Inventory>()
@@ -186,13 +313,29 @@ export function compileOrderMaterials({
 
   const hasOpMap = Object.keys(orderIdToOpNumberMap).length > 0
 
+  // Cache de mapa de OPs e Produtos para consulta de composição
+  const ordersMap = new Map<string, PcpOrder>()
+  if (input.orders) {
+    input.orders.forEach((o) => ordersMap.set(o.id, o))
+  }
+
+  const productsMap = new Map<string, Product>()
+  if (input.products) {
+    input.products.forEach((p) => productsMap.set(p.id, p))
+  }
+
   // Agrupamento dos materiais
+  // Requisito 2: AGRUPAR O COMPILADO POR CÓDIGO
+  // Itens com o mesmo código devem aparecer em UMA única linha, somando o Total Programado,
+  // unindo as OPs que utilizam (ex.: 'OP 494, OP 495') e mantendo a descrição mais limpa/mais curta.
   interface GroupAcc {
     code: string
     description: string
+    allDescriptions: string[]
     unit: string
     totalQty: number
     orderIds: Set<string>
+    isLinear: boolean
   }
 
   const groups = new Map<string, GroupAcc>()
@@ -203,29 +346,86 @@ export function compileOrderMaterials({
       return
     }
 
-    const code = (mat.code || '').trim()
-    const desc = (mat.description || '').trim()
-    const normC = normalizeKeyPart(code)
-    const normD = normalizeKeyPart(desc)
+    const rawCode = (mat.code || '').trim()
+    const cleanedDesc = cleanMaterialDescription(mat.description) || (mat.description || '').trim()
+    const normC = normalizeKeyPart(rawCode)
+    const normD = normalizeKeyPart(cleanedDesc)
 
-    // Agrupamento: por código + descrição para máxima fidelidade e nunca misturar itens distintos
-    const groupKey = normC ? `${normC}:::${normD}` : `NODECODE:::${normD}`
+    // Agrupamento por código quando existir código (ex: FAB01270, 14010036, 06080013),
+    // senão por descrição limpa
+    const groupKey = normC ? `CODE:::${normC}` : `NOCODE:::${normD}`
 
-    const qty = Number(mat.quantity) || 0
-    const unit = mat.unit || 'UN'
+    const rawQty = Number(mat.quantity) || 0
+    let unit = (mat.unit || 'UN').trim()
+
+    // Requisito 4: TUBOS/lineares em METROS
+    // Para itens lineares (código/descrição contendo TUBO, BARRA, PERFIL, CABO)
+    // que possuem medida de corte cadastrada na composição, o Total Programado deve
+    // ser calculado em MT (medida de corte × quantidade por peça × quantidade da OP),
+    // exibindo 'X MT' em vez de 'PC' — itens sem medida de corte continuam como estão hoje.
+    const isLinear = isLinearMaterial(rawCode, cleanedDesc)
+    let calculatedQty = rawQty
+
+    if (isLinear && mat.order_id) {
+      const op = ordersMap.get(mat.order_id)
+      const prod = op?.product_id ? productsMap.get(op.product_id) : undefined
+      const composition = prod?.data?.composition
+
+      if (Array.isArray(composition)) {
+        // Localiza o item na composição técnica daquele produto pelo código ou descrição
+        const compItem = composition.find((c) => {
+          const compCode = (c.code || '').trim()
+          if (normC && compCode && normalizeKeyPart(compCode) === normC) return true
+          const compDesc = cleanMaterialDescription(c.description)
+          if (normD && compDesc && normalizeKeyPart(compDesc) === normD) return true
+          return false
+        })
+
+        if (compItem) {
+          const cutInMeters = parseCutMeasurementToMeters(compItem.measurements)
+          if (cutInMeters !== null && cutInMeters > 0) {
+            // Encontrou medida de corte cadastrada na composição!
+            // Total em MT = medida de corte (em metros) × quantidade por peça × quantidade da OP
+            const compItemQty = Number(compItem.quantity) || 1
+            const opQty = Number(op?.quantity) || 1
+            calculatedQty = cutInMeters * compItemQty * opQty
+            unit = 'MT'
+          }
+        }
+      }
+    }
 
     if (!groups.has(groupKey)) {
       groups.set(groupKey, {
-        code,
-        description: desc,
+        code: rawCode,
+        description: cleanedDesc,
+        allDescriptions: [cleanedDesc],
         unit,
         totalQty: 0,
         orderIds: new Set<string>(),
+        isLinear,
       })
     }
 
     const item = groups.get(groupKey)!
-    item.totalQty += qty
+    item.totalQty += calculatedQty
+    item.allDescriptions.push(cleanedDesc)
+
+    // Se encontramos unidade MT para um item linear, a unidade do grupo vira MT
+    if (unit.toUpperCase() === 'MT') {
+      item.unit = 'MT'
+    }
+
+    // Mantém a descrição mais limpa/mais curta entre as ocorrências
+    if (cleanedDesc) {
+      if (
+        !item.description ||
+        (cleanedDesc.length < item.description.length && cleanedDesc.length > 2)
+      ) {
+        item.description = cleanedDesc
+      }
+    }
+
     if (mat.order_id) {
       item.orderIds.add(mat.order_id)
     }
@@ -319,13 +519,20 @@ export function compileOrderMaterials({
       }
     }
 
-    // Identificar ordens vinculadas
+    // Identificar ordens vinculadas e ordenar numericamente
     const orderNumbers: string[] = []
     group.orderIds.forEach((oid) => {
       const displayNum = orderNumbersMap[oid] || oid
       if (displayNum && !orderNumbers.includes(displayNum)) {
         orderNumbers.push(displayNum)
       }
+    })
+
+    // Ordenar as OPs vinculadas (ex: "OP 494", "OP 495")
+    orderNumbers.sort((a, b) => {
+      const numA = parseInt(a.replace(/\D/g, ''), 10) || 0
+      const numB = parseInt(b.replace(/\D/g, ''), 10) || 0
+      return numA - numB
     })
 
     compiledList.push({

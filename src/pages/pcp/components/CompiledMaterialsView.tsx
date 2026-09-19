@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { PcpOrder } from '@/types'
+import { OpReadOnlyModal } from './OpReadOnlyModal'
 
 interface CompiledMaterialsViewProps {
   selectedOrders: PcpOrder[]
@@ -55,7 +56,14 @@ export function CompiledMaterialsView({
   const [statusFilter, setStatusFilter] = useState<'all' | 'shortage' | 'covered' | 'no_stock'>(
     'all',
   )
+  const [readOnlyModalOpen, setReadOnlyModalOpen] = useState(false)
+  const [selectedOpForModal, setSelectedOpForModal] = useState<string | null>(null)
   const { toast } = useToast()
+
+  const handleOpenOpReadOnly = (opStr: string) => {
+    setSelectedOpForModal(opStr)
+    setReadOnlyModalOpen(true)
+  }
 
   const filterItem = (item: CompiledMaterialItem) => {
     if (statusFilter === 'shortage' && item.status !== 'shortage') return false
@@ -435,7 +443,9 @@ export function CompiledMaterialsView({
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredProfiles.map((item) => <MaterialRow key={item.key} item={item} isTube />)
+                filteredProfiles.map((item) => (
+                  <MaterialRow key={item.key} item={item} isTube onOpClick={handleOpenOpReadOnly} />
+                ))
               )}
             </TableBody>
           </Table>
@@ -491,12 +501,22 @@ export function CompiledMaterialsView({
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredOthers.map((item) => <MaterialRow key={item.key} item={item} />)
+                filteredOthers.map((item) => (
+                  <MaterialRow key={item.key} item={item} onOpClick={handleOpenOpReadOnly} />
+                ))
               )}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
+
+      {/* MODAL SOMENTE LEITURA DA OP */}
+      <OpReadOnlyModal
+        open={readOnlyModalOpen}
+        onOpenChange={setReadOnlyModalOpen}
+        opIdentifier={selectedOpForModal}
+        existingOrders={selectedOrders}
+      />
 
       {/* ÁREA DE IMPRESSÃO (EXIBIDA SOMENTE AO IMPRIMIR / GERAR PDF VIA PRINT) */}
       <PrintableView
@@ -509,7 +529,15 @@ export function CompiledMaterialsView({
   )
 }
 
-function MaterialRow({ item, isTube }: { item: CompiledMaterialItem; isTube?: boolean }) {
+function MaterialRow({
+  item,
+  isTube,
+  onOpClick,
+}: {
+  item: CompiledMaterialItem
+  isTube?: boolean
+  onOpClick?: (opNumber: string) => void
+}) {
   const code = item.code || '-'
   const unit = item.unit || (isTube ? 'MT' : 'UN')
 
@@ -605,12 +633,15 @@ function MaterialRow({ item, isTube }: { item: CompiledMaterialItem; isTube?: bo
       <TableCell className="text-left text-[11px]">
         <div className="flex flex-wrap gap-1 max-w-[220px]">
           {item.orderNumbers.map((num, i) => (
-            <span
+            <button
               key={i}
-              className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-mono text-[10px]"
+              type="button"
+              onClick={() => onOpClick?.(num)}
+              title="Ver detalhes da OP em modo leitura"
+              className="inline-flex items-center px-1.5 py-0.5 rounded bg-slate-100 hover:bg-blue-100 dark:bg-slate-800 dark:hover:bg-blue-950/70 text-slate-800 hover:text-blue-700 dark:text-slate-200 dark:hover:text-blue-300 font-mono text-[10px] font-semibold border border-transparent hover:border-blue-300 dark:hover:border-blue-800 cursor-pointer transition-colors"
             >
               {num}
-            </span>
+            </button>
           ))}
         </div>
       </TableCell>

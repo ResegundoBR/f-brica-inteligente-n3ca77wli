@@ -558,7 +558,7 @@ export default function ComponentesPage() {
         icon={Boxes}
         action={
           <div className="flex items-center gap-2">
-            <RoleGuard role="manager">
+            <RoleGuard module="suprimentos">
               <Button
                 variant="outline"
                 size="sm"

@@ -15,11 +15,17 @@ import {
   ChevronLeft,
   ChevronRight,
   Package,
+  Tags,
+  CheckSquare,
+  Loader2,
 } from 'lucide-react'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
+import { RoleGuard } from '@/components/RoleGuard'
+import { ComponentCategoriesDialog } from './components/ComponentCategoriesDialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Table,
@@ -52,7 +58,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { useRealtime } from '@/hooks/use-realtime'
 import { cn } from '@/lib/utils'
 import pb from '@/lib/pocketbase/client'
-import { MasterComponent, Inventory } from '@/types'
+import { MasterComponent, Inventory, ComponentCategory } from '@/types'
 import {
   getMasterComponents,
   deactivateMasterComponent,
@@ -60,6 +66,10 @@ import {
   deleteMasterComponent,
   ComponentUsageCheckResult,
 } from '@/services/components'
+import {
+  getComponentCategories,
+  updateComponentsCategoryBatch,
+} from '@/services/component-categories'
 import { resolveSourceLabel } from '@/lib/duplicate-detector'
 
 export interface ComponentRowItem {
@@ -68,6 +78,8 @@ export interface ComponentRowItem {
   code: string
   description: string
   unit: string
+  categoryName: string
+  categoryId?: string
   sourceLabel: 'Estoque' | 'Catálogo' | 'Histórico' | 'Manual'
   stockQuantity?: number
   hasStock: boolean
@@ -86,6 +98,10 @@ export default function ComponentesPage() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [components, setComponents] = useState<MasterComponent[]>([])
   const [inventory, setInventory] = useState<Inventory[]>([])
+  const [categories, setCategories] = useState<ComponentCategory[]>([])
+
+  // Modal de Gestão de Categorias
+  const [categoriesModalOpen, setCategoriesModalOpen] = useState(false)
 
   // Filtros de busca e seleção
   const [searchTerm, setSearchTerm] = useState('')
@@ -93,6 +109,12 @@ export default function ComponentesPage() {
     'ALL' | 'Estoque' | 'Catálogo' | 'Histórico' | 'Manual'
   >('ALL')
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL')
+  const [categoryFilter, setCategoryFilter] = useState<string>('ALL')
+
+  // Seleção múltipla para lote
+  const [selectedComponentIds, setSelectedComponentIds] = useState<Set<string>>(new Set())
+  const [targetBatchCategory, setTargetBatchCategory] = useState<string>('')
+  const [isApplyingBatchCategory, setIsApplyingBatchCategory] = useState(false)
 
   // Paginação
   const [currentPage, setCurrentPage] = useState(1)
@@ -132,12 +154,14 @@ export default function ComponentesPage() {
       else setIsRefreshing(true)
 
       try {
-        const [comps, inv] = await Promise.all([
-          getMasterComponents('', { includeInactive: true, expand: 'deactivated_by' }),
+        const [comps, inv, cats] = await Promise.all([
+          getMasterComponents('', { includeInactive: true, expand: 'deactivated_by,category' }),
           pb.collection('inventory').getFullList<Inventory>(),
+          getComponentCategories({ includeInactive: true }),
         ])
         setComponents(comps)
         setInventory(inv)
+        setCategories(cats)
       } catch (err: any) {
         toast({
           title: 'Erro ao carregar dados',
@@ -159,6 +183,7 @@ export default function ComponentesPage() {
   // Tempo real para refletir modificações
   useRealtime('components', () => loadData(true))
   useRealtime('inventory', () => loadData(true))
+  useRealtime('component_categories', () => loadData(true))
 
   // Mapeia todos os componentes unificando dados de estoque
   const rowItems = useMemo<ComponentRowItem[]>(() => {
@@ -172,6 +197,9 @@ export default function ComponentesPage() {
       if (inv.description) invByDesc.set(inv.description.toLowerCase().trim(), inv)
     })
 
+    const catMap = new Map<string, string>()
+    categories.forEach((cat) => catMap.set(cat.id, cat.name))
+
     return components.map((comp) => {
       const inv =
         invByCompId.get(comp.id) ||
@@ -183,12 +211,17 @@ export default function ComponentesPage() {
       const sourceLabel = resolveSourceLabel(comp.source, hasStock)
       const isActive = comp.active !== false
 
+      const catName =
+        comp.expand?.category?.name || (comp.category ? catMap.get(comp.category) : '') || ''
+
       return {
         component: comp,
         inventoryItem: inv,
         code: comp.code || inv?.code || '',
         description: comp.description || '',
         unit: comp.unit || inv?.unit || 'un',
+        categoryName: catName,
+        categoryId: comp.category || undefined,
         sourceLabel,
         stockQuantity,
         hasStock,
@@ -197,26 +230,24 @@ export default function ComponentesPage() {
         deactivated_at: comp.deactivated_at,
       }
     })
-  }, [components, inventory])
+  }, [components, inventory, categories])
 
   // Contadores para cards de métricas
   const metrics = useMemo(() => {
     const total = rowItems.length
     const activeCount = rowItems.filter((it) => it.active).length
     const inactiveCount = total - activeCount
+    const withoutCategoryCount = rowItems.filter((it) => !it.categoryName).length
     const withStockCount = rowItems.filter(
       (it) => it.hasStock && (it.stockQuantity || 0) > 0,
-    ).length
-    const catalogOnlyCount = rowItems.filter(
-      (it) => !it.hasStock || (it.stockQuantity || 0) === 0,
     ).length
 
     return {
       total,
       activeCount,
       inactiveCount,
+      withoutCategoryCount,
       withStockCount,
-      catalogOnlyCount,
     }
   }, [rowItems])
 
@@ -228,6 +259,13 @@ export default function ComponentesPage() {
       // Filtro de situação
       if (statusFilter === 'ACTIVE' && !item.active) return false
       if (statusFilter === 'INACTIVE' && item.active) return false
+
+      // Filtro por Categoria: ALL, NONE (sem categoria), ou ID específico
+      if (categoryFilter === 'NONE') {
+        if (item.categoryName) return false
+      } else if (categoryFilter !== 'ALL') {
+        if (item.categoryId !== categoryFilter && item.categoryName !== categoryFilter) return false
+      }
 
       // Filtro de origem
       if (sourceFilter !== 'ALL' && item.sourceLabel !== sourceFilter) return false
@@ -246,7 +284,75 @@ export default function ComponentesPage() {
   // Resetar página quando filtros mudarem
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchTerm, sourceFilter, statusFilter, pageSize])
+  }, [searchTerm, sourceFilter, statusFilter, categoryFilter, pageSize])
+
+  // Lógica de seleção múltipla
+  const toggleSelectAllVisible = () => {
+    const visibleIds = paginatedItems.map((it) => it.component.id)
+    const allSelected =
+      visibleIds.length > 0 && visibleIds.every((id) => selectedComponentIds.has(id))
+
+    const next = new Set(selectedComponentIds)
+    if (allSelected) {
+      visibleIds.forEach((id) => next.delete(id))
+    } else {
+      visibleIds.forEach((id) => next.add(id))
+    }
+    setSelectedComponentIds(next)
+  }
+
+  const toggleSelectOne = (id: string) => {
+    const next = new Set(selectedComponentIds)
+    if (next.has(id)) {
+      next.delete(id)
+    } else {
+      next.add(id)
+    }
+    setSelectedComponentIds(next)
+  }
+
+  const handleApplyBatchCategory = async () => {
+    if (selectedComponentIds.size === 0) {
+      toast({
+        title: 'Nenhum componente selecionado',
+        description: 'Selecione ao menos um componente na tabela.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    if (!targetBatchCategory) {
+      toast({
+        title: 'Selecione a categoria',
+        description: 'Escolha uma categoria para aplicar aos itens selecionados.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    const categoryIdToSet = targetBatchCategory === '__REMOVE__' ? null : targetBatchCategory
+    const count = selectedComponentIds.size
+
+    setIsApplyingBatchCategory(true)
+    try {
+      await updateComponentsCategoryBatch(Array.from(selectedComponentIds), categoryIdToSet)
+      toast({
+        title: 'Categorias atualizadas em lote',
+        description: `${count} componente(s) atualizado(s) com sucesso.`,
+      })
+      setSelectedComponentIds(new Set())
+      setTargetBatchCategory('')
+      loadData(true)
+    } catch (err: any) {
+      toast({
+        title: 'Erro ao aplicar em lote',
+        description: err.message || 'Não foi possível atualizar os componentes.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsApplyingBatchCategory(false)
+    }
+  }
 
   // Itens paginados
   const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize))
@@ -269,18 +375,35 @@ export default function ComponentesPage() {
       return
     }
 
-    const headers = ['Código', 'Descrição', 'Unidade', 'Origem', 'Saldo em Estoque', 'Situação']
+    const headers = [
+      'Código',
+      'Descrição',
+      'Categoria',
+      'Unidade',
+      'Origem',
+      'Saldo em Estoque',
+      'Situação',
+    ]
 
     const rows = filteredItems.map((it) => {
       const codeEscaped = `"${(it.code || '').replace(/"/g, '""')}"`
       const descEscaped = `"${(it.description || '').replace(/"/g, '""')}"`
+      const catEscaped = `"${(it.categoryName || 'Sem Categoria').replace(/"/g, '""')}"`
       const unitEscaped = `"${(it.unit || 'un').replace(/"/g, '""')}"`
       const origemEscaped = `"${(it.sourceLabel || '').replace(/"/g, '""')}"`
       const saldoStr =
         it.hasStock && it.stockQuantity !== undefined ? String(it.stockQuantity) : '-'
       const situacao = it.active ? 'Ativo' : 'Inativo'
 
-      return [codeEscaped, descEscaped, unitEscaped, origemEscaped, saldoStr, situacao].join(';')
+      return [
+        codeEscaped,
+        descEscaped,
+        catEscaped,
+        unitEscaped,
+        origemEscaped,
+        saldoStr,
+        situacao,
+      ].join(';')
     })
 
     const csvContent = '\uFEFF' + [headers.join(';'), ...rows].join('\r\n')
@@ -435,6 +558,18 @@ export default function ComponentesPage() {
         icon={Boxes}
         action={
           <div className="flex items-center gap-2">
+            <RoleGuard role="manager">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCategoriesModalOpen(true)}
+                className="text-xs border-indigo-300 text-indigo-700 bg-indigo-50/50 hover:bg-indigo-100 dark:border-indigo-800 dark:text-indigo-300 dark:bg-indigo-950/40"
+                title="Gestão de Categorias de Componentes (apenas gestor)"
+              >
+                <Tags className="size-3.5 mr-1.5 text-indigo-600" />
+                Categorias
+              </Button>
+            </RoleGuard>
             <Button
               variant="outline"
               size="sm"
@@ -511,15 +646,26 @@ export default function ComponentesPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Catálogo / Sem Estoque
+              Sem Categoria
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-black text-slate-700 dark:text-slate-300">
-              {metrics.catalogOnlyCount}
-            </p>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-black text-amber-600">
+                {metrics.withoutCategoryCount}
+              </span>
+              {metrics.withoutCategoryCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setCategoryFilter('NONE')}
+                  className="text-xs text-blue-600 hover:underline font-medium"
+                >
+                  Filtrar estes
+                </button>
+              )}
+            </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Itens técnicos de catálogo, históricos ou manuais
+              Componentes aguardando classificação
             </p>
           </CardContent>
         </Card>
@@ -549,8 +695,30 @@ export default function ComponentesPage() {
             )}
           </div>
 
+          {/* Filtro por Categoria */}
+          <div className="w-full sm:w-[190px]">
+            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+              <SelectTrigger className="text-xs h-9">
+                <SelectValue placeholder="Categoria" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL" className="text-xs">
+                  Categoria: Todas
+                </SelectItem>
+                <SelectItem value="NONE" className="text-xs font-semibold text-amber-600">
+                  ⚠️ Sem Categoria ({metrics.withoutCategoryCount})
+                </SelectItem>
+                {categories.map((cat) => (
+                  <SelectItem key={cat.id} value={cat.id} className="text-xs">
+                    {cat.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* Filtro por Origem */}
-          <div className="w-full sm:w-[170px]">
+          <div className="w-full sm:w-[150px]">
             <Select value={sourceFilter} onValueChange={(val: any) => setSourceFilter(val)}>
               <SelectTrigger className="text-xs h-9">
                 <SelectValue placeholder="Origem" />
@@ -576,7 +744,7 @@ export default function ComponentesPage() {
           </div>
 
           {/* Filtro por Situação */}
-          <div className="w-full sm:w-[170px]">
+          <div className="w-full sm:w-[150px]">
             <Select value={statusFilter} onValueChange={(val: any) => setStatusFilter(val)}>
               <SelectTrigger className="text-xs h-9">
                 <SelectValue placeholder="Situação" />
@@ -606,39 +774,110 @@ export default function ComponentesPage() {
         </div>
       </div>
 
+      {/* BARRA DE AÇÃO EM LOTE (quando itens estão selecionados ou gestor quer aplicar) */}
+      {selectedComponentIds.size > 0 && (
+        <div className="bg-indigo-50/90 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 p-3 rounded-lg flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <CheckSquare className="size-4 text-indigo-600" />
+            <span className="text-xs font-semibold text-indigo-900 dark:text-indigo-200">
+              {selectedComponentIds.size} componente(s) selecionado(s)
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSelectedComponentIds(new Set())}
+              className="text-[11px] h-6 px-1.5 text-muted-foreground hover:text-foreground"
+            >
+              Limpar seleção
+            </Button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-700 dark:text-slate-300 font-medium">
+              Atribuir categoria:
+            </span>
+            <Select value={targetBatchCategory} onValueChange={setTargetBatchCategory}>
+              <SelectTrigger className="text-xs h-8 w-[190px] bg-white dark:bg-slate-900">
+                <SelectValue placeholder="Escolher categoria..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__REMOVE__" className="text-xs text-red-600">
+                  (Remover categoria)
+                </SelectItem>
+                {categories
+                  .filter((c) => c.active !== false)
+                  .map((cat) => (
+                    <SelectItem key={cat.id} value={cat.id} className="text-xs">
+                      {cat.name}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+
+            <Button
+              size="sm"
+              onClick={handleApplyBatchCategory}
+              disabled={isApplyingBatchCategory || !targetBatchCategory}
+              className="h-8 text-xs bg-indigo-600 hover:bg-indigo-700 text-white gap-1"
+            >
+              {isApplyingBatchCategory ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Tags className="size-3.5" />
+              )}
+              Aplicar em Lote
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* TABELA DE COMPONENTES */}
       <Card className="border shadow-sm overflow-hidden">
         <CardContent className="p-0">
           <Table>
             <TableHeader className="bg-slate-100/60 dark:bg-slate-800/40">
               <TableRow>
-                <TableHead className="w-[140px] text-xs">Código</TableHead>
+                <TableHead className="w-[40px] text-center">
+                  <Checkbox
+                    checked={
+                      paginatedItems.length > 0 &&
+                      paginatedItems.every((it) => selectedComponentIds.has(it.component.id))
+                    }
+                    onCheckedChange={toggleSelectAllVisible}
+                    aria-label="Selecionar todos visíveis"
+                  />
+                </TableHead>
+                <TableHead className="w-[130px] text-xs">Código</TableHead>
                 <TableHead className="text-xs">Descrição</TableHead>
-                <TableHead className="w-[80px] text-xs text-center">Unidade</TableHead>
-                <TableHead className="w-[110px] text-xs text-center">Origem</TableHead>
-                <TableHead className="w-[120px] text-xs text-right">Saldo em Estoque</TableHead>
-                <TableHead className="w-[110px] text-xs text-center">Situação</TableHead>
-                <TableHead className="w-[200px] text-xs">Rastreabilidade</TableHead>
+                <TableHead className="w-[130px] text-xs">Categoria</TableHead>
+                <TableHead className="w-[70px] text-xs text-center">Unidade</TableHead>
+                <TableHead className="w-[100px] text-xs text-center">Origem</TableHead>
+                <TableHead className="w-[110px] text-xs text-right">Saldo Estoque</TableHead>
+                <TableHead className="w-[90px] text-xs text-center">Situação</TableHead>
+                <TableHead className="w-[180px] text-xs">Rastreabilidade</TableHead>
                 <TableHead className="w-[230px] text-xs text-center">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-16 text-muted-foreground">
+                  <TableCell colSpan={10} className="text-center py-16 text-muted-foreground">
                     <RefreshCw className="size-6 animate-spin mx-auto mb-2 text-blue-600" />
                     <p className="text-xs">Carregando componentes do cadastro mestre...</p>
                   </TableCell>
                 </TableRow>
               ) : paginatedItems.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
+                  <TableCell colSpan={10} className="text-center py-12 text-muted-foreground">
                     <Package className="size-10 mx-auto mb-2 text-slate-400" />
                     <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
                       Nenhum componente encontrado
                     </p>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      {searchTerm || sourceFilter !== 'ALL' || statusFilter !== 'ALL'
+                      {searchTerm ||
+                      sourceFilter !== 'ALL' ||
+                      statusFilter !== 'ALL' ||
+                      categoryFilter !== 'ALL'
                         ? 'Tente ajustar os filtros ou o termo de busca.'
                         : 'Nenhum registro encontrado no cadastro mestre.'}
                     </p>
@@ -647,6 +886,7 @@ export default function ComponentesPage() {
               ) : (
                 paginatedItems.map((item) => {
                   const isInactive = !item.active
+                  const isSelected = selectedComponentIds.has(item.component.id)
                   const code = item.code || '-'
                   const hasStock = item.hasStock && item.stockQuantity !== undefined
 
@@ -655,11 +895,21 @@ export default function ComponentesPage() {
                       key={item.component.id}
                       className={cn(
                         'transition-colors',
+                        isSelected && 'bg-indigo-50/70 dark:bg-indigo-950/30',
                         isInactive
                           ? 'bg-slate-100/60 dark:bg-slate-900/40 text-muted-foreground opacity-85'
                           : 'hover:bg-slate-50 dark:hover:bg-slate-800/50',
                       )}
                     >
+                      {/* Checkbox de seleção múltipla */}
+                      <TableCell className="text-center">
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => toggleSelectOne(item.component.id)}
+                          aria-label={`Selecionar ${item.description}`}
+                        />
+                      </TableCell>
+
                       {/* Código */}
                       <TableCell className="font-mono text-xs font-semibold">
                         <span
@@ -686,6 +936,25 @@ export default function ComponentesPage() {
                         >
                           {item.description}
                         </p>
+                      </TableCell>
+
+                      {/* Categoria */}
+                      <TableCell className="text-xs">
+                        {item.categoryName ? (
+                          <Badge
+                            variant="secondary"
+                            className="text-[11px] font-normal bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800"
+                          >
+                            {item.categoryName}
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] text-amber-600 border-amber-300 bg-amber-50/40 dark:bg-amber-950/20"
+                          >
+                            Sem Categoria
+                          </Badge>
+                        )}
                       </TableCell>
 
                       {/* Unidade */}
@@ -1143,6 +1412,14 @@ export default function ComponentesPage() {
           if (!open) setEditInventoryItem(null)
         }}
         onSaved={() => loadData(true)}
+      />
+
+      {/* Modal de Gestão de Categorias (somente gestor/admin) */}
+      <ComponentCategoriesDialog
+        open={categoriesModalOpen}
+        onOpenChange={setCategoriesModalOpen}
+        categories={categories}
+        onCategoriesChanged={() => loadData(true)}
       />
     </div>
   )

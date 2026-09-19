@@ -1,9 +1,10 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { CompiledMaterialItem, formatQuantity } from '@/services/pcp-programacao'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Table,
   TableBody,
@@ -12,6 +13,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import {
   FileDown,
   Printer,
@@ -23,9 +32,15 @@ import {
   Cylinder,
   Boxes,
   Send,
+  ShoppingCart,
+  Tags,
+  Loader2,
+  CheckSquare,
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
-import { PcpOrder } from '@/types'
+import { PcpOrder, ComponentCategory } from '@/types'
+import { getComponentCategories } from '@/services/component-categories'
+import pb from '@/lib/pocketbase/client'
 import { OpReadOnlyModal } from './OpReadOnlyModal'
 
 interface CompiledMaterialsViewProps {
@@ -56,9 +71,24 @@ export function CompiledMaterialsView({
   const [statusFilter, setStatusFilter] = useState<'all' | 'shortage' | 'covered' | 'no_stock'>(
     'all',
   )
+  const [categoryFilter, setCategoryFilter] = useState<string>('ALL')
+  const [availableCategories, setAvailableCategories] = useState<ComponentCategory[]>([])
+
+  // Seleção múltipla para compra em lote
+  const [selectedItemKeys, setSelectedItemKeys] = useState<Set<string>>(new Set())
+  const [isConfirmBatchBuyOpen, setIsConfirmBatchBuyOpen] = useState(false)
+  const [isSendingBatchBuy, setIsSendingBatchBuy] = useState(false)
+
   const [readOnlyModalOpen, setReadOnlyModalOpen] = useState(false)
   const [selectedOpForModal, setSelectedOpForModal] = useState<string | null>(null)
   const { toast } = useToast()
+
+  // Carrega categorias cadastradas para os chips de filtro
+  useEffect(() => {
+    getComponentCategories({ includeInactive: false })
+      .then((cats) => setAvailableCategories(cats))
+      .catch(() => {})
+  }, [])
 
   const handleOpenOpReadOnly = (opStr: string) => {
     setSelectedOpForModal(opStr)
@@ -66,27 +96,135 @@ export function CompiledMaterialsView({
   }
 
   const filterItem = (item: CompiledMaterialItem) => {
+    // Filtro por situação de estoque
     if (statusFilter === 'shortage' && item.status !== 'shortage') return false
     if (statusFilter === 'covered' && item.status !== 'covered') return false
     if (statusFilter === 'no_stock' && item.status !== 'no_stock_record') return false
 
+    // Filtro por categoria (chip)
+    if (categoryFilter !== 'ALL') {
+      const itemCat = (item.categoryName || 'Outros').toLowerCase().trim()
+      const targetCat = categoryFilter.toLowerCase().trim()
+      if (itemCat !== targetCat) return false
+    }
+
+    // Filtro por texto
     if (!filterText.trim()) return true
     const q = filterText.toLowerCase().trim()
     return (
       (item.code || '').toLowerCase().includes(q) ||
-      (item.description || '').toLowerCase().includes(q)
+      (item.description || '').toLowerCase().includes(q) ||
+      (item.categoryName || '').toLowerCase().includes(q)
     )
   }
 
   const filteredProfiles = useMemo(
     () => profileItems.filter(filterItem),
-    [profileItems, filterText, statusFilter],
+    [profileItems, filterText, statusFilter, categoryFilter],
   )
 
   const filteredOthers = useMemo(
     () => otherItems.filter(filterItem),
-    [otherItems, filterText, statusFilter],
+    [otherItems, filterText, statusFilter, categoryFilter],
   )
+
+  // Itens atualmente visíveis em ambas as seções
+  const allVisibleItems = useMemo(
+    () => [...filteredProfiles, ...filteredOthers],
+    [filteredProfiles, filteredOthers],
+  )
+
+  // Itens selecionados para envio em lote (se houver seleção explícita, usa eles; se nenhum selecionado, oferece todos os visíveis)
+  const itemsToBuy = useMemo(() => {
+    if (selectedItemKeys.size > 0) {
+      return allVisibleItems.filter((it) => selectedItemKeys.has(it.key))
+    }
+    return allVisibleItems
+  }, [allVisibleItems, selectedItemKeys])
+
+  // Alternar seleção de todos os visíveis
+  const toggleSelectAllVisible = () => {
+    const visibleKeys = allVisibleItems.map((it) => it.key)
+    const allSelected = visibleKeys.length > 0 && visibleKeys.every((k) => selectedItemKeys.has(k))
+
+    const next = new Set(selectedItemKeys)
+    if (allSelected) {
+      visibleKeys.forEach((k) => next.delete(k))
+    } else {
+      visibleKeys.forEach((k) => next.add(k))
+    }
+    setSelectedItemKeys(next)
+  }
+
+  const toggleSelectOne = (key: string) => {
+    const next = new Set(selectedItemKeys)
+    if (next.has(key)) {
+      next.delete(key)
+    } else {
+      next.add(key)
+    }
+    setSelectedItemKeys(next)
+  }
+
+  // Envio em Lote para Material Shortages
+  const handleConfirmBatchBuy = async () => {
+    if (itemsToBuy.length === 0) {
+      toast({
+        title: 'Nenhum item para enviar',
+        description: 'Não há itens visíveis ou selecionados para enviar à compra.',
+        variant: 'destructive',
+      })
+      setIsConfirmBatchBuyOpen(false)
+      return
+    }
+
+    setIsSendingBatchBuy(true)
+    let createdCount = 0
+
+    try {
+      for (const item of itemsToBuy) {
+        // Quantidade: se estiver em falta, sugere a missingQuantity (ou totalQuantity se missing for 0)
+        const qty =
+          item.status === 'shortage' && item.missingQuantity > 0
+            ? item.missingQuantity
+            : item.totalQuantity
+
+        const categoryLabel = item.categoryName || 'Outros'
+        const opsLabel =
+          item.orderNumbers.length > 0 ? item.orderNumbers.join(', ') : 'Compilado PCP'
+        const observationText = `[Compilado PCP] Categoria: ${categoryLabel} | OPs de origem: ${opsLabel}`
+
+        await pb.collection('material_shortages').create({
+          code: item.code || '',
+          description: item.description,
+          quantity: qty,
+          unit: item.unit || 'UN',
+          sector: 'Suprimentos',
+          status: 'Pendente',
+          request_type: 'Materiais',
+          priority: 'Média',
+          observations: observationText,
+        })
+        createdCount++
+      }
+
+      toast({
+        title: 'Itens enviados para Suprimentos/Compra com sucesso!',
+        description: `${createdCount} registro(s) gravado(s) em material_shortages com setor Suprimentos e status Pendente.`,
+      })
+
+      setSelectedItemKeys(new Set())
+      setIsConfirmBatchBuyOpen(false)
+    } catch (err: any) {
+      toast({
+        title: 'Erro ao enviar itens para compra',
+        description: err.message || 'Ocorreu um erro ao gravar registros de compras.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsSendingBatchBuy(false)
+    }
+  }
 
   // --------------------------------------------------------------------------
   // EXPORTAR PLANILHA (CSV compatível com Excel / Google Sheets)
@@ -220,13 +358,28 @@ export function CompiledMaterialsView({
           </p>
         </div>
 
-        {/* BOTÕES DE EXPORTAÇÃO E ENVIAR PARA SEPARAÇÃO */}
+        {/* BOTÕES DE EXPORTAÇÃO, COMPRA EM LOTE E ENVIAR PARA SEPARAÇÃO */}
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Botão de Enviar em Lote para Cotação/Compra */}
+          <Button
+            onClick={() => setIsConfirmBatchBuyOpen(true)}
+            size="sm"
+            disabled={allVisibleItems.length === 0}
+            className="gap-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold shadow-sm"
+            title="Enviar itens visíveis ou selecionados em lote para cotação/compra em Suprimentos"
+          >
+            <ShoppingCart className="size-4" />
+            Comprar em Lote{' '}
+            {selectedItemKeys.size > 0
+              ? `(${selectedItemKeys.size})`
+              : `(${allVisibleItems.length})`}
+          </Button>
+
           {onSendToSeparation && (
             <Button
               onClick={onSendToSeparation}
               size="sm"
-              className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-md animate-pulse hover:animate-none"
+              className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-md"
               title="Gravar rodada e enviar compilado para separação pelo Operador"
             >
               <Send className="size-4" />
@@ -330,12 +483,97 @@ export function CompiledMaterialsView({
         </Card>
       </div>
 
+      {/* FILEIRA DE CHIPS DE FILTRO POR CATEGORIA NO TOPO */}
+      <div className="bg-white dark:bg-slate-900 border rounded-lg p-3 space-y-2 shadow-sm">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
+            <Tags className="size-3.5 text-indigo-600" />
+            <span>Filtrar por Categoria:</span>
+          </div>
+
+          {categoryFilter !== 'ALL' && (
+            <button
+              type="button"
+              onClick={() => setCategoryFilter('ALL')}
+              className="text-[11px] text-blue-600 hover:underline font-medium"
+            >
+              Limpar filtro de categoria
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {/* Chip 'Todas' */}
+          <button
+            type="button"
+            onClick={() => setCategoryFilter('ALL')}
+            className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+              categoryFilter === 'ALL'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+            }`}
+          >
+            Todas ({totals.totalDistinctItems})
+          </button>
+
+          {/* Chips para cada categoria existente */}
+          {(availableCategories.length > 0
+            ? availableCategories
+            : [
+                { id: '1', name: 'Usinagem' },
+                { id: '2', name: 'Corte a Laser' },
+                { id: '3', name: 'Borracha' },
+                { id: '4', name: 'Cabos' },
+                { id: '5', name: 'Repuxos' },
+                { id: '6', name: 'Pedras' },
+                { id: '7', name: 'Ferragens' },
+                { id: '8', name: 'Estrutura/Solda' },
+                { id: '9', name: 'Pintura' },
+                { id: '10', name: 'Elétrica' },
+                { id: '11', name: 'Outros' },
+              ]
+          ).map((cat) => {
+            const isSelected = categoryFilter === cat.name
+            // Conta itens com esta categoria
+            const count = [...profileItems, ...otherItems].filter(
+              (it) => (it.categoryName || 'Outros').toLowerCase() === cat.name.toLowerCase(),
+            ).length
+
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setCategoryFilter(isSelected ? 'ALL' : cat.name)}
+                className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors flex items-center gap-1.5 ${
+                  isSelected
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                }`}
+              >
+                <span>{cat.name}</span>
+                {count > 0 && (
+                  <span
+                    className={`text-[10px] px-1 rounded-full ${
+                      isSelected
+                        ? 'bg-indigo-800 text-white'
+                        : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    {count}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
       {/* FILTRO RÁPIDO DO COMPILADO */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-muted/40 p-3 rounded-lg border">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Filtrar compilado por código ou descrição..."
+            placeholder="Filtrar compilado por código, descrição ou categoria..."
             value={filterText}
             onChange={(e) => setFilterText(e.target.value)}
             className="pl-8 text-xs h-9 bg-background"
@@ -378,6 +616,35 @@ export function CompiledMaterialsView({
         </div>
       </div>
 
+      {/* BARRA DE AÇÃO QUANDO ITENS ESTÃO SELECIONADOS */}
+      {selectedItemKeys.size > 0 && (
+        <div className="bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 p-3 rounded-lg flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <CheckSquare className="size-4 text-amber-600" />
+            <span className="text-xs font-semibold text-amber-900 dark:text-amber-200">
+              {selectedItemKeys.size} item(ns) selecionado(s) manualmente
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSelectedItemKeys(new Set())}
+              className="text-[11px] h-6 px-1.5 text-muted-foreground hover:text-foreground"
+            >
+              Limpar seleção
+            </Button>
+          </div>
+
+          <Button
+            size="sm"
+            onClick={() => setIsConfirmBatchBuyOpen(true)}
+            className="h-8 text-xs bg-amber-600 hover:bg-amber-700 text-white gap-1.5"
+          >
+            <ShoppingCart className="size-3.5" />
+            Enviar {selectedItemKeys.size} item(ns) para Compra
+          </Button>
+        </div>
+      )}
+
       {/* SEÇÃO 1: TUBOS, BARRAS E PERFIS (DESTAQUE NO TOPO) */}
       <Card className="border-2 border-sky-300 dark:border-sky-800 shadow-sm overflow-hidden">
         <CardHeader className="bg-sky-50 dark:bg-sky-950/40 border-b border-sky-200 dark:border-sky-800 py-3">
@@ -418,33 +685,51 @@ export function CompiledMaterialsView({
           <Table>
             <TableHeader className="bg-sky-100/60 dark:bg-sky-950/60 text-xs">
               <TableRow>
-                <TableHead className="w-[120px]">Código</TableHead>
+                <TableHead className="w-[40px] text-center">
+                  <Checkbox
+                    checked={
+                      filteredProfiles.length > 0 &&
+                      filteredProfiles.every((it) => selectedItemKeys.has(it.key))
+                    }
+                    onCheckedChange={toggleSelectAllVisible}
+                    aria-label="Selecionar todos os tubos"
+                  />
+                </TableHead>
+                <TableHead className="w-[110px]">Código</TableHead>
                 <TableHead>Descrição do Material</TableHead>
+                <TableHead className="w-[120px]">Categoria</TableHead>
                 <TableHead className="w-[130px] text-right font-semibold text-slate-900 dark:text-slate-100">
                   Total Programado
-                </TableHead>{' '}
-                <TableHead className="w-[130px] text-right">Saldo Estoque</TableHead>
-                <TableHead className="w-[160px] text-center font-bold">Falta / Comprar</TableHead>
+                </TableHead>
+                <TableHead className="w-[120px] text-right">Saldo Estoque</TableHead>
+                <TableHead className="w-[150px] text-center font-bold">Falta / Comprar</TableHead>
                 <TableHead className="w-[180px] text-left">OPs que utilizam</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoadingMaterials ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                     Carregando materiais das OPs selecionadas...
                   </TableCell>
                 </TableRow>
               ) : filteredProfiles.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-6 text-muted-foreground text-xs">
+                  <TableCell colSpan={8} className="text-center py-6 text-muted-foreground text-xs">
                     Nenhum tubo, barra ou perfil encontrado nas OPs selecionadas com os filtros
                     atuais.
                   </TableCell>
                 </TableRow>
               ) : (
                 filteredProfiles.map((item) => (
-                  <MaterialRow key={item.key} item={item} isTube onOpClick={handleOpenOpReadOnly} />
+                  <MaterialRow
+                    key={item.key}
+                    item={item}
+                    isTube
+                    isSelected={selectedItemKeys.has(item.key)}
+                    onToggleSelect={() => toggleSelectOne(item.key)}
+                    onOpClick={handleOpenOpReadOnly}
+                  />
                 ))
               )}
             </TableBody>
@@ -477,38 +762,147 @@ export function CompiledMaterialsView({
           <Table>
             <TableHeader className="bg-slate-100/60 dark:bg-slate-800/50 text-xs">
               <TableRow>
-                <TableHead className="w-[120px]">Código</TableHead>
+                <TableHead className="w-[40px] text-center">
+                  <Checkbox
+                    checked={
+                      filteredOthers.length > 0 &&
+                      filteredOthers.every((it) => selectedItemKeys.has(it.key))
+                    }
+                    onCheckedChange={toggleSelectAllVisible}
+                    aria-label="Selecionar todos os demais"
+                  />
+                </TableHead>
+                <TableHead className="w-[110px]">Código</TableHead>
                 <TableHead>Descrição do Material</TableHead>
+                <TableHead className="w-[120px]">Categoria</TableHead>
                 <TableHead className="w-[130px] text-right font-semibold text-slate-900 dark:text-slate-100">
                   Total Programado
                 </TableHead>
-                <TableHead className="w-[130px] text-right">Saldo Estoque</TableHead>
-                <TableHead className="w-[160px] text-center font-bold">Falta / Comprar</TableHead>
+                <TableHead className="w-[120px] text-right">Saldo Estoque</TableHead>
+                <TableHead className="w-[150px] text-center font-bold">Falta / Comprar</TableHead>
                 <TableHead className="w-[180px] text-left">OPs que utilizam</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoadingMaterials ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                     Carregando materiais das OPs selecionadas...
                   </TableCell>
                 </TableRow>
               ) : filteredOthers.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-6 text-muted-foreground text-xs">
+                  <TableCell colSpan={8} className="text-center py-6 text-muted-foreground text-xs">
                     Nenhum outro componente encontrado nas OPs selecionadas com os filtros atuais.
                   </TableCell>
                 </TableRow>
               ) : (
                 filteredOthers.map((item) => (
-                  <MaterialRow key={item.key} item={item} onOpClick={handleOpenOpReadOnly} />
+                  <MaterialRow
+                    key={item.key}
+                    item={item}
+                    isSelected={selectedItemKeys.has(item.key)}
+                    onToggleSelect={() => toggleSelectOne(item.key)}
+                    onOpClick={handleOpenOpReadOnly}
+                  />
                 ))
               )}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
+
+      {/* MODAL DE CONFIRMAÇÃO DE COMPRA EM LOTE */}
+      <Dialog open={isConfirmBatchBuyOpen} onOpenChange={setIsConfirmBatchBuyOpen}>
+        <DialogContent className="sm:max-w-[540px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+              <ShoppingCart className="size-5" />
+              Confirmar Envio para Cotação / Compra
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Os itens serão gravados em Suprimentos (coleção <code>material_shortages</code>) com
+              status <strong>Pendente</strong>, setor <strong>Suprimentos</strong> e observações com
+              a categoria e as OPs de origem.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 text-xs">
+            <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 p-3 rounded-md">
+              <p className="font-semibold text-amber-900 dark:text-amber-200">
+                Você está prestes a enviar{' '}
+                <span className="text-sm font-bold underline">{itemsToBuy.length}</span> item(ns)
+                {selectedItemKeys.size > 0 ? ' selecionado(s)' : ' da listagem filtrada'}.
+              </p>
+              <p className="text-amber-800 dark:text-amber-300 mt-1">
+                {categoryFilter !== 'ALL' && (
+                  <span>
+                    Filtro de categoria ativo: <strong>{categoryFilter}</strong>.
+                  </span>
+                )}
+              </p>
+            </div>
+
+            <div className="max-h-[200px] overflow-y-auto border rounded-md p-2 bg-slate-50 dark:bg-slate-900/50 space-y-1">
+              {itemsToBuy.slice(0, 15).map((it) => (
+                <div
+                  key={it.key}
+                  className="flex justify-between items-center text-[11px] py-1 border-b last:border-b-0"
+                >
+                  <div className="truncate mr-2">
+                    <span className="font-mono font-bold text-primary mr-1">
+                      {it.code || 'S/Cód'}
+                    </span>
+                    <span className="font-medium">{it.description}</span>
+                  </div>
+                  <Badge variant="outline" className="text-[10px] shrink-0 font-mono">
+                    {formatQuantity(
+                      it.status === 'shortage' && it.missingQuantity > 0
+                        ? it.missingQuantity
+                        : it.totalQuantity,
+                      it.unit,
+                    )}{' '}
+                    {it.unit}
+                  </Badge>
+                </div>
+              ))}
+              {itemsToBuy.length > 15 && (
+                <p className="text-[10px] text-muted-foreground text-center pt-1 italic">
+                  ... e mais {itemsToBuy.length - 15} outro(s) item(ns).
+                </p>
+              )}
+            </div>
+
+            <p className="text-[11px] text-muted-foreground">
+              ⚠️ Nada é gravado sem este clique explícito. Deseja prosseguir com o envio?
+            </p>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsConfirmBatchBuyOpen(false)}
+              disabled={isSendingBatchBuy}
+            >
+              Cancelar
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleConfirmBatchBuy}
+              disabled={isSendingBatchBuy || itemsToBuy.length === 0}
+              className="bg-amber-600 hover:bg-amber-700 text-white gap-1.5"
+            >
+              {isSendingBatchBuy ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <ShoppingCart className="size-3.5" />
+              )}
+              Confirmar Envio ({itemsToBuy.length})
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* MODAL SOMENTE LEITURA DA OP */}
       <OpReadOnlyModal
@@ -532,17 +926,35 @@ export function CompiledMaterialsView({
 function MaterialRow({
   item,
   isTube,
+  isSelected,
+  onToggleSelect,
   onOpClick,
 }: {
   item: CompiledMaterialItem
   isTube?: boolean
+  isSelected?: boolean
+  onToggleSelect?: () => void
   onOpClick?: (opNumber: string) => void
 }) {
   const code = item.code || '-'
   const unit = item.unit || (isTube ? 'MT' : 'UN')
+  const categoryLabel = item.categoryName || 'Outros'
 
   return (
-    <TableRow className="text-xs hover:bg-muted/40 transition-colors">
+    <TableRow
+      className={`text-xs transition-colors ${
+        isSelected ? 'bg-amber-50/60 dark:bg-amber-950/20' : 'hover:bg-muted/40'
+      }`}
+    >
+      {/* Checkbox de seleção */}
+      <TableCell className="text-center">
+        <Checkbox
+          checked={!!isSelected}
+          onCheckedChange={onToggleSelect}
+          aria-label={`Selecionar ${item.description}`}
+        />
+      </TableCell>
+
       {/* Código */}
       <TableCell className="font-mono font-medium">
         {code !== '-' ? (
@@ -555,7 +967,7 @@ function MaterialRow({
       {/* Descrição */}
       <TableCell>
         <div className="flex flex-col">
-          <span className="font-semibold text-slate-900 dark:text-slate-100">
+          <span className="font-semibold text-slate-900 dark:text-slate-100 leading-snug">
             {item.description}
           </span>
           <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground mt-0.5">
@@ -574,6 +986,18 @@ function MaterialRow({
               </span>
             )}
           </div>
+        </div>
+      </TableCell>
+
+      {/* Categoria */}
+      <TableCell>
+        <div className="inline-flex items-center gap-1">
+          <Badge
+            variant="secondary"
+            className="text-[10px] font-normal bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800"
+          >
+            {categoryLabel}
+          </Badge>
         </div>
       </TableCell>
 

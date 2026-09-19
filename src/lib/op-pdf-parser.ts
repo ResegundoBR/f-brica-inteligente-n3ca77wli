@@ -193,22 +193,163 @@ export type ComparisonStatus = 'same' | 'divergent' | 'new' | 'removed'
 
 export interface ComponentComparisonRow {
   id: string
-  code: string
-  sector: PcpOrderMaterialSector
+  code?: string
+  sector: string
   pdfItem?: ExtractedOpComponent
   catalogItem?: CompositionItem
   status: ComparisonStatus
   divergenceReasons?: string[]
   applyToOp: boolean
   updateCatalog: boolean
-  resolvedSector: PcpOrderMaterialSector
-  resolvedCode: string
+  resolvedSector: string
+  resolvedCode?: string
   resolvedDescription: string
   resolvedQuantity: number
   resolvedUnit: string
   resolvedMeasurements?: string
+  suggestedCategory?: string
+  resolvedCategory?: string
 }
 
+/**
+ * Sugere uma categoria de componente com base na descrição e regras por palavras-chave:
+ * - TUBO, BARRA, PERFIL, CHAPA, TUBO QUADRADO, TUBO REDONDO, CANTONEIRA -> Corte a Laser
+ * - CABO, FIO, CHICOTE, CORDAO, CORDAO PARALELO -> Cabos
+ * - PARAFUSO, NIPLE, ARRUELA, ABRACADEIRA, SOQUETE, PORCA, REBITE, FIXADOR, BUCHA NYLON -> Ferragens
+ * - CANOPLA, HASTE, EROSAO, TORNEADO, USINADO, PINO, FLANGE, ADAPTADOR -> Usinagem
+ * - BUCHA BORRACHA, ARRUELA BORRACHA, ANEL, BORRACHA, ORING, SILICONE -> Borracha
+ * - REPUXO, CUPULA, DISCO REPUXADO -> Repuxos
+ * - PEDRA, MARMORE, GRANITO, QUARTZO, TRAVERTINO -> Pedras
+ * - ESTRUTURA, SOLDA, BASE SOLDADA, QUADRO -> Estrutura/Solda
+ * - PINTURA, TINTA, VERNIZ, ACABAMENTO PINTURA -> Pintura
+ * - ELETRICA, INTERRUPTOR, FONTE, DRIVER, REATOR, LED, SOQUETE ELETRICO, LUMINARIA, PLACA LED -> Elétrica
+ * - GLOBO VIDRO, VIDRO, DIVERSOS, OUTROS -> Outros
+ */
+export function suggestComponentCategory(description?: string): string {
+  if (!description) return 'Outros'
+  const desc = description
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // remove acentos
+    .trim()
+
+  // 1. Borracha (deve vir antes de ferragens para não confundir ARRUELA BORRACHA)
+  if (
+    desc.includes('BORRACHA') ||
+    desc.includes('O-RING') ||
+    desc.includes('ORING') ||
+    desc.includes('SILICONE') ||
+    desc.includes('ANEL DE VEDACAO') ||
+    desc.includes('ANEL VEDACAO') ||
+    desc.includes('ANEL BORRACHA')
+  ) {
+    return 'Borracha'
+  }
+
+  // 2. Cabos
+  if (
+    desc.includes('CABO') ||
+    desc.includes('FIO ') ||
+    desc.startsWith('FIO') ||
+    desc.includes('CHICOTE') ||
+    desc.includes('CORDAO')
+  ) {
+    return 'Cabos'
+  }
+
+  // 3. Corte a Laser
+  if (
+    desc.includes('TUBO') ||
+    desc.includes('BARRA') ||
+    desc.includes('PERFIL') ||
+    desc.includes('CHAPA') ||
+    desc.includes('CANTONEIRA')
+  ) {
+    return 'Corte a Laser'
+  }
+
+  // 4. Usinagem
+  if (
+    desc.includes('CANOPLA') ||
+    desc.includes('HASTE') ||
+    desc.includes('EROSAO') ||
+    desc.includes('USINAD') ||
+    desc.includes('TORNEAD') ||
+    desc.includes('PINO') ||
+    desc.includes('FLANGE') ||
+    desc.includes('ADAPTADOR')
+  ) {
+    return 'Usinagem'
+  }
+
+  // 5. Repuxos
+  if (desc.includes('REPUXO') || desc.includes('REPUXAD') || desc.includes('CUPULA')) {
+    return 'Repuxos'
+  }
+
+  // 6. Pedras
+  if (
+    desc.includes('PEDRA') ||
+    desc.includes('MARMORE') ||
+    desc.includes('GRANITO') ||
+    desc.includes('QUARTZO') ||
+    desc.includes('TRAVERTINO')
+  ) {
+    return 'Pedras'
+  }
+
+  // 7. Estrutura / Solda
+  if (
+    desc.includes('ESTRUTURA') ||
+    desc.includes('SOLDA') ||
+    desc.includes('SOLDAD') ||
+    desc.includes('QUADRO')
+  ) {
+    return 'Estrutura/Solda'
+  }
+
+  // 8. Pintura
+  if (desc.includes('PINTURA') || desc.includes('TINTA') || desc.includes('VERNIZ')) {
+    return 'Pintura'
+  }
+
+  // 9. Ferragens
+  if (
+    desc.includes('PARAFUSO') ||
+    desc.includes('NIPLE') ||
+    desc.includes('ARRUELA') ||
+    desc.includes('ABRACADEIRA') ||
+    desc.includes('PORCA') ||
+    desc.includes('REBITE') ||
+    desc.includes('FIXADOR') ||
+    desc.includes('BUCHA')
+  ) {
+    return 'Ferragens'
+  }
+
+  // 10. Elétrica
+  if (
+    desc.includes('ELETRIC') ||
+    desc.includes('INTERRUPTOR') ||
+    desc.includes('FONTE') ||
+    desc.includes('DRIVER') ||
+    desc.includes('REATOR') ||
+    desc.includes('LED') ||
+    desc.includes('SOQUETE') ||
+    desc.includes('LUMINARIA') ||
+    desc.includes('PLACA LED') ||
+    desc.includes('PLACA ELETRONICA')
+  ) {
+    return 'Elétrica'
+  }
+
+  // 11. Vidros e Outros
+  if (desc.includes('VIDRO') || desc.includes('GLOBO')) {
+    return 'Outros'
+  }
+
+  return 'Outros'
+}
 export interface PdfPositionedToken {
   str: string
   x: number
@@ -2345,6 +2486,7 @@ export function comparePdfWithCatalog(
       const autoMedida = isLinear
         ? pdfItem.measurements || match.measurements || rawAutoMedida || ''
         : ''
+      const suggestedCat = suggestComponentCategory(descForMedida)
 
       rows.push({
         id: `row_${pdfItem.id}`,
@@ -2365,12 +2507,15 @@ export function comparePdfWithCatalog(
         resolvedQuantity: pdfItem.quantity,
         resolvedUnit: itemUnit,
         resolvedMeasurements: autoMedida,
+        suggestedCategory: suggestedCat,
+        resolvedCategory: suggestedCat,
       })
     } else {
       const itemUnit = pdfItem.unit || 'UN'
       const isLinear = isLinearUnit(itemUnit)
       const rawAutoMedida = extractCutMeasurementFromDescription(pdfItem.description, itemUnit)
       const autoMedida = isLinear ? pdfItem.measurements || rawAutoMedida || '' : ''
+      const suggestedCat = suggestComponentCategory(pdfItem.description)
       rows.push({
         id: `row_${pdfItem.id}`,
         code: pdfItem.code,
@@ -2390,6 +2535,8 @@ export function comparePdfWithCatalog(
         resolvedQuantity: pdfItem.quantity,
         resolvedUnit: itemUnit,
         resolvedMeasurements: autoMedida,
+        suggestedCategory: suggestedCat,
+        resolvedCategory: suggestedCat,
       })
     }
   }
@@ -2401,6 +2548,7 @@ export function comparePdfWithCatalog(
       // Como o item só está no catálogo e não veio do PDF da OP, usamos sua unidade ou inferência
       const rawAutoMedida = extractCutMeasurementFromDescription(catItem.description)
       const autoMedida = catItem.measurements || rawAutoMedida || ''
+      const suggestedCat = suggestComponentCategory(catItem.description)
 
       rows.push({
         id: `row_cat_${catItem.id}`,
@@ -2418,6 +2566,8 @@ export function comparePdfWithCatalog(
         resolvedQuantity: catQty,
         resolvedUnit: 'UN',
         resolvedMeasurements: autoMedida,
+        suggestedCategory: suggestedCat,
+        resolvedCategory: suggestedCat,
       })
     }
   }

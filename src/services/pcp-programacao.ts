@@ -1,4 +1,5 @@
 import { Inventory, MasterComponent, PcpOrderMaterial, Product, PcpOrder } from '@/types'
+import { suggestComponentCategory } from '@/lib/op-pdf-parser'
 
 export interface CompiledMaterialItem {
   key: string
@@ -8,6 +9,9 @@ export interface CompiledMaterialItem {
   totalQuantity: number
   unit: string
   cutMeasurement?: string | null
+  // Categoria
+  categoryName?: string
+  categoryId?: string
   // Dados de estoque vinculado
   hasInventoryRecord: boolean
   stockQuantity: number | null
@@ -537,13 +541,26 @@ export function compileOrderMaterials(input: CompileMaterialsInput): {
       return numA - numB
     })
 
+    const finalDesc =
+      group.description || matchedMaster?.description || matchedInv?.description || ''
+
+    // Se o master tiver categoria vinculada (via expand ou ID), usa.
+    // Caso contrário, infere via suggestComponentCategory pela descrição do item.
+    let resolvedCategory = matchedMaster?.expand?.category?.name
+    if (!resolvedCategory && isProfile) {
+      resolvedCategory = 'Corte a Laser'
+    } else if (!resolvedCategory) {
+      resolvedCategory = suggestComponentCategory(finalDesc)
+    }
+
     compiledList.push({
       key,
       code: group.code || matchedMaster?.code || matchedInv?.code || '',
-      description: group.description || matchedMaster?.description || matchedInv?.description || '',
+      description: finalDesc,
       isProfileOrTube: isProfile,
       totalQuantity: totalQty,
       unit: itemUnit,
+      cutMeasurement: group.isLinear ? (itemUnit === 'MT' ? 'MT' : null) : null,
       hasInventoryRecord,
       stockQuantity,
       stockUnit,
@@ -553,6 +570,8 @@ export function compileOrderMaterials(input: CompileMaterialsInput): {
       ordersCount: group.orderIds.size,
       orderNumbers,
       orderIds: Array.from(group.orderIds),
+      categoryName: resolvedCategory,
+      categoryId: matchedMaster?.category,
       masterComponent: matchedMaster,
       inventoryItem: matchedInv,
       matchMethod,

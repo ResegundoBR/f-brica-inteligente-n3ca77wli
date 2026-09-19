@@ -33,7 +33,9 @@ import {
   Info,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { Product, PcpOrderMaterialSector } from '@/types'
+import type { Product, PcpOrderMaterialSector, ComponentCategory } from '@/types'
+import { getComponentCategories } from '@/services/component-categories'
+import { createMasterComponent, getMasterComponents } from '@/services/components'
 import {
   Select,
   SelectContent,
@@ -85,14 +87,15 @@ interface OpPdfReviewModalProps {
   comparisonRows: ComponentComparisonRow[]
   selectedProduct?: Product | null
   onConfirm: (decisions: {
-    header: ExtractedOpHeader
+    header: Partial<ExtractedOpHeader>
     materialsForOp: Array<{
       sector: PcpOrderMaterialSector
-      code: string
+      code?: string
       description: string
       quantity: number
       unit: string
       measurements?: string
+      category?: string
     }>
     catalogUpdates?: {
       productId: string
@@ -100,7 +103,6 @@ interface OpPdfReviewModalProps {
     }
   }) => void
 }
-
 export function OpPdfReviewModal({
   open,
   onOpenChange,
@@ -114,14 +116,24 @@ export function OpPdfReviewModal({
   const [rowSectors, setRowSectors] = useState<Record<string, PcpOrderMaterialSector>>({})
   const [rowMeasurements, setRowMeasurements] = useState<Record<string, string>>({})
   const [rowQuantities, setRowQuantities] = useState<Record<string, number>>({})
+  const [rowCategories, setRowCategories] = useState<Record<string, string>>({})
+  const [availableCategories, setAvailableCategories] = useState<ComponentCategory[]>([])
   const [activeSectorTab, setActiveSectorTab] = useState<string>('ALL')
   const [statusFilter, setStatusFilter] = useState<string>('ALL')
+
+  // Carrega categorias cadastradas do sistema
+  useEffect(() => {
+    getComponentCategories({ includeInactive: false })
+      .then((cats) => setAvailableCategories(cats))
+      .catch(() => {})
+  }, [])
 
   // Initialize sector & cut measurement overrides from initial rows and deterministic extraction
   useEffect(() => {
     const initSec: Record<string, PcpOrderMaterialSector> = {}
     const initMeas: Record<string, string> = {}
     const initQty: Record<string, number> = {}
+    const initCats: Record<string, string> = {}
 
     const opQtyVal = Number(initialHeader.quantity) > 0 ? Number(initialHeader.quantity) : 1
 
@@ -141,12 +153,21 @@ export function OpPdfReviewModal({
       const rawPdfQty = Number(r.pdfItem?.quantity ?? r.resolvedQuantity) || 1
       const normalized = Math.round((rawPdfQty / opQtyVal) * 10000) / 10000
       initQty[r.id] = normalized
+      initCats[r.id] = r.resolvedCategory || r.suggestedCategory || 'Outros'
     })
     setRowSectors(initSec)
     setRowMeasurements(initMeas)
     setRowQuantities(initQty)
+    setRowCategories(initCats)
     setRows(initialRows)
   }, [initialRows, initialHeader.quantity])
+
+  const handleCategoryChange = (rowId: string, newCategory: string) => {
+    setRowCategories((prev) => ({ ...prev, [rowId]: newCategory }))
+    setRows((prev) =>
+      prev.map((r) => (r.id === rowId ? { ...r, resolvedCategory: newCategory } : r)),
+    )
+  }
 
   useEffect(() => {
     setEditableHeader(initialHeader)
@@ -310,19 +331,20 @@ export function OpPdfReviewModal({
     )
   }
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     // 1. Gather materials to be inserted into pcp_order_materials for this OP
     const materialsForOp = rows
       .filter((r) => r.applyToOp)
       .map((r) => {
-        const sectorVal = rowSectors[r.id] || r.resolvedSector || r.sector
+        const rawSec = rowSectors[r.id] || r.resolvedSector || r.sector
+        const sectorVal: PcpOrderMaterialSector = normalizeSector(rawSec)
         const itemUnit = r.resolvedUnit || r.pdfItem?.unit || 'UN'
-        const isLinear = isLinearUnit(itemUnit)
         const measVal =
           rowMeasurements[r.id] !== undefined
             ? rowMeasurements[r.id]
             : r.resolvedMeasurements || r.pdfItem?.measurements || ''
         const qtyVal = rowQuantities[r.id] !== undefined ? rowQuantities[r.id] : r.resolvedQuantity
+        const catVal = rowCategories[r.id] || r.resolvedCategory || r.suggestedCategory || 'Outros'
 
         return {
           sector: sectorVal,
@@ -331,8 +353,56 @@ export function OpPdfReviewModal({
           quantity: qtyVal,
           unit: itemUnit,
           measurements: measVal,
+          category: catVal,
         }
       })
+
+    // Sincroniza componentes novos ou sem categoria no cadastro mestre 'components'
+    // Garantindo que componentes novos já entrem com a categoria escolhida pelo gestor
+    try {
+      const existingComps = await getMasterComponents('', { includeInactive: true })
+      const compByCode = new Map<string, any>()
+      const compByDesc = new Map<string, any>()
+      existingComps.forEach((c) => {
+        if (c.code) compByCode.set(c.code.trim().toLowerCase(), c)
+        if (c.description) compByDesc.set(c.description.trim().toLowerCase(), c)
+      })
+
+      // Mapa de categoria por nome para obter id
+      const catNameToId = new Map<string, string>()
+      availableCategories.forEach((cat) => catNameToId.set(cat.name.toLowerCase().trim(), cat.id))
+
+      for (const mat of materialsForOp) {
+        const cleanC = (mat.code || '').trim().toLowerCase()
+        const cleanD = mat.description.trim().toLowerCase()
+        const targetCatId = catNameToId.get((mat.category || '').toLowerCase().trim())
+
+        const match = (cleanC ? compByCode.get(cleanC) : undefined) || compByDesc.get(cleanD)
+
+        if (!match) {
+          // Componente novo: cria no mestre já com a categoria escolhida
+          await createMasterComponent({
+            code: mat.code,
+            description: mat.description,
+            unit: mat.unit,
+            category: targetCatId,
+            source: 'imported',
+            active: true,
+          }).catch(() => {})
+        } else if (!match.category && targetCatId) {
+          // Já existe mas não tem categoria: vincula a categoria escolhida
+          // (sem alterar outros dados)
+          await import('@/lib/pocketbase/client').then(({ default: pb }) =>
+            pb
+              .collection('components')
+              .update(match.id, { category: targetCatId })
+              .catch(() => {}),
+          )
+        }
+      }
+    } catch (_) {
+      // Ignora erro silencioso no sync mestre para não travar o fluxo de OP
+    }
 
     // 2. Build updated catalog composition if user chose to update any item
     let catalogUpdates: { productId: string; newComposition: any[] } | undefined
@@ -676,14 +746,15 @@ export function OpPdfReviewModal({
             <Table>
               <TableHeader>
                 <TableRow className="bg-slate-100/70 dark:bg-slate-800/70 text-xs font-bold">
-                  <TableHead className="w-[125px]">Etapa / Setor</TableHead>
-                  <TableHead className="w-[105px]">Status</TableHead>
-                  <TableHead className="w-[24%]">Item na OP (PDF ERP)</TableHead>
-                  <TableHead className="w-[105px]">Qtd / Peça</TableHead>
-                  <TableHead className="w-[125px]">Medida de Corte</TableHead>
-                  <TableHead className="w-[24%]">Item no Catálogo Técnico</TableHead>
-                  <TableHead className="w-[90px] text-center">Incluir na OP</TableHead>
-                  <TableHead className="w-[100px] text-center">Atualizar Catálogo</TableHead>
+                  <TableHead className="w-[120px]">Etapa / Setor</TableHead>
+                  <TableHead className="w-[95px]">Status</TableHead>
+                  <TableHead className="w-[22%]">Item na OP (PDF ERP)</TableHead>
+                  <TableHead className="w-[130px]">Categoria</TableHead>
+                  <TableHead className="w-[95px]">Qtd / Peça</TableHead>
+                  <TableHead className="w-[115px]">Medida Corte</TableHead>
+                  <TableHead className="w-[22%]">Item no Catálogo</TableHead>
+                  <TableHead className="w-[85px] text-center">Incluir na OP</TableHead>
+                  <TableHead className="w-[95px] text-center">Atualizar Catálogo</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -798,6 +869,59 @@ export function OpPdfReviewModal({
                             <span className="text-muted-foreground italic text-[11px]">
                               — Não consta no PDF da OP —
                             </span>
+                          )}
+                        </TableCell>
+
+                        {/* Categoria (Sugestão automática editável) */}
+                        <TableCell className="border-l border-slate-200 dark:border-slate-800">
+                          {row.pdfItem ? (
+                            <div className="space-y-1">
+                              <Select
+                                value={
+                                  rowCategories[row.id] ||
+                                  row.resolvedCategory ||
+                                  row.suggestedCategory ||
+                                  'Outros'
+                                }
+                                onValueChange={(val) => handleCategoryChange(row.id, val)}
+                              >
+                                <SelectTrigger className="h-7 text-[11px] font-medium w-[120px] bg-white dark:bg-slate-900">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {availableCategories.length > 0
+                                    ? availableCategories.map((c) => (
+                                        <SelectItem key={c.id} value={c.name} className="text-xs">
+                                          {c.name}
+                                        </SelectItem>
+                                      ))
+                                    : [
+                                        'Usinagem',
+                                        'Corte a Laser',
+                                        'Borracha',
+                                        'Cabos',
+                                        'Repuxos',
+                                        'Pedras',
+                                        'Ferragens',
+                                        'Estrutura/Solda',
+                                        'Pintura',
+                                        'Elétrica',
+                                        'Outros',
+                                      ].map((name) => (
+                                        <SelectItem key={name} value={name} className="text-xs">
+                                          {name}
+                                        </SelectItem>
+                                      ))}
+                                </SelectContent>
+                              </Select>
+                              {row.suggestedCategory && (
+                                <span className="text-[9px] text-muted-foreground block font-mono">
+                                  Sugerida: {row.suggestedCategory}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground text-[10px]">—</span>
                           )}
                         </TableCell>
 

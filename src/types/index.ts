@@ -399,11 +399,20 @@ export interface Quotation {
   }
 }
 
+export interface ComponentCategory {
+  id: string
+  name: string
+  active?: boolean
+  created: string
+  updated: string
+}
+
 export interface MasterComponent {
   id: string
   code: string
   description: string
   unit?: string
+  category?: string
   active?: boolean
   source?: 'inventory' | 'catalog' | 'manual' | 'imported'
   deactivated_by?: string
@@ -412,6 +421,7 @@ export interface MasterComponent {
   updated: string
   expand?: {
     deactivated_by?: User
+    category?: ComponentCategory
   }
 }
 

@@ -56,7 +56,7 @@ export const getMasterComponents = async (
   return pb.collection('components').getFullList<MasterComponent>({
     sort: 'description',
     filter: finalFilter,
-    expand: options?.expand || 'deactivated_by',
+    expand: options?.expand || 'deactivated_by,category',
   })
 }
 
@@ -74,7 +74,7 @@ export const searchMasterComponents = async (
       .getList<MasterComponent>(1, limit, {
         sort: 'description',
         filter: activeCondition,
-        expand: options?.expand || 'deactivated_by',
+        expand: options?.expand || 'deactivated_by,category',
       })
       .then((res) => res.items)
   }
@@ -87,7 +87,7 @@ export const searchMasterComponents = async (
     .getList<MasterComponent>(1, limit, {
       filter: finalFilter,
       sort: 'description',
-      expand: options?.expand || 'deactivated_by',
+      expand: options?.expand || 'deactivated_by,category',
     })
     .then((res) => res.items)
 }
@@ -151,6 +151,7 @@ export const createMasterComponent = async (data: {
   code?: string
   description: string
   unit?: string
+  category?: string
   source?: 'inventory' | 'catalog' | 'manual' | 'imported'
   active?: boolean
 }): Promise<MasterComponent> => {
@@ -158,6 +159,7 @@ export const createMasterComponent = async (data: {
     code: data.code?.trim() || '',
     description: data.description.trim(),
     unit: data.unit?.trim() || 'un',
+    category: data.category?.trim() || undefined,
     source: data.source || 'manual',
     active: data.active !== undefined ? data.active : true,
   })

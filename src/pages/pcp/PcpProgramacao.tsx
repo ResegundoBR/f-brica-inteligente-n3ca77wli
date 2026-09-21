@@ -35,6 +35,7 @@ import {
   ChevronRight,
   AlertTriangle,
   Info,
+  Lock,
 } from 'lucide-react'
 import { PromisedDateBadge } from '@/components/PromisedDateBadge'
 import { Input } from '@/components/ui/input'
@@ -52,6 +53,22 @@ import { CompiledMaterialsView } from './components/CompiledMaterialsView'
 import { SendToSeparationModal } from './components/SendToSeparationModal'
 import { SeparationRoundsManager } from './components/SeparationRoundsManager'
 import { compileOrderMaterials } from '@/services/pcp-programacao'
+import {
+  PcpProgramacaoRecord,
+  getProgramacoes,
+  closeProgramacao,
+} from '@/services/pcp-programacoes'
+import { ProgramacaoVigenteCard } from './components/ProgramacaoVigenteCard'
+import { ProgramacaoDetailModal } from './components/ProgramacaoDetailModal'
+import { ProgramacaoHistorySection } from './components/ProgramacaoHistorySection'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 interface PcpProgramacaoProps {
@@ -89,6 +106,14 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
   const [filaOnlyFilter, setFilaOnlyFilter] = useState(false)
   const [sendSeparationOpen, setSendSeparationOpen] = useState(false)
 
+  // Estados do conceito de Programação oficial
+  const [programacoes, setProgramacoes] = useState<PcpProgramacaoRecord[]>([])
+  const [selectedProgramacaoDetail, setSelectedProgramacaoDetail] =
+    useState<PcpProgramacaoRecord | null>(null)
+  const [detailModalOpen, setDetailModalOpen] = useState(false)
+  const [programacaoToClose, setProgramacaoToClose] = useState<PcpProgramacaoRecord | null>(null)
+  const [isClosingProgramacao, setIsClosingProgramacao] = useState(false)
+
   const { toast } = useToast()
 
   const scrollToCompiled = () => {
@@ -98,8 +123,19 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
     }
   }
 
+  // Carrega lista oficial de programações
+  const loadProgramacoes = async () => {
+    try {
+      const list = await getProgramacoes()
+      setProgramacoes(list)
+    } catch (err) {
+      console.error('Erro ao listar programações:', err)
+    }
+  }
+
   // Carrega dados gerais de apoio (somente leitura)
   const loadData = async () => {
+    loadProgramacoes()
     Promise.allSettled([
       pb
         .collection('pcp_orders')
@@ -202,14 +238,18 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
   useRealtime('pcp_orders', () => loadData())
   useRealtime('inventory', () => loadData())
   useRealtime('pcp_order_logs', () => {
-    // Recarrega os dados gerais para atualizar status/logs se houver mudança
     loadData()
   })
   useRealtime('pcp_order_materials', () => {
-    // Recarrega materiais selecionados se houver realtime
     if (selectedOpIds.size > 0) {
       loadSelectedMaterials(Array.from(selectedOpIds))
     }
+  })
+  useRealtime('pcp_programacoes', () => {
+    loadProgramacoes()
+  })
+  useRealtime('material_separations', () => {
+    loadProgramacoes()
   })
 
   // Carrega os materiais das OPs selecionadas (apenas leitura de pcp_order_materials)
@@ -609,6 +649,48 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
     return 'blue'
   }
 
+  // Separação entre Programações em produção e encerradas
+  const programacoesEmProducao = useMemo(() => {
+    return programacoes.filter((p) => p.status === 'Em produção')
+  }, [programacoes])
+
+  const programacoesEncerradas = useMemo(() => {
+    return programacoes.filter((p) => p.status === 'Encerrada')
+  }, [programacoes])
+
+  const handleOpenDetailModal = (prog: PcpProgramacaoRecord) => {
+    setSelectedProgramacaoDetail(prog)
+    setDetailModalOpen(true)
+  }
+
+  // Confirmação explícita para encerramento de programação (Requisito 2 & 7)
+  const handleConfirmCloseProgramacao = async () => {
+    if (!programacaoToClose) return
+    try {
+      setIsClosingProgramacao(true)
+      const updated = await closeProgramacao(programacaoToClose.id)
+      toast({
+        title: 'Programação Encerrada',
+        description: `${updated.name} foi arquivada no Histórico de Programações.`,
+      })
+      setProgramacaoToClose(null)
+      if (selectedProgramacaoDetail?.id === programacaoToClose.id) {
+        setDetailModalOpen(false)
+        setSelectedProgramacaoDetail(null)
+      }
+      loadProgramacoes()
+    } catch (err) {
+      console.error('Erro ao encerrar programação:', err)
+      toast({
+        title: 'Erro ao encerrar',
+        description: 'Não foi possível encerrar a programação.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsClosingProgramacao(false)
+    }
+  }
+
   const getHeaderColor = (opType: string) => {
     switch (opType) {
       case 'Especial':
@@ -653,6 +735,13 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
           </Tabs>
         </div>
       )}
+
+      {/* (3) SEÇÃO CARTÃO FIXO NO TOPO: PROGRAMAÇÃO VIGENTE E DEMAIS EM PRODUÇÃO */}
+      <ProgramacaoVigenteCard
+        programacoesEmProducao={programacoesEmProducao}
+        onOpenDetails={handleOpenDetailModal}
+        onCloseProgramacao={(prog) => setProgramacaoToClose(prog)}
+      />
 
       {/* CABEÇALHO DA ABA PROGRAMAÇÃO */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-4">
@@ -1256,23 +1345,106 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
         )}
       </div>
 
+      {/* (5) HISTÓRICO DE PROGRAMAÇÕES ENCERRADAS (SOMENTE LEITURA COM PEDIDOS, OPS E SEPARAÇÃO) */}
+      <div className="pt-4 border-t">
+        <ProgramacaoHistorySection
+          programacoesEncerradas={programacoesEncerradas}
+          onOpenDetails={handleOpenDetailModal}
+          onRefresh={loadProgramacoes}
+        />
+      </div>
+
       {/* SEÇÃO DE ACOMPANHAMENTO DE RODADAS DE SEPARAÇÃO (STATUS PARA O GESTOR) */}
       <div className="pt-4 border-t">
         <SeparationRoundsManager />
       </div>
 
-      {/* MODAL DE ENVIO PARA SEPARAÇÃO */}
+      {/* (4) MODAL DE DETALHES DA PROGRAMAÇÃO COM COMPONENTES RECOLHIDOS POR PADRÃO */}
+      <ProgramacaoDetailModal
+        programacao={selectedProgramacaoDetail}
+        open={detailModalOpen}
+        onOpenChange={(open) => {
+          setDetailModalOpen(open)
+          if (!open) setSelectedProgramacaoDetail(null)
+        }}
+        onCloseProgramacao={(prog) => {
+          setProgramacaoToClose(prog)
+        }}
+      />
+
+      {/* MODAL DE CONFIRMAÇÃO EXPLÍCITA PARA ENCERRAR PROGRAMAÇÃO (REQUISITOS 2 & 7) */}
+      {programacaoToClose && (
+        <Dialog
+          open={!!programacaoToClose}
+          onOpenChange={(open) => !open && setProgramacaoToClose(null)}
+        >
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-lg flex items-center gap-2 text-rose-600">
+                <Lock className="size-5" />
+                Confirmar Encerramento de Programação
+              </DialogTitle>
+              <DialogDescription className="text-xs">
+                Ação manual e explícita do gestor. Nenhuma programação é encerrada automaticamente.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3 py-2 text-xs">
+              <div className="p-3 bg-muted/50 rounded-lg border space-y-1">
+                <span className="font-bold text-foreground block text-sm">
+                  {programacaoToClose.name}
+                </span>
+                <span className="text-muted-foreground block">
+                  Contém {programacaoToClose.orders_count || 0} pedidos,{' '}
+                  {programacaoToClose.ops_count || 0} OPs e {programacaoToClose.items_count || 0}{' '}
+                  itens consolidados.
+                </span>
+              </div>
+
+              <p className="text-muted-foreground">
+                Ao encerrar, a programação mudará o status para <strong>Encerrada</strong> e será
+                movida para o <strong>Histórico de Programações</strong> em modo de consulta somente
+                leitura.
+              </p>
+            </div>
+
+            <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setProgramacaoToClose(null)}
+                disabled={isClosingProgramacao}
+              >
+                Cancelar
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleConfirmCloseProgramacao}
+                disabled={isClosingProgramacao}
+                className="gap-1.5 font-bold"
+              >
+                {isClosingProgramacao ? 'Encerrando...' : 'Confirmar Encerramento'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* MODAL DE ENVIO PARA SEPARAÇÃO (GRAVA TAMBÉM A PROGRAMAÇÃO OFICIAL) */}
       <SendToSeparationModal
         open={sendSeparationOpen}
         onOpenChange={setSendSeparationOpen}
         compiledItems={[...compiledData.profileItems, ...compiledData.otherItems]}
         selectedOps={selectedOrdersList.map((o) => o.op_number || o.order_number).filter(Boolean)}
         selectedOrderIds={Array.from(selectedOpIds)}
+        selectedOrders={selectedOrdersList}
         onSuccess={() => {
-          // Após enviar com sucesso, scroll suave até a tabela de rodadas
+          loadProgramacoes()
           toast({
-            title: 'Separação Registrada',
-            description: 'Acompanhe o status na tabela de Rodadas de Separação abaixo.',
+            title: 'Programação Oficial Criada',
+            description:
+              'Programação destacada no topo como Vigente e rodada enviada para o Operador.',
           })
         }}
       />

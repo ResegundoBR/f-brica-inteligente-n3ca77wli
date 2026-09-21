@@ -15,6 +15,8 @@ import { Label } from '@/components/ui/label'
 import { Package, Send, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { CompiledMaterialItem } from '@/services/pcp-programacao'
 import { createSeparation, SeparationItem } from '@/services/material-separations'
+import { createProgramacao, ProgramacaoOrderItem } from '@/services/pcp-programacoes'
+import { PcpOrder } from '@/types'
 import { toast } from '@/hooks/use-toast'
 
 interface SendToSeparationModalProps {
@@ -23,6 +25,7 @@ interface SendToSeparationModalProps {
   compiledItems: CompiledMaterialItem[]
   selectedOps: string[]
   selectedOrderIds: string[]
+  selectedOrders?: PcpOrder[]
   onSuccess?: () => void
 }
 
@@ -32,6 +35,7 @@ export function SendToSeparationModal({
   compiledItems,
   selectedOps,
   selectedOrderIds,
+  selectedOrders = [],
   onSuccess,
 }: SendToSeparationModalProps) {
   const [title, setTitle] = useState('')
@@ -53,6 +57,32 @@ export function SendToSeparationModal({
     try {
       setLoading(true)
 
+      // 1. Preparar lista de pedidos no formato exigido:
+      // 'Número do pedido — Nome do cliente — Nome do Produto / OP'
+      const programacaoOrdersList: ProgramacaoOrderItem[] = selectedOrders.map((ord) => {
+        const orderNum = ord.order_number || '-'
+        const clientName = ord.expand?.client_id?.name || ord.client_name || 'Cliente não informado'
+        const productName =
+          ord.op_type === 'Assistência'
+            ? ord.manual_product_name || 'Assistência Técnica'
+            : ord.op_type === 'Especial'
+              ? ord.manual_product_name || 'Produto Especial'
+              : ord.expand?.product_id?.name || 'Produto sem nome'
+        const opNum = ord.op_number ? `OP ${ord.op_number}` : 'Sem OP'
+
+        const formattedLabel = `${orderNum} — ${clientName} — ${productName} / ${opNum}`
+
+        return {
+          order_id: ord.id,
+          order_number: orderNum,
+          client_name: clientName,
+          product_name: productName,
+          op_number: ord.op_number || '',
+          quantity: ord.quantity || 1,
+          formatted_label: formattedLabel,
+        }
+      })
+
       const items: SeparationItem[] = compiledItems.map((item, index) => {
         const orderIds =
           item.orderIds && item.orderIds.length > 0 ? item.orderIds : selectedOrderIds
@@ -69,7 +99,8 @@ export function SendToSeparationModal({
         }
       })
 
-      await createSeparation({
+      // 2. Criar a separação preliminar
+      const createdSep = await createSeparation({
         title: title.trim() || defaultTitle,
         op_numbers: selectedOps,
         order_ids: selectedOrderIds,
@@ -77,9 +108,17 @@ export function SendToSeparationModal({
         notes: notes.trim(),
       })
 
+      // 3. Gravar a Programação oficial atrelada à rodada de separação
+      const createdProg = await createProgramacao({
+        orders_list: programacaoOrdersList,
+        compiled_items: compiledItems,
+        separation_id: createdSep.id,
+        notes: notes.trim(),
+      })
+
       toast({
-        title: 'Enviado para Separação!',
-        description: `Rodada criada com ${items.length} itens e ${selectedOps.length} OPs. Disponível no Portal do Operador.`,
+        title: `${createdProg.name} Criada!`,
+        description: `Programação oficial registrada e rodada de separação enviada ao Portal do Operador (${items.length} itens, ${selectedOps.length} OPs).`,
       })
 
       onOpenChange(false)
@@ -210,11 +249,12 @@ export function SendToSeparationModal({
             </ScrollArea>
           </div>
 
-          <div className="flex items-start gap-2 p-2.5 rounded-md bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs border border-amber-500/20">
-            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+          <div className="flex items-start gap-2 p-2.5 rounded-md bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 text-xs border border-emerald-500/20">
+            <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5 text-emerald-600" />
             <div>
-              Ao clicar em <strong>Confirmar e Enviar</strong>, a rodada será disponibilizada
-              imediatamente na aba <strong>Separação</strong> do Portal do Operador.
+              Ao clicar em <strong>Confirmar e Enviar</strong>, será gravada uma{' '}
+              <strong>Programação oficial</strong> numerada sequencialmente com status{' '}
+              <strong>Em produção</strong> e a rodada será enviada para o Portal do Operador.
             </div>
           </div>
         </div>

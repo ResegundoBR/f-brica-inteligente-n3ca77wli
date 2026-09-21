@@ -34,7 +34,7 @@ import {
   SeparationStatus,
 } from '@/services/material-separations'
 import { formatLocalDate } from '@/lib/pcp-utils'
-import { pb } from '@/lib/pocketbase/client'
+import pb from '@/lib/pocketbase/client'
 
 export function SeparationRoundsManager() {
   const [separations, setSeparations] = useState<MaterialSeparation[]>([])
@@ -185,8 +185,15 @@ export function SeparationRoundsManager() {
 
                       <TableCell>
                         <div className="space-y-1">
+                          {sep.expand?.programacao_id?.name && (
+                            <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 block font-mono">
+                              {sep.expand.programacao_id.name}
+                            </span>
+                          )}
                           <span className="font-medium text-sm text-foreground block">
-                            {sep.title || `Separação (${sep.op_numbers?.length || 0} OPs)`}
+                            {sep.expand?.programacao_id?.name
+                              ? `Separação — ${sep.expand.programacao_id.name}`
+                              : sep.title || `Separação (${sep.op_numbers?.length || 0} OPs)`}
                           </span>
                           <div className="flex flex-wrap gap-1">
                             {(sep.op_numbers || []).slice(0, 5).map((op) => (
@@ -280,13 +287,27 @@ export function SeparationRoundsManager() {
           <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
             <DialogHeader>
               <div className="flex items-center justify-between">
-                <DialogTitle className="text-lg flex items-center gap-2">
-                  <Package className="h-5 w-5 text-primary" />
-                  {detailModal.title || 'Detalhes da Rodada'}
-                </DialogTitle>
+                <div className="space-y-0.5">
+                  {detailModal.expand?.programacao_id?.name && (
+                    <span className="text-xs font-bold text-blue-600 dark:text-blue-400 font-mono block">
+                      {detailModal.expand.programacao_id.name}
+                    </span>
+                  )}
+                  <DialogTitle className="text-lg flex items-center gap-2">
+                    <Package className="h-5 w-5 text-primary" />
+                    {detailModal.expand?.programacao_id?.name
+                      ? `Separação — ${detailModal.expand.programacao_id.name}`
+                      : detailModal.title || 'Detalhes da Rodada'}
+                  </DialogTitle>
+                </div>
                 {getStatusBadge(detailModal.status)}
               </div>
               <DialogDescription className="text-xs">
+                {detailModal.expand?.programacao_id?.name && (
+                  <span className="font-semibold text-foreground mr-1">
+                    Vinculada à {detailModal.expand.programacao_id.name} |
+                  </span>
+                )}
                 Criada em {new Date(detailModal.created).toLocaleString('pt-BR')} | OPs:{' '}
                 {detailModal.op_numbers?.join(', ')}
               </DialogDescription>

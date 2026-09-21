@@ -31,7 +31,7 @@ import {
   updateSeparationItems,
   finalizeSeparation,
 } from '@/services/material-separations'
-import { pb } from '@/lib/pocketbase/client'
+import pb from '@/lib/pocketbase/client'
 import { toast } from '@/hooks/use-toast'
 
 export function OperatorSeparationTab() {
@@ -250,6 +250,7 @@ export function OperatorSeparationTab() {
               const totalItems = sep.total_items_count || sep.items?.length || 0
               const sepCount = sep.separated_count || 0
               const shortCount = sep.shortage_count || 0
+              const progName = sep.expand?.programacao_id?.name
 
               return (
                 <Card
@@ -261,8 +262,16 @@ export function OperatorSeparationTab() {
                   <CardHeader className="p-4 pb-2">
                     <div className="flex items-start justify-between gap-2">
                       <div className="space-y-1">
+                        {progName && (
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400">
+                            <span className="size-2 rounded-full bg-blue-500 animate-pulse" />
+                            <span>{progName}</span>
+                          </div>
+                        )}
                         <CardTitle className="text-base font-bold text-foreground leading-snug">
-                          {sep.title || `Separação (${sep.op_numbers?.length || 0} OPs)`}
+                          {progName
+                            ? `Separação — ${progName}`
+                            : sep.title || `Separação (${sep.op_numbers?.length || 0} OPs)`}
                         </CardTitle>
                         <CardDescription className="text-xs">
                           {sep.created
@@ -372,9 +381,18 @@ export function OperatorSeparationTab() {
               >
                 <CardHeader className="p-4 pb-2">
                   <div className="flex items-start justify-between gap-2">
-                    <CardTitle className="text-sm font-semibold text-foreground">
-                      {sep.title || `Separação (${sep.op_numbers?.length || 0} OPs)`}
-                    </CardTitle>
+                    <div className="space-y-0.5">
+                      {sep.expand?.programacao_id?.name && (
+                        <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 block font-mono">
+                          {sep.expand.programacao_id.name}
+                        </span>
+                      )}
+                      <CardTitle className="text-sm font-semibold text-foreground">
+                        {sep.expand?.programacao_id?.name
+                          ? `Separação — ${sep.expand.programacao_id.name}`
+                          : sep.title || `Separação (${sep.op_numbers?.length || 0} OPs)`}
+                      </CardTitle>
+                    </div>
                     <Badge
                       variant="outline"
                       className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30 text-[11px] gap-1 shrink-0"
@@ -426,9 +444,16 @@ export function OperatorSeparationTab() {
                 <div className="space-y-0.5">
                   <DialogTitle className="text-xl flex items-center gap-2">
                     <Package className="h-5 w-5 text-emerald-600" />
-                    {activeSeparation.title || 'Separação de Materiais'}
+                    {activeSeparation.expand?.programacao_id?.name
+                      ? `Separação — ${activeSeparation.expand.programacao_id.name}`
+                      : activeSeparation.title || 'Separação de Materiais'}
                   </DialogTitle>
                   <DialogDescription className="text-xs">
+                    {activeSeparation.expand?.programacao_id?.name && (
+                      <span className="font-semibold text-foreground mr-2">
+                        Vinculada à {activeSeparation.expand.programacao_id.name} |
+                      </span>
+                    )}
                     OPs: {activeSeparation.op_numbers?.join(', ')}
                   </DialogDescription>
                 </div>

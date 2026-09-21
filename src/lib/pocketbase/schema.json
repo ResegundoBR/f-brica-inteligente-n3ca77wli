@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-19T14:47:59.287Z",
+  "generatedAt": "2026-09-21T14:58:29.991Z",
   "collections": [
     {
       "name": "users",
@@ -2720,6 +2720,13 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "programacao_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "pcp_programacoes"
         }
       ],
       "indexes": [
@@ -2767,6 +2774,126 @@
       ],
       "indexes": [
         "CREATE UNIQUE INDEX idx_component_categories_name ON component_categories (name COLLATE NOCASE)"
+      ]
+    },
+    {
+      "name": "pcp_programacoes",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "seq_number",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["Em produção", "Encerrada"]
+        },
+        {
+          "name": "generation_date",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "orders_list",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "compiled_items",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "orders_count",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ops_count",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "items_count",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "separation_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "material_separations"
+        },
+        {
+          "name": "created_by",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "closed_by",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "closed_at",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_pcp_programacoes_status ON pcp_programacoes (status)",
+        "CREATE INDEX idx_pcp_programacoes_created ON pcp_programacoes (created DESC)",
+        "CREATE INDEX idx_pcp_programacoes_seq ON pcp_programacoes (seq_number DESC)"
       ]
     }
   ]

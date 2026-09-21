@@ -1,4 +1,4 @@
-import { pb } from '@/lib/pocketbase/client'
+import pb from '@/lib/pocketbase/client'
 
 export type SeparationStatus = 'Pendente' | 'Em_Separacao' | 'Concluida' | 'Cancelada'
 
@@ -35,12 +35,14 @@ export interface MaterialSeparation {
   created_by?: string
   finished_by?: string
   finished_at?: string
+  programacao_id?: string
   notes?: string
   created: string
   updated: string
   expand?: {
     created_by?: { id: string; name?: string; email?: string }
     finished_by?: { id: string; name?: string; email?: string }
+    programacao_id?: { id: string; name: string; seq_number: number; status: string }
   }
 }
 
@@ -50,6 +52,7 @@ export interface CreateSeparationInput {
   op_numbers: string[]
   order_ids: string[]
   items: SeparationItem[]
+  programacao_id?: string
   notes?: string
 }
 
@@ -58,7 +61,7 @@ export async function getSeparations(filter?: string): Promise<MaterialSeparatio
     const records = await pb.collection('material_separations').getFullList<MaterialSeparation>({
       filter: filter || '',
       sort: '-created',
-      expand: 'created_by,finished_by',
+      expand: 'created_by,finished_by,programacao_id',
     })
     return records
   } catch (err) {
@@ -70,7 +73,7 @@ export async function getSeparations(filter?: string): Promise<MaterialSeparatio
 export async function getSeparationById(id: string): Promise<MaterialSeparation | null> {
   try {
     const record = await pb.collection('material_separations').getOne<MaterialSeparation>(id, {
-      expand: 'created_by,finished_by',
+      expand: 'created_by,finished_by,programacao_id',
     })
     return record
   } catch (err) {
@@ -99,6 +102,7 @@ export async function createSeparation(input: CreateSeparationInput): Promise<Ma
     shortage_count: 0,
     total_items_count: input.items.length,
     created_by: currentUserId || null,
+    programacao_id: input.programacao_id || null,
     notes: input.notes || '',
   }
 

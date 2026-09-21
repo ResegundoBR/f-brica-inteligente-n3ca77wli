@@ -30,7 +30,6 @@ import {
   MessageSquare,
   ArrowUp,
   ArrowDown,
-  GripVertical,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
@@ -987,7 +986,6 @@ export default function PcpKanban() {
                               canMoveDown={canMoveDown}
                               onMoveUp={() => handleMoveFilaOrder(order.id, 'up')}
                               onMoveDown={() => handleMoveFilaOrder(order.id, 'down')}
-                              queueIndex={orderIdx + 1}
                             />
                           </div>
                         )
@@ -1125,7 +1123,6 @@ export default function PcpKanban() {
                                   canMoveDown={canMoveDown}
                                   onMoveUp={() => handleMoveStageOrder(order.id, 'up', stage)}
                                   onMoveDown={() => handleMoveStageOrder(order.id, 'down', stage)}
-                                  queueIndex={orderIdx + 1}
                                 />
                               </div>
                             )
@@ -2034,13 +2031,11 @@ function KanbanCard({
   onClick,
   onMessageClick,
   messageState = 'none',
-  isFila = false,
   isReorderable = false,
   canMoveUp = false,
   canMoveDown = false,
   onMoveUp,
   onMoveDown,
-  queueIndex,
 }: any) {
   const color = getOrderColor(order)
   const isEmergency = order.manual_priority === 1
@@ -2076,27 +2071,14 @@ function KanbanCard({
       onDragStart={(e) => onDragStart(e, order.id)}
       onClick={onClick}
       className={cn(
-        'cursor-grab active:cursor-grabbing hover:shadow-md transition-all border-l-4 group relative',
+        'cursor-grab active:cursor-grabbing hover:shadow-md transition-all border-l-4 group relative select-none',
         borderClass,
         cardBgClass,
       )}
     >
       <CardContent className="p-3 flex flex-col gap-1">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-1.5 min-w-0">
-            {isFila && queueIndex != null && (
-              <span
-                className="text-[10px] font-mono px-1 rounded bg-black/10 dark:bg-white/10 text-muted-foreground shrink-0 font-semibold"
-                title={`Posição #${queueIndex} na fila`}
-              >
-                #{queueIndex}
-              </span>
-            )}
-            {isReorderable && (
-              <span title="Arrastar para reordenar" className="inline-flex">
-                <GripVertical className="size-3.5 text-muted-foreground/60 shrink-0 cursor-grab" />
-              </span>
-            )}
+        <div className="flex items-start justify-between gap-1">
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
             {isFixed && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -2112,14 +2094,37 @@ function KanbanCard({
                 </TooltipContent>
               </Tooltip>
             )}
-            <span className="font-semibold text-sm flex items-center gap-1 truncate">
-              {isPrazoEspecial && <span title="Prazo Especial">⚡</span>}
-              <NoTranslate as="span">{order.order_number}</NoTranslate>
-            </span>
+            <div className="font-semibold text-sm flex items-center gap-1.5 min-w-0 truncate">
+              {isPrazoEspecial && (
+                <span title="Prazo Especial" className="shrink-0">
+                  ⚡
+                </span>
+              )}
+              <NoTranslate as="span" className="font-bold tracking-tight truncate">
+                {order.order_number}
+              </NoTranslate>
+              {order.op_number && (
+                <NoTranslate
+                  as="span"
+                  className={cn(
+                    'text-xs font-mono font-medium shrink-0',
+                    color === 'neon-orange' || color === 'yellow'
+                      ? 'opacity-85'
+                      : 'text-muted-foreground',
+                  )}
+                >
+                  (OP {order.op_number})
+                </NoTranslate>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-1 shrink-0">
+            {/* Botões subir / descer: hover no desktop, visíveis discretamente no mobile/touch */}
             {isReorderable && (
-              <div className="flex items-center gap-0.5 mr-1" onClick={(e) => e.stopPropagation()}>
+              <div
+                className="opacity-90 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex items-center gap-0.5 bg-black/10 dark:bg-white/10 rounded px-0.5 py-0.5"
+                onClick={(e) => e.stopPropagation()}
+              >
                 <button
                   type="button"
                   disabled={!canMoveUp}
@@ -2129,8 +2134,8 @@ function KanbanCard({
                   }}
                   title="Subir na fila"
                   className={cn(
-                    'p-0.5 rounded hover:bg-black/10 dark:hover:bg-white/10 transition-colors',
-                    !canMoveUp && 'opacity-30 cursor-not-allowed',
+                    'p-1 sm:p-0.5 rounded hover:bg-black/10 dark:hover:bg-white/10 transition-colors',
+                    !canMoveUp && 'opacity-25 cursor-not-allowed',
                   )}
                 >
                   <ArrowUp className="size-3" />
@@ -2144,8 +2149,8 @@ function KanbanCard({
                   }}
                   title="Descer na fila"
                   className={cn(
-                    'p-0.5 rounded hover:bg-black/10 dark:hover:bg-white/10 transition-colors',
-                    !canMoveDown && 'opacity-30 cursor-not-allowed',
+                    'p-1 sm:p-0.5 rounded hover:bg-black/10 dark:hover:bg-white/10 transition-colors',
+                    !canMoveDown && 'opacity-25 cursor-not-allowed',
                   )}
                 >
                   <ArrowDown className="size-3" />
@@ -2248,7 +2253,6 @@ function CompactKanbanCard({
   canMoveDown = false,
   onMoveUp,
   onMoveDown,
-  queueIndex,
 }: any) {
   const color = getOrderColor(order)
   const isEmergency = order.manual_priority === 1
@@ -2274,14 +2278,14 @@ function CompactKanbanCard({
       onDragStart={(e) => onDragStart(e, order.id)}
       onClick={onClick}
       className={cn(
-        'group text-[8px] md:text-[9px] font-bold p-0.5 md:p-1 rounded-sm w-full text-center flex flex-col items-center cursor-grab active:cursor-grabbing transition-all hover:opacity-95 shadow-sm border border-black/10 dark:border-white/10 relative',
+        'group text-[8px] md:text-[9px] font-bold p-0.5 md:p-1 rounded-sm w-full text-center flex flex-col items-center cursor-grab active:cursor-grabbing transition-all hover:opacity-95 shadow-sm border border-black/10 dark:border-white/10 relative select-none',
         bgClass,
       )}
     >
-      {/* Botões subir / descer exibidos ao hover no card compacto quando reordenável */}
+      {/* Botões subir / descer: hover no desktop, visíveis discretamente no mobile/touch quando reordenável */}
       {isReorderable && (
         <div
-          className="absolute right-0.5 top-0.5 hidden group-hover:flex items-center gap-0.5 z-10 bg-black/60 dark:bg-black/80 rounded px-0.5 py-0.5 text-white shadow-sm"
+          className="absolute right-0.5 top-0.5 opacity-90 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex items-center gap-0.5 z-10 bg-black/60 dark:bg-black/80 rounded px-0.5 py-0.5 text-white shadow-sm"
           onClick={(e) => e.stopPropagation()}
         >
           <button
@@ -2318,22 +2322,6 @@ function CompactKanbanCard({
       )}
 
       <div className="flex items-center justify-center gap-1 w-full truncate">
-        {queueIndex != null && (
-          <span
-            className="text-[7.5px] font-mono px-0.5 rounded bg-black/20 text-inherit shrink-0 font-semibold opacity-90"
-            title={`Posição #${queueIndex} na etapa`}
-          >
-            #{queueIndex}
-          </span>
-        )}
-        {isReorderable && (
-          <span
-            title="Arrastar para reordenar"
-            className="inline-flex shrink-0 opacity-60 group-hover:opacity-100"
-          >
-            <GripVertical className="size-2.5 cursor-grab" />
-          </span>
-        )}
         {isFixed && (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -2380,9 +2368,14 @@ function CompactKanbanCard({
             {materialStatus === 'green' && '🟢'}
           </span>
         )}
-        <NoTranslate as="span" className="truncate font-bold">
-          {order.order_number}
-        </NoTranslate>
+        <div className="truncate font-bold inline-flex items-center gap-0.5">
+          <NoTranslate as="span">{order.order_number}</NoTranslate>
+          {order.op_number && (
+            <NoTranslate as="span" className="font-mono text-[7px] opacity-90 font-medium">
+              ({order.op_number})
+            </NoTranslate>
+          )}
+        </div>
       </div>
 
       {order.promised_date && (

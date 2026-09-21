@@ -1,6 +1,7 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
+import { usePcpOrders } from '@/hooks/use-pcp-orders'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -136,7 +137,17 @@ export function getOrderColor(order: any) {
 }
 
 export default function PcpKanban() {
-  const [orders, setOrders] = useState<any[]>([])
+  const {
+    orders,
+    loading: ordersLoading,
+    error: ordersError,
+    refreshOrders,
+    setOrdersOptimistic,
+    updateOrderStage,
+    updateOrderStatus,
+    persistReorderedSequences,
+  } = usePcpOrders()
+
   const [observations, setObservations] = useState<Record<string, any[]>>({})
   const [shortagesByOrder, setShortagesByOrder] = useState<Record<string, MaterialShortage[]>>({})
   const [stuckModalOpen, setStuckModalOpen] = useState(false)
@@ -188,33 +199,36 @@ export default function PcpKanban() {
   const [promisedModalOpen, setPromisedModalOpen] = useState(false)
   const [isEmergencyContext, setIsEmergencyContext] = useState(false)
 
-  const fetchOrders = async () => {
-    const res = await pb.collection('pcp_orders').getFullList({
-      expand: 'product_id,client_id,operator_id,promised_by,bottleneck_by',
-      sort: '-manual_priority,-created',
-    })
-    setOrders(res)
+  // Sincroniza selectedOrder e listSelectedOp quando orders mudar na fonte única
+  useEffect(() => {
     if (selectedOrder) {
-      const updated = res.find((o) => o.id === selectedOrder.id)
-      if (updated) setSelectedOrder(updated)
+      const updated = orders.find((o) => o.id === selectedOrder.id)
+      if (updated && updated !== selectedOrder) setSelectedOrder(updated)
     }
+  }, [orders, selectedOrder])
+
+  useEffect(() => {
     if (listSelectedOp) {
-      const updated = res.find((o) => o.id === listSelectedOp.id)
-      if (updated) setListSelectedOp(updated)
+      const updated = orders.find((o) => o.id === listSelectedOp.id)
+      if (updated && updated !== listSelectedOp) setListSelectedOp(updated)
     }
-  }
+  }, [orders, listSelectedOp])
 
-  const fetchObservations = async () => {
-    const obs = await pb.collection('pcp_order_observations').getFullList({ sort: 'created' })
-    const obsMap: Record<string, any[]> = {}
-    obs.forEach((o) => {
-      if (!obsMap[o.order_id]) obsMap[o.order_id] = []
-      obsMap[o.order_id].push(o)
-    })
-    setObservations(obsMap)
-  }
+  const fetchObservations = useCallback(async () => {
+    try {
+      const obs = await pb.collection('pcp_order_observations').getFullList({ sort: 'created' })
+      const obsMap: Record<string, any[]> = {}
+      obs.forEach((o) => {
+        if (!obsMap[o.order_id]) obsMap[o.order_id] = []
+        obsMap[o.order_id].push(o)
+      })
+      setObservations(obsMap)
+    } catch (err) {
+      console.warn('[PcpKanban] Aviso ao buscar observações:', err)
+    }
+  }, [])
 
-  const fetchShortages = async () => {
+  const fetchShortages = useCallback(async () => {
     try {
       const res = await pb.collection('material_shortages').getFullList<MaterialShortage>({
         sort: '-created',
@@ -230,9 +244,9 @@ export default function PcpKanban() {
     } catch {
       /* ignored */
     }
-  }
+  }, [])
 
-  const fetchReworks = async () => {
+  const fetchReworks = useCallback(async () => {
     try {
       const openReworks = await pb.collection('pcp_reworks').getFullList({
         filter: 'status != "Concluído"',
@@ -246,15 +260,14 @@ export default function PcpKanban() {
     } catch {
       /* ignored */
     }
-  }
+  }, [])
 
   useEffect(() => {
-    fetchOrders()
     fetchObservations()
     fetchShortages()
     fetchReworks()
-  }, [])
-  useRealtime('pcp_orders', fetchOrders)
+  }, [fetchObservations, fetchShortages, fetchReworks])
+
   useRealtime('pcp_order_observations', fetchObservations)
   useRealtime('material_shortages', fetchShortages)
   useRealtime('pcp_reworks', fetchReworks)
@@ -269,8 +282,15 @@ export default function PcpKanban() {
     if (!orderId) return
     const order = orders.find((o) => o.id === orderId)
     if (order && order.stage !== stage) {
-      await pb.collection('pcp_orders').update(orderId, { stage })
-      fetchOrders()
+      try {
+        await updateOrderStage(orderId, stage)
+      } catch (err) {
+        toast({
+          title: 'Erro ao alterar etapa',
+          description: 'A etapa não pôde ser atualizada no momento.',
+          variant: 'destructive',
+        })
+      }
     }
   }
 
@@ -280,8 +300,15 @@ export default function PcpKanban() {
     if (!orderId) return
     const order = orders.find((o) => o.id === orderId)
     if (order && order.status !== status) {
-      await pb.collection('pcp_orders').update(orderId, { status })
-      fetchOrders()
+      try {
+        await updateOrderStatus(orderId, status)
+      } catch (err) {
+        toast({
+          title: 'Erro ao alterar status',
+          description: 'O status não pôde ser atualizado no momento.',
+          variant: 'destructive',
+        })
+      }
     }
   }
 
@@ -338,8 +365,8 @@ export default function PcpKanban() {
       indexMap.set(item.id, idx + 1)
     })
 
-    // Atualizar estado local otimista de orders
-    setOrders((prev) =>
+    // Atualizar estado local otimista de orders imediatamente
+    setOrdersOptimistic((prev) =>
       prev.map((o) => {
         if (indexMap.has(o.id)) {
           return { ...o, manual_sequence: indexMap.get(o.id) }
@@ -357,16 +384,21 @@ export default function PcpKanban() {
       }
     })
 
+    if (changedItems.length === 0) return
+
     try {
-      await Promise.all(
-        changedItems.map(({ id, seq }) =>
-          pb.collection('pcp_orders').update(id, { manual_sequence: seq }),
-        ),
-      )
-      toast({
-        title: 'Sequência atualizada',
-        description: 'A nova fila de produção foi sincronizada com o Portal do Operador.',
-      })
+      const { success } = await persistReorderedSequences(changedItems)
+      if (success) {
+        toast({
+          title: 'Sequência atualizada',
+          description: 'A nova fila de produção foi sincronizada com o Portal do Operador.',
+        })
+      } else {
+        toast({
+          title: 'Aviso na sincronização',
+          description: 'Algumas ordens serão sincronizadas em segundo plano.',
+        })
+      }
     } catch (err) {
       console.error('Erro ao salvar manual_sequence:', err)
       toast({
@@ -374,7 +406,6 @@ export default function PcpKanban() {
         description: 'Não foi possível persistir a nova ordem da fila.',
         variant: 'destructive',
       })
-      fetchOrders()
     }
   }
 
@@ -830,6 +861,23 @@ export default function PcpKanban() {
       )}
 
       <StatusLegend className="shrink-0 mb-1" />
+
+      {ordersError && (
+        <div className="shrink-0 mb-2 p-2 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-xs flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="size-4 shrink-0 text-amber-600" />
+            <span>{ordersError}</span>
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-xs text-amber-900 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/50"
+            onClick={() => refreshOrders(true)}
+          >
+            Tentar agora
+          </Button>
+        </div>
+      )}
 
       <div className="flex-1 min-h-0 flex gap-4 items-start w-full">
         {viewMode === 'status' && (
@@ -1752,7 +1800,11 @@ export default function PcpKanban() {
                                   details: 'Urgência alterada para NORMAL',
                                 })
                                 setSelectedOrder({ ...selectedOrder, manual_priority: 0 })
-                                fetchOrders()
+                                setOrdersOptimistic((prev) =>
+                                  prev.map((o) =>
+                                    o.id === selectedOrder.id ? { ...o, manual_priority: 0 } : o,
+                                  ),
+                                )
                                 toast({ title: 'Emergência desativada' })
                               } catch (err) {
                                 toast({
@@ -1950,7 +2002,9 @@ export default function PcpKanban() {
                 alsoSetEmergency: isEmergencyContext ? true : undefined,
               })
               setSelectedOrder(updated as any)
-              fetchOrders()
+              setOrdersOptimistic((prev) =>
+                prev.map((o) => (o.id === selectedOrder.id ? { ...o, ...(updated as any) } : o)),
+              )
               toast({
                 title: promised_date ? 'Data Prometida salva' : 'Data Prometida removida',
                 description: promised_date

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -18,12 +18,15 @@ import {
   Clock,
   RefreshCw,
   Layers,
-  ArrowRight,
   Loader2,
   RotateCcw,
   AlertCircle,
-  HelpCircle,
+  X,
+  ChevronDown,
+  ChevronUp,
+  Search,
 } from 'lucide-react'
+import { useIsMobile } from '@/hooks/use-mobile'
 import {
   MaterialSeparation,
   SeparationItem,
@@ -43,6 +46,8 @@ export function OperatorSeparationTab() {
   const [finalizing, setFinalizing] = useState(false)
   const [confirmFinalizeOpen, setConfirmFinalizeOpen] = useState(false)
   const [filterQuery, setFilterQuery] = useState('')
+  const [opsExpanded, setOpsExpanded] = useState(false)
+  const isMobile = useIsMobile()
 
   const loadData = async () => {
     try {
@@ -84,6 +89,8 @@ export function OperatorSeparationTab() {
 
   const openSeparationModal = (sep: MaterialSeparation) => {
     setActiveSeparation(sep)
+    setOpsExpanded(false)
+    setFilterQuery('')
     // Cria cópia profunda dos itens para manipulação local
     setItemsDraft(
       (sep.items || []).map((item) => ({
@@ -192,6 +199,18 @@ export function OperatorSeparationTab() {
   const countShortage = itemsDraft.filter((i) => i.status === 'falta').length
   const countPending = itemsDraft.filter((i) => !i.status || i.status === 'pendente').length
   const totalDraft = itemsDraft.length
+
+  // Itens filtrados para busca opcional
+  const filteredItemsDraft = useMemo(() => {
+    if (!filterQuery.trim()) return itemsDraft
+    const q = filterQuery.toLowerCase()
+    return itemsDraft.filter((item) => {
+      const codeMatch = item.code?.toLowerCase().includes(q)
+      const descMatch = item.description?.toLowerCase().includes(q)
+      const opMatch = item.op_numbers?.some((op) => op.toLowerCase().includes(q))
+      return codeMatch || descMatch || opMatch
+    })
+  }, [itemsDraft, filterQuery])
 
   const pendingSeparations = separations.filter(
     (s) => s.status === 'Pendente' || s.status === 'Em_Separacao',
@@ -432,8 +451,368 @@ export function OperatorSeparationTab() {
         </div>
       )}
 
-      {/* MODAL INTERATIVO DE SEPARAÇÃO DA RODADA */}
-      {activeSeparation && (
+      {/* VISUALIZAÇÃO DE SEPARAÇÃO: FULL-SCREEN NATIVO NO MOBILE / DIALOG NO DESKTOP */}
+      {activeSeparation && isMobile ? (
+        /* ================= TELA CHEIA MOBILE ================= */
+        <div className="fixed inset-0 z-50 bg-background flex flex-col overflow-hidden animate-in fade-in-0 duration-200">
+          {/* CABEÇALHO COMPACTO MOBILE */}
+          <div className="bg-card border-b px-3 py-2.5 shrink-0 space-y-2 shadow-sm">
+            {/* Linha 1: Título da Programação, status badge e botão fechar */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <Package className="h-5 w-5 text-emerald-600 shrink-0" />
+                <div className="min-w-0">
+                  <h1 className="font-bold text-sm text-foreground truncate leading-tight">
+                    {activeSeparation.expand?.programacao_id?.name ||
+                      activeSeparation.title ||
+                      'Separação de Materiais'}
+                  </h1>
+                  {activeSeparation.created && (
+                    <span className="text-[10px] text-muted-foreground block">
+                      {new Date(activeSeparation.created).toLocaleDateString('pt-BR')}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                {activeSeparation.status === 'Concluida' ? (
+                  <Badge className="bg-emerald-600 text-white text-[10px] h-6 px-2">
+                    Concluída
+                  </Badge>
+                ) : (
+                  <Badge className="bg-blue-600 text-white text-[10px] h-6 px-2">
+                    Em Separação
+                  </Badge>
+                )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground"
+                  onClick={() => setActiveSeparation(null)}
+                  aria-label="Fechar tela de separação"
+                >
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Linha 2: OPs colapsáveis ("13 OPs" expansível ao toque) */}
+            {(activeSeparation.op_numbers?.length || 0) > 0 && (
+              <div className="text-xs">
+                <button
+                  type="button"
+                  onClick={() => setOpsExpanded(!opsExpanded)}
+                  className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:underline py-0.5"
+                >
+                  <Layers className="h-3 w-3" />
+                  <span>{activeSeparation.op_numbers?.length || 0} OPs na rodada</span>
+                  {opsExpanded ? (
+                    <ChevronUp className="h-3 w-3" />
+                  ) : (
+                    <ChevronDown className="h-3 w-3" />
+                  )}
+                </button>
+
+                {opsExpanded && (
+                  <div className="mt-1.5 p-2 rounded-lg bg-muted/60 border text-[11px] max-h-28 overflow-y-auto space-y-1">
+                    <span className="text-[10px] font-semibold text-muted-foreground block">
+                      Ordens de Produção vinculadas:
+                    </span>
+                    <div className="flex flex-wrap gap-1">
+                      {activeSeparation.op_numbers?.map((op) => (
+                        <Badge
+                          key={op}
+                          variant="secondary"
+                          className="font-mono text-[10px] px-1.5 py-0 h-4"
+                        >
+                          OP {op}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Linha 3: Contadores em UMA LINHA COMPACTA (Total / Separados / Faltas / Pendentes) */}
+            <div className="grid grid-cols-4 gap-1.5 text-center">
+              <div className="px-1.5 py-1 rounded bg-muted/50 border">
+                <span className="text-[9px] text-muted-foreground block leading-tight font-medium truncate">
+                  Total
+                </span>
+                <span className="text-sm font-bold text-foreground leading-tight">
+                  {totalDraft}
+                </span>
+              </div>
+              <div className="px-1.5 py-1 rounded bg-emerald-500/10 border border-emerald-500/30">
+                <span className="text-[9px] text-emerald-700 dark:text-emerald-400 block leading-tight font-medium truncate">
+                  🟢 Separados
+                </span>
+                <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400 leading-tight">
+                  {countSeparated}
+                </span>
+              </div>
+              <div className="px-1.5 py-1 rounded bg-rose-500/10 border border-rose-500/30">
+                <span className="text-[9px] text-rose-700 dark:text-rose-400 block leading-tight font-medium truncate">
+                  🔴 Faltas
+                </span>
+                <span className="text-sm font-bold text-rose-600 dark:text-rose-400 leading-tight">
+                  {countShortage}
+                </span>
+              </div>
+              <div className="px-1.5 py-1 rounded bg-amber-500/10 border border-amber-500/30">
+                <span className="text-[9px] text-amber-700 dark:text-amber-400 block leading-tight font-medium truncate">
+                  ⏳ Pendentes
+                </span>
+                <span className="text-sm font-bold text-amber-600 dark:text-amber-400 leading-tight">
+                  {countPending}
+                </span>
+              </div>
+            </div>
+
+            {/* Ações em lote e busca rápida compacta */}
+            {activeSeparation.status !== 'Concluida' && (
+              <div className="flex items-center justify-between gap-1.5 pt-0.5">
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleMarkAllSeparated}
+                    className="h-7 text-[10px] px-2 gap-1 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+                  >
+                    <CheckCircle2 className="h-3 w-3" />
+                    Marcar todos Separados
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleResetAll}
+                    className="h-7 text-[10px] px-1.5 gap-1 text-muted-foreground hover:text-foreground"
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                    Limpar
+                  </Button>
+                </div>
+
+                {/* Filtro rápido se a lista for grande */}
+                {itemsDraft.length > 10 && (
+                  <div className="relative flex-1 max-w-[130px]">
+                    <Search className="absolute left-1.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                    <input
+                      type="text"
+                      placeholder="Filtrar..."
+                      value={filterQuery}
+                      onChange={(e) => setFilterQuery(e.target.value)}
+                      className="h-7 w-full pl-5 pr-1.5 text-[10px] bg-muted/40 rounded border border-input focus:outline-none focus:ring-1 focus:ring-ring"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* LISTA MOBILE: ROLAGEM NATIVA POR TOQUE (overflow-y-auto com touch-pan-y) */}
+          <div
+            className="flex-1 overflow-y-auto touch-pan-y overscroll-contain p-3 space-y-2.5 pb-24"
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
+            {filteredItemsDraft.length === 0 ? (
+              <div className="p-8 text-center text-sm text-muted-foreground border-2 border-dashed rounded-xl my-4">
+                {filterQuery
+                  ? 'Nenhum material encontrado com o filtro aplicado.'
+                  : 'Nenhum material nesta rodada.'}
+              </div>
+            ) : (
+              filteredItemsDraft.map((item, index) => {
+                const isSeparated = item.status === 'separado'
+                const isShortage = item.status === 'falta'
+                const isReadOnly = activeSeparation.status === 'Concluida'
+
+                return (
+                  <div
+                    key={item.id || index}
+                    className={`p-3 rounded-xl border transition-colors shadow-sm flex flex-col gap-2.5 ${
+                      isSeparated
+                        ? 'bg-emerald-500/10 border-emerald-500/50'
+                        : isShortage
+                          ? 'bg-rose-500/10 border-rose-500/50'
+                          : 'bg-card border-border'
+                    }`}
+                  >
+                    {/* Código do material + status atual (se readonly ou marcado) */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        {item.code ? (
+                          <span className="font-mono font-bold text-xs px-2 py-0.5 rounded bg-muted text-foreground border">
+                            {item.code}
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-muted-foreground italic">
+                            s/ código
+                          </span>
+                        )}
+                        <span className="text-[10px] text-muted-foreground">#{index + 1}</span>
+                      </div>
+
+                      {isSeparated && (
+                        <Badge className="bg-emerald-600 text-white text-[10px] h-5 px-2 gap-1">
+                          <CheckCircle2 className="h-3 w-3" /> Separado
+                        </Badge>
+                      )}
+                      {isShortage && (
+                        <Badge className="bg-rose-600 text-white text-[10px] h-5 px-2 gap-1">
+                          <AlertTriangle className="h-3 w-3" /> Falta
+                        </Badge>
+                      )}
+                      {!isSeparated && !isShortage && (
+                        <Badge variant="outline" className="text-[10px] h-5 text-muted-foreground">
+                          Pendente
+                        </Badge>
+                      )}
+                    </div>
+
+                    {/* Descrição em destaque */}
+                    <div className="font-bold text-sm text-foreground leading-snug break-words">
+                      {item.description}
+                    </div>
+
+                    {/* Qtd, OPs e Medida empilhados de forma limpa */}
+                    <div className="space-y-1 text-xs">
+                      <div className="flex items-center justify-between gap-2 pt-0.5">
+                        <span className="text-muted-foreground text-[11px]">Quantidade:</span>
+                        <span className="font-bold text-foreground text-xs bg-muted px-2 py-0.5 rounded">
+                          {Number(item.total_quantity).toLocaleString('pt-BR', {
+                            maximumFractionDigits: 2,
+                          })}{' '}
+                          {item.unit}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-muted-foreground text-[11px]">OPs:</span>
+                        <span className="font-mono font-medium text-foreground text-[11px] truncate max-w-[200px] text-right">
+                          {item.op_numbers?.join(', ') || 'N/A'}
+                        </span>
+                      </div>
+
+                      {item.cut_measurement && (
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-muted-foreground text-[11px]">Medida corte:</span>
+                          <Badge
+                            variant="secondary"
+                            className="h-5 px-1.5 text-[10px] font-mono text-foreground"
+                          >
+                            {item.cut_measurement}
+                          </Badge>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* BOTÕES GRANDES PARA O CHÃO DE FÁBRICA (mínimo 44px de altura, fáceis de tocar) */}
+                    {!isReadOnly && (
+                      <div className="grid grid-cols-2 gap-2 pt-1">
+                        <Button
+                          type="button"
+                          variant={isSeparated ? 'default' : 'outline'}
+                          onClick={() => handleToggleItemStatus(item.id, 'separado')}
+                          className={`min-h-[44px] h-11 text-xs font-bold gap-2 transition-all shadow-sm ${
+                            isSeparated
+                              ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-500/50'
+                              : 'border-2 border-emerald-600/50 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 active:bg-emerald-100'
+                          }`}
+                        >
+                          <CheckCircle2 className="h-4 w-4 shrink-0" />
+                          <span>Separado</span>
+                        </Button>
+
+                        <Button
+                          type="button"
+                          variant={isShortage ? 'default' : 'outline'}
+                          onClick={() => handleToggleItemStatus(item.id, 'falta')}
+                          className={`min-h-[44px] h-11 text-xs font-bold gap-2 transition-all shadow-sm ${
+                            isShortage
+                              ? 'bg-rose-600 hover:bg-rose-700 text-white ring-2 ring-rose-500/50'
+                              : 'border-2 border-rose-600/50 text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 active:bg-rose-100'
+                          }`}
+                        >
+                          <AlertTriangle className="h-4 w-4 shrink-0" />
+                          <span>Falta</span>
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })
+            )}
+          </div>
+
+          {/* RODAPÉ FIXO NO MOBILE (sticky bottom, sempre visível sem rolar) */}
+          <div className="fixed bottom-0 left-0 right-0 z-20 bg-background/95 backdrop-blur border-t p-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] shadow-lg space-y-1.5">
+            <div className="text-[11px] text-muted-foreground text-center truncate">
+              {activeSeparation.status !== 'Concluida' ? (
+                countPending > 0 ? (
+                  <span>
+                    Restam <strong>{countPending}</strong> itens pendentes de conferência.
+                  </span>
+                ) : (
+                  <span className="text-emerald-600 font-semibold">
+                    ✓ Todos os itens conferidos!
+                  </span>
+                )
+              ) : (
+                <span>Rodada concluída no histórico.</span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-11 px-3 text-xs shrink-0"
+                onClick={() => setActiveSeparation(null)}
+              >
+                Voltar
+              </Button>
+
+              {activeSeparation.status !== 'Concluida' && (
+                <>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="h-11 flex-1 text-xs font-medium gap-1"
+                    onClick={handleSaveProgress}
+                    disabled={savingProgress || finalizing}
+                  >
+                    {savingProgress ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Salvando...
+                      </>
+                    ) : (
+                      'Salvar Progresso'
+                    )}
+                  </Button>
+
+                  <Button
+                    type="button"
+                    className="h-11 flex-1 text-xs font-bold gap-1 bg-emerald-600 hover:bg-emerald-700 text-white shadow"
+                    onClick={() => setConfirmFinalizeOpen(true)}
+                    disabled={savingProgress || finalizing || totalDraft === 0}
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    Finalizar
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : activeSeparation ? (
+        /* ================= MODAL DESKTOP (preservado) ================= */
         <Dialog
           open={!!activeSeparation}
           onOpenChange={(open) => !open && setActiveSeparation(null)}
@@ -535,7 +914,6 @@ export function OperatorSeparationTab() {
                   {itemsDraft.map((item, index) => {
                     const isSeparated = item.status === 'separado'
                     const isShortage = item.status === 'falta'
-                    const isPending = !item.status || item.status === 'pendente'
                     const isReadOnly = activeSeparation.status === 'Concluida'
 
                     return (
@@ -708,7 +1086,7 @@ export function OperatorSeparationTab() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      )}
+      ) : null}
 
       {/* MODAL DE CONFIRMAÇÃO EXPLÍCITA ANTES DE FINALIZAR A RODADA */}
       {confirmFinalizeOpen && (

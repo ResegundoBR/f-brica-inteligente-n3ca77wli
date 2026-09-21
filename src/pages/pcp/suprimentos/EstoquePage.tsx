@@ -30,9 +30,11 @@ import { ProductSearchBar } from './components/ProductSearchBar'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { getInventory, createInventoryItem } from '@/services/inventory'
+import { getActiveReservationsMap, normalizeCode } from '@/services/material-reservations'
 
 export default function EstoquePage() {
   const [inventory, setInventory] = useState<Inventory[]>([])
+  const [reservationsMap, setReservationsMap] = useState<Map<string, number>>(new Map())
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
   const [dossierOpen, setDossierOpen] = useState(false)
   const [dossierItem, setDossierItem] = useState<Inventory | null>(null)
@@ -47,8 +49,9 @@ export default function EstoquePage() {
 
   const fetchInventory = async () => {
     try {
-      const res = await getInventory()
+      const [res, resvMap] = await Promise.all([getInventory(), getActiveReservationsMap()])
       setInventory(res)
+      setReservationsMap(resvMap)
     } catch {
       /* ignored */
     }
@@ -60,6 +63,8 @@ export default function EstoquePage() {
 
   useRealtime('inventory', fetchInventory)
   useRealtime('inventory_movements', fetchInventory)
+  useRealtime('material_reservations', fetchInventory)
+  useRealtime('material_separations', fetchInventory)
 
   const selectedItem = inventory.find((i) => i.id === selectedItemId) ?? null
 
@@ -102,8 +107,14 @@ export default function EstoquePage() {
     return matchCode || matchDesc
   })
 
-  const lowStockCount = inventory.filter((i) => i.quantity <= (i.min_quantity || 0)).length
+  const lowStockCount = inventory.filter((i) => {
+    const reserved = reservationsMap.get(normalizeCode(i.code)) || 0
+    const available = Math.max(0, (Number(i.quantity) || 0) - reserved)
+    return available <= (i.min_quantity || 0)
+  }).length
   const totalItems = inventory.reduce((acc, i) => acc + (Number(i.quantity) || 0), 0)
+  const totalReserved = Array.from(reservationsMap.values()).reduce((acc, val) => acc + val, 0)
+  const totalAvailable = Math.max(0, totalItems - totalReserved)
 
   return (
     <div className="flex flex-col gap-6 p-4 md:p-8 bg-slate-50 min-h-[calc(100vh-4rem)] dark:bg-slate-950">
@@ -142,18 +153,40 @@ export default function EstoquePage() {
         }
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Total de Itens</CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">Estoque Total</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{inventory.length}</p>
+            <p className="text-2xl font-bold text-slate-800 dark:text-slate-100">{totalItems}</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Estoque Baixo</CardTitle>
+            <CardTitle className="text-sm text-amber-700 dark:text-amber-400">
+              Total Reservado
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">{totalReserved}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-emerald-700 dark:text-emerald-400">
+              Total Disponível
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+              {totalAvailable}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-muted-foreground">Estoque Crítico</CardTitle>
           </CardHeader>
           <CardContent>
             <p
@@ -164,14 +197,6 @@ export default function EstoquePage() {
             >
               {lowStockCount}
             </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Saldo Total</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-blue-600">{totalItems}</p>
           </CardContent>
         </Card>
       </div>
@@ -217,32 +242,60 @@ export default function EstoquePage() {
               <TableRow>
                 <TableHead className="w-[120px]">Código</TableHead>
                 <TableHead>Descrição</TableHead>
-                <TableHead className="text-right w-[100px]">Saldo</TableHead>
-                <TableHead className="text-right w-[120px]">Estoque Mín.</TableHead>
-                <TableHead className="w-[80px]">Unidade</TableHead>
-                <TableHead className="text-center w-[100px]">Status</TableHead>
+                <TableHead className="text-right w-[110px]">Estoque total</TableHead>
+                <TableHead className="text-right w-[100px]">Reservado</TableHead>
+                <TableHead className="text-right w-[100px]">Disponível</TableHead>
+                <TableHead className="text-right w-[100px]">Estoque Mín.</TableHead>
+                <TableHead className="w-[70px]">Unidade</TableHead>
+                <TableHead className="text-center w-[90px]">Status</TableHead>
                 <TableHead className="text-center w-[120px]">Ação</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredInventory.map((item) => {
-                const isLow = item.quantity <= (item.min_quantity || 0)
+                const totalStock = Number(item.quantity) || 0
+                const reservedStock = reservationsMap.get(normalizeCode(item.code)) || 0
+                const availableStock = Math.max(0, totalStock - reservedStock)
+                const isLow = availableStock <= (item.min_quantity || 0)
                 return (
                   <TableRow
                     key={item.id}
                     className={cn(
                       'cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors',
-                      isLow && 'bg-red-50 dark:bg-red-950/20',
+                      isLow && 'bg-red-50/70 dark:bg-red-950/20',
                     )}
                     onClick={() => setSelectedItemId(item.id)}
                   >
-                    <TableCell className="text-xs font-medium text-slate-500">
+                    <TableCell className="text-xs font-medium text-slate-500 font-mono">
                       {item.code}
                     </TableCell>
                     <TableCell className="font-medium text-sm">{item.description}</TableCell>
                     <TableCell className="text-right">
-                      <span className={cn('font-bold', isLow && 'text-red-600')}>
-                        {item.quantity}
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">
+                        {totalStock}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {reservedStock > 0 ? (
+                        <span className="font-bold text-amber-600 dark:text-amber-400">
+                          {reservedStock}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">0</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <span
+                        className={cn(
+                          'font-bold',
+                          availableStock === 0
+                            ? 'text-red-600'
+                            : isLow
+                              ? 'text-amber-600'
+                              : 'text-emerald-600 dark:text-emerald-400',
+                        )}
+                      >
+                        {availableStock}
                       </span>
                     </TableCell>
                     <TableCell className="text-right text-sm text-muted-foreground">
@@ -250,12 +303,19 @@ export default function EstoquePage() {
                     </TableCell>
                     <TableCell className="text-xs">{item.unit || '-'}</TableCell>
                     <TableCell className="text-center">
-                      {isLow ? (
+                      {availableStock === 0 ? (
+                        <Badge variant="destructive" className="text-[10px]">
+                          Esgotado
+                        </Badge>
+                      ) : isLow ? (
                         <Badge variant="destructive" className="text-[10px]">
                           <AlertTriangle className="size-3 mr-1" /> Baixo
                         </Badge>
                       ) : (
-                        <Badge variant="secondary" className="text-[10px]">
+                        <Badge
+                          variant="secondary"
+                          className="text-[10px] text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40"
+                        >
                           OK
                         </Badge>
                       )}

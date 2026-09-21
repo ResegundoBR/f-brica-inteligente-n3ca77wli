@@ -4,30 +4,45 @@ import { useRealtime } from '@/hooks/use-realtime'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { MaterialShortage } from '@/types'
-import { Tags, Copy, Check, Search, Layers } from 'lucide-react'
+import { Tags, Copy, Check, Search, Layers, ArrowRight } from 'lucide-react'
 import { advanceToCompra } from '@/services/quotations'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
 import { TriageDialog } from './components/TriageDialog'
 import { CotacoesTable } from './components/CotacoesTable'
+import { CategoryFilterChips } from './components/CategoryFilterChips'
 import { useViewedItems } from '@/hooks/use-viewed-items'
+import { getMasterComponents } from '@/services/components'
+import { getComponentCategories } from '@/services/component-categories'
+import { useCategoryGroups } from '@/hooks/use-category-groups'
+import { ComponentCategory, MasterComponent } from '@/types'
 import { toast } from 'sonner'
 
 export default function CotacoesPage() {
   const [shortages, setShortages] = useState<MaterialShortage[]>([])
+  const [components, setComponents] = useState<MasterComponent[]>([])
+  const [categories, setCategories] = useState<ComponentCategory[]>([])
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
   const [selectedItem, setSelectedItem] = useState<MaterialShortage | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [copied, setCopied] = useState(false)
   const [search, setSearch] = useState('')
   const [grouped, setGrouped] = useState(false)
+  const [advancingBatch, setAdvancingBatch] = useState(false)
   const { isNew, markAsViewed } = useViewedItems('cotacoes')
 
   const fetchData = async () => {
     try {
-      const shortRes = await pb.collection('material_shortages').getFullList<MaterialShortage>({
-        sort: '-created',
-        expand: 'order_id,order_id.product_id,requested_by',
-      })
+      const [shortRes, compRes, catRes] = await Promise.all([
+        pb.collection('material_shortages').getFullList<MaterialShortage>({
+          sort: '-created',
+          expand: 'order_id,order_id.product_id,requested_by',
+        }),
+        getMasterComponents('', { includeInactive: true, expand: 'category' }),
+        getComponentCategories(),
+      ])
       setShortages(shortRes)
+      setComponents(compRes)
+      setCategories(catRes)
     } catch {
       /* ignored */
     }
@@ -37,6 +52,8 @@ export default function CotacoesPage() {
     fetchData()
   }, [])
   useRealtime('material_shortages', fetchData)
+  useRealtime('components', fetchData)
+  useRealtime('component_categories', fetchData)
 
   const normalizeText = (text: string | undefined | null): string =>
     (text || '')
@@ -44,25 +61,43 @@ export default function CotacoesPage() {
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
 
+  const allCotacaoItems = useMemo(() => {
+    return shortages.filter((s) => s.status === 'Cotação')
+  }, [shortages])
+
+  // Agrupamento por categoria de componente
+  const categoryGroups = useCategoryGroups(allCotacaoItems, components, categories)
+
   const filteredCotacaoItems = useMemo(() => {
-    const cotacaoItems = shortages.filter((s) => s.status === 'Cotação')
+    let items = allCotacaoItems
+
+    // Filtro por categoria do componente (se ativo)
+    if (selectedCategoryId !== null) {
+      const activeGroup = categoryGroups.find((g) => g.categoryId === selectedCategoryId)
+      items = activeGroup ? activeGroup.items : []
+    }
+
     const query = normalizeText(search.trim())
-    if (!query) return cotacaoItems
-    return cotacaoItems.filter((item) => {
+    if (!query) return items
+    return items.filter((item) => {
       const productName =
         normalizeText(item.expand?.order_id?.expand?.product_id?.name) ||
         normalizeText(item.expand?.order_id?.manual_product_name)
       const requesterName = normalizeText(item.expand?.requested_by?.name)
       const orderNumber = normalizeText(item.expand?.order_id?.order_number)
       const opNumber = normalizeText(item.expand?.order_id?.op_number)
+      const code = normalizeText(item.code)
+      const desc = normalizeText(item.description)
       return (
         productName.includes(query) ||
         requesterName.includes(query) ||
         orderNumber.includes(query) ||
-        opNumber.includes(query)
+        opNumber.includes(query) ||
+        code.includes(query) ||
+        desc.includes(query)
       )
     })
-  }, [shortages, search])
+  }, [allCotacaoItems, selectedCategoryId, categoryGroups, search])
 
   const handleRowClick = (item: MaterialShortage) => {
     markAsViewed(item.id)
@@ -94,6 +129,37 @@ export default function CotacoesPage() {
       else ids.forEach((id) => next.add(id))
       return next
     })
+  }
+
+  const handleSelectCategoryItems = (ids: string[]) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      const allSelected = ids.every((id) => next.has(id))
+      if (allSelected) {
+        ids.forEach((id) => next.delete(id))
+      } else {
+        ids.forEach((id) => next.add(id))
+      }
+      return next
+    })
+  }
+
+  const handleBatchAdvanceToCompra = async () => {
+    const ids = Array.from(selectedIds)
+    if (ids.length === 0) return
+    try {
+      setAdvancingBatch(true)
+      for (const id of ids) {
+        await advanceToCompra(id)
+      }
+      toast.success(`${ids.length} item(ns) avançados para Compras em lote!`)
+      setSelectedIds(new Set())
+      fetchData()
+    } catch {
+      toast.error('Erro ao avançar itens selecionados para Compras')
+    } finally {
+      setAdvancingBatch(false)
+    }
   }
 
   const handleQuickCompra = async (item: MaterialShortage) => {
@@ -133,18 +199,40 @@ export default function CotacoesPage() {
             {grouped ? 'Lista' : 'Agrupar por fornecedor'}
           </Button>
           {selectedIds.size > 0 && (
-            <Button variant="outline" size="sm" onClick={handleCopySelected}>
-              {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-              Copiar ({selectedIds.size})
-            </Button>
+            <>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={handleBatchAdvanceToCompra}
+                disabled={advancingBatch}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-1.5 shadow-sm"
+              >
+                <ArrowRight className="w-4 h-4" />
+                Comprar em lote ({selectedIds.size})
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleCopySelected}>
+                {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                Copiar ({selectedIds.size})
+              </Button>
+            </>
           )}
         </div>
       </div>
 
+      {/* TOTALIZAÇÃO E CHIPS POR CATEGORIA DO COMPONENTE */}
+      <CategoryFilterChips
+        categoryGroups={categoryGroups}
+        selectedCategoryId={selectedCategoryId}
+        onSelectCategory={setSelectedCategoryId}
+        onSelectCategoryItems={handleSelectCategoryItems}
+        selectedIds={selectedIds}
+        actionLabel="Selecionar todos para cotação em lote"
+      />
+
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <Input
-          placeholder="Buscar por produto, solicitante, pedido ou OP..."
+          placeholder="Buscar por código, descrição, produto, OP..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="pl-9"

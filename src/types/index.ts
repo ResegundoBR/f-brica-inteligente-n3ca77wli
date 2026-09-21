@@ -544,6 +544,27 @@ export interface PcpOrderMaterial {
 
 export type PcpReworkStatus = 'Pendente' | 'Em Andamento' | 'Concluído'
 
+export type MaterialReservationStatus = 'Ativa' | 'Baixada' | 'Liberada'
+
+export interface MaterialReservation {
+  id: string
+  inventory_id?: string
+  separation_id: string
+  item_id: string
+  code: string
+  description: string
+  quantity: number
+  status: MaterialReservationStatus
+  created_by?: string
+  created: string
+  updated: string
+  expand?: {
+    inventory_id?: Inventory
+    separation_id?: any
+    created_by?: User
+  }
+}
+
 export interface PcpRework {
   id: string
   order_id: string

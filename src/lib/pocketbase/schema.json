@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-21T18:31:08.302Z",
+  "generatedAt": "2026-09-21T19:19:30.290Z",
   "collections": [
     {
       "name": "users",
@@ -2894,6 +2894,91 @@
         "CREATE INDEX idx_pcp_programacoes_status ON pcp_programacoes (status)",
         "CREATE INDEX idx_pcp_programacoes_created ON pcp_programacoes (created DESC)",
         "CREATE INDEX idx_pcp_programacoes_seq ON pcp_programacoes (seq_number DESC)"
+      ]
+    },
+    {
+      "name": "material_reservations",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "inventory_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "inventory"
+        },
+        {
+          "name": "separation_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "material_separations"
+        },
+        {
+          "name": "item_id",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "code",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "quantity",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["Ativa", "Baixada", "Liberada"]
+        },
+        {
+          "name": "created_by",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_material_reservations_status ON material_reservations (status)",
+        "CREATE INDEX idx_material_reservations_separation ON material_reservations (separation_id)",
+        "CREATE INDEX idx_material_reservations_code ON material_reservations (code)",
+        "CREATE INDEX idx_material_reservations_item ON material_reservations (separation_id, item_id)"
       ]
     }
   ]

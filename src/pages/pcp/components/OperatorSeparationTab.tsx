@@ -34,6 +34,11 @@ import {
   updateSeparationItems,
   finalizeSeparation,
 } from '@/services/material-separations'
+import {
+  getStockAvailabilityForCodes,
+  ComponentStockAvailability,
+  normalizeCode,
+} from '@/services/material-reservations'
 import pb from '@/lib/pocketbase/client'
 import { toast } from '@/hooks/use-toast'
 
@@ -47,6 +52,9 @@ export function OperatorSeparationTab() {
   const [confirmFinalizeOpen, setConfirmFinalizeOpen] = useState(false)
   const [filterQuery, setFilterQuery] = useState('')
   const [opsExpanded, setOpsExpanded] = useState(false)
+  const [stockAvailabilityMap, setStockAvailabilityMap] = useState<
+    Map<string, ComponentStockAvailability>
+  >(new Map())
   const isMobile = useIsMobile()
 
   const loadData = async () => {
@@ -80,24 +88,44 @@ export function OperatorSeparationTab() {
       })
       .catch(() => {})
 
+    pb.collection('material_reservations')
+      .subscribe('*', () => {
+        if (activeSeparation) {
+          refreshAvailability(itemsDraft)
+        }
+      })
+      .catch(() => {})
+
     return () => {
       pb.collection('material_separations')
+        .unsubscribe('*')
+        .catch(() => {})
+      pb.collection('material_reservations')
         .unsubscribe('*')
         .catch(() => {})
     }
   }, [])
 
+  const refreshAvailability = async (items: SeparationItem[]) => {
+    const codes = items.map((i) => i.code).filter(Boolean)
+    if (codes.length === 0) return
+    const map = await getStockAvailabilityForCodes(codes)
+    setStockAvailabilityMap(map)
+  }
+
   const openSeparationModal = (sep: MaterialSeparation) => {
     setActiveSeparation(sep)
     setOpsExpanded(false)
     setFilterQuery('')
+    const draft = (sep.items || []).map((item) => ({
+      ...item,
+      status: item.status || 'pendente',
+    }))
     // Cria cópia profunda dos itens para manipulação local
-    setItemsDraft(
-      (sep.items || []).map((item) => ({
-        ...item,
-        status: item.status || 'pendente',
-      })),
-    )
+    setItemsDraft(draft)
+
+    // Carregar disponibilidade de estoque em tempo real para os itens
+    refreshAvailability(draft)
 
     // Se estiver Pendente e o operador abriu, podemos colocar como Em_Separacao no backend
     if (sep.status === 'Pendente') {
@@ -109,12 +137,31 @@ export function OperatorSeparationTab() {
   }
 
   const handleToggleItemStatus = (itemId: string, newStatus: 'separado' | 'falta') => {
-    setItemsDraft((prev) =>
-      prev.map((item) => {
+    const targetItem = itemsDraft.find((i) => i.id === itemId)
+    if (targetItem && newStatus === 'separado' && targetItem.status !== 'separado') {
+      // Verificar disponibilidade no momento da marcação
+      const norm = normalizeCode(targetItem.code)
+      const stockInfo = stockAvailabilityMap.get(norm)
+      const available = stockInfo ? stockInfo.availableStock : 0
+      const requested = Number(targetItem.total_quantity) || 0
+
+      if (available < requested) {
+        toast({
+          title: 'Estoque insuficiente para separação!',
+          description: `Disponível no momento: ${available} ${stockInfo?.unit || targetItem.unit || 'UN'}. Solicitado: ${requested}. Favor marcar como Falta (🔴) para gerar solicitação a Suprimentos.`,
+          variant: 'destructive',
+        })
+      }
+    }
+
+    setItemsDraft((prev) => {
+      const nextList: SeparationItem[] = prev.map((item) => {
         if (item.id === itemId) {
           // Se já está no status clicado, permite voltar atrás (desmarcar para 'pendente')
           const currentStatus = item.status
-          const nextStatus = currentStatus === newStatus ? 'pendente' : newStatus
+          const nextStatus = (
+            currentStatus === newStatus ? 'pendente' : newStatus
+          ) as SeparationItem['status']
           return {
             ...item,
             status: nextStatus,
@@ -122,8 +169,15 @@ export function OperatorSeparationTab() {
           }
         }
         return item
-      }),
-    )
+      })
+
+      // Sincronizar reservas no background se temos uma rodada ativa
+      if (activeSeparation) {
+        updateSeparationItems(activeSeparation.id, nextList, 'Em_Separacao').catch(() => {})
+      }
+
+      return nextList
+    })
   }
 
   const handleMarkAllSeparated = () => {
@@ -699,6 +753,37 @@ export function OperatorSeparationTab() {
                         </span>
                       </div>
 
+                      {/* DISPONIBILIDADE DO ITEM NO ESTOQUE (Mobile) */}
+                      {(() => {
+                        const norm = normalizeCode(item.code)
+                        const stockInfo = stockAvailabilityMap.get(norm)
+                        const available = stockInfo ? stockInfo.availableStock : 0
+                        const requested = Number(item.total_quantity) || 0
+                        const isInsufficient = available < requested
+                        return (
+                          <div className="flex items-center justify-between gap-2 pt-0.5">
+                            <span className="text-muted-foreground text-[11px]">Disponível:</span>
+                            <div className="flex items-center gap-1.5">
+                              <Badge
+                                variant={isInsufficient ? 'destructive' : 'secondary'}
+                                className={`h-5 px-2 text-[10px] font-mono font-bold ${
+                                  isInsufficient
+                                    ? 'bg-rose-600 text-white animate-pulse'
+                                    : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 border-emerald-300'
+                                }`}
+                              >
+                                {available} {stockInfo?.unit || item.unit || 'UN'}
+                              </Badge>
+                              {isInsufficient && !isSeparated && (
+                                <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400">
+                                  Marcar 🔴 Falta
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })()}
+
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-muted-foreground text-[11px]">OPs:</span>
                         <span className="font-mono font-medium text-foreground text-[11px] truncate max-w-[200px] text-right">
@@ -995,6 +1080,35 @@ export function OperatorSeparationTab() {
                                 })}{' '}
                                 {item.unit}
                               </span>
+
+                              {/* BADGE DE DISPONIBILIDADE (Desktop) */}
+                              {(() => {
+                                const norm = normalizeCode(item.code)
+                                const stockInfo = stockAvailabilityMap.get(norm)
+                                const available = stockInfo ? stockInfo.availableStock : 0
+                                const requested = Number(item.total_quantity) || 0
+                                const isInsufficient = available < requested
+                                return (
+                                  <div className="flex items-center gap-1.5">
+                                    <Badge
+                                      variant={isInsufficient ? 'destructive' : 'secondary'}
+                                      className={`h-5 px-2 text-[10px] font-mono font-bold ${
+                                        isInsufficient
+                                          ? 'bg-rose-600 text-white animate-pulse'
+                                          : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 border-emerald-300'
+                                      }`}
+                                      title={`Estoque total: ${stockInfo?.totalStock ?? 0} | Reservado: ${stockInfo?.reservedStock ?? 0} | Disponível: ${available}`}
+                                    >
+                                      Disponível: {available} {stockInfo?.unit || item.unit || 'UN'}
+                                    </Badge>
+                                    {isInsufficient && !isSeparated && (
+                                      <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400">
+                                        ⚠️ Insuficiente — marcar 🔴
+                                      </span>
+                                    )}
+                                  </div>
+                                )
+                              })()}
                             </div>
                           </div>
 

@@ -22,12 +22,20 @@ import { OrdemCompraModal, type OCItemInput } from './components/OrdemCompraModa
 import { ProductDossierModal } from './components/ProductDossierModal'
 import { ProductSearchBar } from './components/ProductSearchBar'
 import { OrdemCompraDocument } from './components/OrdemCompraDocument'
+import { CategoryFilterChips } from './components/CategoryFilterChips'
 import { createOrdemCompra, getOrdemCompraItens } from '@/services/ordens-compra'
+import { getMasterComponents } from '@/services/components'
+import { getComponentCategories } from '@/services/component-categories'
+import { useCategoryGroups } from '@/hooks/use-category-groups'
+import { ComponentCategory, MasterComponent } from '@/types'
 import { useShortageStore } from '@/stores/useShortageStore'
 import { toast } from 'sonner'
 
 export default function ComprasPage() {
   const [shortages, setShortages] = useState<MaterialShortage[]>([])
+  const [components, setComponents] = useState<MasterComponent[]>([])
+  const [categories, setCategories] = useState<ComponentCategory[]>([])
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
   const [editItem, setEditItem] = useState<MaterialShortage | null>(null)
   const [deleteItem, setDeleteItem] = useState<MaterialShortage | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -47,11 +55,17 @@ export default function ComprasPage() {
 
   const fetchShortages = async () => {
     try {
-      const res = await pb.collection('material_shortages').getFullList<MaterialShortage>({
-        sort: '-created',
-        expand: 'order_id,order_id.product_id,requested_by',
-      })
+      const [res, compRes, catRes] = await Promise.all([
+        pb.collection('material_shortages').getFullList<MaterialShortage>({
+          sort: '-created',
+          expand: 'order_id,order_id.product_id,requested_by',
+        }),
+        getMasterComponents('', { includeInactive: true, expand: 'category' }),
+        getComponentCategories(),
+      ])
       setShortages(res)
+      setComponents(compRes)
+      setCategories(catRes)
     } catch {
       /* ignored */
     }
@@ -67,8 +81,10 @@ export default function ComprasPage() {
   }, [clear])
 
   useRealtime('material_shortages', fetchShortages)
+  useRealtime('components', fetchShortages)
+  useRealtime('component_categories', fetchShortages)
 
-  const comprasItems = useMemo(
+  const rawComprasItems = useMemo(
     () =>
       shortages.filter((s) => {
         if (s.status !== 'Compra' && s.status !== 'Recebido_Parcial') return false
@@ -79,6 +95,15 @@ export default function ComprasPage() {
       }),
     [shortages, opFilter],
   )
+
+  // Totalização e agrupamento por categoria
+  const categoryGroups = useCategoryGroups(rawComprasItems, components, categories)
+
+  const comprasItems = useMemo(() => {
+    if (selectedCategoryId === null) return rawComprasItems
+    const activeGroup = categoryGroups.find((g) => g.categoryId === selectedCategoryId)
+    return activeGroup ? activeGroup.items : []
+  }, [rawComprasItems, selectedCategoryId, categoryGroups])
 
   const summary = useMemo(() => {
     const today = startOfDay(new Date())
@@ -118,6 +143,19 @@ export default function ComprasPage() {
       const allSelected = ids.every((id) => next.has(id))
       if (allSelected) ids.forEach((id) => next.delete(id))
       else ids.forEach((id) => next.add(id))
+      return next
+    })
+  }
+
+  const handleSelectCategoryItems = (ids: string[]) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      const allSelected = ids.every((id) => next.has(id))
+      if (allSelected) {
+        ids.forEach((id) => next.delete(id))
+      } else {
+        ids.forEach((id) => next.add(id))
+      }
       return next
     })
   }
@@ -310,6 +348,16 @@ export default function ComprasPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* TOTALIZAÇÃO E CHIPS POR CATEGORIA DO COMPONENTE */}
+      <CategoryFilterChips
+        categoryGroups={categoryGroups}
+        selectedCategoryId={selectedCategoryId}
+        onSelectCategory={setSelectedCategoryId}
+        onSelectCategoryItems={handleSelectCategoryItems}
+        selectedIds={selectedIds}
+        actionLabel="Selecionar todos para Ordem de Compra"
+      />
 
       {comprasItems.length === 0 ? (
         <div className="p-8 text-center border-2 border-dashed rounded-xl border-slate-200 dark:border-slate-800 text-slate-400 font-medium">

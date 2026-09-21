@@ -158,11 +158,17 @@ export function ConsolidatedDemandBlock({
             {/* Linha da solicitação atual (referência) */}
             <TableRow className="bg-slate-50/70 dark:bg-slate-800/40 font-medium text-muted-foreground border-b border-amber-100 dark:border-slate-800">
               <TableCell colSpan={2}>
-                <span className="text-slate-600 dark:text-slate-300 font-semibold">
+                <span
+                  className="text-slate-600 dark:text-slate-300 font-semibold notranslate"
+                  translate="no"
+                >
                   {currentItemLabel || 'Esta solicitação atual'}
                 </span>
               </TableCell>
-              <TableCell className="text-right font-bold text-slate-800 dark:text-slate-100">
+              <TableCell
+                className="text-right font-bold text-slate-800 dark:text-slate-100 notranslate"
+                translate="no"
+              >
                 {currentBalance} un
               </TableCell>
               <TableCell colSpan={2} className="text-[11px] text-muted-foreground">
@@ -176,28 +182,46 @@ export function ConsolidatedDemandBlock({
                 key={demand.shortageId}
                 className="hover:bg-amber-50/40 dark:hover:bg-amber-950/20"
               >
-                <TableCell className="font-semibold text-blue-600 dark:text-blue-400">
+                <TableCell
+                  className="font-semibold text-blue-600 dark:text-blue-400 notranslate"
+                  translate="no"
+                >
                   {demand.orderNumber}
                   {demand.clientName && (
-                    <span className="block text-[10px] text-muted-foreground font-normal truncate max-w-[140px]">
+                    <span
+                      className="block text-[10px] text-muted-foreground font-normal truncate max-w-[140px] notranslate"
+                      translate="no"
+                    >
                       {demand.clientName}
                     </span>
                   )}
                 </TableCell>
-                <TableCell className="font-medium text-slate-700 dark:text-slate-300">
+                <TableCell
+                  className="font-medium text-slate-700 dark:text-slate-300 notranslate"
+                  translate="no"
+                >
                   {demand.opNumber}
                 </TableCell>
-                <TableCell className="text-right font-bold text-amber-950 dark:text-amber-300">
+                <TableCell
+                  className="text-right font-bold text-amber-950 dark:text-amber-300 notranslate"
+                  translate="no"
+                >
                   {demand.quantity} un
                   {demand.receivedQuantity > 0 && (
-                    <span className="block text-[10px] text-muted-foreground font-normal">
+                    <span
+                      className="block text-[10px] text-muted-foreground font-normal notranslate"
+                      translate="no"
+                    >
                       (saldo: {demand.quantity} de {demand.originalQuantity})
                     </span>
                   )}
                 </TableCell>
-                <TableCell className="text-slate-700 dark:text-slate-300">
+                <TableCell
+                  className="text-slate-700 dark:text-slate-300 notranslate"
+                  translate="no"
+                >
                   {formatDate(demand.deliveryDate)}
-                </TableCell>
+                </TableCell>{' '}
                 <TableCell>
                   <Badge variant="outline" className="text-[10px] px-1 py-0">
                     {demand.status.replace('_', ' ')}
@@ -211,10 +235,17 @@ export function ConsolidatedDemandBlock({
               <TableCell colSpan={2} className="text-amber-950 dark:text-amber-200 font-bold">
                 TOTAL GERAL SOMADO (Esta solicitação + {otherDemands.length} outra(s) OP(s)):
               </TableCell>
-              <TableCell className="text-right text-sm text-amber-950 dark:text-amber-200 font-extrabold">
+              <TableCell
+                className="text-right text-sm text-amber-950 dark:text-amber-200 font-extrabold notranslate"
+                translate="no"
+              >
                 {totalConsolidatedQuantity} un
               </TableCell>
-              <TableCell colSpan={2} className="text-[11px] text-amber-900/80 dark:text-amber-300">
+              <TableCell
+                colSpan={2}
+                className="text-[11px] text-amber-900/80 dark:text-amber-300 notranslate"
+                translate="no"
+              >
                 (+{totalOtherQuantity} un em outras OPs)
               </TableCell>
             </TableRow>

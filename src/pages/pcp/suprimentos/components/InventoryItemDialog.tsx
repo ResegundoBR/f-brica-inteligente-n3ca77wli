@@ -226,28 +226,52 @@ export function InventoryItemDialog({
                             {m.type === 'Entrada' ? '+' : '-'}
                             {m.quantity}
                           </TableCell>
-                          <TableCell className="text-xs text-right font-semibold whitespace-nowrap">
+                          <TableCell
+                            className="text-xs text-right font-semibold whitespace-nowrap notranslate"
+                            translate="no"
+                          >
                             {m.balance_after != null ? m.balance_after : '-'}
                           </TableCell>
-                          <TableCell className="text-xs whitespace-nowrap">
+                          <TableCell
+                            className="text-xs whitespace-nowrap notranslate"
+                            translate="no"
+                          >
                             {fmtDate(m.purchase_date)}
                           </TableCell>
-                          <TableCell className="text-xs whitespace-nowrap">
+                          <TableCell
+                            className="text-xs whitespace-nowrap notranslate"
+                            translate="no"
+                          >
                             {fmtDate(m.arrival_date)}
                           </TableCell>
-                          <TableCell className="text-xs text-right whitespace-nowrap">
+                          <TableCell
+                            className="text-xs text-right whitespace-nowrap notranslate"
+                            translate="no"
+                          >
                             {fmtCurrency(m.unit_price)}
                           </TableCell>
-                          <TableCell className="text-xs text-right whitespace-nowrap">
+                          <TableCell
+                            className="text-xs text-right whitespace-nowrap notranslate"
+                            translate="no"
+                          >
                             {fmtCurrency(m.total_value)}
                           </TableCell>
-                          <TableCell className="text-xs text-right whitespace-nowrap">
+                          <TableCell
+                            className="text-xs text-right whitespace-nowrap notranslate"
+                            translate="no"
+                          >
                             {fmtCurrency(m.freight)}
                           </TableCell>
-                          <TableCell className="text-xs whitespace-nowrap">
+                          <TableCell
+                            className="text-xs whitespace-nowrap notranslate"
+                            translate="no"
+                          >
                             {fmtDate(m.exit_date)}
                           </TableCell>
-                          <TableCell className="text-xs whitespace-nowrap">
+                          <TableCell
+                            className="text-xs whitespace-nowrap notranslate"
+                            translate="no"
+                          >
                             {orderLabel(m)}
                           </TableCell>
                           <TableCell className="text-xs text-muted-foreground max-w-[160px] truncate">
@@ -294,7 +318,9 @@ export function InventoryItemDialog({
                   value={quantity}
                   onChange={(e) => setQuantity(e.target.value)}
                   placeholder="0"
-                />
+                  className="notranslate"
+                  translate="no"
+                />{' '}
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Motivo</Label>

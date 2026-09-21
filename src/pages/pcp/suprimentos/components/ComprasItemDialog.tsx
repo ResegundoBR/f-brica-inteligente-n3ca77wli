@@ -170,8 +170,7 @@ export function ComprasItemDialog({
                   — OP: <NoTranslate as="span">{item.expand.order_id.op_number}</NoTranslate>
                 </span>
               )}
-            </div>
-
+            </div>{' '}
             {/* Bloco de consolidação de demanda com outras OPs */}
             {consolidation && consolidation.otherDemands.length > 0 && (
               <ConsolidatedDemandBlock
@@ -181,7 +180,6 @@ export function ComprasItemDialog({
                 applyButtonLabel="Sugerir e adotar total"
               />
             )}
-
             <div>
               <h4 className="text-sm font-semibold mb-2">Cotações Registradas</h4>
               {loading ? (
@@ -219,14 +217,19 @@ export function ComprasItemDialog({
                               <Check className="w-4 h-4 text-primary" />
                             )}
                           </TableCell>
-                          <TableCell className="font-medium text-sm">{q.supplier}</TableCell>
-                          <TableCell className="text-right text-sm">
+                          <TableCell className="font-medium text-sm notranslate" translate="no">
+                            {q.supplier}
+                          </TableCell>
+                          <TableCell className="text-right text-sm notranslate" translate="no">
                             {formatCurrency(q.price)}
                           </TableCell>
-                          <TableCell className="text-right text-sm">
+                          <TableCell className="text-right text-sm notranslate" translate="no">
                             {q.delivery_days || '-'}
                           </TableCell>
-                          <TableCell className="text-right text-sm font-semibold">
+                          <TableCell
+                            className="text-right text-sm font-semibold notranslate"
+                            translate="no"
+                          >
                             {formatCurrency(q.price * (item.quantity || 0))}
                           </TableCell>
                         </TableRow>
@@ -236,11 +239,15 @@ export function ComprasItemDialog({
                 </div>
               )}
             </div>
-
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t">
               <div className="space-y-1">
                 <Label className="text-xs">Fornecedor</Label>
-                <Input value={supplier} onChange={(e) => setSupplier(e.target.value)} />
+                <Input
+                  value={supplier}
+                  onChange={(e) => setSupplier(e.target.value)}
+                  className="notranslate"
+                  translate="no"
+                />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Valor Unitário</Label>
@@ -249,6 +256,8 @@ export function ComprasItemDialog({
                   step="0.01"
                   value={unitPrice}
                   onChange={(e) => setUnitPrice(e.target.value)}
+                  className="notranslate"
+                  translate="no"
                 />
               </div>
               <div className="space-y-1">
@@ -257,6 +266,8 @@ export function ComprasItemDialog({
                   type="date"
                   value={expectedDate}
                   onChange={(e) => setExpectedDate(e.target.value)}
+                  className="notranslate"
+                  translate="no"
                 />
               </div>
             </div>

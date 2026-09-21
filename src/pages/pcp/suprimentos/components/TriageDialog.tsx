@@ -101,17 +101,24 @@ export function TriageDialog({
               <div className="space-y-2 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
                 <div className="flex justify-between">
                   <span className="text-xs text-muted-foreground">Código</span>
-                  <span className="text-xs font-medium">{item?.code || '-'}</span>
+                  <span className="text-xs font-medium notranslate" translate="no">
+                    {item?.code || '-'}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-xs text-muted-foreground">Descrição</span>
-                  <span className="text-xs font-medium text-right max-w-[200px]">
+                  <span
+                    className="text-xs font-medium text-right max-w-[200px] notranslate"
+                    translate="no"
+                  >
                     {item?.description}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-xs text-muted-foreground">Quantidade</span>
-                  <span className="text-xs font-bold">{item?.quantity}</span>
+                  <span className="text-xs font-bold notranslate" translate="no">
+                    {item?.quantity}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-xs text-muted-foreground">Setor</span>

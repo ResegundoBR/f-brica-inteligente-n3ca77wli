@@ -160,7 +160,12 @@ export default function EstoquePage() {
             <CardTitle className="text-sm text-muted-foreground">Estoque Total</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-slate-800 dark:text-slate-100">{totalItems}</p>
+            <p
+              className="text-2xl font-bold text-slate-800 dark:text-slate-100 notranslate"
+              translate="no"
+            >
+              {totalItems}
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -170,7 +175,12 @@ export default function EstoquePage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">{totalReserved}</p>
+            <p
+              className="text-2xl font-bold text-amber-600 dark:text-amber-400 notranslate"
+              translate="no"
+            >
+              {totalReserved}
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -180,7 +190,10 @@ export default function EstoquePage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+            <p
+              className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 notranslate"
+              translate="no"
+            >
               {totalAvailable}
             </p>
           </CardContent>
@@ -192,9 +205,10 @@ export default function EstoquePage() {
           <CardContent>
             <p
               className={cn(
-                'text-2xl font-bold',
+                'text-2xl font-bold notranslate',
                 lowStockCount > 0 ? 'text-red-600' : 'text-slate-700 dark:text-slate-300',
               )}
+              translate="no"
             >
               {lowStockCount}
             </p>
@@ -424,6 +438,8 @@ export default function EstoquePage() {
                 value={newCode}
                 onChange={(e) => setNewCode(e.target.value)}
                 placeholder="Código do item"
+                className="notranslate font-mono"
+                translate="no"
               />
             </div>
             <div className="space-y-2">
@@ -432,20 +448,39 @@ export default function EstoquePage() {
                 value={newDesc}
                 onChange={(e) => setNewDesc(e.target.value)}
                 placeholder="Descrição do item"
+                className="notranslate"
+                translate="no"
               />
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-2">
                 <Label>Quantidade</Label>
-                <Input type="number" value={newQty} onChange={(e) => setNewQty(e.target.value)} />
+                <Input
+                  type="number"
+                  value={newQty}
+                  onChange={(e) => setNewQty(e.target.value)}
+                  className="notranslate"
+                  translate="no"
+                />
               </div>
               <div className="space-y-2">
                 <Label>Estoque Mín.</Label>
-                <Input type="number" value={newMin} onChange={(e) => setNewMin(e.target.value)} />
+                <Input
+                  type="number"
+                  value={newMin}
+                  onChange={(e) => setNewMin(e.target.value)}
+                  className="notranslate"
+                  translate="no"
+                />
               </div>
               <div className="space-y-2">
                 <Label>Unidade</Label>
-                <Input value={newUnit} onChange={(e) => setNewUnit(e.target.value)} />
+                <Input
+                  value={newUnit}
+                  onChange={(e) => setNewUnit(e.target.value)}
+                  className="notranslate"
+                  translate="no"
+                />
               </div>
             </div>
           </div>

@@ -121,7 +121,9 @@ export default function OrdensCompraPage() {
             <CardTitle className="text-sm text-muted-foreground">Total de OCs</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{summary.total}</p>
+            <p className="text-2xl font-bold notranslate" translate="no">
+              {summary.total}
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -129,7 +131,9 @@ export default function OrdensCompraPage() {
             <CardTitle className="text-sm text-muted-foreground">Pendentes</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-amber-600">{summary.pending}</p>
+            <p className="text-2xl font-bold text-amber-600 notranslate" translate="no">
+              {summary.pending}
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -137,7 +141,9 @@ export default function OrdensCompraPage() {
             <CardTitle className="text-sm text-muted-foreground">Recebidas</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-green-600">{summary.received}</p>
+            <p className="text-2xl font-bold text-green-600 notranslate" translate="no">
+              {summary.received}
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -145,7 +151,9 @@ export default function OrdensCompraPage() {
             <CardTitle className="text-sm text-muted-foreground">Valor Total</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-blue-600">{formatCurrency(summary.totalValue)}</p>
+            <p className="text-2xl font-bold text-blue-600 notranslate" translate="no">
+              {formatCurrency(summary.totalValue)}
+            </p>
           </CardContent>
         </Card>
       </div>

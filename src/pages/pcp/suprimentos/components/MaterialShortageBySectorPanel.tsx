@@ -49,7 +49,7 @@ export function MaterialShortageBySectorPanel({
             <Layers className="w-5 h-5 text-orange-600" />
             Faltas de Material por Setor
           </span>
-          <Badge variant="secondary" className="text-sm">
+          <Badge variant="secondary" className="text-sm notranslate" translate="no">
             {total}
           </Badge>
         </CardTitle>
@@ -76,7 +76,13 @@ export function MaterialShortageBySectorPanel({
             >
               <span className="font-medium">{sector}</span>
               <div className="flex items-center gap-2">
-                <Badge variant={count > 0 ? 'destructive' : 'outline'}>{count}</Badge>
+                <Badge
+                  variant={count > 0 ? 'destructive' : 'outline'}
+                  className="notranslate"
+                  translate="no"
+                >
+                  {count}
+                </Badge>
                 {clickable && <ChevronRight className="w-4 h-4 text-muted-foreground" />}
               </div>
             </button>
@@ -99,7 +105,13 @@ export function MaterialShortageBySectorPanel({
               >
                 <span className="font-medium">Outros</span>
                 <div className="flex items-center gap-2">
-                  <Badge variant={other > 0 ? 'destructive' : 'outline'}>{other}</Badge>
+                  <Badge
+                    variant={other > 0 ? 'destructive' : 'outline'}
+                    className="notranslate"
+                    translate="no"
+                  >
+                    {other}
+                  </Badge>
                   {clickable && <ChevronRight className="w-4 h-4 text-muted-foreground" />}
                 </div>
               </button>

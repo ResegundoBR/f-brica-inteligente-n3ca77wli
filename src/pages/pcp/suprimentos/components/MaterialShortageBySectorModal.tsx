@@ -75,9 +75,13 @@ export function MaterialShortageBySectorModal({
                       <div className="min-w-0 flex-1 flex items-start gap-2">
                         <Package className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
                         <div className="min-w-0">
-                          <p className="text-sm font-medium truncate">{s.description}</p>
+                          <p className="text-sm font-medium truncate notranslate" translate="no">
+                            {s.description}
+                          </p>
                           {s.code && (
-                            <p className="text-xs text-muted-foreground">Código: {s.code}</p>
+                            <p className="text-xs text-muted-foreground notranslate" translate="no">
+                              Código: {s.code}
+                            </p>
                           )}
                         </div>
                       </div>
@@ -92,17 +96,26 @@ export function MaterialShortageBySectorModal({
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground pl-6">
                         <span>
                           Pedido:{' '}
-                          <span className="font-medium text-foreground">{order.order_number}</span>
+                          <span className="font-medium text-foreground notranslate" translate="no">
+                            {order.order_number}
+                          </span>
                         </span>
                         {order.op_number && (
                           <span>
                             OP:{' '}
-                            <span className="font-medium text-foreground">{order.op_number}</span>
+                            <span
+                              className="font-medium text-foreground notranslate"
+                              translate="no"
+                            >
+                              {order.op_number}
+                            </span>
                           </span>
                         )}
                         <span>
                           Cliente:{' '}
-                          <span className="font-medium text-foreground">{order.client_name}</span>
+                          <span className="font-medium text-foreground notranslate" translate="no">
+                            {order.client_name}
+                          </span>
                         </span>
                       </div>
                     )}
@@ -110,7 +123,7 @@ export function MaterialShortageBySectorModal({
                       <Calendar className="w-3.5 h-3.5" />
                       <span>
                         Previsão de chegada:{' '}
-                        <span className="font-medium text-foreground">
+                        <span className="font-medium text-foreground notranslate" translate="no">
                           {formatDateSafe(s.expected_date)}
                         </span>
                       </span>

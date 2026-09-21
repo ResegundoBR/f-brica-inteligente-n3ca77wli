@@ -35,7 +35,9 @@ export function OrdemCompraRow({ oc, onStatusChange, onViewDoc }: OrdemCompraRow
         {oc.oc_number}
       </TableCell>
       <TableCell className="text-sm font-medium">
-        <div>{oc.supplier}</div>
+        <div className="notranslate" translate="no">
+          {oc.supplier}
+        </div>
         {oc.expand?.user_id && (
           <div className="mt-0.5">
             <UserActionBadge
@@ -81,7 +83,7 @@ export function OrdemCompraRow({ oc, onStatusChange, onViewDoc }: OrdemCompraRow
           </Badge>
         )}
       </TableCell>
-      <TableCell className="text-right text-sm font-semibold">
+      <TableCell className="text-right text-sm font-semibold notranslate" translate="no">
         {oc.total ? formatCurrency(Number(oc.total)) : '-'}
       </TableCell>
       <TableCell className="text-xs">{oc.delivery_type || '-'}</TableCell>

@@ -78,15 +78,20 @@ function GroupSection({
             collapsed && '-rotate-90',
           )}
         />
-        <span className="font-semibold text-sm">{supplier}</span>
-        <Badge variant="secondary" className="text-xs">
-          {itemCount} {itemCount === 1 ? 'OC' : 'OCs'}
+        <span className="font-semibold text-sm notranslate" translate="no">
+          {supplier}
+        </span>
+        <Badge variant="secondary" className="text-xs notranslate" translate="no">
+          {itemCount} {itemCount === 1 ? 'pedido' : 'pedidos'}
         </Badge>
         {totalValue > 0 && (
-          <span className="ml-auto text-sm font-semibold text-blue-600 dark:text-blue-400">
+          <span
+            className="ml-auto text-sm font-semibold text-blue-600 dark:text-blue-400 notranslate"
+            translate="no"
+          >
             {formatCurrency(totalValue)}
           </span>
-        )}
+        )}{' '}
       </div>
       {!collapsed && (
         <Table>

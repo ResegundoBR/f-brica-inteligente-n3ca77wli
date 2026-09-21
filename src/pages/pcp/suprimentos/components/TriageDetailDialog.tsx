@@ -66,11 +66,15 @@ export function TriageDetailDialog({
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div>
               <span className="text-muted-foreground">Código:</span>{' '}
-              <span className="font-medium">{item.code || '-'}</span>
+              <span className="font-medium notranslate" translate="no">
+                {item.code || '-'}
+              </span>
             </div>
             <div>
               <span className="text-muted-foreground">Quantidade:</span>{' '}
-              <span className="font-medium">{item.quantity}</span>
+              <span className="font-medium notranslate" translate="no">
+                {item.quantity}
+              </span>
             </div>
             <div>
               <span className="text-muted-foreground">Setor:</span>{' '}

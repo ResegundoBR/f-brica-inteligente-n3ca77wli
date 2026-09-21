@@ -353,22 +353,33 @@ export function QuotationDialog({
                         className={cn(q.selected && 'bg-blue-50 dark:bg-blue-900/20')}
                       >
                         <TableCell className="font-medium text-sm">
-                          <div>{q.supplier}</div>
+                          <div className="notranslate" translate="no">
+                            {q.supplier}
+                          </div>
                         </TableCell>
-                        <TableCell className="text-right font-semibold text-sm">
+                        <TableCell
+                          className="text-right font-semibold text-sm notranslate"
+                          translate="no"
+                        >
                           R$ {Number(q.price).toFixed(2)}
                         </TableCell>
-                        <TableCell className="text-right text-xs text-muted-foreground">
+                        <TableCell
+                          className="text-right text-xs text-muted-foreground notranslate"
+                          translate="no"
+                        >
                           {q.st_value != null && q.st_value > 0
                             ? `R$ ${Number(q.st_value).toFixed(2)}`
                             : '-'}
                         </TableCell>
-                        <TableCell className="text-right text-xs text-muted-foreground">
+                        <TableCell
+                          className="text-right text-xs text-muted-foreground notranslate"
+                          translate="no"
+                        >
                           {q.ipi_value != null && q.ipi_value > 0
                             ? `R$ ${Number(q.ipi_value).toFixed(2)}`
                             : '-'}
                         </TableCell>
-                        <TableCell className="text-center text-sm">
+                        <TableCell className="text-center text-sm notranslate" translate="no">
                           {q.delivery_days || '-'}
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
@@ -486,6 +497,8 @@ export function QuotationDialog({
                       value={directSupplier}
                       onChange={(e) => setDirectSupplier(e.target.value)}
                       placeholder="Opcional"
+                      className="notranslate"
+                      translate="no"
                     />
                   </div>
                   <div className="space-y-1">
@@ -497,6 +510,8 @@ export function QuotationDialog({
                       value={directPrice}
                       onChange={(e) => setDirectPrice(e.target.value)}
                       placeholder="Opcional"
+                      className="notranslate"
+                      translate="no"
                     />
                   </div>
                   <div className="space-y-1">
@@ -505,6 +520,8 @@ export function QuotationDialog({
                       type="date"
                       value={directExpectedDate}
                       onChange={(e) => setDirectExpectedDate(e.target.value)}
+                      className="notranslate"
+                      translate="no"
                     />
                   </div>
                 </div>

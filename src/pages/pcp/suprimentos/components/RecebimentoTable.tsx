@@ -79,8 +79,10 @@ function RecebimentoRow({
           / {total}
         </span>
       </TableCell>
-      <TableCell className="text-xs">{item.supplier || '-'}</TableCell>
-      <TableCell className="text-xs">
+      <TableCell className="text-xs notranslate" translate="no">
+        {item.supplier || '-'}
+      </TableCell>
+      <TableCell className="text-xs notranslate" translate="no">
         {item.expected_date ? format(parseISO(item.expected_date), 'dd/MM/yyyy') : '-'}
       </TableCell>
       <TableCell>

@@ -168,19 +168,27 @@ export function SmartReceiveDialog({
           <div className="space-y-4">
             <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border">
               <div className="flex justify-between text-sm">
-                <span className="font-semibold">{item?.description}</span>
+                <span className="font-semibold notranslate" translate="no">
+                  {item?.description}
+                </span>
                 {item?.code && (
-                  <Badge variant="outline" className="text-xs">
+                  <Badge variant="outline" className="text-xs notranslate" translate="no">
                     {item.code}
                   </Badge>
                 )}
               </div>
               <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
                 <span>
-                  Total necessário: <strong className="text-foreground">{totalNeeded}</strong>
+                  Total necessário:{' '}
+                  <strong className="text-foreground notranslate" translate="no">
+                    {totalNeeded}
+                  </strong>
                 </span>
                 <span>
-                  Já recebido: <strong className="text-foreground">{totalAlreadyReceived}</strong>
+                  Já recebido:{' '}
+                  <strong className="text-foreground notranslate" translate="no">
+                    {totalAlreadyReceived}
+                  </strong>
                 </span>
               </div>
             </div>
@@ -192,7 +200,8 @@ export function SmartReceiveDialog({
                 min="0.01"
                 step="0.01"
                 placeholder="0"
-                className="max-w-[200px]"
+                className="max-w-[200px] notranslate"
+                translate="no"
                 value={totalReceived}
                 onChange={(e) => setTotalReceived(e.target.value)}
               />
@@ -203,7 +212,8 @@ export function SmartReceiveDialog({
                 <Label className="text-xs">Data da Compra</Label>
                 <Input
                   type="date"
-                  className="h-9 text-sm"
+                  className="h-9 text-sm notranslate"
+                  translate="no"
                   value={purchaseDate}
                   onChange={(e) => setPurchaseDate(e.target.value)}
                 />
@@ -212,7 +222,8 @@ export function SmartReceiveDialog({
                 <Label className="text-xs">Data da Chegada</Label>
                 <Input
                   type="date"
-                  className="h-9 text-sm"
+                  className="h-9 text-sm notranslate"
+                  translate="no"
                   value={arrivalDate}
                   onChange={(e) => setArrivalDate(e.target.value)}
                 />
@@ -224,7 +235,8 @@ export function SmartReceiveDialog({
                   min="0"
                   step="0.01"
                   placeholder="0.00"
-                  className="h-9 text-sm"
+                  className="h-9 text-sm notranslate"
+                  translate="no"
                   value={unitPrice}
                   onChange={(e) => setUnitPrice(e.target.value)}
                 />
@@ -236,7 +248,8 @@ export function SmartReceiveDialog({
                   min="0"
                   step="0.01"
                   placeholder="0.00"
-                  className="h-9 text-sm"
+                  className="h-9 text-sm notranslate"
+                  translate="no"
                   value={freight}
                   onChange={(e) => setFreight(e.target.value)}
                 />
@@ -244,7 +257,9 @@ export function SmartReceiveDialog({
               {computedTotalValue > 0 && (
                 <div className="col-span-2 sm:col-span-4 text-xs text-muted-foreground">
                   Valor total calculado:{' '}
-                  <strong className="text-foreground">R$ {computedTotalValue.toFixed(2)}</strong>
+                  <strong className="text-foreground notranslate" translate="no">
+                    R$ {computedTotalValue.toFixed(2)}
+                  </strong>
                 </div>
               )}
             </div>
@@ -270,17 +285,25 @@ export function SmartReceiveDialog({
                     const remaining = Math.max(0, needed - alreadyRcvd)
                     return (
                       <TableRow key={s.id}>
-                        <TableCell className="text-sm font-medium">
+                        <TableCell className="text-sm font-medium notranslate" translate="no">
                           {op?.op_number ||
                             op?.order_number ||
                             (isWithoutOp ? 'Estoque Geral / Almoxarifado' : '-')}
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
+                        <TableCell
+                          className="text-xs text-muted-foreground notranslate"
+                          translate="no"
+                        >
                           {product?.code ? `${product.code} - ` : ''}
                           {product?.name || (isWithoutOp ? 'Material sem OP vinculada' : '-')}
                         </TableCell>
-                        <TableCell className="text-right text-sm">{needed}</TableCell>
-                        <TableCell className="text-right text-sm text-muted-foreground">
+                        <TableCell className="text-right text-sm notranslate" translate="no">
+                          {needed}
+                        </TableCell>
+                        <TableCell
+                          className="text-right text-sm text-muted-foreground notranslate"
+                          translate="no"
+                        >
                           {alreadyRcvd}
                         </TableCell>
                         <TableCell>
@@ -295,7 +318,8 @@ export function SmartReceiveDialog({
                               step="0.01"
                               max={remaining}
                               placeholder="0"
-                              className="h-8 w-full text-right text-sm"
+                              className="h-8 w-full text-right text-sm notranslate"
+                              translate="no"
                               value={distributions[s.id] || ''}
                               onChange={(e) =>
                                 setDistributions((prev) => ({ ...prev, [s.id]: e.target.value }))
@@ -321,8 +345,14 @@ export function SmartReceiveDialog({
 
             <div className="flex justify-between items-center pt-2 border-t">
               <span className="text-sm text-muted-foreground">
-                Distribuído: <strong className="text-foreground">{totalDistributed}</strong> /{' '}
-                {Number(totalReceived) || 0}
+                Distribuído:{' '}
+                <strong className="text-foreground notranslate" translate="no">
+                  {totalDistributed}
+                </strong>{' '}
+                /{' '}
+                <span className="notranslate" translate="no">
+                  {Number(totalReceived) || 0}
+                </span>
               </span>
             </div>
           </div>

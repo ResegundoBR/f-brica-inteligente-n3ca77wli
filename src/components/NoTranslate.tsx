@@ -2,9 +2,10 @@ import React from 'react'
 import { cn } from '@/lib/utils'
 
 export interface NoTranslateProps extends React.HTMLAttributes<HTMLElement> {
-  as?: keyof JSX.IntrinsicElements
+  as?: React.ElementType
   children?: React.ReactNode
   className?: string
+  [key: string]: any
 }
 
 /**

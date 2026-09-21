@@ -182,7 +182,9 @@ export function OrdemCompraModal({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <Label className="text-xs text-muted-foreground">Fornecedor</Label>
-              <p className="font-semibold">{supplierName}</p>
+              <p className="font-semibold notranslate" translate="no">
+                {supplierName}
+              </p>
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Previsão de Entrega</Label>
@@ -190,6 +192,8 @@ export function OrdemCompraModal({
                 type="date"
                 value={expectedDate}
                 onChange={(e) => setExpectedDate(e.target.value)}
+                className="notranslate"
+                translate="no"
               />
             </div>
           </div>
@@ -279,7 +283,8 @@ export function OrdemCompraModal({
                       <TableCell>
                         <Input
                           type="number"
-                          className="h-8 w-16"
+                          className="h-8 w-16 notranslate"
+                          translate="no"
                           value={item.quantity}
                           onChange={(e) => updateQty(idx, Number(e.target.value) || 0)}
                         />
@@ -288,7 +293,8 @@ export function OrdemCompraModal({
                         <Input
                           type="number"
                           step="0.01"
-                          className="h-8 w-24"
+                          className="h-8 w-24 notranslate"
+                          translate="no"
                           value={item.unit_price}
                           onChange={(e) => updatePrice(idx, Number(e.target.value) || 0)}
                         />
@@ -297,7 +303,8 @@ export function OrdemCompraModal({
                         <Input
                           type="number"
                           step="0.01"
-                          className="h-8 w-20"
+                          className="h-8 w-20 notranslate"
+                          translate="no"
                           value={item.st_value ?? ''}
                           placeholder="0,00"
                           onChange={(e) => updateSt(idx, Number(e.target.value) || 0)}
@@ -307,13 +314,17 @@ export function OrdemCompraModal({
                         <Input
                           type="number"
                           step="0.01"
-                          className="h-8 w-20"
+                          className="h-8 w-20 notranslate"
+                          translate="no"
                           value={item.ipi_value ?? ''}
                           placeholder="0,00"
                           onChange={(e) => updateIpi(idx, Number(e.target.value) || 0)}
                         />
                       </TableCell>
-                      <TableCell className="text-right text-sm font-semibold">
+                      <TableCell
+                        className="text-right text-sm font-semibold notranslate"
+                        translate="no"
+                      >
                         {formatCurrency(getItemTotal(item))}
                       </TableCell>
                       <TableCell>
@@ -335,7 +346,13 @@ export function OrdemCompraModal({
           <div className="flex flex-wrap items-end gap-2 p-3 border-2 border-dashed rounded-lg">
             <div className="w-20 space-y-1">
               <Label className="text-xs">Código</Label>
-              <Input value={newCode} onChange={(e) => setNewCode(e.target.value)} placeholder="-" />
+              <Input
+                value={newCode}
+                onChange={(e) => setNewCode(e.target.value)}
+                placeholder="-"
+                className="notranslate font-mono"
+                translate="no"
+              />
             </div>
             <div className="flex-1 min-w-[140px] space-y-1">
               <Label className="text-xs">Nova Descrição</Label>
@@ -343,11 +360,19 @@ export function OrdemCompraModal({
                 value={newDesc}
                 onChange={(e) => setNewDesc(e.target.value)}
                 placeholder="Adicionar item..."
+                className="notranslate"
+                translate="no"
               />
             </div>
             <div className="w-16 space-y-1">
               <Label className="text-xs">Qtde</Label>
-              <Input type="number" value={newQty} onChange={(e) => setNewQty(e.target.value)} />
+              <Input
+                type="number"
+                value={newQty}
+                onChange={(e) => setNewQty(e.target.value)}
+                className="notranslate"
+                translate="no"
+              />
             </div>
             <div className="w-24 space-y-1">
               <Label className="text-xs">Vl. Unit.</Label>
@@ -357,6 +382,8 @@ export function OrdemCompraModal({
                 value={newPrice}
                 onChange={(e) => setNewPrice(e.target.value)}
                 placeholder="0,00"
+                className="notranslate"
+                translate="no"
               />
             </div>
             <div className="w-20 space-y-1">
@@ -367,6 +394,8 @@ export function OrdemCompraModal({
                 value={newSt}
                 onChange={(e) => setNewSt(e.target.value)}
                 placeholder="0,00"
+                className="notranslate"
+                translate="no"
               />
             </div>
             <div className="w-20 space-y-1">
@@ -377,6 +406,8 @@ export function OrdemCompraModal({
                 value={newIpi}
                 onChange={(e) => setNewIpi(e.target.value)}
                 placeholder="0,00"
+                className="notranslate"
+                translate="no"
               />
             </div>
             <Button variant="outline" size="sm" onClick={handleAddItem}>
@@ -396,7 +427,9 @@ export function OrdemCompraModal({
 
           <div className="flex justify-between items-center pt-2 border-t">
             <span className="text-sm text-muted-foreground">Total Geral</span>
-            <span className="text-xl font-bold">{formatCurrency(grandTotal)}</span>
+            <span className="text-xl font-bold notranslate" translate="no">
+              {formatCurrency(grandTotal)}
+            </span>
           </div>
         </div>
         <DialogFooter>

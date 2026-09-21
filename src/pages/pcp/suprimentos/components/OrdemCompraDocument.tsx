@@ -148,12 +148,17 @@ export function OrdemCompraDocument({ oc, items, open, onOpenChange }: OrdemComp
           </div>
           <div className="grid grid-cols-2 gap-2">
             <p className="text-sm">
-              <strong>Fornecedor:</strong> {oc.supplier}
+              <strong>Fornecedor:</strong>{' '}
+              <span className="notranslate" translate="no">
+                {oc.supplier}
+              </span>
             </p>
             {oc.expected_date && (
               <p className="text-sm">
                 <strong>Previsão de Entrega:</strong>{' '}
-                {format(parseISO(oc.expected_date), 'dd/MM/yyyy')}
+                <span className="notranslate" translate="no">
+                  {format(parseISO(oc.expected_date), 'dd/MM/yyyy')}
+                </span>
               </p>
             )}
             <p className="text-sm">
@@ -223,7 +228,12 @@ export function OrdemCompraDocument({ oc, items, open, onOpenChange }: OrdemComp
             </tbody>
           </table>
           <div className="text-right">
-            <span className="text-lg font-bold">Total Geral: {formatCurrency(grandTotal)}</span>
+            <span className="text-lg font-bold">
+              Total Geral:{' '}
+              <span className="notranslate" translate="no">
+                {formatCurrency(grandTotal)}
+              </span>
+            </span>
           </div>
           {oc.delivery_terms && (
             <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">

@@ -153,7 +153,8 @@ export function EnhancedQuotationForm({
             <Input
               value={desc}
               onChange={(e) => setDesc(e.target.value)}
-              className="h-8 text-sm"
+              className="h-8 text-sm notranslate"
+              translate="no"
               onBlur={handleEditItem}
             />
           </div>
@@ -163,7 +164,8 @@ export function EnhancedQuotationForm({
               type="number"
               value={qty}
               onChange={(e) => setQty(e.target.value)}
-              className="h-8 text-sm"
+              className="h-8 text-sm notranslate"
+              translate="no"
               onBlur={handleEditItem}
             />
           </div>
@@ -212,7 +214,8 @@ export function EnhancedQuotationForm({
                 step="0.01"
                 value={price}
                 onChange={(e) => setPrice(e.target.value)}
-                className="h-8 text-sm"
+                className="h-8 text-sm notranslate"
+                translate="no"
               />
             </div>
             <div>
@@ -223,7 +226,8 @@ export function EnhancedQuotationForm({
                 value={stValue}
                 onChange={(e) => setStValue(e.target.value)}
                 placeholder="0.00"
-                className="h-8 text-sm"
+                className="h-8 text-sm notranslate"
+                translate="no"
               />
             </div>
             <div>
@@ -234,7 +238,8 @@ export function EnhancedQuotationForm({
                 value={ipiValue}
                 onChange={(e) => setIpiValue(e.target.value)}
                 placeholder="0.00"
-                className="h-8 text-sm"
+                className="h-8 text-sm notranslate"
+                translate="no"
               />
             </div>
           </div>
@@ -245,7 +250,8 @@ export function EnhancedQuotationForm({
                 type="number"
                 value={deliveryDays}
                 onChange={(e) => setDeliveryDays(e.target.value)}
-                className="h-8 text-sm"
+                className="h-8 text-sm notranslate"
+                translate="no"
               />
             </div>
           </div>
@@ -269,7 +275,9 @@ export function EnhancedQuotationForm({
                 </Button>
                 <div className="flex-1">
                   <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium">{q.supplier}</p>
+                    <p className="text-sm font-medium notranslate" translate="no">
+                      {q.supplier}
+                    </p>
                     <UserActionBadge
                       user={q.expand?.quoted_by}
                       date={q.created}
@@ -277,7 +285,7 @@ export function EnhancedQuotationForm({
                       compact={true}
                     />
                   </div>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs text-muted-foreground notranslate" translate="no">
                     R$ {q.price.toFixed(2)}
                     {q.st_value ? ` • ST: R$ ${q.st_value.toFixed(2)}` : ''}
                     {q.ipi_value ? ` • IPI: R$ ${q.ipi_value.toFixed(2)}` : ''}

@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import { NoTranslate } from '@/components/NoTranslate'
 import {
   Table,
   TableBody,
@@ -229,7 +230,8 @@ export function QuotationDialog({
         <DialogContent className="sm:max-w-[650px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <ShoppingCart className="size-5 text-blue-600" /> Cotações — {item.description}
+              <ShoppingCart className="size-5 text-blue-600" /> Cotações —{' '}
+              <NoTranslate as="span">{item.description}</NoTranslate>
               <Button size="sm" variant="ghost" className="h-7 ml-auto" onClick={handleCopy}>
                 <Copy className="size-3.5 mr-1" /> Copiar
               </Button>
@@ -239,7 +241,9 @@ export function QuotationDialog({
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div>
                 <span className="text-muted-foreground">Código:</span>{' '}
-                <span className="font-medium">{item.code || '-'}</span>
+                <NoTranslate as="span" className="font-medium">
+                  {item.code || '-'}
+                </NoTranslate>
               </div>
               <div className="flex items-center gap-2">
                 {editing ? (
@@ -250,7 +254,8 @@ export function QuotationDialog({
                       min="1"
                       value={editQty}
                       onChange={(e) => setEditQty(e.target.value)}
-                      className="h-7 w-20 text-sm"
+                      className="h-7 w-20 text-sm notranslate"
+                      translate="no"
                     />
                     <Button
                       size="sm"
@@ -272,7 +277,9 @@ export function QuotationDialog({
                 ) : (
                   <>
                     <span className="text-muted-foreground">Quantidade:</span>
-                    <span className="font-medium">{item.quantity}</span>
+                    <NoTranslate as="span" className="font-medium">
+                      {item.quantity}
+                    </NoTranslate>
                     <Button
                       size="sm"
                       variant="ghost"
@@ -291,7 +298,8 @@ export function QuotationDialog({
                 <Input
                   value={editDesc}
                   onChange={(e) => setEditDesc(e.target.value)}
-                  className="h-7 text-sm"
+                  className="h-7 text-sm notranslate"
+                  translate="no"
                 />
               </div>
             )}

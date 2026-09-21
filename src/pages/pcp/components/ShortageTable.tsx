@@ -29,6 +29,7 @@ import { cn } from '@/lib/utils'
 import { UserActionBadge } from '@/components/UserActionBadge'
 import { format, parseISO } from 'date-fns'
 import { extractFieldErrors, type FieldErrors } from '@/lib/pocketbase/errors'
+import { NoTranslate } from '@/components/NoTranslate'
 import {
   sanitizeNumber,
   sanitizeDate,
@@ -551,7 +552,9 @@ function ShortageRow({
         <TableCell className="text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">
           {format(parseISO(item.created), 'dd/MM/yyyy')}
         </TableCell>
-        <TableCell className="font-medium text-xs text-slate-500">{item.code || '-'}</TableCell>
+        <TableCell className="font-medium text-xs text-slate-500">
+          <NoTranslate as="span">{item.code || '-'}</NoTranslate>
+        </TableCell>
         <TableCell
           className="text-right"
           onClick={(e) => {
@@ -563,7 +566,8 @@ function ShortageRow({
               type="number"
               min={1}
               step={0.01}
-              className="w-20 text-right ml-auto h-8 font-black bg-white dark:bg-slate-950"
+              className="w-20 text-right ml-auto h-8 font-black bg-white dark:bg-slate-950 notranslate"
+              translate="no"
               defaultValue={item.quantity}
               onBlur={async (e) => {
                 const val = Number(e.target.value)
@@ -587,11 +591,13 @@ function ShortageRow({
               }}
             />
           ) : (
-            <span className="font-black text-slate-700 dark:text-slate-300">{item.quantity}</span>
+            <NoTranslate as="span" className="font-black text-slate-700 dark:text-slate-300">
+              {item.quantity}
+            </NoTranslate>
           )}
         </TableCell>
         <TableCell className="font-semibold text-slate-900 dark:text-slate-100">
-          {item.description}
+          <NoTranslate as="span">{item.description}</NoTranslate>
         </TableCell>
         <TableCell className="text-xs text-slate-600 dark:text-slate-400">
           {item.supplier || '-'}
@@ -645,10 +651,10 @@ function ShortageRow({
           </Badge>
         </TableCell>
         <TableCell className="text-xs font-medium text-slate-600 dark:text-slate-400">
-          {item.expand?.order_id?.order_number || '-'}
+          <NoTranslate as="span">{item.expand?.order_id?.order_number || '-'}</NoTranslate>
         </TableCell>
         <TableCell className="text-xs font-medium text-slate-600 dark:text-slate-400">
-          {item.expand?.order_id?.op_number || '-'}
+          <NoTranslate as="span">{item.expand?.order_id?.op_number || '-'}</NoTranslate>
         </TableCell>
         <TableCell className="text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">
           {item.expected_date ? format(parseISO(item.expected_date), 'dd/MM/yyyy') : '-'}

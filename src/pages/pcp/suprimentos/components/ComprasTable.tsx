@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/table'
 import { MaterialShortage } from '@/types'
 import { Pencil, Trash2 } from 'lucide-react'
+import { NoTranslate } from '@/components/NoTranslate'
 import { useSupplierGroups } from '@/hooks/use-supplier-groups'
 import { SupplierGroupSection } from './SupplierGroupSection'
 import { useMemo } from 'react'
@@ -61,21 +62,29 @@ function ComprasRow({
       <TableCell className="text-xs text-muted-foreground">
         {format(parseISO(item.created), 'dd/MM/yy')}
       </TableCell>
-      <TableCell className="text-xs text-muted-foreground">{item.code || '-'}</TableCell>
+      <TableCell className="text-xs text-muted-foreground">
+        <NoTranslate as="span">{item.code || '-'}</NoTranslate>
+      </TableCell>
       <TableCell className="font-medium text-sm">
         <div className="flex flex-col sm:flex-row sm:items-center gap-1.5">
-          <span>{item.description}</span>
+          <NoTranslate as="span">{item.description}</NoTranslate>
           <ConsolidatedDemandBadge consolidation={consolidation} />
         </div>
       </TableCell>
       <TableCell className="text-xs text-muted-foreground">{item.supplier || '-'}</TableCell>
-      <TableCell className="text-right text-sm font-semibold">{item.quantity}</TableCell>
-      <TableCell className="text-right text-xs text-muted-foreground">{received || '-'}</TableCell>
+      <TableCell className="text-right text-sm font-semibold">
+        <NoTranslate as="span">{item.quantity}</NoTranslate>
+      </TableCell>
+      <TableCell className="text-right text-xs text-muted-foreground">
+        <NoTranslate as="span">{received || '-'}</NoTranslate>
+      </TableCell>
       <TableCell className="text-right text-sm">
-        {item.unit_price ? formatCurrency(Number(item.unit_price)) : '-'}
+        <NoTranslate as="span">
+          {item.unit_price ? formatCurrency(Number(item.unit_price)) : '-'}
+        </NoTranslate>
       </TableCell>
       <TableCell className="text-right text-sm font-semibold">
-        {item.unit_price ? formatCurrency(total) : '-'}
+        <NoTranslate as="span">{item.unit_price ? formatCurrency(total) : '-'}</NoTranslate>
       </TableCell>
       <TableCell className="text-xs text-muted-foreground">
         {item.expected_date ? format(parseISO(item.expected_date), 'dd/MM/yy') : '-'}

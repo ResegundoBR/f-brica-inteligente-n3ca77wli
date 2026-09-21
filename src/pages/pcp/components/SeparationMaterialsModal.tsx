@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { NoTranslate } from '@/components/NoTranslate'
 import {
   Table,
   TableBody,
@@ -639,25 +640,32 @@ export function SeparationMaterialsModal({
                           >
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0 flex-1">
-                                <span className="font-mono font-bold text-primary text-sm">
+                                <NoTranslate
+                                  as="span"
+                                  className="font-mono font-bold text-primary text-sm"
+                                >
                                   {item.code || '—'}
-                                </span>
-                                <p className="font-medium text-sm leading-snug break-words text-slate-900 dark:text-slate-100">
+                                </NoTranslate>
+                                <NoTranslate
+                                  as="p"
+                                  className="font-medium text-sm leading-snug break-words text-slate-900 dark:text-slate-100"
+                                >
                                   {item.description}
-                                </p>
+                                </NoTranslate>
                                 {item.measurements && (
                                   <span className="text-[11px] text-muted-foreground">
-                                    Medida: {item.measurements}
+                                    Medida: <NoTranslate as="span">{item.measurements}</NoTranslate>
                                   </span>
                                 )}
                               </div>
                               <div className="flex flex-col items-end gap-1.5 shrink-0">
-                                <Badge
+                                <NoTranslate
+                                  as={Badge as any}
                                   variant="secondary"
                                   className="font-bold text-xs px-2 py-0.5"
                                 >
                                   {item.quantity} {item.unit || 'UN'}
-                                </Badge>
+                                </NoTranslate>
                                 {renderStatusBadges(item)}
                               </div>
                             </div>
@@ -730,20 +738,25 @@ export function SeparationMaterialsModal({
                               )}
                             >
                               <TableCell className="font-mono font-bold text-primary">
-                                {item.code || '—'}
+                                <NoTranslate as="span">{item.code || '—'}</NoTranslate>
                               </TableCell>
                               <TableCell>
-                                <div className="font-medium text-slate-900 dark:text-slate-100 text-sm">
+                                <NoTranslate
+                                  as="div"
+                                  className="font-medium text-slate-900 dark:text-slate-100 text-sm"
+                                >
                                   {item.description}
-                                </div>
+                                </NoTranslate>
                                 {item.measurements && (
                                   <span className="text-[11px] text-muted-foreground">
-                                    Medida: {item.measurements}
+                                    Medida: <NoTranslate as="span">{item.measurements}</NoTranslate>
                                   </span>
                                 )}
                               </TableCell>
                               <TableCell className="text-center font-bold text-sm">
-                                {item.quantity} {item.unit || 'UN'}
+                                <NoTranslate as="span">
+                                  {item.quantity} {item.unit || 'UN'}
+                                </NoTranslate>
                               </TableCell>
                               <TableCell className="text-center">
                                 <div className="flex flex-col items-center gap-1">

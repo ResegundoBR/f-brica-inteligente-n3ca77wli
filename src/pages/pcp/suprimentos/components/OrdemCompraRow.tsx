@@ -31,7 +31,9 @@ export function OrdemCompraRow({ oc, onStatusChange, onViewDoc }: OrdemCompraRow
 
   return (
     <TableRow className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-      <TableCell className="font-bold text-sm">{oc.oc_number}</TableCell>
+      <TableCell className="font-bold text-sm notranslate" translate="no">
+        {oc.oc_number}
+      </TableCell>
       <TableCell className="text-sm font-medium">
         <div>{oc.supplier}</div>
         {oc.expand?.user_id && (

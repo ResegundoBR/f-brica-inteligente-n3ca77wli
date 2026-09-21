@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/table'
 import { Plus, Trash2, Loader2, Link2, Sparkles } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { NoTranslate } from '@/components/NoTranslate'
 import { MaterialShortage } from '@/types'
 import { findOtherOpDemands } from '@/services/material-consolidation'
 import { toDateFieldValue } from '@/lib/pcp-utils'
@@ -244,7 +245,8 @@ export function OrdemCompraModal({
                     >
                       <TableCell>
                         <Input
-                          className="h-8 w-20"
+                          className="h-8 w-20 notranslate font-mono"
+                          translate="no"
                           value={item.code || ''}
                           onChange={(e) => updateCode(idx, e.target.value)}
                           placeholder="-"
@@ -252,7 +254,7 @@ export function OrdemCompraModal({
                       </TableCell>
                       <TableCell className="text-sm font-medium">
                         <div>
-                          <span>{item.description}</span>
+                          <NoTranslate as="span">{item.description}</NoTranslate>
                           {hasSuggestion && (
                             <div className="mt-1 flex flex-wrap items-center gap-1.5">
                               <Badge

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { NoTranslate } from '@/components/NoTranslate'
 import {
   Table,
   TableBody,
@@ -368,20 +369,27 @@ export function SeparationRoundsManager() {
                         <div className="space-y-1 max-w-[70%]">
                           <div className="flex items-center gap-2">
                             {item.code ? (
-                              <span className="font-mono font-semibold text-foreground">
+                              <NoTranslate
+                                as="span"
+                                className="font-mono font-semibold text-foreground"
+                              >
                                 {item.code}
-                              </span>
+                              </NoTranslate>
                             ) : (
                               <span className="text-muted-foreground italic">s/ código</span>
                             )}
-                            <span className="text-muted-foreground truncate">
+                            <NoTranslate as="span" className="text-muted-foreground truncate">
                               {item.description}
-                            </span>
+                            </NoTranslate>
                           </div>
                           <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                            <span>OPs: {item.op_numbers?.join(', ')}</span>
+                            <NoTranslate as="span">OPs: {item.op_numbers?.join(', ')}</NoTranslate>
                             {item.cut_measurement && (
-                              <Badge variant="outline" className="h-4 px-1 text-[9px]">
+                              <Badge
+                                variant="outline"
+                                className="h-4 px-1 text-[9px] notranslate"
+                                translate="no"
+                              >
                                 Corte: {item.cut_measurement}
                               </Badge>
                             )}
@@ -389,12 +397,12 @@ export function SeparationRoundsManager() {
                         </div>
 
                         <div className="flex items-center gap-3">
-                          <span className="font-semibold text-foreground text-xs">
+                          <NoTranslate as="span" className="font-semibold text-foreground text-xs">
                             {Number(item.total_quantity).toLocaleString('pt-BR', {
                               maximumFractionDigits: 2,
                             })}{' '}
                             {item.unit}
-                          </span>
+                          </NoTranslate>
                           {item.status === 'separado' ? (
                             <Badge className="bg-emerald-600 hover:bg-emerald-600 text-white text-[10px] gap-1">
                               <CheckCircle2 className="h-3 w-3" />

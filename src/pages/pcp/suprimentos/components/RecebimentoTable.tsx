@@ -2,6 +2,7 @@ import { format, parseISO } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { NoTranslate } from '@/components/NoTranslate'
 import {
   Table,
   TableBody,
@@ -41,25 +42,42 @@ function RecebimentoRow({
     <TableRow key={item.id}>
       <TableCell className="text-xs text-muted-foreground">
         {item.code ? (
-          <span className="font-mono text-slate-700 dark:text-slate-300 font-medium">
+          <NoTranslate
+            as="span"
+            className="font-mono text-slate-700 dark:text-slate-300 font-medium"
+          >
             {item.code}
-          </span>
+          </NoTranslate>
         ) : (
           <Input
             placeholder="Cod. opcional"
-            className="h-7 w-24 text-xs"
+            className="h-7 w-24 text-xs notranslate"
+            translate="no"
             value={codeInputs[item.id] ?? ''}
             onChange={(e) => onCodeChange(item.id, e.target.value)}
           />
         )}
       </TableCell>
-      <TableCell className="font-medium text-sm">{item.description}</TableCell>
-      <TableCell className="text-right font-semibold">{total}</TableCell>
+      <TableCell className="font-medium text-sm">
+        <NoTranslate as="span">{item.description}</NoTranslate>
+      </TableCell>
+      <TableCell className="text-right font-semibold">
+        <NoTranslate as="span">{total}</NoTranslate>
+      </TableCell>
       <TableCell className="text-right">
-        <span className={cn('font-bold', received > 0 && received < total && 'text-amber-600')}>
+        <span
+          className={cn(
+            'font-bold notranslate',
+            received > 0 && received < total && 'text-amber-600',
+          )}
+          translate="no"
+        >
           {received}
         </span>
-        <span className="text-xs text-muted-foreground"> / {total}</span>
+        <span className="text-xs text-muted-foreground notranslate" translate="no">
+          {' '}
+          / {total}
+        </span>
       </TableCell>
       <TableCell className="text-xs">{item.supplier || '-'}</TableCell>
       <TableCell className="text-xs">

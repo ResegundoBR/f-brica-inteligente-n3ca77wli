@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/table'
 import { MaterialShortage } from '@/types'
 import { NovoBadge } from '@/components/NovoBadge'
+import { NoTranslate } from '@/components/NoTranslate'
 import { useSupplierGroups } from '@/hooks/use-supplier-groups'
 import { SupplierGroupSection } from './SupplierGroupSection'
 import { useMemo } from 'react'
@@ -64,11 +65,13 @@ function CotacoesRow({
       <TableCell className="text-xs text-muted-foreground">
         {format(parseISO(item.created), 'dd/MM/yy')}
       </TableCell>
-      <TableCell className="text-xs text-muted-foreground">{item.code || '-'}</TableCell>
+      <TableCell className="text-xs text-muted-foreground">
+        <NoTranslate as="span">{item.code || '-'}</NoTranslate>
+      </TableCell>
       <TableCell className="font-medium text-sm">
         <div className="flex flex-col sm:flex-row sm:items-center gap-1.5">
           <div className="flex items-center gap-2">
-            <span>{item.description}</span>
+            <NoTranslate as="span">{item.description}</NoTranslate>
             {isNew(item.id) && <NovoBadge />}
           </div>
           <ConsolidatedDemandBadge consolidation={consolidation} />
@@ -84,12 +87,14 @@ function CotacoesRow({
         />
       </TableCell>
       <TableCell className="text-xs text-muted-foreground">
-        {item.expand?.order_id?.order_number || '-'}
+        <NoTranslate as="span">{item.expand?.order_id?.order_number || '-'}</NoTranslate>
       </TableCell>
       <TableCell className="text-xs text-muted-foreground">
-        {item.expand?.order_id?.op_number || '-'}
+        <NoTranslate as="span">{item.expand?.order_id?.op_number || '-'}</NoTranslate>
       </TableCell>
-      <TableCell className="text-right text-sm font-semibold">{item.quantity}</TableCell>
+      <TableCell className="text-right text-sm font-semibold">
+        <NoTranslate as="span">{item.quantity}</NoTranslate>
+      </TableCell>
       <TableCell>
         {item.priority && (
           <Badge variant="outline" className="text-[10px]">

@@ -11,4 +11,10 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-// Add any other utility functions here
+/** Classe CSS padrão que impede a tradução automática do navegador */
+export const NOTRANSLATE_CLASS = 'notranslate'
+
+/** Props HTML prontas para espalhar em elementos que não devem ser traduzidos */
+export const noTranslateAttrs = {
+  translate: 'no' as const,
+}

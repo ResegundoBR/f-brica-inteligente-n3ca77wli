@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { NoTranslate } from '@/components/NoTranslate'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Table,
@@ -1030,7 +1031,9 @@ function MaterialRow({
       {/* Código */}
       <TableCell className="font-mono font-medium">
         {code !== '-' ? (
-          <span className="text-blue-600 dark:text-blue-400 font-semibold">{code}</span>
+          <NoTranslate as="span" className="text-blue-600 dark:text-blue-400 font-semibold">
+            {code}
+          </NoTranslate>
         ) : (
           <span className="text-muted-foreground italic">Sem cód</span>
         )}
@@ -1039,9 +1042,12 @@ function MaterialRow({
       {/* Descrição */}
       <TableCell>
         <div className="flex flex-col">
-          <span className="font-semibold text-slate-900 dark:text-slate-100 leading-snug">
+          <NoTranslate
+            as="span"
+            className="font-semibold text-slate-900 dark:text-slate-100 leading-snug"
+          >
             {item.description}
-          </span>
+          </NoTranslate>
           <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground mt-0.5">
             {item.matchMethod === 'code' && (
               <span className="text-emerald-700 dark:text-emerald-400">✓ Vínculo por código</span>
@@ -1075,17 +1081,19 @@ function MaterialRow({
 
       {/* Total Programado */}
       <TableCell className="text-right font-mono font-bold text-sm">
-        {formatQuantity(item.totalQuantity, unit)}{' '}
-        <span className="text-xs font-normal text-muted-foreground">{unit}</span>
+        <NoTranslate as="span">
+          {formatQuantity(item.totalQuantity, unit)}{' '}
+          <span className="text-xs font-normal text-muted-foreground">{unit}</span>
+        </NoTranslate>
       </TableCell>
 
       {/* Saldo Estoque */}
       <TableCell className="text-right font-mono">
         {item.hasInventoryRecord && item.stockQuantity !== null ? (
-          <span className="font-semibold">
+          <NoTranslate as="span" className="font-semibold">
             {formatQuantity(item.stockQuantity, item.stockUnit)}{' '}
             <span className="text-xs text-muted-foreground">{item.stockUnit}</span>
-          </span>
+          </NoTranslate>
         ) : (
           <span className="text-muted-foreground italic">-</span>
         )}
@@ -1099,15 +1107,20 @@ function MaterialRow({
               <CheckCircle2 className="size-3 text-emerald-600" />
               Estoque cobre
             </Badge>
-            <span className="text-[10px] text-emerald-700 dark:text-emerald-400 mt-0.5">
+            <NoTranslate
+              as="span"
+              className="text-[10px] text-emerald-700 dark:text-emerald-400 mt-0.5"
+            >
               Sobra: +{formatQuantity(item.surplusQuantity, unit)} {unit}
-            </span>
+            </NoTranslate>
           </div>
         ) : item.status === 'shortage' ? (
           <div className="inline-flex flex-col items-center">
             <Badge className="bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border-rose-300 font-bold gap-1 py-0.5 px-2">
               <AlertTriangle className="size-3 text-rose-600" />
-              Falta: {formatQuantity(item.missingQuantity, unit)} {unit}
+              <NoTranslate as="span">
+                Falta: {formatQuantity(item.missingQuantity, unit)} {unit}
+              </NoTranslate>
             </Badge>
             <span className="text-[10px] text-rose-700 dark:text-rose-400 font-medium mt-0.5">
               Necessário comprar
@@ -1226,19 +1239,36 @@ function PrintableView({
                     item.status === 'shortage' ? 'bg-red-50' : ''
                   }`}
                 >
-                  <td className="border-r border-black p-1 font-mono font-bold">
+                  <td
+                    className="border-r border-black p-1 font-mono font-bold notranslate"
+                    translate="no"
+                  >
                     {item.code || '-'}
                   </td>
-                  <td className="border-r border-black p-1 font-semibold">{item.description}</td>
-                  <td className="border-r border-black p-1 text-right font-mono font-bold">
+                  <td
+                    className="border-r border-black p-1 font-semibold notranslate"
+                    translate="no"
+                  >
+                    {item.description}
+                  </td>
+                  <td
+                    className="border-r border-black p-1 text-right font-mono font-bold notranslate"
+                    translate="no"
+                  >
                     {formatQuantity(item.totalQuantity, item.unit)} {item.unit}
                   </td>
-                  <td className="border-r border-black p-1 text-right font-mono">
+                  <td
+                    className="border-r border-black p-1 text-right font-mono notranslate"
+                    translate="no"
+                  >
                     {item.hasInventoryRecord && item.stockQuantity !== null
                       ? `${formatQuantity(item.stockQuantity, item.stockUnit)} ${item.stockUnit}`
                       : '-'}
                   </td>
-                  <td className="border-r border-black p-1 text-center font-bold">
+                  <td
+                    className="border-r border-black p-1 text-center font-bold notranslate"
+                    translate="no"
+                  >
                     {item.status === 'covered' && (
                       <span className="text-green-700">
                         COBRE (+{formatQuantity(item.surplusQuantity, item.unit)} {item.unit})
@@ -1253,7 +1283,7 @@ function PrintableView({
                       <span className="text-gray-600 font-normal">S/ CAD. — CONFIRMAR</span>
                     )}
                   </td>
-                  <td className="border-r border-black p-1 text-[10px]">
+                  <td className="border-r border-black p-1 text-[10px] notranslate" translate="no">
                     {item.orderNumbers.join(', ')}
                   </td>
                   <td className="p-1 text-center border-black">
@@ -1291,19 +1321,36 @@ function PrintableView({
                     item.status === 'shortage' ? 'bg-red-50' : ''
                   }`}
                 >
-                  <td className="border-r border-black p-1 font-mono font-bold">
+                  <td
+                    className="border-r border-black p-1 font-mono font-bold notranslate"
+                    translate="no"
+                  >
                     {item.code || '-'}
                   </td>
-                  <td className="border-r border-black p-1 font-semibold">{item.description}</td>
-                  <td className="border-r border-black p-1 text-right font-mono font-bold">
+                  <td
+                    className="border-r border-black p-1 font-semibold notranslate"
+                    translate="no"
+                  >
+                    {item.description}
+                  </td>
+                  <td
+                    className="border-r border-black p-1 text-right font-mono font-bold notranslate"
+                    translate="no"
+                  >
                     {formatQuantity(item.totalQuantity, item.unit)} {item.unit}
                   </td>
-                  <td className="border-r border-black p-1 text-right font-mono">
+                  <td
+                    className="border-r border-black p-1 text-right font-mono notranslate"
+                    translate="no"
+                  >
                     {item.hasInventoryRecord && item.stockQuantity !== null
                       ? `${formatQuantity(item.stockQuantity, item.stockUnit)} ${item.stockUnit}`
                       : '-'}
                   </td>
-                  <td className="border-r border-black p-1 text-center font-bold">
+                  <td
+                    className="border-r border-black p-1 text-center font-bold notranslate"
+                    translate="no"
+                  >
                     {item.status === 'covered' && (
                       <span className="text-green-700">
                         COBRE (+{formatQuantity(item.surplusQuantity, item.unit)} {item.unit})
@@ -1318,7 +1365,7 @@ function PrintableView({
                       <span className="text-gray-600 font-normal">S/ CAD. — CONFIRMAR</span>
                     )}
                   </td>{' '}
-                  <td className="border-r border-black p-1 text-[10px]">
+                  <td className="border-r border-black p-1 text-[10px] notranslate" translate="no">
                     {item.orderNumbers.join(', ')}
                   </td>
                   <td className="p-1 text-center border-black">

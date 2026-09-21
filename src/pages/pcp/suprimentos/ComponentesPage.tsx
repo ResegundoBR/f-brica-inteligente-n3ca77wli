@@ -25,6 +25,7 @@ import { ComponentCategoriesDialog } from './components/ComponentCategoriesDialo
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { NoTranslate } from '@/components/NoTranslate'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -912,7 +913,8 @@ export default function ComponentesPage() {
 
                       {/* Código */}
                       <TableCell className="font-mono text-xs font-semibold">
-                        <span
+                        <NoTranslate
+                          as="span"
                           className={cn(
                             code.startsWith('REF-')
                               ? 'text-amber-600 dark:text-amber-400'
@@ -922,12 +924,13 @@ export default function ComponentesPage() {
                           )}
                         >
                           {code}
-                        </span>
+                        </NoTranslate>
                       </TableCell>
 
                       {/* Descrição */}
                       <TableCell className="text-xs">
-                        <p
+                        <NoTranslate
+                          as="p"
                           className={cn(
                             'font-medium text-slate-900 dark:text-slate-100 leading-snug',
                             isInactive && 'line-through text-slate-500',
@@ -935,7 +938,7 @@ export default function ComponentesPage() {
                           title={item.description}
                         >
                           {item.description}
-                        </p>
+                        </NoTranslate>
                       </TableCell>
 
                       {/* Categoria */}
@@ -959,7 +962,7 @@ export default function ComponentesPage() {
 
                       {/* Unidade */}
                       <TableCell className="text-center text-xs uppercase text-muted-foreground">
-                        {item.unit || 'un'}
+                        <NoTranslate as="span">{item.unit || 'un'}</NoTranslate>
                       </TableCell>
 
                       {/* Origem */}
@@ -986,11 +989,16 @@ export default function ComponentesPage() {
                       <TableCell className="text-right text-xs">
                         {hasStock ? (
                           (item.stockQuantity || 0) > 0 ? (
-                            <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                            <NoTranslate
+                              as="span"
+                              className="font-bold text-emerald-600 dark:text-emerald-400"
+                            >
                               {item.stockQuantity} {item.unit}
-                            </span>
+                            </NoTranslate>
                           ) : (
-                            <span className="text-muted-foreground">0 {item.unit}</span>
+                            <NoTranslate as="span" className="text-muted-foreground">
+                              0 {item.unit}
+                            </NoTranslate>
                           )
                         ) : (
                           <span

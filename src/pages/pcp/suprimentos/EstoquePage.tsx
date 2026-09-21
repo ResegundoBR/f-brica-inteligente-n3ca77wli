@@ -29,6 +29,7 @@ import { ProductDossierModal } from './components/ProductDossierModal'
 import { ProductSearchBar } from './components/ProductSearchBar'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
+import { NoTranslate } from '@/components/NoTranslate'
 import { getInventory, createInventoryItem } from '@/services/inventory'
 import { getActiveReservationsMap, normalizeCode } from '@/services/material-reservations'
 
@@ -267,25 +268,34 @@ export default function EstoquePage() {
                     onClick={() => setSelectedItemId(item.id)}
                   >
                     <TableCell className="text-xs font-medium text-slate-500 font-mono">
-                      {item.code}
+                      <NoTranslate as="span">{item.code}</NoTranslate>
                     </TableCell>
-                    <TableCell className="font-medium text-sm">{item.description}</TableCell>
+                    <TableCell className="font-medium text-sm">
+                      <NoTranslate as="span">{item.description}</NoTranslate>
+                    </TableCell>
                     <TableCell className="text-right">
-                      <span className="font-semibold text-slate-800 dark:text-slate-200">
+                      <NoTranslate
+                        as="span"
+                        className="font-semibold text-slate-800 dark:text-slate-200"
+                      >
                         {totalStock}
-                      </span>
+                      </NoTranslate>
                     </TableCell>
                     <TableCell className="text-right">
                       {reservedStock > 0 ? (
-                        <span className="font-bold text-amber-600 dark:text-amber-400">
+                        <NoTranslate
+                          as="span"
+                          className="font-bold text-amber-600 dark:text-amber-400"
+                        >
                           {reservedStock}
-                        </span>
+                        </NoTranslate>
                       ) : (
                         <span className="text-muted-foreground text-xs">0</span>
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      <span
+                      <NoTranslate
+                        as="span"
                         className={cn(
                           'font-bold',
                           availableStock === 0
@@ -296,12 +306,14 @@ export default function EstoquePage() {
                         )}
                       >
                         {availableStock}
-                      </span>
+                      </NoTranslate>
                     </TableCell>
                     <TableCell className="text-right text-sm text-muted-foreground">
-                      {item.min_quantity || 0}
+                      <NoTranslate as="span">{item.min_quantity || 0}</NoTranslate>
                     </TableCell>
-                    <TableCell className="text-xs">{item.unit || '-'}</TableCell>
+                    <TableCell className="text-xs">
+                      <NoTranslate as="span">{item.unit || '-'}</NoTranslate>
+                    </TableCell>
                     <TableCell className="text-center">
                       {availableStock === 0 ? (
                         <Badge variant="destructive" className="text-[10px]">

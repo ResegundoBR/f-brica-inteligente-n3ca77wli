@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { NoTranslate } from '@/components/NoTranslate'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -851,17 +852,24 @@ export function OpPdfReviewModal({
                           {row.pdfItem ? (
                             <div className="space-y-1">
                               <div className="flex items-center gap-2">
-                                <span className="font-mono font-bold text-primary text-xs">
+                                <NoTranslate
+                                  as="span"
+                                  className="font-mono font-bold text-primary text-xs"
+                                >
                                   {row.pdfItem.code || 'S/Cód'}
-                                </span>
+                                </NoTranslate>
                                 <Badge
                                   variant="secondary"
-                                  className="text-[10px] px-1.5 py-0 font-bold"
+                                  className="text-[10px] px-1.5 py-0 font-bold notranslate"
+                                  translate="no"
                                 >
                                   Total OP: {row.pdfItem.quantity} {row.pdfItem.unit || 'UN'}
                                 </Badge>
                               </div>
-                              <p className="font-medium text-slate-900 dark:text-slate-100 text-xs">
+                              <p
+                                className="font-medium text-slate-900 dark:text-slate-100 text-xs notranslate"
+                                translate="no"
+                              >
                                 {row.pdfItem.description}
                               </p>
                             </div>
@@ -996,22 +1004,30 @@ export function OpPdfReviewModal({
                           {row.catalogItem ? (
                             <div className="space-y-1">
                               <div className="flex items-center gap-2">
-                                <span className="font-mono font-semibold text-xs">
+                                <NoTranslate as="span" className="font-mono font-semibold text-xs">
                                   {row.catalogItem.code || 'S/Cód'}
-                                </span>
-                                <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                                </NoTranslate>
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] px-1.5 py-0 notranslate"
+                                  translate="no"
+                                >
                                   {row.catalogItem.quantity}{' '}
                                   {row.catalogItem.measurements
                                     ? `(${row.catalogItem.measurements})`
                                     : ''}
                                 </Badge>
                               </div>
-                              <p className="text-slate-700 dark:text-slate-300 text-xs">
+                              <p
+                                className="text-slate-700 dark:text-slate-300 text-xs notranslate"
+                                translate="no"
+                              >
                                 {row.catalogItem.description}
                               </p>
                               {row.catalogItem.etapa && (
                                 <span className="text-[10px] text-muted-foreground block">
-                                  Etapa: {row.catalogItem.etapa}
+                                  Etapa:{' '}
+                                  <NoTranslate as="span">{row.catalogItem.etapa}</NoTranslate>
                                 </span>
                               )}
                             </div>

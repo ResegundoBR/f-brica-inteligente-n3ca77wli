@@ -59,7 +59,7 @@ export function OrdemCompraDocument({ oc, items, open, onOpenChange }: OrdemComp
       })
       .join('')
 
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>OC ${formatOcNumber(oc.oc_number)}</title>
+    const html = `<!DOCTYPE html><html lang="pt-BR" translate="no" class="notranslate"><head><meta charset="utf-8"><meta name="google" content="notranslate"><title>OC ${formatOcNumber(oc.oc_number)}</title>
     <style>
       body{font-family:Arial,sans-serif;padding:40px;color:#1a1a1a;}
       .header{display:flex;align-items:center;gap:20px;border-bottom:3px solid #0d1b4a;padding-bottom:16px;margin-bottom:20px;}
@@ -187,19 +187,34 @@ export function OrdemCompraDocument({ oc, items, open, onOpenChange }: OrdemComp
                 const itTotal = it.total ?? (it.quantity || 0) * (it.unit_price || 0) + st + ipi
                 return (
                   <tr key={it.id} className="border-b">
-                    <td className="py-2 text-sm">{it.code || '-'}</td>
-                    <td className="py-2 text-sm">{it.description}</td>
-                    <td className="text-right py-2 text-sm">{it.quantity}</td>
-                    <td className="text-right py-2 text-sm">
+                    <td className="py-2 text-sm font-mono notranslate" translate="no">
+                      {it.code || '-'}
+                    </td>
+                    <td className="py-2 text-sm notranslate" translate="no">
+                      {it.description}
+                    </td>
+                    <td className="text-right py-2 text-sm notranslate" translate="no">
+                      {it.quantity}
+                    </td>
+                    <td className="text-right py-2 text-sm notranslate" translate="no">
                       {formatCurrency(it.unit_price || 0)}
                     </td>
-                    <td className="text-right py-2 text-sm text-muted-foreground">
+                    <td
+                      className="text-right py-2 text-sm text-muted-foreground notranslate"
+                      translate="no"
+                    >
                       {st > 0 ? formatCurrency(st) : '-'}
                     </td>
-                    <td className="text-right py-2 text-sm text-muted-foreground">
+                    <td
+                      className="text-right py-2 text-sm text-muted-foreground notranslate"
+                      translate="no"
+                    >
                       {ipi > 0 ? formatCurrency(ipi) : '-'}
                     </td>
-                    <td className="text-right py-2 text-sm font-semibold">
+                    <td
+                      className="text-right py-2 text-sm font-semibold notranslate"
+                      translate="no"
+                    >
                       {formatCurrency(itTotal)}
                     </td>
                   </tr>

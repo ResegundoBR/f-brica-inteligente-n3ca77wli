@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import { NoTranslate } from '@/components/NoTranslate'
 import {
   Select,
   SelectContent,
@@ -114,34 +115,39 @@ export function InventoryItemDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[1000px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{item.description}</DialogTitle>
+          <DialogTitle>
+            <NoTranslate as="span">{item.description}</NoTranslate>
+          </DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
             <div className="bg-slate-50 dark:bg-slate-800/50 p-2 rounded border">
               <span className="text-[10px] uppercase font-bold text-slate-500 block">Código</span>
-              <span className="font-semibold text-sm">{item.code}</span>
+              <NoTranslate as="span" className="font-semibold text-sm">
+                {item.code}
+              </NoTranslate>
             </div>
             <div className="bg-slate-50 dark:bg-slate-800/50 p-2 rounded border">
               <span className="text-[10px] uppercase font-bold text-slate-500 block">
                 Saldo Atual
               </span>
-              <span
+              <NoTranslate
+                as="span"
                 className={cn(
                   'font-bold text-sm',
                   isLow ? 'text-red-600' : 'text-slate-800 dark:text-slate-200',
                 )}
               >
                 {item.quantity} {item.unit}
-              </span>
+              </NoTranslate>
             </div>
             <div className="bg-slate-50 dark:bg-slate-800/50 p-2 rounded border">
               <span className="text-[10px] uppercase font-bold text-slate-500 block">
                 Estoque Mín.
               </span>
-              <span className="font-semibold text-sm">
+              <NoTranslate as="span" className="font-semibold text-sm">
                 {item.min_quantity || 0} {item.unit}
-              </span>
+              </NoTranslate>
             </div>
             <div className="bg-slate-50 dark:bg-slate-800/50 p-2 rounded border">
               <span className="text-[10px] uppercase font-bold text-slate-500 block">Status</span>

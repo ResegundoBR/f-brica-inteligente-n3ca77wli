@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { NoTranslate } from '@/components/NoTranslate'
 import {
   Dialog,
   DialogContent,
@@ -708,9 +709,12 @@ export function OperatorSeparationTab() {
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5">
                         {item.code ? (
-                          <span className="font-mono font-bold text-xs px-2 py-0.5 rounded bg-muted text-foreground border">
+                          <NoTranslate
+                            as="span"
+                            className="font-mono font-bold text-xs px-2 py-0.5 rounded bg-muted text-foreground border"
+                          >
                             {item.code}
-                          </span>
+                          </NoTranslate>
                         ) : (
                           <span className="text-[11px] text-muted-foreground italic">
                             s/ código
@@ -737,19 +741,24 @@ export function OperatorSeparationTab() {
                     </div>
 
                     {/* Descrição em destaque */}
-                    <div className="font-bold text-sm text-foreground leading-snug break-words">
+                    <NoTranslate
+                      as="div"
+                      className="font-bold text-sm text-foreground leading-snug break-words"
+                    >
                       {item.description}
-                    </div>
+                    </NoTranslate>
 
                     {/* Qtd, OPs e Medida empilhados de forma limpa */}
                     <div className="space-y-1 text-xs">
                       <div className="flex items-center justify-between gap-2 pt-0.5">
                         <span className="text-muted-foreground text-[11px]">Quantidade:</span>
                         <span className="font-bold text-foreground text-xs bg-muted px-2 py-0.5 rounded">
-                          {Number(item.total_quantity).toLocaleString('pt-BR', {
-                            maximumFractionDigits: 2,
-                          })}{' '}
-                          {item.unit}
+                          <NoTranslate as="span">
+                            {Number(item.total_quantity).toLocaleString('pt-BR', {
+                              maximumFractionDigits: 2,
+                            })}{' '}
+                            {item.unit}
+                          </NoTranslate>
                         </span>
                       </div>
 
@@ -766,11 +775,12 @@ export function OperatorSeparationTab() {
                             <div className="flex items-center gap-1.5">
                               <Badge
                                 variant={isInsufficient ? 'destructive' : 'secondary'}
-                                className={`h-5 px-2 text-[10px] font-mono font-bold ${
+                                className={`h-5 px-2 text-[10px] font-mono font-bold notranslate ${
                                   isInsufficient
                                     ? 'bg-rose-600 text-white animate-pulse'
                                     : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 border-emerald-300'
                                 }`}
+                                translate="no"
                               >
                                 {available} {stockInfo?.unit || item.unit || 'UN'}
                               </Badge>
@@ -786,9 +796,12 @@ export function OperatorSeparationTab() {
 
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-muted-foreground text-[11px]">OPs:</span>
-                        <span className="font-mono font-medium text-foreground text-[11px] truncate max-w-[200px] text-right">
+                        <NoTranslate
+                          as="span"
+                          className="font-mono font-medium text-foreground text-[11px] truncate max-w-[200px] text-right"
+                        >
                           {item.op_numbers?.join(', ') || 'N/A'}
-                        </span>
+                        </NoTranslate>
                       </div>
 
                       {item.cut_measurement && (
@@ -796,7 +809,8 @@ export function OperatorSeparationTab() {
                           <span className="text-muted-foreground text-[11px]">Medida corte:</span>
                           <Badge
                             variant="secondary"
-                            className="h-5 px-1.5 text-[10px] font-mono text-foreground"
+                            className="h-5 px-1.5 text-[10px] font-mono text-foreground notranslate"
+                            translate="no"
                           >
                             {item.cut_measurement}
                           </Badge>
@@ -1046,40 +1060,53 @@ export function OperatorSeparationTab() {
                           <div className="space-y-1 flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               {item.code ? (
-                                <span className="font-mono font-bold text-xs px-2 py-0.5 rounded bg-muted text-foreground">
+                                <NoTranslate
+                                  as="span"
+                                  className="font-mono font-bold text-xs px-2 py-0.5 rounded bg-muted text-foreground"
+                                >
                                   {item.code}
-                                </span>
+                                </NoTranslate>
                               ) : (
                                 <span className="text-xs text-muted-foreground italic">
                                   s/ código
                                 </span>
                               )}
-                              <span className="font-semibold text-sm text-foreground break-words">
+                              <NoTranslate
+                                as="span"
+                                className="font-semibold text-sm text-foreground break-words"
+                              >
                                 {item.description}
-                              </span>
+                              </NoTranslate>
                             </div>
 
                             <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-                              <span className="flex items-center gap-1 font-mono font-semibold text-foreground">
+                              <NoTranslate
+                                as="span"
+                                className="flex items-center gap-1 font-mono font-semibold text-foreground"
+                              >
                                 OPs: {item.op_numbers?.join(', ') || 'N/A'}
-                              </span>
+                              </NoTranslate>
 
                               {item.cut_measurement && (
                                 <Badge
                                   variant="secondary"
-                                  className="h-5 px-1.5 text-[10px] font-mono"
+                                  className="h-5 px-1.5 text-[10px] font-mono notranslate"
+                                  translate="no"
                                 >
                                   Medida de corte: {item.cut_measurement}
                                 </Badge>
                               )}
 
-                              <span className="font-semibold text-foreground bg-muted/80 px-2 py-0.5 rounded text-xs">
+                              <NoTranslate
+                                as="span"
+                                className="font-semibold text-foreground bg-muted/80 px-2 py-0.5 rounded text-xs"
+                              >
                                 Qtd:{' '}
                                 {Number(item.total_quantity).toLocaleString('pt-BR', {
                                   maximumFractionDigits: 2,
                                 })}{' '}
                                 {item.unit}
-                              </span>
+                              </NoTranslate>
 
                               {/* BADGE DE DISPONIBILIDADE (Desktop) */}
                               {(() => {
@@ -1092,11 +1119,12 @@ export function OperatorSeparationTab() {
                                   <div className="flex items-center gap-1.5">
                                     <Badge
                                       variant={isInsufficient ? 'destructive' : 'secondary'}
-                                      className={`h-5 px-2 text-[10px] font-mono font-bold ${
+                                      className={`h-5 px-2 text-[10px] font-mono font-bold notranslate ${
                                         isInsufficient
                                           ? 'bg-rose-600 text-white animate-pulse'
                                           : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 border-emerald-300'
                                       }`}
+                                      translate="no"
                                       title={`Estoque total: ${stockInfo?.totalStock ?? 0} | Reservado: ${stockInfo?.reservedStock ?? 0} | Disponível: ${available}`}
                                     >
                                       Disponível: {available} {stockInfo?.unit || item.unit || 'UN'}

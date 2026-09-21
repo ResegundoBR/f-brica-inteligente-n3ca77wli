@@ -1,4 +1,5 @@
 import { Badge } from '@/components/ui/badge'
+import { NoTranslate } from '@/components/NoTranslate'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Table,
@@ -81,14 +82,18 @@ export function TriageTable({ items, allShortages, onRowClick }: TriageTableProp
                 <TableCell className="text-xs text-muted-foreground">
                   {format(parseISO(item.created), 'dd/MM/yy')}
                 </TableCell>
-                <TableCell className="text-xs text-muted-foreground">{item.code || '-'}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  <NoTranslate as="span">{item.code || '-'}</NoTranslate>
+                </TableCell>
                 <TableCell className="font-medium text-sm">
                   <div className="flex flex-col sm:flex-row sm:items-center gap-1.5">
-                    <span>{item.description}</span>
+                    <NoTranslate as="span">{item.description}</NoTranslate>
                     <ConsolidatedDemandBadge consolidation={consolidationsMap.get(item.id)} />
                   </div>
                 </TableCell>
-                <TableCell className="text-right text-sm font-semibold">{item.quantity}</TableCell>
+                <TableCell className="text-right text-sm font-semibold">
+                  <NoTranslate as="span">{item.quantity}</NoTranslate>
+                </TableCell>
                 <TableCell className="text-xs">{item.sector || '-'}</TableCell>
                 <TableCell className="text-xs">
                   {item.priority && (
@@ -114,10 +119,10 @@ export function TriageTable({ items, allShortages, onRowClick }: TriageTableProp
                   />
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">
-                  {item.expand?.order_id?.order_number || '-'}
+                  <NoTranslate as="span">{item.expand?.order_id?.order_number || '-'}</NoTranslate>
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">
-                  {item.expand?.order_id?.op_number || '-'}
+                  <NoTranslate as="span">{item.expand?.order_id?.op_number || '-'}</NoTranslate>
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">
                   {item.expected_date ? format(parseISO(item.expected_date), 'dd/MM/yy') : ''}

@@ -209,7 +209,8 @@ export function EditInventoryItemDialog({
               value={code}
               onChange={(e) => setCode(e.target.value)}
               placeholder="Ex: 05100188"
-              className="h-9 font-mono text-xs sm:text-sm"
+              className="h-9 font-mono text-xs sm:text-sm notranslate"
+              translate="no"
               disabled={isSaving}
             />
           </div>
@@ -224,7 +225,8 @@ export function EditInventoryItemDialog({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Descrição completa do material"
-              className="h-9 text-xs sm:text-sm"
+              className="h-9 text-xs sm:text-sm notranslate"
+              translate="no"
               disabled={isSaving}
               required
             />

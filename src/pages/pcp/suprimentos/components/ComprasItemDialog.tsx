@@ -27,6 +27,7 @@ import { useMemo } from 'react'
 import { findOtherOpDemands } from '@/services/material-consolidation'
 import { ConsolidatedDemandBlock } from './ConsolidatedDemandBlock'
 import { toDateFieldValue } from '@/lib/pcp-utils'
+import { NoTranslate } from '@/components/NoTranslate'
 
 interface ComprasItemDialogProps {
   item: MaterialShortage | null
@@ -148,14 +149,26 @@ export function ComprasItemDialog({
         {item && (
           <div className="space-y-4">
             <div className="text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">{item.description}</span>
-              {item.code && <span className="ml-2">— Código: {item.code}</span>}
-              <span className="ml-2">— Qtde: {itemQuantity || item.quantity}</span>
+              <NoTranslate as="span" className="font-medium text-foreground">
+                {item.description}
+              </NoTranslate>
+              {item.code && (
+                <span className="ml-2">
+                  — Código: <NoTranslate as="span">{item.code}</NoTranslate>
+                </span>
+              )}
+              <span className="ml-2">
+                — Qtde: <NoTranslate as="span">{itemQuantity || item.quantity}</NoTranslate>
+              </span>
               {item.expand?.order_id?.order_number && (
-                <span className="ml-2">— Pedido: {item.expand.order_id.order_number}</span>
+                <span className="ml-2">
+                  — Pedido: <NoTranslate as="span">{item.expand.order_id.order_number}</NoTranslate>
+                </span>
               )}
               {item.expand?.order_id?.op_number && (
-                <span className="ml-2">— OP: {item.expand.order_id.op_number}</span>
+                <span className="ml-2">
+                  — OP: <NoTranslate as="span">{item.expand.order_id.op_number}</NoTranslate>
+                </span>
               )}
             </div>
 

@@ -1,20 +1,10 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Calendar,
-  Layers,
-  Lock,
-  Eye,
-  CheckCircle2,
-  Clock,
-  Sparkles,
-  ArrowRight,
-  ChevronDown,
-  ChevronUp,
-} from 'lucide-react'
+import { Calendar, Layers, Lock, Eye, ChevronDown, ChevronUp } from 'lucide-react'
 import { PcpProgramacaoRecord } from '@/services/pcp-programacoes'
+import { NoTranslate } from '@/components/NoTranslate'
 
 interface ProgramacaoVigenteCardProps {
   programacoesEmProducao: PcpProgramacaoRecord[]
@@ -28,6 +18,38 @@ export function ProgramacaoVigenteCard({
   onCloseProgramacao,
 }: ProgramacaoVigenteCardProps) {
   const [showOtherCards, setShowOtherCards] = useState(false)
+
+  // A vigente é a mais recente em produção
+  const vigente = programacoesEmProducao[0]
+  const outrasEmProducao = programacoesEmProducao.slice(1)
+
+  const vigenteSeparation = vigente?.expand?.separation_id
+  const vigenteOrdersList = Array.isArray(vigente?.orders_list) ? vigente.orders_list : []
+
+  // Agrupamento de pedidos únicos para exibição consistente
+  const uniqueVigenteOrders = useMemo(() => {
+    const map = new Map<string, { order_number: string; client_name: string; opCount: number }>()
+    vigenteOrdersList.forEach((o) => {
+      const key = (o.order_number || 'Sem Pedido').trim().toUpperCase()
+      const existing = map.get(key)
+      if (!existing) {
+        map.set(key, {
+          order_number: o.order_number || 'Sem Pedido',
+          client_name: o.client_name || '',
+          opCount: 1,
+        })
+      } else {
+        existing.opCount += 1
+        if (!existing.client_name && o.client_name) {
+          existing.client_name = o.client_name
+        }
+      }
+    })
+    return Array.from(map.values())
+  }, [vigenteOrdersList])
+
+  const vigenteOrdersCount = uniqueVigenteOrders.length || vigente?.orders_count || 0
+  const vigenteOpsCount = vigenteOrdersList.length || vigente?.ops_count || 0
 
   if (programacoesEmProducao.length === 0) {
     return (
@@ -51,13 +73,6 @@ export function ProgramacaoVigenteCard({
       </Card>
     )
   }
-
-  // A vigente é a mais recente em produção
-  const vigente = programacoesEmProducao[0]
-  const outrasEmProducao = programacoesEmProducao.slice(1)
-
-  const vigenteSeparation = vigente.expand?.separation_id
-  const vigenteOrdersList = Array.isArray(vigente.orders_list) ? vigente.orders_list : []
 
   return (
     <div className="space-y-3">
@@ -100,11 +115,15 @@ export function ProgramacaoVigenteCard({
               </CardTitle>
               <CardDescription className="text-xs text-muted-foreground flex items-center gap-2 flex-wrap">
                 <span>
-                  <strong>{vigente.orders_count || vigenteOrdersList.length} pedidos</strong>
+                  <strong>
+                    {vigenteOrdersCount} {vigenteOrdersCount === 1 ? 'pedido' : 'pedidos'}
+                  </strong>
                 </span>
                 <span>•</span>
                 <span>
-                  <strong>{vigente.ops_count || vigenteOrdersList.length} OPs</strong>
+                  <strong>
+                    {vigenteOpsCount} OP{vigenteOpsCount !== 1 ? 's' : ''}
+                  </strong>
                 </span>
                 <span>•</span>
                 <span>
@@ -145,23 +164,27 @@ export function ProgramacaoVigenteCard({
           </div>
 
           {/* PRÉVIA RÁPIDA DOS PEDIDOS DA VIGENTE */}
-          {vigenteOrdersList.length > 0 && (
+          {uniqueVigenteOrders.length > 0 && (
             <div className="pt-2 border-t text-xs text-muted-foreground flex items-center gap-2 overflow-x-auto whitespace-nowrap">
               <span className="font-semibold text-foreground shrink-0">Pedidos nesta rodada:</span>
               <div className="flex items-center gap-1.5">
-                {vigenteOrdersList.slice(0, 4).map((ord, idx) => (
+                {uniqueVigenteOrders.slice(0, 4).map((ord, idx) => (
                   <Badge
                     key={idx}
                     variant="secondary"
                     className="text-[11px] font-mono px-2 py-0.5 max-w-[280px] truncate"
-                    title={ord.formatted_label}
+                    title={`Pedido ${ord.order_number}${ord.client_name ? ` · ${ord.client_name}` : ''} (${ord.opCount} OPs)`}
                   >
-                    {ord.order_number} ({ord.client_name})
+                    <NoTranslate>
+                      {ord.order_number}
+                      {ord.client_name ? ` (${ord.client_name})` : ''}
+                      {ord.opCount > 1 ? ` [${ord.opCount} OPs]` : ''}
+                    </NoTranslate>
                   </Badge>
                 ))}
-                {vigenteOrdersList.length > 4 && (
+                {uniqueVigenteOrders.length > 4 && (
                   <Badge variant="outline" className="text-[10px]">
-                    +{vigenteOrdersList.length - 4} pedidos
+                    +{uniqueVigenteOrders.length - 4} pedidos
                   </Badge>
                 )}
               </div>
@@ -211,8 +234,11 @@ export function ProgramacaoVigenteCard({
                             {prog.name}
                           </CardTitle>
                           <CardDescription className="text-[11px]">
-                            {prog.orders_count || ordList.length} pedidos • {prog.items_count || 0}{' '}
-                            itens
+                            {prog.orders_count ||
+                              new Set(ordList.map((o) => o.order_number).filter(Boolean)).size ||
+                              ordList.length}{' '}
+                            pedidos • {ordList.length || prog.ops_count || 0} OPs •{' '}
+                            {prog.items_count || 0} itens
                           </CardDescription>
                         </div>
                         <Badge className="bg-emerald-600 text-white text-[10px]">Em produção</Badge>

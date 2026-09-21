@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -16,19 +16,30 @@ import {
   Package,
   AlertTriangle,
   ChevronRight,
+  ChevronDown,
   Lock,
   Search,
   ArrowUpDown,
   X,
+  Layers,
+  ExternalLink,
 } from 'lucide-react'
-import { PcpProgramacaoRecord } from '@/services/pcp-programacoes'
+import { PcpProgramacaoRecord, ProgramacaoOrderItem } from '@/services/pcp-programacoes'
 import { NoTranslate } from '@/components/NoTranslate'
+import { OpReadOnlyModal } from './OpReadOnlyModal'
 
 interface ProgramacaoDetailModalProps {
   programacao: PcpProgramacaoRecord | null
   open: boolean
   onOpenChange: (open: boolean) => void
   onCloseProgramacao?: (prog: PcpProgramacaoRecord) => void
+}
+
+export interface GroupedProgramacaoOrder {
+  order_number: string
+  client_name: string
+  total_quantity: number
+  ops: ProgramacaoOrderItem[]
 }
 
 export function ProgramacaoDetailModal({
@@ -41,59 +52,114 @@ export function ProgramacaoDetailModal({
   const [orderSearch, setOrderSearch] = useState('')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
   const [componentSearch, setComponentSearch] = useState('')
+  const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>({})
+  const [selectedOpForModal, setSelectedOpForModal] = useState<string | null>(null)
+  const [opModalOpen, setOpModalOpen] = useState(false)
+
+  // Resetar busca e expansão ao trocar de programação
+  useEffect(() => {
+    setOrderSearch('')
+    setExpandedOrders({})
+    setComponentsExpanded(false)
+  }, [programacao?.id])
 
   const isClosed = programacao?.status === 'Encerrada'
   const separation = programacao?.expand?.separation_id
   const compiledItems = Array.isArray(programacao?.compiled_items) ? programacao.compiled_items : []
-  const ordersList = Array.isArray(programacao?.orders_list) ? programacao.orders_list : []
+  const ordersList: ProgramacaoOrderItem[] = Array.isArray(programacao?.orders_list)
+    ? programacao.orders_list
+    : []
 
   // Total de itens consolidados
   const totalItemsCount = compiledItems.length || programacao?.items_count || 0
 
-  // Cálculo de pedidos e OPs reais
-  const uniqueOrdersCount = useMemo(() => {
-    if (!programacao) return 0
-    const orders = new Set(ordersList.map((o) => o.order_number).filter(Boolean))
-    return orders.size || programacao.orders_count || ordersList.length
+  // Agrupamento de itens por PEDIDO
+  const groupedOrders: GroupedProgramacaoOrder[] = useMemo(() => {
+    const groupsMap = new Map<string, GroupedProgramacaoOrder>()
+
+    ordersList.forEach((item) => {
+      const orderNum = (item.order_number || 'Sem Pedido').trim()
+      const key = orderNum.toUpperCase()
+
+      let existing = groupsMap.get(key)
+      if (!existing) {
+        existing = {
+          order_number: item.order_number || 'Sem Pedido',
+          client_name: item.client_name || 'Cliente não informado',
+          total_quantity: 0,
+          ops: [],
+        }
+        groupsMap.set(key, existing)
+      } else {
+        // Atualiza cliente se o item atual tiver um nome mais completo
+        if (
+          (!existing.client_name || existing.client_name === 'Cliente não informado') &&
+          item.client_name
+        ) {
+          existing.client_name = item.client_name
+        }
+      }
+
+      existing.total_quantity += Number(item.quantity || 0)
+      existing.ops.push(item)
+    })
+
+    return Array.from(groupsMap.values())
+  }, [ordersList])
+
+  // Contadores globais corretos
+  const totalUniqueOrders = groupedOrders.length || programacao?.orders_count || 0
+  const totalOpsCount = useMemo(() => {
+    if (ordersList.length > 0) return ordersList.length
+    return programacao?.ops_count || 0
   }, [ordersList, programacao])
 
-  const uniqueOpsCount = useMemo(() => {
-    if (!programacao) return 0
-    const ops = new Set(ordersList.map((o) => o.op_number).filter(Boolean))
-    return ops.size || programacao.ops_count || ordersList.length
-  }, [ordersList, programacao])
+  // Filtragem e ordenação dos pedidos agrupados
+  const filteredAndSortedGroups = useMemo(() => {
+    const q = orderSearch.toLowerCase().trim()
 
-  // Filtragem e ordenação da lista de pedidos / OPs
-  const filteredAndSortedOrders = useMemo(() => {
-    let result = [...ordersList]
+    let list = groupedOrders.filter((group) => {
+      if (!q) return true
 
-    if (orderSearch.trim()) {
-      const q = orderSearch.toLowerCase().trim()
-      result = result.filter((item) => {
-        const orderNum = (item.order_number || '').toLowerCase()
-        const opNum = (item.op_number || '').toLowerCase()
-        const client = (item.client_name || '').toLowerCase()
-        const product = (item.product_name || '').toLowerCase()
-        const label = (item.formatted_label || '').toLowerCase()
-        return (
-          orderNum.includes(q) ||
-          opNum.includes(q) ||
-          client.includes(q) ||
-          product.includes(q) ||
-          label.includes(q)
-        )
+      const orderMatch = group.order_number.toLowerCase().includes(q)
+      const clientMatch = group.client_name.toLowerCase().includes(q)
+      const opsMatch = group.ops.some((op) => {
+        const opNum = (op.op_number || '').toLowerCase()
+        const prod = (op.product_name || '').toLowerCase()
+        const label = (op.formatted_label || '').toLowerCase()
+        return opNum.includes(q) || prod.includes(q) || label.includes(q)
       })
-    }
 
-    result.sort((a, b) => {
+      return orderMatch || clientMatch || opsMatch
+    })
+
+    list.sort((a, b) => {
       const numA = (a.order_number || '').toLowerCase()
       const numB = (b.order_number || '').toLowerCase()
       const comp = numA.localeCompare(numB, undefined, { numeric: true, sensitivity: 'base' })
       return sortOrder === 'asc' ? comp : -comp
     })
 
-    return result
-  }, [ordersList, orderSearch, sortOrder])
+    return list
+  }, [groupedOrders, orderSearch, sortOrder])
+
+  // Contagem de OPs visíveis após filtro
+  const filteredOpsCount = useMemo(() => {
+    return filteredAndSortedGroups.reduce((acc, g) => acc + g.ops.length, 0)
+  }, [filteredAndSortedGroups])
+
+  const toggleOrderExpand = (orderNumber: string) => {
+    setExpandedOrders((prev) => ({
+      ...prev,
+      [orderNumber]: !prev[orderNumber],
+    }))
+  }
+
+  const handleOpenOpModal = (opNumber: string) => {
+    if (!opNumber) return
+    setSelectedOpForModal(opNumber)
+    setOpModalOpen(true)
+  }
 
   // Filtragem de componentes expandidos
   const filteredComponents = useMemo(() => {
@@ -154,18 +220,14 @@ export function ProgramacaoDetailModal({
               <span className="text-[10px] text-muted-foreground uppercase font-bold block">
                 Pedidos
               </span>
-              <span className="text-xl font-bold text-foreground">
-                {programacao.orders_count || ordersList.length}
-              </span>
+              <span className="text-xl font-bold text-foreground">{totalUniqueOrders}</span>
             </div>
             <div className="p-3 bg-muted/40 rounded-lg border text-center">
               <span className="text-[10px] text-muted-foreground uppercase font-bold block">
                 Ordens de Produção
               </span>
-              <span className="text-xl font-bold text-blue-600">
-                {programacao.ops_count || ordersList.length}
-              </span>
-            </div>
+              <span className="text-xl font-bold text-blue-600">{totalOpsCount}</span>
+            </div>{' '}
             <div className="p-3 bg-muted/40 rounded-lg border text-center">
               <span className="text-[10px] text-muted-foreground uppercase font-bold block">
                 Itens Consolidados
@@ -228,7 +290,7 @@ export function ProgramacaoDetailModal({
             </div>
           )}
 
-          {/* (4) LISTA DE PEDIDOS / OPS / PRODUTOS (SEMPRE VISÍVEL) */}
+          {/* (4) LISTA DE PEDIDOS & ORDENS DE PRODUÇÃO AGRUPADA POR PEDIDO */}
           <div className="space-y-2.5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div className="space-y-0.5">
@@ -236,26 +298,27 @@ export function ProgramacaoDetailModal({
                   <span className="text-base">📋</span>
                   <span>Pedidos & Ordens de Produção</span>
                   <Badge variant="secondary" className="font-semibold text-xs">
-                    {uniqueOrdersCount} {uniqueOrdersCount === 1 ? 'pedido' : 'pedidos'} /{' '}
-                    {uniqueOpsCount} OP{uniqueOpsCount !== 1 ? 's' : ''}
+                    {totalUniqueOrders} {totalUniqueOrders === 1 ? 'pedido' : 'pedidos'} /{' '}
+                    {totalOpsCount} OP{totalOpsCount !== 1 ? 's' : ''}
                   </Badge>
                 </h3>
                 <p className="text-[11px] text-muted-foreground">
                   Exibindo{' '}
                   <strong className="text-foreground font-semibold">
-                    {filteredAndSortedOrders.length}
+                    {filteredAndSortedGroups.length}
                   </strong>{' '}
-                  de {ordersList.length} registro{ordersList.length !== 1 ? 's' : ''}
+                  {filteredAndSortedGroups.length === 1 ? 'pedido' : 'pedidos'} ({filteredOpsCount}{' '}
+                  OP{filteredOpsCount !== 1 ? 's' : ''}) de {totalUniqueOrders} pedidos gravados
                   {orderSearch.trim() && ' (filtrado)'}
                 </p>
               </div>
 
               {/* FILTRO E ORDENAÇÃO RÁPIDA */}
               <div className="flex items-center gap-2 w-full sm:w-auto">
-                <div className="relative flex-1 sm:w-60">
+                <div className="relative flex-1 sm:w-64">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
                   <Input
-                    placeholder="Filtrar cliente, pedido ou OP..."
+                    placeholder="Filtrar pedido, cliente, OP ou produto..."
                     value={orderSearch}
                     onChange={(e) => setOrderSearch(e.target.value)}
                     className="h-8 pl-8 pr-7 text-xs bg-background"
@@ -265,6 +328,7 @@ export function ProgramacaoDetailModal({
                       type="button"
                       onClick={() => setOrderSearch('')}
                       className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      title="Limpar filtro"
                     >
                       <X className="h-3.5 w-3.5" />
                     </button>
@@ -287,92 +351,237 @@ export function ProgramacaoDetailModal({
               </div>
             </div>
 
-            {/* CONTAINER COM ROLAGEM NATIVA, ALTURA EXPANDIDA E INDICADORES VISUAIS */}
+            {/* CONTAINER COM ROLAGEM NATIVA, AGRUPAMENTO POR PEDIDO */}
             <div className="relative border rounded-lg overflow-hidden bg-card shadow-sm">
               <div className="max-h-[50vh] sm:max-h-[55vh] overflow-y-auto overscroll-contain divide-y text-xs divide-border/60">
-                {filteredAndSortedOrders.map((ord, idx) => (
-                  <div
-                    key={`${ord.order_id || ord.order_number}-${idx}`}
-                    className="p-2.5 sm:p-3 flex items-start sm:items-center justify-between hover:bg-muted/50 transition-colors gap-3"
-                  >
-                    <div className="flex items-start sm:items-center gap-2.5 min-w-0 flex-1">
-                      <span className="font-mono text-[11px] text-muted-foreground w-6 shrink-0 text-center pt-0.5 sm:pt-0">
-                        #{idx + 1}
-                      </span>
-                      <div className="min-w-0 space-y-0.5">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <NoTranslate className="font-bold text-foreground text-xs sm:text-sm">
-                            Pedido {ord.order_number || '-'}
-                          </NoTranslate>
-                          {ord.client_name && (
-                            <NoTranslate className="text-muted-foreground text-xs truncate max-w-[260px] sm:max-w-md">
-                              • {ord.client_name}
-                            </NoTranslate>
+                {filteredAndSortedGroups.map((group, idx) => {
+                  const hasMultipleOps = group.ops.length > 1
+                  const isExpanded = !!(
+                    expandedOrders[group.order_number] ||
+                    (orderSearch.trim().length > 0 && hasMultipleOps)
+                  )
+                  const isSearchActive = orderSearch.trim().length > 0
+                  const q = orderSearch.toLowerCase().trim()
+
+                  return (
+                    <div
+                      key={`${group.order_number}-${idx}`}
+                      className="transition-colors bg-card hover:bg-muted/30"
+                    >
+                      {/* LINHA PRINCIPAL DO PEDIDO */}
+                      <div
+                        onClick={() => {
+                          if (hasMultipleOps) toggleOrderExpand(group.order_number)
+                        }}
+                        className={`p-2.5 sm:p-3 flex items-start sm:items-center justify-between gap-3 ${
+                          hasMultipleOps ? 'cursor-pointer select-none' : ''
+                        }`}
+                      >
+                        <div className="flex items-start sm:items-center gap-2.5 min-w-0 flex-1">
+                          <span className="font-mono text-[11px] text-muted-foreground w-6 shrink-0 text-center pt-0.5 sm:pt-0">
+                            #{idx + 1}
+                          </span>
+
+                          <div className="min-w-0 space-y-0.5 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <NoTranslate className="font-bold text-foreground text-xs sm:text-sm">
+                                Pedido {group.order_number}
+                              </NoTranslate>
+                              {group.client_name && (
+                                <NoTranslate className="text-muted-foreground text-xs truncate max-w-[260px] sm:max-w-md font-medium">
+                                  • {group.client_name}
+                                </NoTranslate>
+                              )}
+                            </div>
+
+                            {/* CASO 1 OP: Exibir direto na linha sem precisar expandir */}
+                            {!hasMultipleOps && group.ops[0] && (
+                              <div className="text-[11px] text-muted-foreground flex items-center gap-2 flex-wrap">
+                                <NoTranslate className="text-slate-600 dark:text-slate-300">
+                                  {group.ops[0].product_name ||
+                                    group.ops[0].formatted_label ||
+                                    'Produto'}
+                                </NoTranslate>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* LADO DIREITO: SOMA DE QUANTIDADES, OP OU CONTADOR DE OPS */}
+                        <div className="shrink-0 flex items-center gap-1.5 sm:gap-2 self-start sm:self-center">
+                          {/* SOMA TOTAL DAS QUANTIDADES DO PEDIDO */}
+                          <Badge
+                            variant="secondary"
+                            className="font-mono text-[10px] sm:text-xs font-semibold px-2 py-0.5"
+                            title={`Soma das quantidades das OPs do Pedido ${group.order_number}`}
+                          >
+                            <NoTranslate>{group.total_quantity} un</NoTranslate>
+                          </Badge>
+
+                          {/* QUANDO TEM 1 OP: mostra a OP direto como botão clicável */}
+                          {!hasMultipleOps && group.ops[0] && (
+                            <>
+                              {group.ops[0].op_number ? (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleOpenOpModal(group.ops[0].op_number!)
+                                  }}
+                                  className="h-6 px-2 text-[10px] sm:text-xs font-mono bg-blue-50/70 hover:bg-blue-100 dark:bg-blue-950/40 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 border-blue-300 cursor-pointer gap-1"
+                                  title="Clique para abrir detalhes da OP"
+                                >
+                                  <NoTranslate>OP {group.ops[0].op_number}</NoTranslate>
+                                  <ExternalLink className="size-2.5 opacity-60" />
+                                </Button>
+                              ) : (
+                                <Badge
+                                  variant="outline"
+                                  className="font-mono text-[10px] text-muted-foreground"
+                                >
+                                  Sem OP
+                                </Badge>
+                              )}
+                            </>
+                          )}
+
+                          {/* QUANDO TEM VÁRIAS OPS: botão expansor com contador */}
+                          {hasMultipleOps && (
+                            <Button
+                              type="button"
+                              variant={isExpanded ? 'secondary' : 'outline'}
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                toggleOrderExpand(group.order_number)
+                              }}
+                              className="h-6 px-2 text-[10px] sm:text-xs font-semibold gap-1 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700"
+                              title={
+                                isExpanded
+                                  ? 'Recolher OPs deste pedido'
+                                  : 'Expandir lista de OPs deste pedido'
+                              }
+                            >
+                              <Layers className="size-3 text-blue-600 dark:text-blue-400" />
+                              <span>{group.ops.length} OPs</span>
+                              {isExpanded ? (
+                                <ChevronDown className="size-3 transition-transform" />
+                              ) : (
+                                <ChevronRight className="size-3 transition-transform" />
+                              )}
+                            </Button>
                           )}
                         </div>
-                        {ord.product_name && (
-                          <div className="text-[11px] text-muted-foreground">
-                            <NoTranslate className="text-slate-600 dark:text-slate-300">
-                              {ord.product_name}
-                            </NoTranslate>
-                          </div>
-                        )}
-                        {!ord.product_name && ord.formatted_label && (
-                          <div className="text-[11px] text-muted-foreground">
-                            <NoTranslate>{ord.formatted_label}</NoTranslate>
-                          </div>
-                        )}
                       </div>
-                    </div>
 
-                    <div className="shrink-0 flex items-center gap-1.5 sm:gap-2 self-start sm:self-center">
-                      {ord.quantity && (
-                        <Badge variant="secondary" className="font-mono text-[10px] sm:text-xs">
-                          <NoTranslate>{ord.quantity} un</NoTranslate>
-                        </Badge>
-                      )}
-                      {ord.op_number ? (
-                        <Badge
-                          variant="outline"
-                          className="font-mono text-[10px] sm:text-xs bg-blue-50/50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 border-blue-300"
-                        >
-                          <NoTranslate>OP {ord.op_number}</NoTranslate>
-                        </Badge>
-                      ) : (
-                        <Badge
-                          variant="outline"
-                          className="font-mono text-[10px] text-muted-foreground"
-                        >
-                          Sem OP
-                        </Badge>
+                      {/* LISTA EXPANDIDA DE OPS (quando tem mais de 1 OP) */}
+                      {hasMultipleOps && isExpanded && (
+                        <div className="bg-slate-50/70 dark:bg-slate-900/40 border-t border-dashed px-3 py-2 sm:px-6 space-y-1.5 animate-in fade-in duration-150">
+                          <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold flex items-center justify-between pb-1">
+                            <span>Ordens de Produção vinculadas a este pedido:</span>
+                            <span>{group.ops.length} OPs</span>
+                          </div>
+
+                          <div className="divide-y divide-border/40 border rounded-md bg-background overflow-hidden">
+                            {group.ops.map((op, opIdx) => {
+                              const opMatchesSearch =
+                                isSearchActive &&
+                                ((op.op_number || '').toLowerCase().includes(q) ||
+                                  (op.product_name || '').toLowerCase().includes(q) ||
+                                  (op.formatted_label || '').toLowerCase().includes(q))
+
+                              return (
+                                <div
+                                  key={`${op.op_number || op.order_id}-${opIdx}`}
+                                  className={`p-2 flex items-center justify-between gap-2 text-xs transition-colors ${
+                                    opMatchesSearch
+                                      ? 'bg-amber-50/70 dark:bg-amber-950/30'
+                                      : 'hover:bg-muted/40'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                                    {/* Botão de OP clicável */}
+                                    {op.op_number ? (
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => handleOpenOpModal(op.op_number!)}
+                                        className="h-6 px-2 text-[10px] font-mono font-bold bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 dark:hover:bg-blue-900/70 text-blue-700 dark:text-blue-300 border-blue-300 shrink-0 gap-1 cursor-pointer"
+                                        title="Ver detalhes da OP em modo leitura"
+                                      >
+                                        <NoTranslate>OP {op.op_number}</NoTranslate>
+                                        <ExternalLink className="size-2.5 opacity-60" />
+                                      </Button>
+                                    ) : (
+                                      <Badge
+                                        variant="outline"
+                                        className="font-mono text-[10px] text-muted-foreground shrink-0"
+                                      >
+                                        Sem OP
+                                      </Badge>
+                                    )}
+
+                                    {/* Descrição do produto */}
+                                    <div className="min-w-0 flex-1">
+                                      <NoTranslate className="text-slate-700 dark:text-slate-300 text-[11px] truncate block font-medium">
+                                        {op.product_name || op.formatted_label || 'Produto'}
+                                      </NoTranslate>
+                                    </div>
+                                  </div>
+
+                                  {/* Quantidade desta OP específica */}
+                                  <div className="shrink-0 flex items-center gap-1.5">
+                                    <Badge
+                                      variant="outline"
+                                      className="font-mono text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-300"
+                                    >
+                                      <NoTranslate>{op.quantity || 1} un</NoTranslate>
+                                    </Badge>
+                                    {opMatchesSearch && (
+                                      <Badge
+                                        variant="secondary"
+                                        className="text-[9px] h-4 px-1 bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200"
+                                      >
+                                        Correspondente
+                                      </Badge>
+                                    )}
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
                       )}
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
 
-                {filteredAndSortedOrders.length === 0 && (
+                {filteredAndSortedGroups.length === 0 && (
                   <div className="p-8 text-center text-muted-foreground text-xs space-y-1">
                     <p className="font-medium text-foreground">Nenhum pedido encontrado</p>
                     <p className="text-[11px]">
                       {orderSearch.trim()
-                        ? `Nenhum resultado corresponde ao filtro "${orderSearch}".`
+                        ? `Nenhum pedido ou OP corresponde ao filtro "${orderSearch}".`
                         : 'Nenhum pedido listado nesta programação.'}
                     </p>
                   </div>
                 )}
               </div>
+
               {/* Barra de rodapé do container com contador fixo para transparência */}
               <div className="px-3 py-1.5 bg-muted/30 border-t flex items-center justify-between text-[11px] text-muted-foreground">
                 <span>
                   Mostrando{' '}
-                  <strong className="text-foreground">{filteredAndSortedOrders.length}</strong> de{' '}
-                  {ordersList.length} itens gravados
+                  <strong className="text-foreground">{filteredAndSortedGroups.length}</strong> de{' '}
+                  {totalUniqueOrders} pedidos ({filteredOpsCount} de {totalOpsCount} OPs)
                 </span>
                 <span className="text-[10px]">Role para ver todos</span>
               </div>
             </div>
           </div>
-
           {/* (4) LISTA DE COMPONENTES RECOLHIDA POR PADRÃO (APENAS CONTADORES, COM EXPANSÃO EXPLÍCITA) */}
           <div className="space-y-2 border rounded-lg p-3 bg-muted/20">
             <div className="flex items-center justify-between flex-wrap gap-2">
@@ -548,6 +757,16 @@ export function ProgramacaoDetailModal({
           </div>
         </DialogFooter>
       </DialogContent>
+
+      {/* MODAL SOMENTE LEITURA DA OP QUANDO O GESTOR CLICA NA OP */}
+      <OpReadOnlyModal
+        open={opModalOpen}
+        onOpenChange={(isOpen) => {
+          setOpModalOpen(isOpen)
+          if (!isOpen) setSelectedOpForModal(null)
+        }}
+        opIdentifier={selectedOpForModal}
+      />
     </Dialog>
   )
 }

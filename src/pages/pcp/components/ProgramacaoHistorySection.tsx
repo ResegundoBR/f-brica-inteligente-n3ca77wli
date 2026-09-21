@@ -10,9 +10,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { History, Lock, Eye, CheckCircle2, AlertTriangle, RefreshCw, Calendar } from 'lucide-react'
+import { History, Lock, Eye, CheckCircle2, AlertTriangle, RefreshCw } from 'lucide-react'
 import { PcpProgramacaoRecord } from '@/services/pcp-programacoes'
-
+import { NoTranslate } from '@/components/NoTranslate'
 interface ProgramacaoHistorySectionProps {
   programacoesEncerradas: PcpProgramacaoRecord[]
   onOpenDetails: (prog: PcpProgramacaoRecord) => void
@@ -85,6 +85,31 @@ export function ProgramacaoHistorySection({
                 const sep = prog.expand?.separation_id
                 const ordList = Array.isArray(prog.orders_list) ? prog.orders_list : []
 
+                // Agrupamento por pedido único para consistência
+                const uniqueOrdersMap = new Map<
+                  string,
+                  { order_number: string; client_name: string; opCount: number }
+                >()
+                ordList.forEach((o) => {
+                  const key = (o.order_number || 'Sem Pedido').trim().toUpperCase()
+                  const existing = uniqueOrdersMap.get(key)
+                  if (!existing) {
+                    uniqueOrdersMap.set(key, {
+                      order_number: o.order_number || 'Sem Pedido',
+                      client_name: o.client_name || '',
+                      opCount: 1,
+                    })
+                  } else {
+                    existing.opCount += 1
+                    if (!existing.client_name && o.client_name) {
+                      existing.client_name = o.client_name
+                    }
+                  }
+                })
+                const uniqueOrders = Array.from(uniqueOrdersMap.values())
+                const totalOrdersCount = uniqueOrders.length || prog.orders_count || 0
+                const totalOpsCount = ordList.length || prog.ops_count || 0
+
                 return (
                   <TableRow key={prog.id} className="hover:bg-muted/40 text-xs">
                     <TableCell className="font-mono text-muted-foreground">
@@ -97,11 +122,19 @@ export function ProgramacaoHistorySection({
                           {prog.name}
                         </span>
                         <div className="text-[11px] text-muted-foreground truncate max-w-md">
-                          {ordList
-                            .slice(0, 3)
-                            .map((o) => `${o.order_number} (${o.client_name})`)
-                            .join(', ')}
-                          {ordList.length > 3 && ` e mais ${ordList.length - 3}...`}
+                          <NoTranslate>
+                            {uniqueOrders
+                              .slice(0, 3)
+                              .map(
+                                (o) =>
+                                  `${o.order_number}${o.client_name ? ` (${o.client_name})` : ''}${
+                                    o.opCount > 1 ? ` [${o.opCount} OPs]` : ''
+                                  }`,
+                              )
+                              .join(', ')}
+                            {uniqueOrders.length > 3 &&
+                              ` e mais ${uniqueOrders.length - 3} pedidos...`}
+                          </NoTranslate>
                         </div>
                       </div>
                     </TableCell>
@@ -118,10 +151,11 @@ export function ProgramacaoHistorySection({
 
                     <TableCell className="text-center">
                       <span className="font-bold text-foreground">
-                        {prog.orders_count || ordList.length} pedidos
+                        {totalOrdersCount} {totalOrdersCount === 1 ? 'pedido' : 'pedidos'}
                       </span>
                       <span className="block text-[10px] text-muted-foreground">
-                        {prog.ops_count || ordList.length} OPs • {prog.items_count || 0} itens
+                        {totalOpsCount} OP{totalOpsCount !== 1 ? 's' : ''} • {prog.items_count || 0}{' '}
+                        itens
                       </span>
                     </TableCell>
 

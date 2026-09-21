@@ -62,7 +62,9 @@ import { PromisedDateModal } from '@/components/PromisedDateModal'
 import { UserActionBadge } from '@/components/UserActionBadge'
 import { setPromisedDateOnOrder } from '@/services/pcp-promised-date'
 import { useToast } from '@/hooks/use-toast'
-import { Target, Calendar as CalendarIcon } from 'lucide-react'
+import { Target, Calendar as CalendarIcon, Pin } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { NoTranslate } from '@/components/NoTranslate'
 
 const MACRO_GROUPS = [
   {
@@ -283,18 +285,18 @@ export default function PcpKanban() {
     }
   }
 
-  // Reordenação por drag and drop ou botões na coluna Fila
-  const handleReorderFila = async (activeId: string, overId: string) => {
+  // Reordenação genérica de subconjunto de OPs (coluna Fila ou coluna de etapa do Processo)
+  const isManagedOrder = (o: any) =>
+    o.manual_priority !== 1 && o.manual_priority !== 2 && !o.promised_date
+
+  const handleReorderSubset = async (activeId: string, overId: string, subsetOrders: any[]) => {
     if (activeId === overId) return
 
-    // Buscar a lista atual de Fila já ordenada
-    const filaList = sortFilaProductionOrders(filteredOrders.filter((o) => o.status === 'Fila'))
+    // Garante ordenação canônica da lista de contexto
+    const sortedSubset = sortFilaProductionOrders(subsetOrders)
 
     // Identificar a partição gerenciada (sem manual_priority 1 ou 2, e sem promised_date)
-    const isManaged = (o: any) =>
-      o.manual_priority !== 1 && o.manual_priority !== 2 && !o.promised_date
-
-    const managedOrders = filaList.filter(isManaged)
+    const managedOrders = sortedSubset.filter(isManagedOrder)
     const oldIndex = managedOrders.findIndex((o) => o.id === activeId)
     const newIndex = managedOrders.findIndex((o) => o.id === overId)
 
@@ -307,17 +309,36 @@ export default function PcpKanban() {
       return
     }
 
-    // Criar nova ordem otimista
-    const newManaged = [...managedOrders]
-    const [movedItem] = newManaged.splice(oldIndex, 1)
-    newManaged.splice(newIndex, 0, movedItem)
+    // Criar nova ordem otimista para a partição movida
+    const reorderedManaged = [...managedOrders]
+    const [movedItem] = reorderedManaged.splice(oldIndex, 1)
+    reorderedManaged.splice(newIndex, 0, movedItem)
 
-    // Atualizar estado local otimista de orders
+    // A sequência global é o conjunto de todas as OPs gerenciadas ordenadas canonicamente.
+    // Para refletir essa troca em toda a aplicação sem quebrar outras etapas/filas,
+    // calculamos as novas sequências relativas no escopo global de managed:
+    const allManagedGlobal = sortFilaProductionOrders(orders.filter(isManagedOrder))
+
+    // Reordenamos a lista global substituindo as posições dos itens do subset
+    // mantendo a nova ordem relativa definida no subset
+    const subsetIds = new Set(managedOrders.map((o) => o.id))
+    let subsetPointer = 0
+    const finalManagedGlobal = allManagedGlobal.map((item) => {
+      if (subsetIds.has(item.id)) {
+        const replacement = reorderedManaged[subsetPointer]
+        subsetPointer++
+        return replacement
+      }
+      return item
+    })
+
+    // Montar mapa id -> manual_sequence (1-based contínuo)
     const indexMap = new Map<string, number>()
-    newManaged.forEach((item, idx) => {
+    finalManagedGlobal.forEach((item, idx) => {
       indexMap.set(item.id, idx + 1)
     })
 
+    // Atualizar estado local otimista de orders
     setOrders((prev) =>
       prev.map((o) => {
         if (indexMap.has(o.id)) {
@@ -327,11 +348,19 @@ export default function PcpKanban() {
       }),
     )
 
-    // Persistir no backend em lote
+    // Persistir no backend apenas os itens cujas sequências realmente mudaram
+    const changedItems: { id: string; seq: number }[] = []
+    finalManagedGlobal.forEach((item, idx) => {
+      const newSeq = idx + 1
+      if (item.manual_sequence !== newSeq) {
+        changedItems.push({ id: item.id, seq: newSeq })
+      }
+    })
+
     try {
       await Promise.all(
-        newManaged.map((item, idx) =>
-          pb.collection('pcp_orders').update(item.id, { manual_sequence: idx + 1 }),
+        changedItems.map(({ id, seq }) =>
+          pb.collection('pcp_orders').update(id, { manual_sequence: seq }),
         ),
       )
       toast({
@@ -349,17 +378,38 @@ export default function PcpKanban() {
     }
   }
 
+  // Compatibilidade com reordenação da Fila
+  const handleReorderFila = async (activeId: string, overId: string) => {
+    const filaList = filteredOrders.filter((o) => o.status === 'Fila')
+    await handleReorderSubset(activeId, overId, filaList)
+  }
+
   const handleMoveFilaOrder = async (orderId: string, direction: 'up' | 'down') => {
     const filaList = sortFilaProductionOrders(filteredOrders.filter((o) => o.status === 'Fila'))
-    const isManaged = (o: any) =>
-      o.manual_priority !== 1 && o.manual_priority !== 2 && !o.promised_date
-    const managedOrders = filaList.filter(isManaged)
+    const managedOrders = filaList.filter(isManagedOrder)
     const currentIndex = managedOrders.findIndex((o) => o.id === orderId)
     if (currentIndex === -1) return
     const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
     if (targetIndex < 0 || targetIndex >= managedOrders.length) return
     const targetId = managedOrders[targetIndex].id
-    await handleReorderFila(orderId, targetId)
+    await handleReorderSubset(orderId, targetId, filaList)
+  }
+
+  // Reordenação na visão Por Processo (coluna de etapa)
+  const handleReorderStage = async (activeId: string, overId: string, stage: string) => {
+    const stageOrders = filteredOrders.filter((o) => o.stage === stage)
+    await handleReorderSubset(activeId, overId, stageOrders)
+  }
+
+  const handleMoveStageOrder = async (orderId: string, direction: 'up' | 'down', stage: string) => {
+    const stageOrders = sortFilaProductionOrders(filteredOrders.filter((o) => o.stage === stage))
+    const managedOrders = stageOrders.filter(isManagedOrder)
+    const currentIndex = managedOrders.findIndex((o) => o.id === orderId)
+    if (currentIndex === -1) return
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
+    if (targetIndex < 0 || targetIndex >= managedOrders.length) return
+    const targetId = managedOrders[targetIndex].id
+    await handleReorderSubset(orderId, targetId, stageOrders)
   }
 
   // Mapa de contagem de itens por pedido para o filtro rápido de itens
@@ -473,6 +523,9 @@ export default function PcpKanban() {
   ])
 
   const groupedFilteredOrders = useMemo(() => {
+    // Ordenar filteredOrders canonicamente antes de agrupar para que tanto os grupos
+    // (ordem do primeiro item) quanto os itens internos respeitem a mesma sequência
+    const sorted = sortFilaProductionOrders(filteredOrders)
     const groups: {
       normalized_key: string
       order_number: string
@@ -480,18 +533,23 @@ export default function PcpKanban() {
       items: any[]
     }[] = []
     const map = new Map<string, any[]>()
-    filteredOrders.forEach((op) => {
+    sorted.forEach((op) => {
       const normalized = (op.order_number || '').replace(/[.\-\s]/g, '').replace(/^0+/, '') || '0'
       if (!map.has(normalized)) {
-        map.set(normalized, [])
+        const itemsArr: any[] = []
+        map.set(normalized, itemsArr)
         groups.push({
           normalized_key: normalized,
           order_number: op.order_number,
           client_name: op.expand?.client_id?.name || op.client_name,
-          items: map.get(normalized)!,
+          items: itemsArr,
         })
       }
       map.get(normalized)!.push(op)
+    })
+    // Ordena os itens internos de cada grupo também com a ordenação canônica
+    groups.forEach((g) => {
+      g.items = sortFilaProductionOrders(g.items)
     })
     return groups
   }, [filteredOrders])
@@ -918,12 +976,19 @@ export default function PcpKanban() {
                 </div>
                 <div className="flex flex-1 min-h-0 divide-x divide-slate-100 dark:divide-slate-800">
                   {group.stages.map((stage) => {
-                    const stageOrders = filteredOrders.filter((o) => o.stage === stage)
+                    const rawStageOrders = filteredOrders.filter((o) => o.stage === stage)
+                    // Ordenação canônica em CADA coluna de etapa (emergenciais -> prazo especial -> data prometida -> manual_sequence -> delivery_date)
+                    const stageOrders = sortFilaProductionOrders(rawStageOrders)
+                    const managedStageOrders = stageOrders.filter(isManagedOrder)
+
                     return (
                       <div
                         key={stage}
                         onDragOver={(e) => e.preventDefault()}
-                        onDrop={(e) => handleDropStage(e, stage)}
+                        onDrop={(e) => {
+                          setDragOverCardId(null)
+                          handleDropStage(e, stage)
+                        }}
                         className="flex-1 flex flex-col min-w-0 min-h-0"
                       >
                         <div className="h-28 w-full flex flex-col items-center justify-between py-1.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 shrink-0">
@@ -945,28 +1010,78 @@ export default function PcpKanban() {
                           </div>
                         </div>
                         <div className="flex-1 w-full p-0.5 md:p-1 overflow-y-auto overflow-x-hidden space-y-1 bg-white dark:bg-slate-950 min-h-0">
-                          {stageOrders.map((order) => (
-                            <CompactKanbanCard
-                              key={order.id}
-                              order={order}
-                              observations={observations[order.id] || []}
-                              shortages={shortagesByOrder[order.id] || []}
-                              onDragStart={handleDragStart}
-                              onClick={() => setSelectedOrder(order)}
-                              onMessageClick={() =>
-                                setMessageOrder({
-                                  id: order.id,
-                                  orderNumber: order.order_number,
-                                  opNumber: order.op_number || '',
-                                })
-                              }
-                              messageState={getOrderMessageInfo(order.id).indicatorState}
-                              onExpedition={() => {
-                                setExpeditionOrderNumber(order.order_number)
-                                setExpeditionModalOpen(true)
-                              }}
-                            />
-                          ))}
+                          {stageOrders.map((order, orderIdx) => {
+                            const isPrioritary =
+                              order.manual_priority === 1 ||
+                              order.manual_priority === 2 ||
+                              !!order.promised_date
+                            const isReorderable = !isPrioritary && canManageSequence
+                            const managedIdx = managedStageOrders.findIndex(
+                              (o) => o.id === order.id,
+                            )
+                            const canMoveUp = isReorderable && managedIdx > 0
+                            const canMoveDown =
+                              isReorderable &&
+                              managedIdx !== -1 &&
+                              managedIdx < managedStageOrders.length - 1
+
+                            return (
+                              <div
+                                key={order.id}
+                                className={cn(
+                                  'relative transition-all',
+                                  dragOverCardId === order.id && 'ring-2 ring-primary rounded',
+                                )}
+                                onDragOver={(e) => {
+                                  if (isReorderable) {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                    setDragOverCardId(order.id)
+                                  }
+                                }}
+                                onDragLeave={() => {
+                                  if (dragOverCardId === order.id) setDragOverCardId(null)
+                                }}
+                                onDrop={(e) => {
+                                  if (isReorderable) {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                    setDragOverCardId(null)
+                                    const activeId = e.dataTransfer.getData('orderId')
+                                    if (activeId && activeId !== order.id) {
+                                      handleReorderStage(activeId, order.id, stage)
+                                    }
+                                  }
+                                }}
+                              >
+                                <CompactKanbanCard
+                                  order={order}
+                                  observations={observations[order.id] || []}
+                                  shortages={shortagesByOrder[order.id] || []}
+                                  onDragStart={handleDragStart}
+                                  onClick={() => setSelectedOrder(order)}
+                                  onMessageClick={() =>
+                                    setMessageOrder({
+                                      id: order.id,
+                                      orderNumber: order.order_number,
+                                      opNumber: order.op_number || '',
+                                    })
+                                  }
+                                  messageState={getOrderMessageInfo(order.id).indicatorState}
+                                  onExpedition={() => {
+                                    setExpeditionOrderNumber(order.order_number)
+                                    setExpeditionModalOpen(true)
+                                  }}
+                                  isReorderable={isReorderable}
+                                  canMoveUp={canMoveUp}
+                                  canMoveDown={canMoveDown}
+                                  onMoveUp={() => handleMoveStageOrder(order.id, 'up', stage)}
+                                  onMoveDown={() => handleMoveStageOrder(order.id, 'down', stage)}
+                                  queueIndex={orderIdx + 1}
+                                />
+                              </div>
+                            )
+                          })}
                         </div>
                       </div>
                     )
@@ -996,11 +1111,14 @@ export default function PcpKanban() {
                         className="border rounded-md bg-white dark:bg-slate-950 shadow-sm overflow-hidden"
                       >
                         <div className="p-2 bg-blue-100/50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-800 text-sm font-semibold flex flex-col md:flex-row md:items-center justify-between gap-1">
-                          <span className="text-blue-900 dark:text-blue-100">
+                          <NoTranslate
+                            as="span"
+                            className="text-blue-900 dark:text-blue-100 font-bold"
+                          >
                             {group.order_number}
-                          </span>
+                          </NoTranslate>
                           <span className="text-blue-700 dark:text-blue-300 font-normal text-xs truncate max-w-[120px]">
-                            {group.client_name}
+                            {group.client_name || '-'}
                           </span>
                         </div>
                         <div className="p-1 space-y-1">
@@ -1032,12 +1150,36 @@ export default function PcpKanban() {
                                   )}
                                 />
                                 <div className="flex-1 truncate">
-                                  {op.op_type === 'Assistência'
-                                    ? op.manual_product_name
-                                    : op.op_type === 'Especial'
-                                      ? op.manual_product_name || 'Produto Especial'
-                                      : op.expand?.product_id?.name || 'S/Produto'}
+                                  <NoTranslate as="span">
+                                    {op.op_type === 'Assistência'
+                                      ? op.manual_product_name
+                                      : op.op_type === 'Especial'
+                                        ? op.manual_product_name || 'Produto Especial'
+                                        : op.expand?.product_id?.name || 'S/Produto'}
+                                  </NoTranslate>
                                 </div>
+                                {op.op_number && (
+                                  <NoTranslate
+                                    as="span"
+                                    className="text-[10px] text-muted-foreground font-mono shrink-0"
+                                  >
+                                    OP {op.op_number}
+                                  </NoTranslate>
+                                )}
+                                {(op.manual_priority === 1 ||
+                                  op.manual_priority === 2 ||
+                                  !!op.promised_date) && (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="text-amber-600 dark:text-amber-400 shrink-0 cursor-help">
+                                        <Pin className="size-3 rotate-45" />
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top" className="text-xs">
+                                      Posição fixa por prioridade/data prometida
+                                    </TooltipContent>
+                                  </Tooltip>
+                                )}
                                 {(() => {
                                   const msgState = getOrderMessageInfo(op.id).indicatorState
                                   return msgState !== 'none' ? (
@@ -1849,6 +1991,7 @@ function KanbanCard({
   const color = getOrderColor(order)
   const isEmergency = order.manual_priority === 1
   const isPrazoEspecial = order.manual_priority === 2
+  const isFixed = isEmergency || isPrazoEspecial || !!order.promised_date
   const materialStatus = getMaterialAvailabilityStatus(shortages)
 
   const borderClass = isEmergency
@@ -1900,9 +2043,24 @@ function KanbanCard({
                 <GripVertical className="size-3.5 text-muted-foreground/60 shrink-0 cursor-grab" />
               </span>
             )}
+            {isFixed && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className="inline-flex items-center text-amber-600 dark:text-amber-400 shrink-0 cursor-help"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Pin className="size-3.5 rotate-45 fill-amber-500/20" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  Posição fixa por prioridade/data prometida
+                </TooltipContent>
+              </Tooltip>
+            )}
             <span className="font-semibold text-sm flex items-center gap-1 truncate">
               {isPrazoEspecial && <span title="Prazo Especial">⚡</span>}
-              {order.order_number}
+              <NoTranslate as="span">{order.order_number}</NoTranslate>
             </span>
           </div>
           <div className="flex items-center gap-1 shrink-0">
@@ -2031,10 +2189,17 @@ function CompactKanbanCard({
   onMessageClick,
   messageState = 'none',
   onExpedition,
+  isReorderable = false,
+  canMoveUp = false,
+  canMoveDown = false,
+  onMoveUp,
+  onMoveDown,
+  queueIndex,
 }: any) {
   const color = getOrderColor(order)
   const isEmergency = order.manual_priority === 1
   const isPrazoEspecial = order.manual_priority === 2
+  const isFixed = isEmergency || isPrazoEspecial || !!order.promised_date
   const materialStatus = getMaterialAvailabilityStatus(shortages)
 
   const bgClass = isEmergency
@@ -2055,11 +2220,81 @@ function CompactKanbanCard({
       onDragStart={(e) => onDragStart(e, order.id)}
       onClick={onClick}
       className={cn(
-        'text-[8px] md:text-[9px] font-bold p-0.5 md:p-1 rounded-sm w-full text-center flex flex-col items-center cursor-grab active:cursor-grabbing transition-all hover:opacity-80 shadow-sm border border-black/10 dark:border-white/10',
+        'group text-[8px] md:text-[9px] font-bold p-0.5 md:p-1 rounded-sm w-full text-center flex flex-col items-center cursor-grab active:cursor-grabbing transition-all hover:opacity-95 shadow-sm border border-black/10 dark:border-white/10 relative',
         bgClass,
       )}
     >
-      <span className="block truncate w-full">
+      {/* Botões subir / descer exibidos ao hover no card compacto quando reordenável */}
+      {isReorderable && (
+        <div
+          className="absolute right-0.5 top-0.5 hidden group-hover:flex items-center gap-0.5 z-10 bg-black/60 dark:bg-black/80 rounded px-0.5 py-0.5 text-white shadow-sm"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            disabled={!canMoveUp}
+            onClick={(e) => {
+              e.stopPropagation()
+              onMoveUp?.()
+            }}
+            title="Subir ordem"
+            className={cn(
+              'p-0.5 rounded hover:bg-white/20 transition-colors',
+              !canMoveUp && 'opacity-30 cursor-not-allowed',
+            )}
+          >
+            <ArrowUp className="size-2.5" />
+          </button>
+          <button
+            type="button"
+            disabled={!canMoveDown}
+            onClick={(e) => {
+              e.stopPropagation()
+              onMoveDown?.()
+            }}
+            title="Descer ordem"
+            className={cn(
+              'p-0.5 rounded hover:bg-white/20 transition-colors',
+              !canMoveDown && 'opacity-30 cursor-not-allowed',
+            )}
+          >
+            <ArrowDown className="size-2.5" />
+          </button>
+        </div>
+      )}
+
+      <div className="flex items-center justify-center gap-1 w-full truncate">
+        {queueIndex != null && (
+          <span
+            className="text-[7.5px] font-mono px-0.5 rounded bg-black/20 text-inherit shrink-0 font-semibold opacity-90"
+            title={`Posição #${queueIndex} na etapa`}
+          >
+            #{queueIndex}
+          </span>
+        )}
+        {isReorderable && (
+          <span
+            title="Arrastar para reordenar"
+            className="inline-flex shrink-0 opacity-60 group-hover:opacity-100"
+          >
+            <GripVertical className="size-2.5 cursor-grab" />
+          </span>
+        )}
+        {isFixed && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className="inline-flex items-center text-amber-300 dark:text-amber-300 shrink-0 cursor-help"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <Pin className="size-2.5 rotate-45 fill-amber-300/40" />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">
+              Posição fixa por prioridade/data prometida
+            </TooltipContent>
+          </Tooltip>
+        )}
         {isEmergency && <span className="text-[10px]">🚨</span>}
         {order.stage === 'Expedição' && (
           <button
@@ -2067,32 +2302,35 @@ function CompactKanbanCard({
               e.stopPropagation()
               onExpedition?.()
             }}
-            className="inline-flex items-center"
+            className="inline-flex items-center shrink-0"
             title="Registrar Expedição"
           >
             <Truck className="size-2.5" />
           </button>
-        )}{' '}
+        )}
         {messageState !== 'none' && (
           <button
             onClick={(e) => {
               e.stopPropagation()
               onMessageClick?.()
             }}
-            className="inline-flex items-center"
+            className="inline-flex items-center shrink-0"
           >
             <OrderMessageBell state={messageState} size="sm" />
           </button>
-        )}{' '}
+        )}
         {materialStatus !== 'none' && (
-          <span className="text-[10px]">
+          <span className="text-[10px] shrink-0">
             {materialStatus === 'red' && '🔴'}
             {materialStatus === 'yellow' && '🟡'}
             {materialStatus === 'green' && '🟢'}
           </span>
-        )}{' '}
-        {order.order_number}
-      </span>
+        )}
+        <NoTranslate as="span" className="truncate font-bold">
+          {order.order_number}
+        </NoTranslate>
+      </div>
+
       {order.promised_date && (
         <PromisedDateBadge
           promisedDate={order.promised_date}

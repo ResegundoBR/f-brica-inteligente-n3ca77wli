@@ -2,6 +2,7 @@ import { Search, UserCircle } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { MessageNotificationBell } from '@/components/MessageNotificationBell'
+import { ManagerNotificationsBell } from '@/components/ManagerNotificationsBell'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import {
   DropdownMenu,
@@ -36,6 +37,7 @@ export function Header() {
         </div>
       </div>
       <div className="ml-auto flex items-center gap-2">
+        <ManagerNotificationsBell />
         <MessageNotificationBell />
 
         <DropdownMenu>

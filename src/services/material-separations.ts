@@ -1,4 +1,5 @@
 import pb from '@/lib/pocketbase/client'
+import { notifyPcpManagers } from '@/services/notifications'
 
 export type SeparationStatus = 'Pendente' | 'Em_Separacao' | 'Concluida' | 'Cancelada'
 
@@ -211,7 +212,31 @@ export async function finalizeSeparation(
 
   const updatedSeparation = await pb
     .collection('material_separations')
-    .update<MaterialSeparation>(separationId, payload)
+    .update<MaterialSeparation>(separationId, payload, {
+      expand: 'programacao_id,created_by,finished_by',
+    })
+
+  // (3) NOTIFICAÇÃO AO GESTOR quando o operador finalizar a rodada de separação
+  // Notifica os gestores com o nome da Programação, operador e resumo
+  try {
+    const progName =
+      updatedSeparation.expand?.programacao_id?.name ||
+      updatedSeparation.title ||
+      'Programação de Separação'
+    const operatorName =
+      pb.authStore.record?.name ||
+      updatedSeparation.expand?.finished_by?.name ||
+      'Operador da Fábrica'
+
+    const message = `Rodada da ${progName} finalizada por ${operatorName}: ${separated.length} itens separados, ${shortages.length} faltas enviadas para suprimentos.`
+
+    await notifyPcpManagers({
+      message,
+      actionUrl: '/pcp/programacao',
+    })
+  } catch (notifErr) {
+    console.warn('Erro ao disparar notificação aos gestores:', notifErr)
+  }
 
   return {
     separation: updatedSeparation,

@@ -571,18 +571,40 @@ export function OperatorSeparationTab() {
               </div>
             </div>
 
-            {/* Ações em lote e busca rápida compacta */}
+            {/* CAMPO DE BUSCA POR CÓDIGO E DESCRIÇÃO NO MOBILE (toque fácil ~44px de altura) */}
+            <div className="relative pt-0.5">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Buscar por código ou descrição..."
+                value={filterQuery}
+                onChange={(e) => setFilterQuery(e.target.value)}
+                className="h-11 w-full pl-9 pr-9 text-xs sm:text-sm bg-muted/50 rounded-lg border border-input focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-inner"
+              />
+              {filterQuery && (
+                <button
+                  type="button"
+                  onClick={() => setFilterQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted"
+                  aria-label="Limpar busca"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Ações em lote compactas */}
             {activeSeparation.status !== 'Concluida' && (
               <div className="flex items-center justify-between gap-1.5 pt-0.5">
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1.5 w-full">
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     onClick={handleMarkAllSeparated}
-                    className="h-7 text-[10px] px-2 gap-1 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+                    className="h-8 flex-1 text-[11px] px-2 gap-1 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
                   >
-                    <CheckCircle2 className="h-3 w-3" />
+                    <CheckCircle2 className="h-3.5 w-3.5" />
                     Marcar todos Separados
                   </Button>
                   <Button
@@ -590,26 +612,12 @@ export function OperatorSeparationTab() {
                     variant="ghost"
                     size="sm"
                     onClick={handleResetAll}
-                    className="h-7 text-[10px] px-1.5 gap-1 text-muted-foreground hover:text-foreground"
+                    className="h-8 text-[11px] px-2 gap-1 text-muted-foreground hover:text-foreground"
                   >
-                    <RotateCcw className="h-3 w-3" />
+                    <RotateCcw className="h-3.5 w-3.5" />
                     Limpar
                   </Button>
                 </div>
-
-                {/* Filtro rápido se a lista for grande */}
-                {itemsDraft.length > 10 && (
-                  <div className="relative flex-1 max-w-[130px]">
-                    <Search className="absolute left-1.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-                    <input
-                      type="text"
-                      placeholder="Filtrar..."
-                      value={filterQuery}
-                      onChange={(e) => setFilterQuery(e.target.value)}
-                      className="h-7 w-full pl-5 pr-1.5 text-[10px] bg-muted/40 rounded border border-input focus:outline-none focus:ring-1 focus:ring-ring"
-                    />
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -874,22 +882,38 @@ export function OperatorSeparationTab() {
                 </div>
               </div>
 
-              {/* ATALHOS RÁPIDOS SE A RODADA NÃO ESTIVER CONCLUÍDA */}
-              {activeSeparation.status !== 'Concluida' && (
-                <div className="flex items-center justify-between gap-2 pt-1 flex-wrap">
-                  <div className="text-xs text-muted-foreground">
-                    Marque <strong>Separado</strong> para itens em estoque ou <strong>Falta</strong>{' '}
-                    para os faltantes. Clique novamente para desmarcar.
-                  </div>
+              {/* ATALHOS RÁPIDOS E BUSCA NO MODAL DESKTOP */}
+              <div className="flex items-center justify-between gap-2 pt-1 flex-wrap">
+                <div className="relative flex-1 max-w-xs">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <input
+                    type="text"
+                    placeholder="Filtrar por código ou descrição..."
+                    value={filterQuery}
+                    onChange={(e) => setFilterQuery(e.target.value)}
+                    className="h-8 w-full pl-8 pr-7 text-xs bg-muted/40 rounded-md border border-input focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                  {filterQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setFilterQuery('')}
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 h-5 w-5 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+
+                {activeSeparation.status !== 'Concluida' && (
                   <div className="flex items-center gap-1.5">
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
                       onClick={handleMarkAllSeparated}
-                      className="h-7 text-[11px] gap-1 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+                      className="h-8 text-[11px] gap-1 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
                     >
-                      <CheckCircle2 className="h-3 w-3" />
+                      <CheckCircle2 className="h-3.5 w-3.5" />
                       Marcar todos como Separados
                     </Button>
                     <Button
@@ -897,131 +921,139 @@ export function OperatorSeparationTab() {
                       variant="ghost"
                       size="sm"
                       onClick={handleResetAll}
-                      className="h-7 text-[11px] gap-1 text-muted-foreground hover:text-foreground"
+                      className="h-8 text-[11px] gap-1 text-muted-foreground hover:text-foreground"
                     >
-                      <RotateCcw className="h-3 w-3" />
+                      <RotateCcw className="h-3.5 w-3.5" />
                       Limpar marcações
                     </Button>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </DialogHeader>
 
             {/* LISTA INTERATIVA DE ITENS */}
             <div className="flex-1 min-h-0 flex flex-col py-2">
               <ScrollArea className="flex-1 max-h-[50vh] pr-2">
                 <div className="space-y-2">
-                  {itemsDraft.map((item, index) => {
-                    const isSeparated = item.status === 'separado'
-                    const isShortage = item.status === 'falta'
-                    const isReadOnly = activeSeparation.status === 'Concluida'
+                  {filteredItemsDraft.length === 0 ? (
+                    <div className="p-8 text-center text-sm text-muted-foreground border-2 border-dashed rounded-xl my-4">
+                      {filterQuery
+                        ? 'Nenhum material encontrado com o filtro aplicado.'
+                        : 'Nenhum material nesta rodada.'}
+                    </div>
+                  ) : (
+                    filteredItemsDraft.map((item, index) => {
+                      const isSeparated = item.status === 'separado'
+                      const isShortage = item.status === 'falta'
+                      const isReadOnly = activeSeparation.status === 'Concluida'
 
-                    return (
-                      <div
-                        key={item.id || index}
-                        className={`p-3 rounded-xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                          isSeparated
-                            ? 'bg-emerald-500/10 border-emerald-500/40 shadow-sm'
-                            : isShortage
-                              ? 'bg-rose-500/10 border-rose-500/40 shadow-sm'
-                              : 'bg-card border-border hover:border-slate-400/50'
-                        }`}
-                      >
-                        <div className="space-y-1 flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            {item.code ? (
-                              <span className="font-mono font-bold text-xs px-2 py-0.5 rounded bg-muted text-foreground">
-                                {item.code}
+                      return (
+                        <div
+                          key={item.id || index}
+                          className={`p-3 rounded-xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                            isSeparated
+                              ? 'bg-emerald-500/10 border-emerald-500/40 shadow-sm'
+                              : isShortage
+                                ? 'bg-rose-500/10 border-rose-500/40 shadow-sm'
+                                : 'bg-card border-border hover:border-slate-400/50'
+                          }`}
+                        >
+                          <div className="space-y-1 flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {item.code ? (
+                                <span className="font-mono font-bold text-xs px-2 py-0.5 rounded bg-muted text-foreground">
+                                  {item.code}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-muted-foreground italic">
+                                  s/ código
+                                </span>
+                              )}
+                              <span className="font-semibold text-sm text-foreground break-words">
+                                {item.description}
                               </span>
-                            ) : (
-                              <span className="text-xs text-muted-foreground italic">
-                                s/ código
+                            </div>
+
+                            <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                              <span className="flex items-center gap-1 font-mono font-semibold text-foreground">
+                                OPs: {item.op_numbers?.join(', ') || 'N/A'}
                               </span>
-                            )}
-                            <span className="font-semibold text-sm text-foreground break-words">
-                              {item.description}
-                            </span>
+
+                              {item.cut_measurement && (
+                                <Badge
+                                  variant="secondary"
+                                  className="h-5 px-1.5 text-[10px] font-mono"
+                                >
+                                  Medida de corte: {item.cut_measurement}
+                                </Badge>
+                              )}
+
+                              <span className="font-semibold text-foreground bg-muted/80 px-2 py-0.5 rounded text-xs">
+                                Qtd:{' '}
+                                {Number(item.total_quantity).toLocaleString('pt-BR', {
+                                  maximumFractionDigits: 2,
+                                })}{' '}
+                                {item.unit}
+                              </span>
+                            </div>
                           </div>
 
-                          <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-                            <span className="flex items-center gap-1 font-mono font-semibold text-foreground">
-                              OPs: {item.op_numbers?.join(', ') || 'N/A'}
-                            </span>
-
-                            {item.cut_measurement && (
-                              <Badge
-                                variant="secondary"
-                                className="h-5 px-1.5 text-[10px] font-mono"
+                          {/* BOTÕES DE AÇÃO DO OPERADOR: 🟢 SEPARADO / 🔴 FALTA */}
+                          {!isReadOnly ? (
+                            <div className="flex items-center gap-2 shrink-0">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant={isSeparated ? 'default' : 'outline'}
+                                onClick={() => handleToggleItemStatus(item.id, 'separado')}
+                                className={`h-9 px-3 gap-1.5 font-bold transition-all text-xs ${
+                                  isSeparated
+                                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-500/30 shadow'
+                                    : 'border-emerald-600/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
+                                }`}
                               >
-                                Medida de corte: {item.cut_measurement}
-                              </Badge>
-                            )}
-
-                            <span className="font-semibold text-foreground bg-muted/80 px-2 py-0.5 rounded text-xs">
-                              Qtd:{' '}
-                              {Number(item.total_quantity).toLocaleString('pt-BR', {
-                                maximumFractionDigits: 2,
-                              })}{' '}
-                              {item.unit}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* BOTÕES DE AÇÃO DO OPERADOR: 🟢 SEPARADO / 🔴 FALTA */}
-                        {!isReadOnly ? (
-                          <div className="flex items-center gap-2 shrink-0">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant={isSeparated ? 'default' : 'outline'}
-                              onClick={() => handleToggleItemStatus(item.id, 'separado')}
-                              className={`h-9 px-3 gap-1.5 font-bold transition-all text-xs ${
-                                isSeparated
-                                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-500/30 shadow'
-                                  : 'border-emerald-600/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
-                              }`}
-                            >
-                              <CheckCircle2 className="h-4 w-4" />
-                              Separado
-                            </Button>
-
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant={isShortage ? 'default' : 'outline'}
-                              onClick={() => handleToggleItemStatus(item.id, 'falta')}
-                              className={`h-9 px-3 gap-1.5 font-bold transition-all text-xs ${
-                                isShortage
-                                  ? 'bg-rose-600 hover:bg-rose-700 text-white ring-2 ring-rose-500/30 shadow'
-                                  : 'border-rose-600/40 text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40'
-                              }`}
-                            >
-                              <AlertTriangle className="h-4 w-4" />
-                              Falta
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="shrink-0">
-                            {isSeparated ? (
-                              <Badge className="bg-emerald-600 text-white text-xs gap-1 py-1 px-2.5">
-                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                <CheckCircle2 className="h-4 w-4" />
                                 Separado
-                              </Badge>
-                            ) : isShortage ? (
-                              <Badge className="bg-rose-600 text-white text-xs gap-1 py-1 px-2.5">
-                                <AlertTriangle className="h-3.5 w-3.5" />
+                              </Button>
+
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant={isShortage ? 'default' : 'outline'}
+                                onClick={() => handleToggleItemStatus(item.id, 'falta')}
+                                className={`h-9 px-3 gap-1.5 font-bold transition-all text-xs ${
+                                  isShortage
+                                    ? 'bg-rose-600 hover:bg-rose-700 text-white ring-2 ring-rose-500/30 shadow'
+                                    : 'border-rose-600/40 text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40'
+                                }`}
+                              >
+                                <AlertTriangle className="h-4 w-4" />
                                 Falta
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline" className="text-xs">
-                                Pendente
-                              </Badge>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="shrink-0">
+                              {isSeparated ? (
+                                <Badge className="bg-emerald-600 text-white text-xs gap-1 py-1 px-2.5">
+                                  <CheckCircle2 className="h-3.5 w-3.5" />
+                                  Separado
+                                </Badge>
+                              ) : isShortage ? (
+                                <Badge className="bg-rose-600 text-white text-xs gap-1 py-1 px-2.5">
+                                  <AlertTriangle className="h-3.5 w-3.5" />
+                                  Falta
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-xs">
+                                  Pendente
+                                </Badge>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })
+                  )}
                 </div>
               </ScrollArea>
             </div>

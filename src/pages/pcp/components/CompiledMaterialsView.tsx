@@ -90,6 +90,30 @@ export function CompiledMaterialsView({
       .catch(() => {})
   }, [])
 
+  // Métricas de metros e quantidade por categoria (considerando itens consolidados profileItems + otherItems)
+  const { categoryMetricsMap, allLinearMetersTotal } = useMemo(() => {
+    const allItems = [...profileItems, ...otherItems]
+    const map = new Map<string, { count: number; linearMeters: number }>()
+    let totalMeters = 0
+
+    allItems.forEach((item) => {
+      const catKey = (item.categoryName || 'Outros').toLowerCase().trim()
+      const existing = map.get(catKey) || { count: 0, linearMeters: 0 }
+      existing.count += 1
+
+      const isMt = (item.unit || '').toUpperCase() === 'MT'
+      if (isMt) {
+        const qty = Number(item.totalQuantity) || 0
+        existing.linearMeters += qty
+        totalMeters += qty
+      }
+
+      map.set(catKey, existing)
+    })
+
+    return { categoryMetricsMap: map, allLinearMetersTotal: totalMeters }
+  }, [profileItems, otherItems])
+
   const handleOpenOpReadOnly = (opStr: string) => {
     setSelectedOpForModal(opStr)
     setReadOnlyModalOpen(true)
@@ -483,12 +507,25 @@ export function CompiledMaterialsView({
         </Card>
       </div>
 
-      {/* FILEIRA DE CHIPS DE FILTRO POR CATEGORIA NO TOPO */}
-      <div className="bg-white dark:bg-slate-900 border rounded-lg p-3 space-y-2 shadow-sm">
+      {/* FILEIRA DE CHIPS DE FILTRO POR CATEGORIA NO TOPO COM TOTAL DE METROS */}
+      <div className="bg-white dark:bg-slate-900 border rounded-lg p-3 space-y-2.5 shadow-sm">
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
-            <Tags className="size-3.5 text-indigo-600" />
-            <span>Filtrar por Categoria:</span>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
+              <Tags className="size-3.5 text-indigo-600" />
+              <span>Filtrar por Categoria:</span>
+            </div>
+            {/* Total Geral de Metros do Compilado */}
+            {allLinearMetersTotal > 0 && (
+              <Badge
+                variant="secondary"
+                className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800 text-xs font-mono font-bold px-2 py-0.5 gap-1"
+                title="Total geral de metros somando todos os itens em MT do compilado"
+              >
+                <span>Total Geral:</span>
+                <span>{formatQuantity(allLinearMetersTotal, 'MT')} MT</span>
+              </Badge>
+            )}
           </div>
 
           {categoryFilter !== 'ALL' && (
@@ -507,13 +544,33 @@ export function CompiledMaterialsView({
           <button
             type="button"
             onClick={() => setCategoryFilter('ALL')}
-            className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+            className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors flex items-center gap-1.5 ${
               categoryFilter === 'ALL'
-                ? 'bg-indigo-600 text-white shadow-sm'
+                ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-400/40'
                 : 'bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
             }`}
           >
-            Todas ({totals.totalDistinctItems})
+            <span>Todas</span>
+            <span
+              className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                categoryFilter === 'ALL'
+                  ? 'bg-indigo-800 text-white'
+                  : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
+              }`}
+            >
+              {totals.totalDistinctItems}
+            </span>
+            {allLinearMetersTotal > 0 && (
+              <span
+                className={`text-[10px] font-mono px-1.5 py-0.2 rounded font-semibold ${
+                  categoryFilter === 'ALL'
+                    ? 'bg-indigo-700/80 text-white'
+                    : 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60'
+                }`}
+              >
+                {formatQuantity(allLinearMetersTotal, 'MT')} MT
+              </span>
+            )}
           </button>
 
           {/* Chips para cada categoria existente */}
@@ -533,25 +590,40 @@ export function CompiledMaterialsView({
                 { id: '11', name: 'Outros' },
               ]
           ).map((cat) => {
-            const isSelected = categoryFilter === cat.name
-            // Conta itens com esta categoria
-            const count = [...profileItems, ...otherItems].filter(
-              (it) => (it.categoryName || 'Outros').toLowerCase() === cat.name.toLowerCase(),
-            ).length
+            const isSelected = categoryFilter.toLowerCase() === cat.name.toLowerCase()
+            const metrics = categoryMetricsMap.get(cat.name.toLowerCase()) || {
+              count: 0,
+              linearMeters: 0,
+            }
+
+            // Omitir categorias sem itens para deixar a barra limpa e objetiva
+            if (metrics.count === 0) return null
 
             return (
               <button
                 key={cat.id}
                 type="button"
                 onClick={() => setCategoryFilter(isSelected ? 'ALL' : cat.name)}
-                className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors flex items-center gap-1.5 ${
+                className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all flex items-center gap-1.5 ${
                   isSelected
-                    ? 'bg-indigo-600 text-white shadow-sm'
+                    ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-400/50'
                     : 'bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
                 }`}
               >
                 <span>{cat.name}</span>
-                {count > 0 && (
+
+                {/* Exibe total consolidado em MT se houver itens lineares */}
+                {metrics.linearMeters > 0 ? (
+                  <span
+                    className={`text-[10px] font-mono px-1.5 py-0.2 rounded font-bold ${
+                      isSelected
+                        ? 'bg-indigo-800 text-white'
+                        : 'bg-sky-100 dark:bg-sky-950/70 text-sky-800 dark:text-sky-300 border border-sky-300 dark:border-sky-800'
+                    }`}
+                  >
+                    {formatQuantity(metrics.linearMeters, 'MT')} MT
+                  </span>
+                ) : (
                   <span
                     className={`text-[10px] px-1 rounded-full ${
                       isSelected
@@ -559,7 +631,7 @@ export function CompiledMaterialsView({
                         : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
                     }`}
                   >
-                    {count}
+                    {metrics.count}
                   </span>
                 )}
               </button>

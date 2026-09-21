@@ -321,14 +321,74 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
     }
   }
 
-  // Regra de elegibilidade para programação:
-  // "apenas aquelas que estão na fila da Separação, que não tiveram nenhuma atividade feita ainda"
-  // status === 'Fila' && stage === 'Separação' && sem registro em pcp_order_logs
-  const isOrderSelectable = (op: PcpOrder) => {
-    return op.status === 'Fila' && op.stage === 'Separação' && !orderIdsWithLogs.has(op.id)
+  // Mapa de OPs que já constam em programações com status 'Em produção'
+  // Permite saber rapidamente se uma OP está alocada e em qual programação (#XX)
+  const activeProgramacaoByOpMap = useMemo(() => {
+    // Chave: op_number (normalizado em maiúsculo sem prefixo "OP") ou order_id
+    // Valor: { seq_number: number; name: string }
+    const byOpNumber = new Map<string, { seq_number: number; name: string }>()
+    const byOrderId = new Map<string, { seq_number: number; name: string }>()
+
+    programacoes
+      .filter((p) => p.status === 'Em produção')
+      .forEach((prog) => {
+        const list = Array.isArray(prog.orders_list) ? prog.orders_list : []
+        list.forEach((item) => {
+          const progInfo = {
+            seq_number: prog.seq_number,
+            name: prog.name || `Programação #${prog.seq_number}`,
+          }
+          if (item.order_id) {
+            byOrderId.set(item.order_id, progInfo)
+          }
+          if (item.op_number) {
+            const cleanOp = item.op_number
+              .replace(/^OP\s*/i, '')
+              .trim()
+              .toUpperCase()
+            if (cleanOp) {
+              byOpNumber.set(cleanOp, progInfo)
+            }
+          }
+        })
+      })
+
+    return { byOpNumber, byOrderId }
+  }, [programacoes])
+
+  // Função auxiliar para verificar se uma OP consta em alguma programação 'Em produção'
+  const getOpActiveProgramacao = (op: PcpOrder): { seq_number: number; name: string } | null => {
+    if (op.id && activeProgramacaoByOpMap.byOrderId.has(op.id)) {
+      return activeProgramacaoByOpMap.byOrderId.get(op.id)!
+    }
+    const cleanOp = (op.op_number || '')
+      .replace(/^OP\s*/i, '')
+      .trim()
+      .toUpperCase()
+    if (cleanOp && activeProgramacaoByOpMap.byOpNumber.has(cleanOp)) {
+      return activeProgramacaoByOpMap.byOpNumber.get(cleanOp)!
+    }
+    return null
   }
 
-  // Divisão entre OPs selecionáveis (programáveis) e em execução / com atividade
+  // Regra de elegibilidade para programação:
+  // O critério original permanece intacto: status === 'Fila' && stage === 'Separação' && !orderIdsWithLogs.has(op.id)
+  // Regra ADITIVA (Reginaldo): uma OP que consta em QUALQUER programação com status 'Em produção'
+  // NÃO deve ser selecionável/programável.
+  // Quando a programação que a contém for encerrada (status 'Encerrada'), a OP volta a ser elegível normalmente.
+  const isOrderSelectable = (op: PcpOrder) => {
+    const isBaseEligible =
+      op.status === 'Fila' && op.stage === 'Separação' && !orderIdsWithLogs.has(op.id)
+    if (!isBaseEligible) return false
+
+    // Se estiver em alguma programação com status 'Em produção', não é selecionável
+    const activeProg = getOpActiveProgramacao(op)
+    if (activeProg) return false
+
+    return true
+  }
+
+  // Divisão entre OPs selecionáveis (programáveis) e em execução / com atividade / já em programação
   const { selectableOrders, inExecutionOrders } = useMemo(() => {
     const selectable: PcpOrder[] = []
     const inExecution: PcpOrder[] = []
@@ -342,7 +402,7 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
     })
 
     return { selectableOrders: selectable, inExecutionOrders: inExecution }
-  }, [orders, orderIdsWithLogs])
+  }, [orders, orderIdsWithLogs, activeProgramacaoByOpMap])
 
   // Conjunto de OPs a serem listadas na tabela:
   // Se showInExecutionConsultation for falso (padrão): lista apenas as OPs selecionáveis/programáveis.
@@ -535,11 +595,20 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
   // --------------------------------------------------------------------------
   const toggleOrderSelection = (op: PcpOrder) => {
     if (!isOrderSelectable(op)) {
-      toast({
-        title: 'OP não programável',
-        description: 'Esta OP já está em execução ou possui atividade anterior registrada.',
-        variant: 'destructive',
-      })
+      const activeProg = getOpActiveProgramacao(op)
+      if (activeProg) {
+        toast({
+          title: 'OP não programável',
+          description: `Esta OP já consta na Programação #${activeProg.seq_number} (Em produção)`,
+          variant: 'destructive',
+        })
+      } else {
+        toast({
+          title: 'OP não programável',
+          description: 'Esta OP já está em execução ou possui atividade anterior registrada.',
+          variant: 'destructive',
+        })
+      }
       return
     }
 
@@ -557,10 +626,20 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
     // Considera apenas as OPs que são selecionáveis no lote
     const selectableInGroup = items.filter(isOrderSelectable)
     if (selectableInGroup.length === 0) {
-      toast({
-        title: 'Nenhuma OP programável no lote',
-        description: 'Todas as OPs deste lote já estão em execução ou possuem atividades.',
-      })
+      const firstActiveProgItem = items.find((it) => getOpActiveProgramacao(it) !== null)
+      if (firstActiveProgItem) {
+        const activeProg = getOpActiveProgramacao(firstActiveProgItem)!
+        toast({
+          title: 'Nenhuma OP programável no lote',
+          description: `As OPs deste lote não estão aptas (ex.: OP já consta na Programação #${activeProg.seq_number}).`,
+        })
+      } else {
+        toast({
+          title: 'Nenhuma OP programável no lote',
+          description:
+            'Todas as OPs deste lote já estão em execução, com atividades ou em programação.',
+        })
+      }
       return
     }
 
@@ -580,13 +659,14 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
   }
 
   // Atalho 1: Selecionar todas da fila
-  // Requisito: deve considerar apenas a fila filtrada pela regra (Separação + sem logs)
+  // Requisito: deve considerar apenas a fila filtrada pela regra (Separação + sem logs + fora de programações em produção)
   const handleSelectAllFila = () => {
     const eligibleFilaOrders = selectableOrders
     if (eligibleFilaOrders.length === 0) {
       toast({
-        title: 'Fila vazia',
-        description: 'Não há OPs na fila de Separação sem atividades no momento.',
+        title: 'Nenhuma OP programável na fila',
+        description:
+          'Não há OPs na fila de Separação aptas para programação no momento (as existentes já estão em produção ou com atividades).',
       })
       return
     }
@@ -865,25 +945,26 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
         </div>
       )}
 
-      {/* AVISO DISCRETO DE OPS JÁ EM EXECUÇÃO / COM ATIVIDADE */}
+      {/* AVISO DISCRETO DE OPS JÁ EM EXECUÇÃO / COM ATIVIDADE / EM PROGRAMAÇÃO */}
       {inExecutionOrders.length > 0 && (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 py-2 rounded-lg bg-slate-100/90 dark:bg-slate-800/80 border text-xs text-muted-foreground">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Info className="size-4 text-slate-500 shrink-0" />
             <span>
-              <strong className="text-foreground">{inExecutionOrders.length} OP(s)</strong> já em
-              execução ou com atividade registrada — não programáveis.
+              <strong className="text-foreground">{inExecutionOrders.length} OP(s)</strong> não
+              programáveis no momento (em execução, com atividade registrada ou já incluídas em
+              Programação "Em produção").
             </span>
           </div>
           <Button
             variant="ghost"
             size="sm"
             onClick={() => setShowInExecutionConsultation(!showInExecutionConsultation)}
-            className="h-7 text-xs px-2.5 hover:bg-background text-slate-700 dark:text-slate-300 font-medium"
+            className="h-7 text-xs px-2.5 hover:bg-background text-slate-700 dark:text-slate-300 font-medium shrink-0"
           >
             {showInExecutionConsultation
-              ? 'Ocultar OPs em execução (apenas programáveis)'
-              : 'Visualizar OPs em execução (apenas consulta)'}
+              ? 'Ocultar OPs não programáveis (apenas aptas)'
+              : 'Visualizar OPs em execução/programação (apenas consulta)'}
           </Button>
         </div>
       )}
@@ -1099,6 +1180,7 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
                       const normOp = (op.op_number || '').trim().toUpperCase()
                       const dupGroup = normOp ? duplicateOpsMap.get(normOp) : undefined
                       const isDuplicate = !!dupGroup && dupGroup.length > 1
+                      const activeProg = getOpActiveProgramacao(op)
 
                       return (
                         <TableRow
@@ -1119,7 +1201,7 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
                                 : 'bg-white dark:bg-slate-900 hover:bg-muted/40'),
                           )}
                           onClick={() => {
-                            if (selectable) toggleOrderSelection(op)
+                            toggleOrderSelection(op)
                           }}
                         >
                           {/* CHECKBOX POR LINHA (OU TRAÇO/AVISO SE NÃO SELECIONÁVEL) */}
@@ -1127,7 +1209,7 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
                             className="py-1 text-center"
                             onClick={(e) => {
                               e.stopPropagation()
-                              if (selectable) toggleOrderSelection(op)
+                              toggleOrderSelection(op)
                             }}
                           >
                             {selectable ? (
@@ -1155,11 +1237,13 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
                                 <TooltipContent className="text-xs max-w-xs">
                                   <p className="font-semibold">Não programável</p>
                                   <p className="text-[11px] text-muted-foreground mt-0.5">
-                                    {op.status !== 'Fila'
-                                      ? `Status atual: ${op.status} (já em execução)`
-                                      : op.stage !== 'Separação'
-                                        ? `Etapa atual: ${op.stage} (fora da Separação)`
-                                        : 'Esta OP já possui atividades anteriores registradas em log.'}
+                                    {activeProg
+                                      ? `Esta OP já consta na Programação #${activeProg.seq_number} (Em produção)`
+                                      : op.status !== 'Fila'
+                                        ? `Status atual: ${op.status} (já em execução)`
+                                        : op.stage !== 'Separação'
+                                          ? `Etapa atual: ${op.stage} (fora da Separação)`
+                                          : 'Esta OP já possui atividades anteriores registradas em log.'}
                                   </p>
                                 </TooltipContent>
                               </Tooltip>
@@ -1174,6 +1258,15 @@ export default function PcpProgramacao({ embeddedInOrdersTab = false }: PcpProgr
                                 <span className="font-mono font-bold">
                                   {op.op_number ? `OP ${op.op_number}` : '-'}
                                 </span>
+                                {activeProg && (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] px-1.5 py-0 border-blue-400 bg-blue-50 text-blue-700 dark:bg-blue-950/70 dark:text-blue-300 dark:border-blue-700 font-semibold shrink-0"
+                                    title={`OP já incluída na ${activeProg.name} (Em produção)`}
+                                  >
+                                    Na Programação #{activeProg.seq_number}
+                                  </Badge>
+                                )}
                                 {isDuplicate && (
                                   <Tooltip>
                                     <TooltipTrigger asChild>

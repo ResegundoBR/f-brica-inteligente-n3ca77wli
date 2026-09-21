@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -9,25 +9,20 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion'
+import { Input } from '@/components/ui/input'
 import {
   Calendar,
   CheckCircle2,
-  Clock,
-  Layers,
   Package,
   AlertTriangle,
   ChevronRight,
-  ExternalLink,
   Lock,
+  Search,
+  ArrowUpDown,
+  X,
 } from 'lucide-react'
 import { PcpProgramacaoRecord } from '@/services/pcp-programacoes'
+import { NoTranslate } from '@/components/NoTranslate'
 
 interface ProgramacaoDetailModalProps {
   programacao: PcpProgramacaoRecord | null
@@ -43,20 +38,81 @@ export function ProgramacaoDetailModal({
   onCloseProgramacao,
 }: ProgramacaoDetailModalProps) {
   const [componentsExpanded, setComponentsExpanded] = useState(false)
+  const [orderSearch, setOrderSearch] = useState('')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
+  const [componentSearch, setComponentSearch] = useState('')
+
+  const isClosed = programacao?.status === 'Encerrada'
+  const separation = programacao?.expand?.separation_id
+  const compiledItems = Array.isArray(programacao?.compiled_items) ? programacao.compiled_items : []
+  const ordersList = Array.isArray(programacao?.orders_list) ? programacao.orders_list : []
+
+  // Total de itens consolidados
+  const totalItemsCount = compiledItems.length || programacao?.items_count || 0
+
+  // Cálculo de pedidos e OPs reais
+  const uniqueOrdersCount = useMemo(() => {
+    if (!programacao) return 0
+    const orders = new Set(ordersList.map((o) => o.order_number).filter(Boolean))
+    return orders.size || programacao.orders_count || ordersList.length
+  }, [ordersList, programacao])
+
+  const uniqueOpsCount = useMemo(() => {
+    if (!programacao) return 0
+    const ops = new Set(ordersList.map((o) => o.op_number).filter(Boolean))
+    return ops.size || programacao.ops_count || ordersList.length
+  }, [ordersList, programacao])
+
+  // Filtragem e ordenação da lista de pedidos / OPs
+  const filteredAndSortedOrders = useMemo(() => {
+    let result = [...ordersList]
+
+    if (orderSearch.trim()) {
+      const q = orderSearch.toLowerCase().trim()
+      result = result.filter((item) => {
+        const orderNum = (item.order_number || '').toLowerCase()
+        const opNum = (item.op_number || '').toLowerCase()
+        const client = (item.client_name || '').toLowerCase()
+        const product = (item.product_name || '').toLowerCase()
+        const label = (item.formatted_label || '').toLowerCase()
+        return (
+          orderNum.includes(q) ||
+          opNum.includes(q) ||
+          client.includes(q) ||
+          product.includes(q) ||
+          label.includes(q)
+        )
+      })
+    }
+
+    result.sort((a, b) => {
+      const numA = (a.order_number || '').toLowerCase()
+      const numB = (b.order_number || '').toLowerCase()
+      const comp = numA.localeCompare(numB, undefined, { numeric: true, sensitivity: 'base' })
+      return sortOrder === 'asc' ? comp : -comp
+    })
+
+    return result
+  }, [ordersList, orderSearch, sortOrder])
+
+  // Filtragem de componentes expandidos
+  const filteredComponents = useMemo(() => {
+    if (!componentSearch.trim()) return compiledItems
+    const q = componentSearch.toLowerCase().trim()
+    return compiledItems.filter((item: any) => {
+      const code = (item.code || '').toLowerCase()
+      const desc = (item.description || '').toLowerCase()
+      const cut = (item.cutMeasurement || '').toLowerCase()
+      const ops = Array.isArray(item.orderNumbers) ? item.orderNumbers.join(' ').toLowerCase() : ''
+      return code.includes(q) || desc.includes(q) || cut.includes(q) || ops.includes(q)
+    })
+  }, [compiledItems, componentSearch])
 
   if (!programacao) return null
 
-  const isClosed = programacao.status === 'Encerrada'
-  const separation = programacao.expand?.separation_id
-  const compiledItems = Array.isArray(programacao.compiled_items) ? programacao.compiled_items : []
-  const ordersList = Array.isArray(programacao.orders_list) ? programacao.orders_list : []
-
-  // Agrupar componentes por perfil/tubos e gerais se aplicável, ou exibir blocos
-  const totalItemsCount = compiledItems.length || programacao.items_count || 0
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-4 sm:p-6">
+      <DialogContent className="w-[96vw] max-w-4xl max-h-[92vh] sm:max-h-[90vh] flex flex-col p-3 sm:p-6 overflow-hidden">
         <DialogHeader className="border-b pb-3">
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div className="space-y-1">
@@ -173,55 +229,147 @@ export function ProgramacaoDetailModal({
           )}
 
           {/* (4) LISTA DE PEDIDOS / OPS / PRODUTOS (SEMPRE VISÍVEL) */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
-                <span>📋</span>
-                Pedidos & Ordens de Produção ({ordersList.length})
-                <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground">
-                  Sempre visível
-                </Badge>
-              </h3>
-            </div>
+          <div className="space-y-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="space-y-0.5">
+                <h3 className="text-sm font-bold text-foreground flex items-center gap-2 flex-wrap">
+                  <span className="text-base">📋</span>
+                  <span>Pedidos & Ordens de Produção</span>
+                  <Badge variant="secondary" className="font-semibold text-xs">
+                    {uniqueOrdersCount} {uniqueOrdersCount === 1 ? 'pedido' : 'pedidos'} /{' '}
+                    {uniqueOpsCount} OP{uniqueOpsCount !== 1 ? 's' : ''}
+                  </Badge>
+                </h3>
+                <p className="text-[11px] text-muted-foreground">
+                  Exibindo{' '}
+                  <strong className="text-foreground font-semibold">
+                    {filteredAndSortedOrders.length}
+                  </strong>{' '}
+                  de {ordersList.length} registro{ordersList.length !== 1 ? 's' : ''}
+                  {orderSearch.trim() && ' (filtrado)'}
+                </p>
+              </div>
 
-            <div className="border rounded-lg overflow-hidden bg-card">
-              <ScrollArea className="max-h-56">
-                <div className="divide-y text-xs">
-                  {ordersList.map((ord, idx) => (
-                    <div
-                      key={idx}
-                      className="p-2.5 flex items-center justify-between hover:bg-muted/40 transition-colors gap-3"
+              {/* FILTRO E ORDENAÇÃO RÁPIDA */}
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <div className="relative flex-1 sm:w-60">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                  <Input
+                    placeholder="Filtrar cliente, pedido ou OP..."
+                    value={orderSearch}
+                    onChange={(e) => setOrderSearch(e.target.value)}
+                    className="h-8 pl-8 pr-7 text-xs bg-background"
+                  />
+                  {orderSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setOrderSearch('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                     >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="font-mono text-[11px] text-muted-foreground w-6 text-center">
-                          #{idx + 1}
-                        </span>
-                        <div className="font-medium text-foreground break-words">
-                          {ord.formatted_label ||
-                            `${ord.order_number} — ${ord.client_name} — ${ord.product_name} / OP ${ord.op_number}`}
-                        </div>
-                      </div>
-                      <div className="shrink-0 flex items-center gap-2">
-                        {ord.quantity && (
-                          <Badge variant="secondary" className="font-mono text-[10px]">
-                            {ord.quantity} un
-                          </Badge>
-                        )}
-                        {ord.op_number && (
-                          <Badge variant="outline" className="font-mono text-[10px]">
-                            OP {ord.op_number}
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                  {ordersList.length === 0 && (
-                    <div className="p-4 text-center text-muted-foreground text-xs">
-                      Nenhum pedido listado nesta programação.
-                    </div>
+                      <X className="h-3.5 w-3.5" />
+                    </button>
                   )}
                 </div>
-              </ScrollArea>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+                  className="h-8 px-2.5 text-xs gap-1 shrink-0"
+                  title={`Ordenar por pedido (${sortOrder === 'asc' ? 'Crescente' : 'Decrescente'})`}
+                >
+                  <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="hidden sm:inline">
+                    {sortOrder === 'asc' ? 'Crescente' : 'Decrescente'}
+                  </span>
+                </Button>
+              </div>
+            </div>
+
+            {/* CONTAINER COM ROLAGEM NATIVA, ALTURA EXPANDIDA E INDICADORES VISUAIS */}
+            <div className="relative border rounded-lg overflow-hidden bg-card shadow-sm">
+              <div className="max-h-[50vh] sm:max-h-[55vh] overflow-y-auto overscroll-contain divide-y text-xs divide-border/60">
+                {filteredAndSortedOrders.map((ord, idx) => (
+                  <div
+                    key={`${ord.order_id || ord.order_number}-${idx}`}
+                    className="p-2.5 sm:p-3 flex items-start sm:items-center justify-between hover:bg-muted/50 transition-colors gap-3"
+                  >
+                    <div className="flex items-start sm:items-center gap-2.5 min-w-0 flex-1">
+                      <span className="font-mono text-[11px] text-muted-foreground w-6 shrink-0 text-center pt-0.5 sm:pt-0">
+                        #{idx + 1}
+                      </span>
+                      <div className="min-w-0 space-y-0.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <NoTranslate className="font-bold text-foreground text-xs sm:text-sm">
+                            Pedido {ord.order_number || '-'}
+                          </NoTranslate>
+                          {ord.client_name && (
+                            <NoTranslate className="text-muted-foreground text-xs truncate max-w-[260px] sm:max-w-md">
+                              • {ord.client_name}
+                            </NoTranslate>
+                          )}
+                        </div>
+                        {ord.product_name && (
+                          <div className="text-[11px] text-muted-foreground">
+                            <NoTranslate className="text-slate-600 dark:text-slate-300">
+                              {ord.product_name}
+                            </NoTranslate>
+                          </div>
+                        )}
+                        {!ord.product_name && ord.formatted_label && (
+                          <div className="text-[11px] text-muted-foreground">
+                            <NoTranslate>{ord.formatted_label}</NoTranslate>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="shrink-0 flex items-center gap-1.5 sm:gap-2 self-start sm:self-center">
+                      {ord.quantity && (
+                        <Badge variant="secondary" className="font-mono text-[10px] sm:text-xs">
+                          <NoTranslate>{ord.quantity} un</NoTranslate>
+                        </Badge>
+                      )}
+                      {ord.op_number ? (
+                        <Badge
+                          variant="outline"
+                          className="font-mono text-[10px] sm:text-xs bg-blue-50/50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 border-blue-300"
+                        >
+                          <NoTranslate>OP {ord.op_number}</NoTranslate>
+                        </Badge>
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          className="font-mono text-[10px] text-muted-foreground"
+                        >
+                          Sem OP
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                ))}
+
+                {filteredAndSortedOrders.length === 0 && (
+                  <div className="p-8 text-center text-muted-foreground text-xs space-y-1">
+                    <p className="font-medium text-foreground">Nenhum pedido encontrado</p>
+                    <p className="text-[11px]">
+                      {orderSearch.trim()
+                        ? `Nenhum resultado corresponde ao filtro "${orderSearch}".`
+                        : 'Nenhum pedido listado nesta programação.'}
+                    </p>
+                  </div>
+                )}
+              </div>
+              {/* Barra de rodapé do container com contador fixo para transparência */}
+              <div className="px-3 py-1.5 bg-muted/30 border-t flex items-center justify-between text-[11px] text-muted-foreground">
+                <span>
+                  Mostrando{' '}
+                  <strong className="text-foreground">{filteredAndSortedOrders.length}</strong> de{' '}
+                  {ordersList.length} itens gravados
+                </span>
+                <span className="text-[10px]">Role para ver todos</span>
+              </div>
             </div>
           </div>
 
@@ -258,54 +406,93 @@ export function ProgramacaoDetailModal({
               </Button>
             </div>
 
-            {/* SE EXPANDIDO: EXIBE A LISTA DE MATERIAIS */}
+            {/* SE EXPANDIDO: EXIBE A LISTA DE MATERIAIS COM ROLAGEM NATIVA E FILTRO */}
             {componentsExpanded && (
-              <div className="pt-2 border-t mt-2">
-                <ScrollArea className="max-h-72">
-                  <div className="space-y-1.5">
-                    {compiledItems.map((item: any, idx: number) => (
+              <div className="pt-3 border-t mt-2 space-y-2">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="relative flex-1 sm:max-w-xs">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                    <Input
+                      placeholder="Filtrar por código ou descrição..."
+                      value={componentSearch}
+                      onChange={(e) => setComponentSearch(e.target.value)}
+                      className="h-7 pl-8 pr-7 text-xs bg-background"
+                    />
+                    {componentSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setComponentSearch('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                  <span className="text-[11px] text-muted-foreground">
+                    Exibindo <strong>{filteredComponents.length}</strong> de {compiledItems.length}
+                  </span>
+                </div>
+
+                <div className="border rounded-lg overflow-hidden bg-card shadow-sm">
+                  <div className="max-h-[50vh] sm:max-h-[55vh] overflow-y-auto overscroll-contain divide-y text-xs divide-border/60">
+                    {filteredComponents.map((item: any, idx: number) => (
                       <div
                         key={idx}
-                        className="p-2 rounded bg-card border flex items-center justify-between text-xs gap-3 hover:bg-muted/40"
+                        className="p-2.5 rounded-none flex items-center justify-between text-xs gap-3 hover:bg-muted/40 transition-colors"
                       >
-                        <div className="space-y-0.5 min-w-0">
-                          <div className="flex items-center gap-2">
+                        <div className="space-y-0.5 min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
                             {item.code ? (
-                              <span className="font-mono font-bold text-foreground">
+                              <NoTranslate className="font-mono font-bold text-foreground">
                                 {item.code}
-                              </span>
+                              </NoTranslate>
                             ) : (
                               <span className="text-muted-foreground italic">s/ código</span>
                             )}
-                            <span className="text-muted-foreground truncate">
+                            <NoTranslate className="text-foreground truncate max-w-sm sm:max-w-md">
                               {item.description}
-                            </span>
+                            </NoTranslate>
                           </div>
-                          <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                          <div className="flex items-center gap-2 text-[10px] text-muted-foreground flex-wrap">
                             {item.cutMeasurement && (
                               <Badge variant="secondary" className="h-4 px-1 text-[9px]">
-                                Corte: {item.cutMeasurement}
+                                <NoTranslate>Corte: {item.cutMeasurement}</NoTranslate>
                               </Badge>
                             )}
+                            {item.categoryName && (
+                              <span className="text-slate-500">[{item.categoryName}]</span>
+                            )}
                             {item.orderNumbers && item.orderNumbers.length > 0 && (
-                              <span>OPs: {item.orderNumbers.join(', ')}</span>
+                              <NoTranslate className="text-muted-foreground">
+                                OPs: {item.orderNumbers.join(', ')}
+                              </NoTranslate>
                             )}
                           </div>
                         </div>
 
                         <div className="text-right shrink-0">
-                          <span className="font-bold text-foreground font-mono">
+                          <NoTranslate className="font-bold text-foreground font-mono">
                             {Number(item.totalQuantity || item.quantity || 0).toLocaleString(
                               'pt-BR',
                               { maximumFractionDigits: 2 },
                             )}{' '}
                             {item.unit || 'UN'}
-                          </span>
+                          </NoTranslate>
                         </div>
                       </div>
                     ))}
+
+                    {filteredComponents.length === 0 && (
+                      <div className="p-6 text-center text-muted-foreground text-xs">
+                        Nenhum componente encontrado para esta busca.
+                      </div>
+                    )}
                   </div>
-                </ScrollArea>
+                  <div className="px-3 py-1 bg-muted/30 border-t flex items-center justify-between text-[10px] text-muted-foreground">
+                    <span>Lista completa de insumos compilados da programação</span>
+                    <span>Role para ver todos</span>
+                  </div>
+                </div>
               </div>
             )}
           </div>

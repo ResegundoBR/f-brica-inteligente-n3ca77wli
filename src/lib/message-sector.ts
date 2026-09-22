@@ -207,4 +207,54 @@ export function getMessageSenderSector(msg: any): MessageSector | 'pcp' {
   return getRoleSector(userExpand.expand?.role)
 }
 
+/**
+ * Extrai o operator_id de uma mensagem (ou de sua ordem vinculada) tratando
+ * tanto ID em string pura quanto objeto expandido ({ id: string }).
+ */
+export function getOrderOperatorId(msg: any): string | null {
+  const order = msg?.expand?.order_id ?? msg?.order
+  const op = order?.operator_id ?? order?.expand?.operator_id ?? msg?.operator_id
+  if (!op) return null
+  if (typeof op === 'string') return op
+  if (typeof op === 'object' && op.id) return String(op.id)
+  return null
+}
+
+/**
+ * Verifica se o usuário autenticado é o operador responsável pela OP vinculada à mensagem.
+ */
+export function isUserOrderOperator(msg: any, userId: string | null | undefined): boolean {
+  if (!userId) return false
+  const orderOpId = getOrderOperatorId(msg)
+  return !!orderOpId && orderOpId === userId
+}
+
+/**
+ * NOVA REGRA DE VISIBILIDADE DE MENSAGENS:
+ * - Para gestores do PCP (isPcpManager): vê todas as mensagens (visão total).
+ * - Para usuários não-PCP:
+ *     Visível se:
+ *       1) Não há userChannel definido, OU msg.sector === userChannel (ou msg não tem setor especificado);
+ *       OU
+ *       2) O usuário logado é o operador responsável pela OP vinculada (via expand order_id.operator_id).
+ */
+export function isMessageVisibleForUser(
+  msg: any,
+  user: User | null | undefined,
+  userChannel?: MessageSector | null,
+): boolean {
+  if (!user) return false
+  if (isPcpManager(user)) return true
+
+  // 1) Setor/Canal compatível
+  const effectiveChannel = userChannel ?? getUserChannel(user)
+  const sector = msg?.sector
+  const matchesSector = !effectiveChannel || !sector || sector === effectiveChannel
+
+  if (matchesSector) return true
+
+  // 2) Operador responsável da OP
+  return isUserOrderOperator(msg, user.id)
+}
+
 export type IndicatorState = 'none' | 'blue' | 'green' | 'gray' | 'red'

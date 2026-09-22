@@ -34,6 +34,7 @@ import {
   isPcpManager,
   getUserChannel,
   getUserSector,
+  isMessageVisibleForUser,
   SECTOR_OPTIONS,
   SECTOR_VISUALS,
   type MessageChannel,
@@ -112,6 +113,13 @@ export function OrderMessagesPanel({
     }
   }, [sector, userChannel])
 
+  // Ajusta automaticamente o canal ativo se houver initialReplyTo com setor
+  useEffect(() => {
+    if (initialReplyTo?.sector) {
+      setSelectedChannel(initialReplyTo.sector)
+    }
+  }, [initialReplyTo])
+
   // Função para marcar como lidas as mensagens da conversa direcionadas ao perfil atual
   const markAsRead = useCallback(async () => {
     if (!orderId || !user) return
@@ -130,9 +138,7 @@ export function OrderMessagesPanel({
       const orderMsgs = allSharedMessages.filter((m) => m.order_id === orderId)
       const visible = orderMsgs.filter((m) => {
         if (userIsPcp) return true
-        if (!userChannel) return true
-        if (!m.sector) return true
-        return m.sector === userChannel
+        return isMessageVisibleForUser(m, user, userChannel)
       })
       visible.sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime())
       setMessages(visible)
@@ -146,14 +152,12 @@ export function OrderMessagesPanel({
       const res = await pb.collection('pcp_order_messages').getFullList<PcpOrderMessage>({
         filter: `order_id="${orderId}"`,
         sort: 'created',
-        expand: 'user_id.role,reply_to.user_id',
+        expand: 'user_id.role,order_id.operator_id,reply_to.user_id',
       })
 
       const visible = res.filter((m) => {
         if (userIsPcp) return true
-        if (!userChannel) return true
-        if (!m.sector) return true
-        return m.sector === userChannel
+        return isMessageVisibleForUser(m, user, userChannel)
       })
 
       setMessages(visible)
@@ -204,16 +208,36 @@ export function OrderMessagesPanel({
     return counts
   }, [messages])
 
-  // Filtra mensagens pelo canal selecionado quando o usuário for PCP ou sector === 'all'
+  // Se o usuário não é PCP, ele vê mensagens visíveis (canal do usuário ou OP sob sua responsabilidade).
+  // Se foi selecionado um canal explícito ou se houver mensagens de múltiplos setores da OP,
+  // permite exibir as mensagens relevantes.
   const displayMessages = useMemo(() => {
-    if (!userIsPcp && userChannel) {
-      return messages.filter((m) => !m.sector || m.sector === userChannel)
+    if (userIsPcp) {
+      return messages.filter((m) => {
+        if (!m.sector) return selectedChannel === 'Comercial' || selectedChannel === 'Operador'
+        return m.sector === selectedChannel
+      })
     }
-    return messages.filter((m) => {
-      if (!m.sector) return selectedChannel === 'Comercial' || selectedChannel === 'Operador'
-      return m.sector === selectedChannel
-    })
-  }, [messages, userIsPcp, userChannel, selectedChannel])
+
+    // Se o usuário tem sector prop !== 'all', mas existem mensagens de outros setores visíveis da OP
+    // (ex.: pergunta da Cristina em 'Montagem' e Gonzalo em 'Operador'):
+    // Se sector === 'all', mostra todas as visíveis. Se sector específico foi passado, mas a OP tem
+    // mensagens de outros setores em que o operador é responsável, respeita o selectedChannel se ele
+    // navegou para ele, ou mostra todas se houver apenas mensagens desse outro setor.
+    if (sector !== 'all' && messages.some((m) => m.sector && m.sector !== sector)) {
+      // Se há canal selecionado explicitamente entre as abas ou reply_to:
+      if (selectedChannel && messages.some((m) => m.sector === selectedChannel)) {
+        return messages.filter((m) => m.sector === selectedChannel || !m.sector)
+      }
+      return messages
+    }
+
+    if (sector !== 'all') {
+      return messages.filter((m) => !m.sector || m.sector === sector)
+    }
+
+    return messages
+  }, [messages, userIsPcp, sector, selectedChannel])
 
   const handleStartReply = (msg: PcpOrderMessage) => {
     setReplyingTo(msg)
@@ -357,15 +381,21 @@ export function OrderMessagesPanel({
             </div>
           </div>
 
-          {/* Abas de setores (visíveis para gestores do PCP) */}
-          {userIsPcp && (
+          {/* Abas de canais por setor: visíveis para gestores do PCP ou se houver mensagens de múltiplos setores na OP */}
+          {userIsPcp ||
+          Array.from(new Set(messages.map((m) => m.sector).filter(Boolean))).length > 1 ? (
             <div className="pt-3">
               <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5">
                 Canais por Setor
               </span>
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-                {SECTOR_OPTIONS.map((sec) => {
-                  const meta = SECTOR_VISUALS[sec]
+                {(userIsPcp
+                  ? SECTOR_OPTIONS
+                  : Array.from(
+                      new Set(messages.map((m) => m.sector).filter(Boolean) as MessageSector[]),
+                    )
+                ).map((sec) => {
+                  const meta = SECTOR_VISUALS[sec] || SECTOR_VISUALS.Operador
                   const Icon = meta.icon
                   const isSelected = selectedChannel === sec
                   const counts = sectorCounts[sec] || { total: 0, pending: 0 }
@@ -405,31 +435,32 @@ export function OrderMessagesPanel({
                 })}
               </div>
             </div>
-          )}
-
-          {/* Se for usuário de setor restrito, mostra badge indicativo do canal ativo */}
-          {!userIsPcp && userChannel && (
-            <div className="pt-2 flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Canal de comunicação:</span>
-              {(() => {
-                const meta = SECTOR_VISUALS[userChannel]
-                const Icon = meta.icon
-                return (
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      'text-xs gap-1 py-0.5',
-                      meta.badgeBg,
-                      meta.badgeText,
-                      meta.badgeBorder,
-                    )}
-                  >
-                    <Icon className="size-3" style={{ color: meta.color }} />
-                    {meta.label}
-                  </Badge>
-                )
-              })()}
-            </div>
+          ) : (
+            /* Se for canal único e não-PCP, mostra badge indicativo do canal ativo */
+            !userIsPcp && (
+              <div className="pt-2 flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Canal de comunicação:</span>
+                {(() => {
+                  const activeSector = selectedChannel || userChannel || 'Operador'
+                  const meta = SECTOR_VISUALS[activeSector] || SECTOR_VISUALS.Operador
+                  const Icon = meta.icon
+                  return (
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        'text-xs gap-1 py-0.5',
+                        meta.badgeBg,
+                        meta.badgeText,
+                        meta.badgeBorder,
+                      )}
+                    >
+                      <Icon className="size-3" style={{ color: meta.color }} />
+                      {meta.label}
+                    </Badge>
+                  )
+                })()}
+              </div>
+            )
           )}
         </SheetHeader>
 

@@ -1,6 +1,6 @@
 import pb from '@/lib/pocketbase/client'
 import type { PcpOrderMessage, MessageSector, MessageType, MessageStatus } from '@/types'
-import { isPcpSender } from '@/lib/message-sector'
+import { isPcpSender, isMessageVisibleForUser } from '@/lib/message-sector'
 
 export interface CreateOrderMessageInput {
   order_id: string
@@ -17,7 +17,7 @@ export const getOrderMessages = (orderId: string) =>
   pb.collection('pcp_order_messages').getFullList<PcpOrderMessage>({
     filter: `order_id="${orderId}"`,
     sort: 'created',
-    expand: 'user_id.role,order_id,reply_to.user_id',
+    expand: 'user_id.role,order_id.operator_id,reply_to.user_id',
   })
 
 export const createOrderMessage = async (data: CreateOrderMessageInput) => {
@@ -67,7 +67,7 @@ export const markOrderMessagesAsRead = async (
     if (list.length === 0 && !snapshot.initialized) {
       list = await pb.collection('pcp_order_messages').getFullList<PcpOrderMessage>({
         filter: `order_id="${orderId}" && read=false`,
-        expand: 'user_id.role',
+        expand: 'user_id.role,order_id.operator_id',
       })
     }
 
@@ -77,8 +77,8 @@ export const markOrderMessagesAsRead = async (
       if (isPcp) {
         return !senderIsPcp
       } else {
-        const sectorMatch = !m.sector || !userChannel || m.sector === userChannel
-        return senderIsPcp && sectorMatch
+        const isVisible = isMessageVisibleForUser(m, currentUser as any, userChannel)
+        return senderIsPcp && isVisible
       }
     })
 
@@ -96,5 +96,5 @@ export const markOrderMessagesAsRead = async (
 export const getAllMessages = () =>
   pb.collection('pcp_order_messages').getFullList<PcpOrderMessage>({
     sort: '-created',
-    expand: 'user_id.role,order_id.client_id,reply_to.user_id',
+    expand: 'user_id.role,order_id.client_id,order_id.operator_id,reply_to.user_id',
   })

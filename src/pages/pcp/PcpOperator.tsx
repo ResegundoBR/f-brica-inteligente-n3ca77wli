@@ -1134,7 +1134,7 @@ export default function PcpOperator() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const { toast } = useToast()
-  const { getOrderMessageInfo, markOrderAsRead } = useOrderMessages('Operador')
+  const { getOrderMessageInfo, markOrderAsRead } = useOrderMessages()
   const { totalBadgeCount } = useUnreadMessages()
 
   const [openRequest, setOpenRequest] = useState(false)
@@ -2100,7 +2100,7 @@ export default function PcpOperator() {
         open={!!messageOrder}
         onOpenChange={(open) => !open && setMessageOrder(null)}
         onMessagesRead={markOrderAsRead}
-        sector="Operador"
+        sector="all"
       />
     </div>
   )

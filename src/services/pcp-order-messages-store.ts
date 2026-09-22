@@ -99,7 +99,7 @@ export async function fetchAllOrderMessages(force: boolean = false): Promise<Pcp
     try {
       const records = await pb.collection('pcp_order_messages').getFullList<PcpOrderMessage>({
         sort: '-created',
-        expand: 'user_id.role,order_id.client_id,reply_to.user_id',
+        expand: 'user_id.role,order_id.client_id,order_id.operator_id,reply_to.user_id',
       })
       state.messages = records
       state.initialized = true

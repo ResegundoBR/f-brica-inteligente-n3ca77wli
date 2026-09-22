@@ -14,6 +14,7 @@ import {
   isPcpManager,
   getUserChannel,
   getUserSector,
+  isMessageVisibleForUser,
   SECTOR_OPTIONS,
   SECTOR_VISUALS,
 } from '@/lib/message-sector'
@@ -126,8 +127,8 @@ export function PcpInbox() {
       const clientName = order?.expand?.client_id?.name || order?.client_name || ''
       const sector = (msg.sector || (userChannel ?? 'Operador')) as MessageSector
 
-      // Se o usuário não é PCP, só vê conversas do seu setor/canal
-      if (!isPcp && userChannel && sector !== userChannel) {
+      // Se o usuário não é PCP, só vê conversas do seu setor/canal OU se for o operador responsável da OP
+      if (!isPcp && !isMessageVisibleForUser(msg, user, userChannel)) {
         continue
       }
 
@@ -161,9 +162,7 @@ export function PcpInbox() {
       const isUnread =
         !msg.read &&
         msg.user_id !== user?.id &&
-        (isPcp
-          ? !msgFromPcp
-          : msgFromPcp && (!msg.sector || !userChannel || msg.sector === userChannel))
+        (isPcp ? !msgFromPcp : msgFromPcp && isMessageVisibleForUser(msg, user, userChannel))
       if (isUnread) {
         conv.unreadCount += 1
       }
@@ -182,9 +181,13 @@ export function PcpInbox() {
         conv.totalQuestions += 1
         // Regra (2): Só conta como pendente se relevante ao perfil:
         // Se for PCP: perguntas feitas por outros (não PCP)
-        // Se for Setor: perguntas feitas pelo setor ou direcionadas ao setor
+        // Se for não-PCP (setor / operador responsável):
+        // - Perguntas feitas pelo próprio usuário aguardando resposta
+        // - OU perguntas feitas pelo PCP direcionadas ao setor / operador responsável que aguardam resposta
         const isOwnQuestion = msg.user_id === user?.id
-        const isRelevantQuestion = isPcp ? !msgFromPcp && !isOwnQuestion : isOwnQuestion
+        const isRelevantQuestion = isPcp
+          ? !msgFromPcp && !isOwnQuestion
+          : isOwnQuestion || (msgFromPcp && isMessageVisibleForUser(msg, user, userChannel))
         if (msg.status === 'Pendente' && isRelevantQuestion) {
           conv.pendingQuestionsCount += 1
         } else if (msg.status === 'Respondida') {
@@ -297,7 +300,8 @@ export function PcpInbox() {
   // Filtragem
   const filteredConversations = useMemo(() => {
     return conversationGroups.filter((c) => {
-      if (isPcp && sectorFilter !== 'all' && c.sector !== sectorFilter) {
+      // Se filtro de setor estiver ativo (para PCP ou se não-PCP alternar entre 'all' e canal específico)
+      if (sectorFilter !== 'all' && c.sector !== sectorFilter) {
         return false
       }
 
@@ -329,8 +333,8 @@ export function PcpInbox() {
       if (isPcp) {
         return !senderIsPcp
       } else {
-        const sectorMatch = !m.sector || !userChannel || m.sector === userChannel
-        return senderIsPcp && sectorMatch
+        const isVisible = isMessageVisibleForUser(m, user, userChannel)
+        return senderIsPcp && isVisible
       }
     })
 
@@ -503,36 +507,37 @@ export function PcpInbox() {
           </Button>
         </div>
 
-        {/* Filtro por Setor (para PCP) */}
-        {isPcp && (
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
-            <Button
-              variant={sectorFilter === 'all' ? 'secondary' : 'ghost'}
-              size="sm"
-              className="h-8 text-xs"
-              onClick={() => setSectorFilter('all')}
-            >
-              Todos Setores
-            </Button>
-            {SECTOR_OPTIONS.map((sec) => {
-              const meta = SECTOR_VISUALS[sec]
-              const Icon = meta.icon
-              const isSelected = sectorFilter === sec
-              return (
-                <Button
-                  key={sec}
-                  variant={isSelected ? 'default' : 'outline'}
-                  size="sm"
-                  className={cn('h-8 text-xs gap-1.5 shrink-0')}
-                  onClick={() => setSectorFilter(sec)}
-                >
-                  <Icon className="size-3.5" style={{ color: isSelected ? 'white' : meta.color }} />
-                  <span>{meta.label}</span>
-                </Button>
-              )
-            })}
-          </div>
-        )}
+        {/* Filtro por Setor (para PCP e para usuários com acesso a mais de um setor/OPs) */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
+          <Button
+            variant={sectorFilter === 'all' ? 'secondary' : 'ghost'}
+            size="sm"
+            className="h-8 text-xs"
+            onClick={() => setSectorFilter('all')}
+          >
+            {isPcp ? 'Todos Setores' : 'Todas'}
+          </Button>
+          {(isPcp
+            ? SECTOR_OPTIONS
+            : Array.from(new Set(conversationGroups.map((c) => c.sector)))
+          ).map((sec) => {
+            const meta = SECTOR_VISUALS[sec] || SECTOR_VISUALS.Operador
+            const Icon = meta.icon
+            const isSelected = sectorFilter === sec
+            return (
+              <Button
+                key={sec}
+                variant={isSelected ? 'default' : 'outline'}
+                size="sm"
+                className={cn('h-8 text-xs gap-1.5 shrink-0')}
+                onClick={() => setSectorFilter(sec)}
+              >
+                <Icon className="size-3.5" style={{ color: isSelected ? 'white' : meta.color }} />
+                <span>{meta.label}</span>
+              </Button>
+            )
+          })}
+        </div>
       </div>
 
       {/* Lista de Conversas / Threads agrupadas por OP + Setor */}

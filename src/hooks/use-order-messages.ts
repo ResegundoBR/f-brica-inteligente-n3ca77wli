@@ -7,6 +7,7 @@ import {
   isPcpSender,
   isPcpManager,
   getUserChannel,
+  isMessageVisibleForUser,
 } from '@/lib/message-sector'
 import {
   subscribeToSharedMessages,
@@ -47,9 +48,17 @@ export function useOrderMessages(channel?: MessageChannel) {
   }, [])
 
   const messages = useMemo(() => {
-    if (!effectiveChannel) return allMessages
-    return allMessages.filter((m) => m.sector === effectiveChannel)
-  }, [allMessages, effectiveChannel])
+    if (isPcp) {
+      if (!channel) return allMessages
+      return allMessages.filter((m) => m.sector === channel)
+    }
+    // Para não-PCP: se channel foi explicitamente passado, filtra por esse canal
+    // MAS também inclui mensagens da OP se o usuário for o operador responsável da OP
+    return allMessages.filter((m) => {
+      if (channel && m.sector === channel) return true
+      return isMessageVisibleForUser(m, user, userChannel)
+    })
+  }, [allMessages, isPcp, channel, user, userChannel])
 
   const markOrderAsRead = useCallback(
     async (orderId: string) => {
@@ -63,8 +72,8 @@ export function useOrderMessages(channel?: MessageChannel) {
         if (userIsPcp) {
           return !senderIsPcp
         } else {
-          const sectorMatch = !m.sector || !currentChannel || m.sector === currentChannel
-          return senderIsPcp && sectorMatch
+          const visible = isMessageVisibleForUser(m, user, currentChannel)
+          return senderIsPcp && visible
         }
       })
       if (messagesToMark.length > 0) {

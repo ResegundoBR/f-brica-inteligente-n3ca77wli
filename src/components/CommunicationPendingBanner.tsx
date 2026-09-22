@@ -7,6 +7,7 @@ import {
   isPcpManager,
   getUserChannel,
   getUserSector,
+  isMessageVisibleForUser,
   SECTOR_VISUALS,
 } from '@/lib/message-sector'
 import {
@@ -147,12 +148,12 @@ export function CommunicationPendingBanner() {
         const time = new Date(msg.created).getTime()
         if (time > latestCreatedTime) latestCreatedTime = time
 
-        const msgSector = msg.sector || 'Operador'
-        if (userChannel && msgSector !== userChannel) continue
+        // Aplica a nova regra de visibilidade: setor/canal compatível OU operador da OP
+        if (!isMessageVisibleForUser(msg, user, userChannel)) continue
 
         const msgFromPcp = isPcpSender(msg)
 
-        // Respostas do PCP não lidas
+        // Respostas e avisos do PCP não lidos
         if (msgFromPcp && !msg.read && msg.user_id !== user.id) {
           unreadCount += 1
           if (msg.reply_to || msg.type === 'Informação') {
@@ -163,9 +164,14 @@ export function CommunicationPendingBanner() {
           }
         }
 
-        // Perguntas próprias do setor que ainda aguardam resposta do PCP
-        if (msg.type === 'Pergunta' && msg.status === 'Pendente' && msg.user_id === user.id) {
-          pendingCount += 1
+        // Perguntas relevantes: feitas pelo usuário aguardando resposta OU perguntas do PCP direcionadas aguardando resposta
+        if (msg.type === 'Pergunta' && msg.status === 'Pendente') {
+          if (msg.user_id === user.id || msgFromPcp) {
+            pendingCount += 1
+            if (!firstPendingOrderId && msg.order_id) {
+              firstPendingOrderId = msg.order_id
+            }
+          }
         }
       }
     }

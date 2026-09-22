@@ -1,7 +1,12 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useAuth } from '@/hooks/use-auth'
 import type { PcpOrderMessage } from '@/types'
-import { isPcpSender, isPcpManager, getUserChannel } from '@/lib/message-sector'
+import {
+  isPcpSender,
+  isPcpManager,
+  getUserChannel,
+  isMessageVisibleForUser,
+} from '@/lib/message-sector'
 import {
   subscribeToSharedMessages,
   fetchAllOrderMessages,
@@ -59,14 +64,14 @@ export function useUnreadMessages() {
     // Se for PCP:
     // - Não lidas: mensagens não lidas de outros
     // - Pendências: perguntas de status 'Pendente' feitas por outros
-    // Se for setor:
-    // - Não lidas: mensagens não lidas do PCP para o setor do usuário
-    // - Pendências: perguntas direcionadas ao setor que ainda aguardam resposta
+    // Se for não-PCP (setor / operador responsável):
+    // - Não lidas: mensagens não lidas do PCP visíveis ao usuário (canal próprio ou operador da OP)
+    // - Pendências: perguntas visíveis ao usuário (canal próprio ou operador da OP) que aguardam resposta
     const unreadMsgs = isPcp
       ? allMessages.filter((m) => !isPcpSender(m) && m.user_id !== user.id && !m.read)
       : allMessages.filter(
           (m) =>
-            (!m.sector || !userChannel || m.sector === userChannel) &&
+            isMessageVisibleForUser(m, user, userChannel) &&
             isPcpSender(m) &&
             m.user_id !== user.id &&
             !m.read,
@@ -80,7 +85,7 @@ export function useUnreadMessages() {
           (m) =>
             m.type === 'Pergunta' &&
             m.status === 'Pendente' &&
-            (!m.sector || !userChannel || m.sector === userChannel),
+            isMessageVisibleForUser(m, user, userChannel),
         )
 
     const priorityList = [

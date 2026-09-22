@@ -41,31 +41,46 @@ interface KpiConfig {
 export function DashboardKpis({ orders }: DashboardKpisProps) {
   const today = startOfDay(new Date())
 
-  const ordersByNumber: Record<string, PcpOrder[]> = {}
+  // Agrupar todas as OPs por pedido para verificar quais pedidos têm ao menos uma OP em processo
+  const allOrdersByNumber: Record<string, PcpOrder[]> = {}
   orders.forEach((o) => {
     const key = o.order_number || o.id
-    if (!ordersByNumber[key]) ordersByNumber[key] = []
-    ordersByNumber[key].push(o)
+    if (!allOrdersByNumber[key]) allOrdersByNumber[key] = []
+    allOrdersByNumber[key].push(o)
   })
-  const uniqueOrderNumbers = Object.keys(ordersByNumber)
 
-  const totalPedidos = uniqueOrderNumbers.length
+  // (1) GRUPO OPERACIONAL - Pedidos: considerar APENAS pedidos em processo
+  // Equivalente para pedidos: ter ao menos uma OP não concluída ('Fila', 'Em Andamento', 'Parado')
+  const activeOrderNumbers = Object.keys(allOrdersByNumber).filter((orderNumber) => {
+    const ops = allOrdersByNumber[orderNumber]
+    return ops.some(
+      (o) => o.status === 'Fila' || o.status === 'Em Andamento' || o.status === 'Parado',
+    )
+  })
+
+  const totalPedidos = activeOrderNumbers.length
 
   const pedidosByType: Record<string, number> = { Linha: 0, Especial: 0, Assistência: 0 }
-  uniqueOrderNumbers.forEach((orderNumber) => {
-    const ops = ordersByNumber[orderNumber]
-    const type = ops[0]?.op_type || 'Linha'
+  activeOrderNumbers.forEach((orderNumber) => {
+    const ops = allOrdersByNumber[orderNumber]
+    // Considerar o tipo do pedido (preferindo OPs ativas ou a primeira do pedido)
+    const activeOp = ops.find(
+      (o) => o.status === 'Fila' || o.status === 'Em Andamento' || o.status === 'Parado',
+    )
+    const type = activeOp?.op_type || ops[0]?.op_type || 'Linha'
     if (pedidosByType[type] !== undefined) pedidosByType[type]++
   })
 
   let pedidosAtrasados = 0
   let pedidosNoPrazo = 0
   let pedidosTravados = 0
-  uniqueOrderNumbers.forEach((orderNumber) => {
-    const ops = ordersByNumber[orderNumber]
+  activeOrderNumbers.forEach((orderNumber) => {
+    const ops = allOrdersByNumber[orderNumber].filter(
+      (o) => o.status === 'Fila' || o.status === 'Em Andamento' || o.status === 'Parado',
+    )
     const hasStuck = ops.some((o) => o.status === 'Parado')
     const hasDelayed = ops.some((o) => {
-      if (o.status === 'Concluído' || !o.delivery_date) return false
+      if (!o.delivery_date) return false
       const d = parseISO(o.delivery_date)
       return isValid(d) && isBefore(startOfDay(d), today)
     })
@@ -74,24 +89,31 @@ export function DashboardKpis({ orders }: DashboardKpisProps) {
     else pedidosNoPrazo++
   })
 
+  // (1) GRUPO OPERACIONAL - OPs em processo: 'Fila', 'Em Andamento', 'Parado'
+  const inProcessOps = orders.filter(
+    (o) => o.status === 'Fila' || o.status === 'Em Andamento' || o.status === 'Parado',
+  )
+
   const active = orders.filter((o) => o.status === 'Em Andamento' || o.status === 'Fila').length
-  const delayed = orders.filter((o) => {
-    if (o.status === 'Concluído' || !o.delivery_date) return false
+  const delayed = inProcessOps.filter((o) => {
+    if (!o.delivery_date) return false
     const d = parseISO(o.delivery_date)
     return isValid(d) && isBefore(startOfDay(d), today)
   }).length
-  const stuck = orders.filter((o) => o.status === 'Parado').length
+  const stuck = inProcessOps.filter((o) => o.status === 'Parado').length
+  // (2) Concluídas no Mês: Histórico por natureza (mantido com base em orders completo)
   const completedThisMonth = orders.filter((o) => {
     if (o.status !== 'Concluído' || !o.finished_at) return false
     const d = parseISO(o.finished_at)
     return isValid(d) && isWithinInterval(d, { start: startOfMonth(today), end: endOfMonth(today) })
   }).length
-  const deliveriesToday = orders.filter((o) => {
+  // (1) Entregas Hoje e na Semana: Apenas OPs em processo (concluída não figura)
+  const deliveriesToday = inProcessOps.filter((o) => {
     if (!o.delivery_date) return false
     const d = parseISO(o.delivery_date)
     return isValid(d) && isSameDay(startOfDay(d), today)
   }).length
-  const deliveriesThisWeek = orders.filter((o) => {
+  const deliveriesThisWeek = inProcessOps.filter((o) => {
     if (!o.delivery_date) return false
     const d = parseISO(o.delivery_date)
     return isValid(d) && isSameWeek(d, today, { weekStartsOn: 1 })

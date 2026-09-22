@@ -64,18 +64,21 @@ function FunnelBars({ stages, maxCount }: { stages: FunnelStageData[]; maxCount:
 
 export function FlowFunnel({ orders }: FlowFunnelProps) {
   const { pedidosFunnel, opsFunnel, pedidosTotal, opsTotal } = useMemo(() => {
-    const activeOps = orders.filter((o) => o.status === 'Fila' || o.status === 'Em Andamento')
-    const nonConcludedOps = orders.filter((o) => o.status !== 'Concluído')
+    // (1) GRUPO OPERACIONAL - FlowFunnel: considerar APENAS OPs em processo (status 'Fila', 'Em Andamento', 'Parado')
+    // Pedido/OP 100% concluído não pode figurar no funil
+    const inProcessOps = orders.filter(
+      (o) => o.status === 'Fila' || o.status === 'Em Andamento' || o.status === 'Parado',
+    )
 
     const ordersByNumber: Record<string, any[]> = {}
-    nonConcludedOps.forEach((o) => {
+    inProcessOps.forEach((o) => {
       const key = o.order_number || o.id
       if (!ordersByNumber[key]) ordersByNumber[key] = []
       ordersByNumber[key].push(o)
     })
     const activeOrderNumbers = Object.keys(ordersByNumber)
     const pedidosTotal = activeOrderNumbers.length
-    const opsTotal = activeOps.length
+    const opsTotal = inProcessOps.length
 
     const pedidosFunnel: FunnelStageData[] = [
       { name: 'Pedidos', count: pedidosTotal, percentage: 100, color: STAGE_COLORS.Pedidos },
@@ -97,7 +100,7 @@ export function FlowFunnel({ orders }: FlowFunnelProps) {
       { name: 'OPs', count: opsTotal, percentage: 100, color: STAGE_COLORS.OPs },
       ...FUNNEL_MACRO_GROUPS.map((macroName) => {
         const stages = getStagesForMacroGroup(macroName)
-        const count = activeOps.filter((op) => stages.includes(op.stage)).length
+        const count = inProcessOps.filter((op) => stages.includes(op.stage)).length
         return {
           name: macroName,
           count,

@@ -28,9 +28,15 @@ export function DeadlineAlerts({ orders }: DeadlineAlertsProps) {
   const dueTomorrow: PcpOrder[] = []
   const dueThisWeek: PcpOrder[] = []
 
-  orders.forEach((o) => {
-    // Destaque aditivo: OPs com data prometida vencida
-    if (o.promised_date && o.status !== 'Concluído') {
+  // GRUPO OPERACIONAL: DeadlineAlerts considera APENAS OPs em processo ('Fila', 'Em Andamento', 'Parado')
+  // Pedido/OP 100% concluído não pode figurar em nenhum deles
+  const inProcessOps = orders.filter(
+    (o) => o.status === 'Fila' || o.status === 'Em Andamento' || o.status === 'Parado',
+  )
+
+  inProcessOps.forEach((o) => {
+    // Destaque aditivo: OPs em processo com data prometida vencida
+    if (o.promised_date) {
       const pDate = parseISO(o.promised_date)
       if (isValid(pDate) && isBefore(startOfDay(pDate), today)) {
         promisedOverdue.push(o)
@@ -42,7 +48,7 @@ export function DeadlineAlerts({ orders }: DeadlineAlertsProps) {
     if (!isValid(d)) return
     const dayStart = startOfDay(d)
 
-    const isOverdue = isBefore(dayStart, today) && o.status !== 'Concluído'
+    const isOverdue = isBefore(dayStart, today)
     if (isOverdue) {
       overdue.push(o)
       return
@@ -55,7 +61,7 @@ export function DeadlineAlerts({ orders }: DeadlineAlertsProps) {
       dueTomorrow.push(o)
       return
     }
-    if (isSameWeek(d, today, { weekStartsOn: 1 }) && o.status !== 'Concluído') {
+    if (isSameWeek(d, today, { weekStartsOn: 1 })) {
       dueThisWeek.push(o)
     }
   })

@@ -95,7 +95,7 @@ const MACRO_GROUPS = [
     name: 'Acabamento',
     color: 'bg-purple-100/50 dark:bg-purple-900/20 text-purple-800 dark:text-purple-300',
     borderColor: 'border-purple-200 dark:border-purple-800',
-    stages: ['Preparação', 'Pintura', 'Verniz', 'Retoques', 'Retoque'],
+    stages: ['Preparação', 'Pintura', 'Verniz', 'Retoques'],
   },
   {
     name: 'Montagem',
@@ -475,7 +475,6 @@ export default function PcpKanban() {
         const hasOpenRework =
           activeReworkOrderIds.has(o.id) ||
           o.bottleneck_reason === 'Retrabalho' ||
-          o.stage === 'Retoque' ||
           o.stage === 'Retoques'
         if (!hasOpenRework) return false
       }
@@ -786,7 +785,7 @@ export default function PcpKanban() {
             <Clock className="size-3" />5 mais atrasados
           </Button>
 
-          {/* Em Retrabalho (etapa Retoque) */}
+          {/* Em Retrabalho (etapa Retoques) */}
           <Button
             variant={reworkOnly ? 'default' : 'outline'}
             size="sm"

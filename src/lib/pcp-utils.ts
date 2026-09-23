@@ -158,16 +158,26 @@ export const STAGE_THRESHOLDS: Record<string, number> = {
   Pintura: 48,
   Verniz: 24,
   Retoques: 24,
-  Retoque: 24,
   Montagem: 48,
   Qualidade: 24,
   Embalagem: 24,
   Expedição: 24,
 }
 
+/**
+ * Normaliza o valor de stage para garantir consistência canônica:
+ * 'Retoque' (singular histórico de retrabalhos) é sempre convertido para 'Retoques'.
+ */
+export function normalizeStage<T extends string | null | undefined>(stage: T): T {
+  if (!stage) return stage
+  if (stage === 'Retoque') return 'Retoques' as T
+  return stage
+}
+
 export function isStageDelayed(order: any): boolean {
   if (order.status === 'Concluído' || order.status === 'Parado') return false
-  const thresholdHours = STAGE_THRESHOLDS[order.stage]
+  const normalized = normalizeStage(order.stage)
+  const thresholdHours = STAGE_THRESHOLDS[normalized]
   if (!thresholdHours) return false
   const diffHours = (new Date().getTime() - new Date(order.updated).getTime()) / (1000 * 60 * 60)
   return diffHours > thresholdHours
@@ -190,27 +200,28 @@ const fabricacaoStages = [
   'Terceirização',
 ]
 
-const acabamentoStages = ['Preparação', 'Pintura', 'Verniz', 'Retoques', 'Retoque', 'Acabamento']
+const acabamentoStages = ['Preparação', 'Pintura', 'Verniz', 'Retoques', 'Acabamento']
 
 const montagemStages = ['Montagem']
 
 export function shouldHighlightObservation(op: any, currentStage: string): boolean {
   if (!op || !op.observations || op.observations.trim() === '') return false
 
-  if (currentStage === 'Expedição' || currentStage === 'Qualidade') {
+  const stage = normalizeStage(currentStage)
+  if (stage === 'Expedição' || stage === 'Qualidade') {
     return true
   }
 
-  if (op.observation_sector === 'Projetos' && engenhariaStages.includes(currentStage)) {
+  if (op.observation_sector === 'Projetos' && engenhariaStages.includes(stage)) {
     return true
   }
-  if (op.observation_sector === 'Fabricação' && fabricacaoStages.includes(currentStage)) {
+  if (op.observation_sector === 'Fabricação' && fabricacaoStages.includes(stage)) {
     return true
   }
-  if (op.observation_sector === 'Acabamento' && acabamentoStages.includes(currentStage)) {
+  if (op.observation_sector === 'Acabamento' && acabamentoStages.includes(stage)) {
     return true
   }
-  if (op.observation_sector === 'Montagem' && montagemStages.includes(currentStage)) {
+  if (op.observation_sector === 'Montagem' && montagemStages.includes(stage)) {
     return true
   }
 
@@ -220,20 +231,21 @@ export function shouldHighlightObservation(op: any, currentStage: string): boole
 export function isSectorActiveForStage(sector: string, currentStage: string): boolean {
   if (!sector) return false
 
-  if (currentStage === 'Expedição' || currentStage === 'Qualidade') {
+  const stage = normalizeStage(currentStage)
+  if (stage === 'Expedição' || stage === 'Qualidade') {
     return true
   }
 
-  if (sector === 'Projetos' && engenhariaStages.includes(currentStage)) {
+  if (sector === 'Projetos' && engenhariaStages.includes(stage)) {
     return true
   }
-  if (sector === 'Fabricação' && fabricacaoStages.includes(currentStage)) {
+  if (sector === 'Fabricação' && fabricacaoStages.includes(stage)) {
     return true
   }
-  if (sector === 'Acabamento' && acabamentoStages.includes(currentStage)) {
+  if (sector === 'Acabamento' && acabamentoStages.includes(stage)) {
     return true
   }
-  if (sector === 'Montagem' && montagemStages.includes(currentStage)) {
+  if (sector === 'Montagem' && montagemStages.includes(stage)) {
     return true
   }
 
@@ -272,7 +284,7 @@ export function getStageDelay(
   } else if (process?.estimated_days && process.estimated_days > 0) {
     threshold = process.estimated_days * 24
   } else {
-    threshold = STAGE_THRESHOLDS[order.stage] || 0
+    threshold = STAGE_THRESHOLDS[normalizeStage(order.stage)] || 0
   }
   if (threshold <= 0) return { delayed: false, formatted: '' }
 

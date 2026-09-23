@@ -76,10 +76,9 @@ const SECTORS = {
     'Furação',
     'Rosca',
     'Concreto',
-    'Retoque',
   ],
-  Acabamento: ['Preparação', 'Pintura', 'Verniz', 'Retoques', 'Retoque'],
-  Montagem: ['Montagem', 'Qualidade', 'Retoque'],
+  Acabamento: ['Preparação', 'Pintura', 'Verniz', 'Retoques'],
+  Montagem: ['Montagem', 'Qualidade'],
   Expedição: ['Embalagem', 'Expedição'],
 } as const
 
@@ -105,7 +104,6 @@ const ALL_STAGES = [
   'Pintura',
   'Verniz',
   'Retoques',
-  'Retoque',
   'Montagem',
   'Qualidade',
   'Embalagem',
@@ -454,10 +452,9 @@ function OperatorCard({
     { description: string; code: string; quantity: number }[]
   >([])
 
-  // Obter as etapas disponíveis para o setor de destino (excluindo 'Retoque')
+  // Obter as etapas disponíveis para o setor de destino
   const targetSectorStages = useMemo(() => {
-    const list = SECTORS[reworkTargetSector] || []
-    return (list as readonly string[]).filter((st) => st !== 'Retoque')
+    return SECTORS[reworkTargetSector] || []
   }, [reworkTargetSector])
 
   const handleOpenBottleneckChange = (isOpen: boolean) => {
@@ -855,7 +852,7 @@ function OperatorCard({
                       variant="outline"
                       className="border-amber-400 text-amber-700 dark:text-amber-300"
                     >
-                      Envia para Retoque
+                      Envia para Retrabalho
                     </Badge>
                   </div>
 
@@ -865,9 +862,7 @@ function OperatorCard({
                       value={reworkTargetSector}
                       onValueChange={(val: any) => {
                         setReworkTargetSector(val)
-                        const stages = (SECTORS[val as keyof typeof SECTORS] || []).filter(
-                          (st) => st !== 'Retoque',
-                        )
+                        const stages = SECTORS[val as keyof typeof SECTORS] || []
                         setReworkTargetStage(stages[0] || '')
                       }}
                     >

@@ -45,6 +45,8 @@ import {
   sortFilaProductionOrders,
   formatLocalDate,
   normalizeStage,
+  ALL_CANONICAL_STAGES,
+  getNextStageForOp,
 } from '@/lib/pcp-utils'
 import { getMaterialAvailabilityStatus } from '@/lib/material-status'
 import { isBefore, startOfDay, parseISO } from 'date-fns'
@@ -85,69 +87,7 @@ const SECTORS = {
 
 type SectorName = keyof typeof SECTORS
 
-const ALL_STAGES = [
-  'Separação no estoque fisico',
-  'Separação',
-  'Cotação',
-  'Compra',
-  'Retirada',
-  'Aguardando',
-  'Corte',
-  'Dobra',
-  'Calandra',
-  'Solda',
-  'Acab. Solda',
-  'Furação',
-  'Rosca',
-  'Concreto',
-  'Terceirização',
-  'Preparação',
-  'Pintura',
-  'Verniz',
-  'Retoques',
-  'Montagem',
-  'Qualidade',
-  'Embalagem',
-  'Expedição',
-]
-
-function getNextStage(current: string) {
-  const idx = ALL_STAGES.indexOf(current)
-  if (idx === -1 || idx === ALL_STAGES.length - 1) return null
-  return ALL_STAGES[idx + 1]
-}
-
-function getNextStageForOp(current: string, op: PcpOrder, processes: ProductProcessModel[]) {
-  const currentIdx = ALL_STAGES.indexOf(current)
-  if (currentIdx === -1 || currentIdx === ALL_STAGES.length - 1) return null
-
-  const manualEstimates = (op.outsourcing_data as any)?.estimates || {}
-  const opProcesses = op.product_id
-    ? processes.filter((p) => p.product_id === op.product_id)
-    : ALL_STAGES.map(
-        (name) =>
-          ({
-            name,
-            kanban_stage: name,
-            estimated_hours:
-              manualEstimates[name] !== undefined && manualEstimates[name] !== ''
-                ? Number(manualEstimates[name]) || 0
-                : 0,
-          }) as any,
-      )
-
-  for (let i = currentIdx + 1; i < ALL_STAGES.length; i++) {
-    const _stageName = ALL_STAGES[i]
-    const _p = opProcesses.find((proc) => proc.kanban_stage === _stageName)
-    if (!_p || !_p.estimated_hours || _p.estimated_hours <= 0) continue
-    const stage = ALL_STAGES[i]
-    const proc = opProcesses.find((p) => p.kanban_stage === stage)
-    if (proc && proc.estimated_hours && proc.estimated_hours > 0) {
-      return stage
-    }
-  }
-  return null
-}
+const ALL_STAGES = ALL_CANONICAL_STAGES
 
 function OperatorMessageBadge({ state, onClick }: { state: IndicatorState; onClick: () => void }) {
   const config: Record<IndicatorState, { label: string; className: string }> = {

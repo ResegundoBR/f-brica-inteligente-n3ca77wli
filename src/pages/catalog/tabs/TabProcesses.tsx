@@ -132,7 +132,8 @@ export function TabProcesses({
           ...r,
           kanban_stage: r.kanban_stage === 'Retoque' ? 'Retoques' : r.kanban_stage,
         })),
-      )    } catch (err) {
+      )
+    } catch (err) {
       console.error('Error loading processes:', err)
     }
   }
@@ -270,7 +271,11 @@ export function TabProcesses({
       setProcesses((prev) =>
         prev.map((p) =>
           p.id === id
-            ? { ...updated, kanban_stage: updated.kanban_stage === 'Retoque' ? 'Retoques' : updated.kanban_stage }
+            ? {
+                ...updated,
+                kanban_stage:
+                  updated.kanban_stage === 'Retoque' ? 'Retoques' : updated.kanban_stage,
+              }
             : p,
         ),
       )

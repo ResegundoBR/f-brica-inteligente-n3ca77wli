@@ -374,6 +374,101 @@ export interface PromisedDateInfo {
   daysRemaining: number
 }
 
+/**
+ * Lista canônica de todas as etapas de produção.
+ */
+export const ALL_CANONICAL_STAGES = [
+  'Separação no estoque fisico',
+  'Separação',
+  'Cotação',
+  'Compra',
+  'Retirada',
+  'Aguardando',
+  'Corte',
+  'Dobra',
+  'Calandra',
+  'Solda',
+  'Acab. Solda',
+  'Furação',
+  'Rosca',
+  'Concreto',
+  'Terceirização',
+  'Preparação',
+  'Pintura',
+  'Verniz',
+  'Retoques',
+  'Montagem',
+  'Qualidade',
+  'Embalagem',
+  'Expedição',
+] as const
+
+/**
+ * Retorna a próxima etapa canônica imediata baseada na ordem de ALL_CANONICAL_STAGES.
+ */
+export function getImmediateNextCanonicalStage(currentStage: string): string | null {
+  const normalizedCurrent = normalizeStage(currentStage)
+  const idx = ALL_CANONICAL_STAGES.findIndex((s) => normalizeStage(s) === normalizedCurrent)
+  if (idx === -1 || idx === ALL_CANONICAL_STAGES.length - 1) return null
+  return ALL_CANONICAL_STAGES[idx + 1]
+}
+
+/**
+ * Determina a próxima etapa sugerida para uma OP ao concluir a etapa atual no Portal do Operador:
+ * 1. Ao concluir 'Qualidade', o próximo padrão obrigatório é 'Embalagem'.
+ * 2. Ao concluir 'Embalagem', o próximo padrão obrigatório é 'Expedição'.
+ * 3. Apenas após concluir 'Expedição' (ou qualquer etapa sem próxima na cadeia), retorna null (sugerir 'Finalizar OP (Concluído)').
+ * 4. Para etapas anteriores, busca nos processos cadastrados do produto com estimated_hours > 0.
+ * 5. Se o produto não tiver processos cadastrados posteriores (retornaria null), usa a ordem canônica
+ *    de ALL_CANONICAL_STAGES como fallback seguro para não finalizar a OP prematuramente antes de passar por Expedição.
+ */
+export function getNextStageForOp(
+  current: string,
+  op: { outsourcing_data?: any; product_id?: string | null },
+  processes: { product_id?: string; kanban_stage?: string; estimated_hours?: number }[],
+): string | null {
+  const normalizedCurrent = normalizeStage(current)
+
+  // 1 & 2: Regras diretas obrigatórias para o fluxo de finalização e expedição
+  if (normalizedCurrent === 'Qualidade') {
+    return 'Embalagem'
+  }
+  if (normalizedCurrent === 'Embalagem') {
+    return 'Expedição'
+  }
+  if (normalizedCurrent === 'Expedição') {
+    return null // Após Expedição concluída, o padrão volta a ser finalizar (Concluído)
+  }
+
+  const currentIdx = ALL_CANONICAL_STAGES.findIndex((s) => normalizeStage(s) === normalizedCurrent)
+  if (currentIdx === -1 || currentIdx === ALL_CANONICAL_STAGES.length - 1) return null
+
+  const manualEstimates = (op.outsourcing_data as any)?.estimates || {}
+  const opProcesses = op.product_id
+    ? processes.filter((p) => p.product_id === op.product_id)
+    : ALL_CANONICAL_STAGES.map((name) => ({
+        kanban_stage: name,
+        estimated_hours:
+          manualEstimates[name] !== undefined && manualEstimates[name] !== ''
+            ? Number(manualEstimates[name]) || 0
+            : 0,
+      }))
+
+  for (let i = currentIdx + 1; i < ALL_CANONICAL_STAGES.length; i++) {
+    const stageName = ALL_CANONICAL_STAGES[i]
+    const proc = opProcesses.find(
+      (p) => normalizeStage(p.kanban_stage) === normalizeStage(stageName),
+    )
+    if (proc && proc.estimated_hours && proc.estimated_hours > 0) {
+      return stageName
+    }
+  }
+
+  // Fallback: se nenhum processo futuro com estimated_hours > 0 for encontrado,
+  // usa a ordem canônica da próxima etapa para não pular etapas obrigatórias
+  return ALL_CANONICAL_STAGES[currentIdx + 1]
+}
+
 export function getPromisedDateInfo(
   promisedDateStr: string | undefined | null,
   status?: string,

@@ -1,23 +1,24 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Plus, Copy, Check, Loader2, Trash2 } from 'lucide-react'
+import { Plus, Copy, Check, Loader2, Trash2, ShoppingCart } from 'lucide-react'
 import { MaterialShortage, Quotation } from '@/types'
 import { toast } from 'sonner'
 import pb from '@/lib/pocketbase/client'
 import { selectQuotation } from '@/services/quotations'
 import { SupplierSearch } from './SupplierSearch'
 import { SupplierFormDialog } from './SupplierFormDialog'
-import { useMemo } from 'react'
-import { findOtherOpDemands } from '@/services/material-consolidation'
+import {
+  findOtherOpDemands,
+  findConsolidatedDemandAsync,
+  ItemDemandConsolidation,
+} from '@/services/material-consolidation'
 import { ConsolidatedDemandBlock } from './ConsolidatedDemandBlock'
 import { UserActionBadge } from '@/components/UserActionBadge'
-
 import { Checkbox } from '@/components/ui/checkbox'
-import { ShoppingCart } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface EnhancedQuotationFormProps {
@@ -57,11 +58,48 @@ export function EnhancedQuotationForm({
       .reduce((sum, curr) => sum + (Number(curr.quantity) || 0), 0)
   }, [groupList, selectedModalSubIds])
 
-  const consolidation = useMemo(() => {
-    return findOtherOpDemands(item, allShortages)
-  }, [item, allShortages])
+  // Consolidação síncrona inicial baseada em material_shortages
+  const initialConsolidation = useMemo(() => {
+    const excluded = isMultiItem ? groupList.map((g) => g.id) : undefined
+    return findOtherOpDemands(item, allShortages, excluded)
+  }, [item, allShortages, isMultiItem, groupList])
+
+  // Estado da consolidação completa com demandas futuras e estoque
+  const [consolidation, setConsolidation] = useState<ItemDemandConsolidation>(initialConsolidation)
+  const [loadingConsolidation, setLoadingConsolidation] = useState(false)
+
+  // Carregar consolidação assíncrona (demandas futuras de engenharia e estoque)
+  useEffect(() => {
+    let active = true
+    setLoadingConsolidation(true)
+
+    findConsolidatedDemandAsync({
+      currentItem: item,
+      groupItems: isMultiItem ? groupList : undefined,
+      allShortages,
+      includeFutureDemands: true,
+      includeStock: true,
+    })
+      .then((res) => {
+        if (active) {
+          setConsolidation(res)
+        }
+      })
+      .catch((err) => {
+        console.error('Erro ao calcular consolidação assíncrona:', err)
+      })
+      .finally(() => {
+        if (active) setLoadingConsolidation(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [item, groupList, isMultiItem, allShortages])
+
   const [quotations, setQuotations] = useState<Quotation[]>([])
   const [desc, setDesc] = useState(item.description)
+  // No modo grupo consolidado: exibe a quantidade consolidada total do contexto
   const [qty, setQty] = useState(String(isMultiItem ? totalGroupQty : item.quantity))
 
   // Atualizar valores do formulário se o item ou total do grupo mudar
@@ -158,6 +196,7 @@ export function EnhancedQuotationForm({
   }
 
   const handleEditItem = async () => {
+    // TRAVA DE SEGURANÇA: No modo grupo (isMultiItem), o cabeçalho é somente leitura e NUNCA grava no registro individual!
     if (isMultiItem) return
     if (desc === item.description && qty === String(item.quantity)) return
     try {
@@ -179,6 +218,32 @@ export function EnhancedQuotationForm({
       setTimeout(() => setCopied(false), 2000)
       toast.success('Texto copiado para área de transferência')
     })
+  }
+
+  /**
+   * Manipulador para adotar a quantidade consolidada no bloco.
+   * - No modo grupo (isMultiItem): apenas atualiza a quantidade exibida no contexto local da cotação
+   *   SEM GRAVAR em nenhum registro individual (respeitando estritamente a trava de proteção).
+   * - No modo item único: atualiza o registro individual no backend e no estado local.
+   */
+  const handleApplyConsolidatedTotal = (suggestedQty: number) => {
+    setQty(String(suggestedQty))
+    if (isMultiItem) {
+      toast.success(
+        `Quantidade total ajustada para ${suggestedQty} un para cotação conjunta (sem alterar registros individuais)`,
+      )
+      return
+    }
+
+    pb.collection('material_shortages')
+      .update(item.id, { quantity: suggestedQty })
+      .then(() => {
+        onUpdate()
+        toast.success(`Quantidade atualizada para ${suggestedQty} un (total consolidado)`)
+      })
+      .catch(() => {
+        toast.error('Erro ao atualizar quantidade do item')
+      })
   }
 
   return (
@@ -224,7 +289,7 @@ export function EnhancedQuotationForm({
             {isMultiItem ? (
               <Input
                 type="text"
-                value={`${totalGroupQty} un`}
+                value={`${qty} un`}
                 readOnly
                 disabled
                 className="h-8 text-sm font-semibold notranslate bg-slate-100 dark:bg-slate-900 text-blue-700 dark:text-blue-300 cursor-not-allowed select-none"
@@ -350,26 +415,20 @@ export function EnhancedQuotationForm({
           </div>
         )}
 
-        {/* Bloco de consolidação de demanda com sugestão de quantidade total (para itens individuais) */}
-        {!isMultiItem && consolidation && consolidation.otherDemands.length > 0 && (
+        {/* Bloco de consolidação de demanda com sugestão de quantidade total (exibido tanto no modo único quanto no modo grupo) */}
+        {consolidation && consolidation.otherDemands.length > 0 && (
           <ConsolidatedDemandBlock
             consolidation={consolidation}
-            currentItemLabel={`Esta solicitação (${item.quantity} un)`}
-            onApplyTotal={(suggestedQty) => {
-              setQty(String(suggestedQty))
-              pb.collection('material_shortages')
-                .update(item.id, { quantity: suggestedQty })
-                .then(() => {
-                  onUpdate()
-                  toast.success(`Quantidade atualizada para ${suggestedQty} un (total consolidado)`)
-                })
-                .catch(() => {
-                  toast.error('Erro ao atualizar quantidade do item')
-                })
-            }}
-            applyButtonLabel="Sugerir e aplicar total"
+            currentItemLabel={
+              isMultiItem
+                ? `Lote consolidado deste grupo (${totalGroupQty} un em ${groupList.length} OPs)`
+                : `Esta solicitação (${item.quantity} un)`
+            }
+            onApplyTotal={handleApplyConsolidatedTotal}
+            applyButtonLabel="Adotar quantidade consolidada"
           />
         )}
+
         <div className="space-y-2 p-3 border rounded-lg">
           <div className="flex items-end gap-2">
             <div className="flex-1">

@@ -48,6 +48,36 @@ export function handleItemBlurAction({
   return true
 }
 
+/**
+ * Função representativa do botão "Adotar quantidade consolidada":
+ * - No modo grupo (isMultiItem): apenas atualiza a quantidade exibida no contexto local da cotação
+ *   SEM GRAVAR em nenhum registro individual (respeitando estritamente a trava de proteção).
+ * - No modo item único: atualiza o registro individual no backend e no estado local.
+ */
+export function handleApplyConsolidatedTotalAction({
+  isMultiItem,
+  item,
+  suggestedQty,
+  updateShortageRecord,
+  setLocalQty,
+}: {
+  isMultiItem: boolean
+  item: MaterialShortage
+  suggestedQty: number
+  updateShortageRecord: (id: string, data: { quantity: number }) => Promise<void>
+  setLocalQty: (qty: string) => void
+}) {
+  setLocalQty(String(suggestedQty))
+  if (isMultiItem) {
+    // Modo grupo: trava rígida — NUNCA chama updateShortageRecord
+    return { savedRemote: false, newLocalQty: String(suggestedQty) }
+  }
+
+  // Modo item único: persiste no backend
+  updateShortageRecord(item.id, { quantity: suggestedQty })
+  return { savedRemote: true, newLocalQty: String(suggestedQty) }
+}
+
 describe('EnhancedQuotationForm - Proteção contra corrupção de quantidade no modo grupo', () => {
   const mockItemOP1: MaterialShortage = {
     id: 'owbbm9ibmq0pntn',
@@ -92,9 +122,11 @@ describe('EnhancedQuotationForm - Proteção contra corrupção de quantidade no
   const totalGroupQty = mockGroupList.reduce((acc, curr) => acc + (Number(curr.quantity) || 0), 0) // 10
 
   let updateShortageMock: any
+  let setLocalQtyMock: any
 
   beforeEach(() => {
     updateShortageMock = vi.fn().mockResolvedValue({})
+    setLocalQtyMock = vi.fn()
   })
 
   it('no modo grupo consolidado (isMultiItem): blur no campo de quantidade NÃO altera o registro individual com a soma do grupo (nenhuma chamada de update a material_shortages a partir do cabeçalho do grupo)', () => {
@@ -152,33 +184,40 @@ describe('EnhancedQuotationForm - Proteção contra corrupção de quantidade no
     })
   })
 
-  it('no modo item único (NÃO isMultiItem): não dispara update se os valores forem idênticos', () => {
-    const isMultiItem = false
+  it('no modo grupo consolidado (isMultiItem): clicar em "Adotar quantidade consolidada" ajusta o contexto local SEM gravar no registro individual', () => {
+    const isMultiItem = true
+    const suggestedTotal = 18 // Ex.: 10 das OPs do lote + 8 futuras
 
-    const result = handleItemBlurAction({
+    const res = handleApplyConsolidatedTotalAction({
       isMultiItem,
       item: mockItemOP1,
-      desc: mockItemOP1.description,
-      qty: String(mockItemOP1.quantity),
+      suggestedQty: suggestedTotal,
       updateShortageRecord: updateShortageMock,
+      setLocalQty: setLocalQtyMock,
     })
 
-    expect(result).toBe(false)
+    expect(res.savedRemote).toBe(false)
+    expect(setLocalQtyMock).toHaveBeenCalledWith('18')
+    // Crucial: nenhuma gravação no banco de dados para não sobrescrever a OP individual com o total!
     expect(updateShortageMock).not.toHaveBeenCalled()
   })
 
-  it('no modo item único (NÃO isMultiItem): rejeita valores NaN sem disparar update', () => {
+  it('no modo item único (NÃO isMultiItem): clicar em "Adotar quantidade consolidada" atualiza o registro remoto e local', () => {
     const isMultiItem = false
+    const suggestedTotal = 15
 
-    const result = handleItemBlurAction({
+    const res = handleApplyConsolidatedTotalAction({
       isMultiItem,
       item: mockItemOP1,
-      desc: mockItemOP1.description,
-      qty: 'invalid-number',
+      suggestedQty: suggestedTotal,
       updateShortageRecord: updateShortageMock,
+      setLocalQty: setLocalQtyMock,
     })
 
-    expect(result).toBe(false)
-    expect(updateShortageMock).not.toHaveBeenCalled()
+    expect(res.savedRemote).toBe(true)
+    expect(setLocalQtyMock).toHaveBeenCalledWith('15')
+    expect(updateShortageMock).toHaveBeenCalledWith('owbbm9ibmq0pntn', {
+      quantity: 15,
+    })
   })
 })

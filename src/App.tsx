@@ -28,6 +28,7 @@ import FornecedoresPage from './pages/pcp/suprimentos/FornecedoresPage'
 import OrdensCompraPage from './pages/pcp/suprimentos/OrdensCompraPage'
 import CentralDestinoPage from './pages/pcp/suprimentos/CentralDestinoPage'
 import ComponentesPage from './pages/pcp/suprimentos/ComponentesPage'
+import BaixasRetroativasPage from './pages/pcp/suprimentos/BaixasRetroativasPage'
 import DuplicatasPage from './pages/pcp/suprimentos/DuplicatasPage'
 import PcpClients from './pages/pcp/PcpClients'
 import PcpOperator from './pages/pcp/PcpOperator'
@@ -308,6 +309,14 @@ const App = () => (
                 element={
                   <RoleGuard module="suprimentos">
                     <CentralDestinoPage />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/pcp/suprimentos/baixas-retroativas"
+                element={
+                  <RoleGuard module="suprimentos">
+                    <BaixasRetroativasPage />
                   </RoleGuard>
                 }
               />

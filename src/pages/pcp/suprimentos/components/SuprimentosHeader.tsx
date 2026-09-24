@@ -1,6 +1,8 @@
-import { type ComponentType, type ReactNode } from 'react'
+import { useState, useEffect, type ComponentType, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { cn } from '@/lib/utils'
+import { countPendingRetroactiveWithdrawals } from '@/services/retroactive-withdrawals'
+import { useRealtime } from '@/hooks/use-realtime'
 
 interface SuprimentosHeaderProps {
   title: string
@@ -21,6 +23,7 @@ const suprimentosTabs = [
   { label: 'Duplicatas', href: '/pcp/suprimentos/duplicatas' },
   { label: 'Terceirização', href: '/pcp/suprimentos/terceirizacao' },
   { label: 'Fornecedores', href: '/pcp/suprimentos/fornecedores' },
+  { label: 'Baixas Retroativas', href: '/pcp/suprimentos/baixas-retroativas' },
 ]
 
 export function SuprimentosHeader({
@@ -30,6 +33,19 @@ export function SuprimentosHeader({
   action,
 }: SuprimentosHeaderProps) {
   const location = useLocation()
+  const [pendingRetroCount, setPendingRetroCount] = useState<number>(0)
+
+  useEffect(() => {
+    countPendingRetroactiveWithdrawals()
+      .then(setPendingRetroCount)
+      .catch(() => setPendingRetroCount(0))
+  }, [])
+
+  useRealtime('pcp_retroactive_withdrawals', () => {
+    countPendingRetroactiveWithdrawals()
+      .then(setPendingRetroCount)
+      .catch(() => setPendingRetroCount(0))
+  })
 
   return (
     <div className="flex flex-col gap-4">
@@ -57,6 +73,11 @@ export function SuprimentosHeader({
               )}
             >
               {tab.label}
+              {tab.href === '/pcp/suprimentos/baixas-retroativas' && pendingRetroCount > 0 && (
+                <span className="ml-1.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-red-600 text-white shadow-xs">
+                  {pendingRetroCount}
+                </span>
+              )}
             </Link>
           )
         })}

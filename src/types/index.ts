@@ -588,3 +588,42 @@ export interface PcpRework {
     executed_by?: User
   }
 }
+
+export type RetroactiveWithdrawalStatus = 'Pendente' | 'Aprovada' | 'Rejeitada'
+
+export interface RetroactiveWithdrawal {
+  id: string
+  order_id: string
+  order_number: string
+  material_code?: string
+  material_description: string
+  unit?: string
+  quantity: number
+  reason: string
+  requested_by: string
+  status: RetroactiveWithdrawalStatus
+  reviewed_by?: string
+  reviewed_at?: string
+  review_note?: string
+  inventory_id?: string
+  withdrawal_id?: string
+  created: string
+  updated: string
+  expand?: {
+    order_id?: PcpOrder
+    requested_by?: User
+    reviewed_by?: User
+    inventory_id?: Inventory
+    withdrawal_id?: InventoryMovement
+  }
+}
+
+export interface RetroactiveBomItem {
+  code: string
+  description: string
+  unit: string
+  engineeringQty: number
+  alreadyWithdrawnQty: number
+  suggestedMaxQty: number
+  inventoryId?: string
+}

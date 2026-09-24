@@ -16,7 +16,17 @@ import {
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
-import { Trash, Plus, ShoppingCart, Volume2, VolumeX, MessageSquare, RotateCcw } from 'lucide-react'
+import {
+  Trash,
+  Plus,
+  ShoppingCart,
+  Volume2,
+  VolumeX,
+  MessageSquare,
+  RotateCcw,
+  History,
+  PackageCheck,
+} from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import {
   Select,
@@ -60,6 +70,8 @@ import { MaterialDescriptionAutocomplete } from '@/pages/pcp/components/Material
 import { SeparationMaterialsModal } from '@/pages/pcp/components/SeparationMaterialsModal'
 import { StockWithdrawalModal } from '@/pages/pcp/components/StockWithdrawalModal'
 import { OperatorSeparationTab } from './components/OperatorSeparationTab'
+import { RetroactiveWithdrawalDialog } from './components/RetroactiveWithdrawalDialog'
+import { OperatorRetroactiveListModal } from './components/OperatorRetroactiveListModal'
 import { useOrderMessages } from '@/hooks/use-order-messages'
 import { useUnreadMessages } from '@/hooks/use-unread-messages'
 import { OrderMessagesPanel } from '@/components/OrderMessagesPanel'
@@ -1220,6 +1232,8 @@ export default function PcpOperator() {
   const [separationOp, setSeparationOp] = useState<PcpOrder | null>(null)
   const [withdrawalOp, setWithdrawalOp] = useState<PcpOrder | null>(null)
   const [operatorMainTab, setOperatorMainTab] = useState<'operacoes' | 'separacao'>('operacoes')
+  const [openRetroactiveDialog, setOpenRetroactiveDialog] = useState(false)
+  const [openRetroactiveList, setOpenRetroactiveList] = useState(false)
 
   const loadData = async () => {
     try {
@@ -1822,6 +1836,25 @@ export default function PcpOperator() {
           <Button
             size="lg"
             variant="outline"
+            className="w-full sm:w-auto border-2 border-amber-500/40 text-amber-800 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40 font-bold h-12 shadow-sm whitespace-nowrap justify-center gap-2"
+            onClick={() => setOpenRetroactiveList(true)}
+            title="Ver histórico e status das minhas solicitações de baixa retroativa"
+          >
+            <History className="size-5 text-amber-600 dark:text-amber-400" /> Minhas Baixas
+          </Button>
+
+          <Button
+            size="lg"
+            className="w-full sm:w-auto bg-amber-600 hover:bg-amber-700 text-white font-bold h-12 shadow-sm whitespace-nowrap justify-center gap-2"
+            onClick={() => setOpenRetroactiveDialog(true)}
+            title="Solicitar baixa retroativa de componentes para uma OP já encerrada"
+          >
+            <PackageCheck className="size-5" /> Solicitar Baixa Retroativa
+          </Button>
+
+          <Button
+            size="lg"
+            variant="outline"
             className="relative w-full sm:w-auto border-2 border-blue-500/30 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/40 font-bold h-12 shadow-sm whitespace-nowrap justify-center"
             onClick={() => navigate('/pcp/comunicacoes')}
           >
@@ -2186,6 +2219,20 @@ export default function PcpOperator() {
         onOpenChange={(open) => !open && setMessageOrder(null)}
         onMessagesRead={markOrderAsRead}
         sector="all"
+      />
+
+      <RetroactiveWithdrawalDialog
+        open={openRetroactiveDialog}
+        onOpenChange={setOpenRetroactiveDialog}
+        onRequestSuccess={() => {
+          setOpenRetroactiveList(true)
+        }}
+      />
+
+      <OperatorRetroactiveListModal
+        open={openRetroactiveList}
+        onOpenChange={setOpenRetroactiveList}
+        onOpenNewRequest={() => setOpenRetroactiveDialog(true)}
       />
     </div>
   )

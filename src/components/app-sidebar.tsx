@@ -99,6 +99,12 @@ const navItems = [
     icon: Users,
     group: 'Suprimentos',
   },
+  {
+    title: 'Baixas Retroativas',
+    url: '/pcp/suprimentos/baixas-retroativas',
+    icon: PackageCheck,
+    group: 'Suprimentos',
+  },
   { title: 'Dashboard PCP', url: '/pcp/dashboard', icon: LayoutDashboard, group: 'PCP' },
   { title: 'Painel de Controle', url: '/pcp/kanban', icon: Kanban, group: 'PCP' },
   { title: 'Ordens de Produção', url: '/pcp/ordens', icon: FileText, group: 'PCP' },
@@ -200,6 +206,7 @@ export function AppSidebar() {
       case 'Estoque':
       case 'Terceirização':
       case 'Fornecedores':
+      case 'Baixas Retroativas':
         return !!role.access_suprimentos || !!role.access_pcp || !!role.access_produto_processos
       case 'Portal do Operador':
         return !!role.access_operator || !!role.access_pcp

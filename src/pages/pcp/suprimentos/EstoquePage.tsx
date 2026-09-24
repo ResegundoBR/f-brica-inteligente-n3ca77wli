@@ -32,8 +32,21 @@ import { cn } from '@/lib/utils'
 import { NoTranslate } from '@/components/NoTranslate'
 import { getInventory, createInventoryItem } from '@/services/inventory'
 import { getActiveReservationsMap, normalizeCode } from '@/services/material-reservations'
+import {
+  getMaterialMinLevels,
+  calculateMinLevelAlerts,
+  PcpMaterialMinLevel,
+  MaterialMinLevelAlertItem,
+} from '@/services/material-min-levels'
+import { MaterialMinLevelAlertBlock } from './components/MaterialMinLevelAlertBlock'
+import { useAuth } from '@/hooks/use-auth'
+import { isPcpManager } from '@/lib/message-sector'
 
 export default function EstoquePage() {
+  const { user } = useAuth()
+  const isManager = isPcpManager(user)
+  const [minLevels, setMinLevels] = useState<PcpMaterialMinLevel[]>([])
+  const [minLevelAlerts, setMinLevelAlerts] = useState<MaterialMinLevelAlertItem[]>([])
   const [inventory, setInventory] = useState<Inventory[]>([])
   const [reservationsMap, setReservationsMap] = useState<Map<string, number>>(new Map())
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
@@ -50,9 +63,43 @@ export default function EstoquePage() {
 
   const fetchInventory = async () => {
     try {
-      const [res, resvMap] = await Promise.all([getInventory(), getActiveReservationsMap()])
+      const [res, resvMap, levels] = await Promise.all([
+        getInventory(),
+        getActiveReservationsMap(),
+        getMaterialMinLevels(),
+      ])
       setInventory(res)
       setReservationsMap(resvMap)
+      setMinLevels(levels)
+
+      // Montar mapa de disponibilidade para os alertas de estoque mínimo
+      const invByCode = new Map<string, any>()
+      for (const item of res) {
+        const norm = normalizeCode(item.code)
+        if (norm) invByCode.set(norm, item)
+      }
+
+      const stockMapForAlerts = new Map<
+        string,
+        { totalStock: number; reservedStock: number; availableStock: number; unit?: string }
+      >()
+      for (const lvl of levels) {
+        const norm = normalizeCode(lvl.material_code)
+        if (!norm) continue
+        const inv = invByCode.get(norm)
+        const total = inv ? Number(inv.quantity) || 0 : 0
+        const reserved = resvMap.get(norm) || 0
+        const available = Math.max(0, total - reserved)
+        stockMapForAlerts.set(norm, {
+          totalStock: total,
+          reservedStock: reserved,
+          availableStock: available,
+          unit: inv?.unit || 'un',
+        })
+      }
+
+      const alerts = calculateMinLevelAlerts(levels, stockMapForAlerts)
+      setMinLevelAlerts(alerts)
     } catch {
       /* ignored */
     }
@@ -66,6 +113,7 @@ export default function EstoquePage() {
   useRealtime('inventory_movements', fetchInventory)
   useRealtime('material_reservations', fetchInventory)
   useRealtime('material_separations', fetchInventory)
+  useRealtime('pcp_material_min_levels', fetchInventory)
 
   const selectedItem = inventory.find((i) => i.id === selectedItemId) ?? null
 
@@ -215,6 +263,14 @@ export default function EstoquePage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Bloco Alerta de Estoque Mínimo (Disponível abaixo da Margem de Segurança) */}
+      <MaterialMinLevelAlertBlock
+        alerts={minLevelAlerts}
+        allMinLevels={minLevels}
+        isManager={isManager}
+        onReload={fetchInventory}
+      />
 
       {/* Barra de busca na listagem de estoque */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-24T20:47:47.951Z",
+  "generatedAt": "2026-09-24T22:04:01.964Z",
   "collections": [
     {
       "name": "users",
@@ -3102,6 +3102,62 @@
         "CREATE INDEX idx_retro_withdrawals_order ON pcp_retroactive_withdrawals (order_id)",
         "CREATE INDEX idx_retro_withdrawals_requested_by ON pcp_retroactive_withdrawals (requested_by)",
         "CREATE INDEX idx_retro_withdrawals_created ON pcp_retroactive_withdrawals (created DESC)"
+      ]
+    },
+    {
+      "name": "pcp_material_min_levels",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "material_code",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "material_description",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "min_level",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "updated_by",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX idx_material_min_levels_code ON pcp_material_min_levels (material_code)",
+        "CREATE INDEX idx_material_min_levels_updated ON pcp_material_min_levels (updated DESC)"
       ]
     }
   ]

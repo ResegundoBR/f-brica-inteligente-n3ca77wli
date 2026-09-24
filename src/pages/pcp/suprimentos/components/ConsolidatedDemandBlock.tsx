@@ -23,6 +23,7 @@ import {
 import { format, parseISO, isValid } from 'date-fns'
 import { ItemDemandConsolidation, OtherOpDemandItem } from '@/services/material-consolidation'
 import { cn } from '@/lib/utils'
+import { differenceInCalendarDays, startOfDay } from 'date-fns'
 
 interface ConsolidatedDemandBadgeProps {
   consolidation?: ItemDemandConsolidation | null
@@ -82,6 +83,39 @@ function formatDate(dateStr?: string): string {
 }
 
 /**
+ * Retorna o status de urgência baseado na data de vencimento em relação ao dia de hoje:
+ * - <= 7 dias (inclui vencidas/hoje): 'urgent' (vermelho)
+ * - <= 14 dias: 'warning' (âmbar)
+ * - > 14 dias ou sem data: 'normal'
+ */
+export function getDeadlineUrgency(
+  dateStr?: string,
+  referenceDate: Date = new Date(),
+): 'urgent' | 'warning' | 'normal' {
+  if (!dateStr) return 'normal'
+  try {
+    // Pegar YYYY-MM-DD para evitar variações de fuso horário UTC vs Local
+    const cleanedDate = dateStr.slice(0, 10)
+    const [y, m, d] = cleanedDate.split('-').map(Number)
+    if (!y || !m || !d) return 'normal'
+    const target = new Date(y, m - 1, d)
+    if (isNaN(target.getTime())) return 'normal'
+
+    const refYear = referenceDate.getFullYear()
+    const refMonth = referenceDate.getMonth()
+    const refDay = referenceDate.getDate()
+    const today = new Date(refYear, refMonth, refDay)
+
+    const diff = differenceInCalendarDays(target, today)
+    if (diff <= 7) return 'urgent'
+    if (diff <= 14) return 'warning'
+    return 'normal'
+  } catch {
+    return 'normal'
+  }
+}
+
+/**
  * Bloco destacado:
  * "🔗 Consolidação de Demanda & Necessidades Futuras"
  * Tabela com: Pedido, Nº da OP, Tipo (Solicitação aberta vs Necessidade futura),
@@ -112,8 +146,16 @@ export function ConsolidatedDemandBlock({
     stockInfo,
   } = consolidation
 
-  const openShortageItems = otherDemands.filter((d) => d.demandType !== 'necessidade_futura')
-  const futureDemandItems = otherDemands.filter((d) => d.demandType === 'necessidade_futura')
+  // Ordenação crescente por data de vencimento: mais urgente primeiro, sem data vai para o fim
+  const sortedOtherDemands = [...otherDemands].sort((a, b) => {
+    if (!a.deliveryDate && !b.deliveryDate) return 0
+    if (!a.deliveryDate) return 1
+    if (!b.deliveryDate) return -1
+    return a.deliveryDate.localeCompare(b.deliveryDate)
+  })
+
+  const openShortageItems = sortedOtherDemands.filter((d) => d.demandType !== 'necessidade_futura')
+  const futureDemandItems = sortedOtherDemands.filter((d) => d.demandType === 'necessidade_futura')
 
   const handleOpenOpModal = (demand: OtherOpDemandItem) => {
     setSelectedOpTarget({
@@ -291,15 +333,18 @@ export function ConsolidatedDemandBlock({
               </TableCell>
             </TableRow>
 
-            {/* Linhas de outras OPs */}
-            {otherDemands.map((demand: OtherOpDemandItem) => {
+            {/* Linhas de outras OPs (ordenadas por vencimento crescente) */}
+            {sortedOtherDemands.map((demand: OtherOpDemandItem) => {
               const isFuture = demand.demandType === 'necessidade_futura'
+              const urgency = getDeadlineUrgency(demand.deliveryDate)
               return (
                 <TableRow
                   key={demand.shortageId}
                   className={cn(
                     'hover:bg-amber-50/40 dark:hover:bg-amber-950/20',
                     isFuture && 'bg-blue-50/20 dark:bg-blue-950/10',
+                    urgency === 'urgent' && 'bg-red-50/60 dark:bg-red-950/25',
+                    urgency === 'warning' && !isFuture && 'bg-amber-50/70 dark:bg-amber-950/25',
                   )}
                 >
                   <TableCell
@@ -380,7 +425,33 @@ export function ConsolidatedDemandBlock({
                     className="text-slate-700 dark:text-slate-300 notranslate"
                     translate="no"
                   >
-                    {formatDate(demand.deliveryDate)}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span
+                        className={cn(
+                          urgency === 'urgent' && 'font-bold text-red-600 dark:text-red-400',
+                          urgency === 'warning' &&
+                            'font-semibold text-amber-700 dark:text-amber-400',
+                        )}
+                      >
+                        {formatDate(demand.deliveryDate)}
+                      </span>
+                      {urgency === 'urgent' && (
+                        <Badge
+                          variant="destructive"
+                          className="text-[9px] px-1.5 py-0 h-4 font-bold uppercase tracking-wider"
+                        >
+                          urgente
+                        </Badge>
+                      )}
+                      {urgency === 'warning' && (
+                        <Badge
+                          variant="outline"
+                          className="text-[9px] px-1.5 py-0 h-4 font-bold border-amber-500 text-amber-800 bg-amber-100/80 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700"
+                        >
+                          ≤ 14d
+                        </Badge>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline" className="text-[10px] px-1 py-0">

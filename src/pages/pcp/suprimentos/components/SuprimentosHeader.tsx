@@ -2,6 +2,8 @@ import { useState, useEffect, type ComponentType, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { countPendingRetroactiveWithdrawals } from '@/services/retroactive-withdrawals'
+import { getMaterialMinLevels, calculateMinLevelAlerts } from '@/services/material-min-levels'
+import { getStockAvailabilityForCodes } from '@/services/material-reservations'
 import { useRealtime } from '@/hooks/use-realtime'
 
 interface SuprimentosHeaderProps {
@@ -14,6 +16,7 @@ interface SuprimentosHeaderProps {
 const suprimentosTabs = [
   { label: 'Solicitações', href: '/pcp/suprimentos/solicitacoes' },
   { label: 'Cotações', href: '/pcp/suprimentos/cotacoes' },
+  { label: 'Reservas por Programação', href: '/pcp/suprimentos/reservas-programacao' },
   { label: 'Compras', href: '/pcp/suprimentos/compras' },
   { label: 'Ordens de Compra', href: '/pcp/suprimentos/ordens-compra' },
   { label: 'Recebimento', href: '/pcp/suprimentos/recebimento' },
@@ -34,11 +37,29 @@ export function SuprimentosHeader({
 }: SuprimentosHeaderProps) {
   const location = useLocation()
   const [pendingRetroCount, setPendingRetroCount] = useState<number>(0)
+  const [minLevelAlertCount, setMinLevelAlertCount] = useState<number>(0)
+
+  const fetchAlerts = async () => {
+    try {
+      const minLevels = await getMaterialMinLevels()
+      if (minLevels.length === 0) {
+        setMinLevelAlertCount(0)
+        return
+      }
+      const codes = minLevels.map((l) => l.material_code)
+      const stockMap = await getStockAvailabilityForCodes(codes)
+      const alerts = calculateMinLevelAlerts(minLevels, stockMap)
+      setMinLevelAlertCount(alerts.length)
+    } catch {
+      setMinLevelAlertCount(0)
+    }
+  }
 
   useEffect(() => {
     countPendingRetroactiveWithdrawals()
       .then(setPendingRetroCount)
       .catch(() => setPendingRetroCount(0))
+    fetchAlerts()
   }, [])
 
   useRealtime('pcp_retroactive_withdrawals', () => {
@@ -46,6 +67,9 @@ export function SuprimentosHeader({
       .then(setPendingRetroCount)
       .catch(() => setPendingRetroCount(0))
   })
+  useRealtime('pcp_material_min_levels', fetchAlerts)
+  useRealtime('inventory', fetchAlerts)
+  useRealtime('material_reservations', fetchAlerts)
 
   return (
     <div className="flex flex-col gap-4">
@@ -76,6 +100,14 @@ export function SuprimentosHeader({
               {tab.href === '/pcp/suprimentos/baixas-retroativas' && pendingRetroCount > 0 && (
                 <span className="ml-1.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-red-600 text-white shadow-xs">
                   {pendingRetroCount}
+                </span>
+              )}
+              {tab.href === '/pcp/suprimentos/estoque' && minLevelAlertCount > 0 && (
+                <span
+                  title={`${minLevelAlertCount} item(ns) com disponível abaixo do estoque mínimo`}
+                  className="ml-1.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-600 text-white shadow-xs"
+                >
+                  {minLevelAlertCount}
                 </span>
               )}
             </Link>

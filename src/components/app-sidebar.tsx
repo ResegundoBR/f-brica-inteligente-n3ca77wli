@@ -67,6 +67,12 @@ const navItems = [
     group: 'Suprimentos',
   },
   { title: 'Cotações', url: '/pcp/suprimentos/cotacoes', icon: Tags, group: 'Suprimentos' },
+  {
+    title: 'Reservas por Programação',
+    url: '/pcp/suprimentos/reservas-programacao',
+    icon: Calendar,
+    group: 'Suprimentos',
+  },
   { title: 'Compras', url: '/pcp/suprimentos/compras', icon: ShoppingCart, group: 'Suprimentos' },
   {
     title: 'Ordens de Compra',
@@ -199,6 +205,7 @@ export function AppSidebar() {
         return !!role.access_ordens_producao || !!role.access_pcp
       case 'Solicitações':
       case 'Cotações':
+      case 'Reservas por Programação':
       case 'Compras':
       case 'Ordens de Compra':
       case 'Recebimento':

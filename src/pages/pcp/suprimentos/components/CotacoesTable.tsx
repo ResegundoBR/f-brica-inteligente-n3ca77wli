@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import React, { useState, useMemo, Fragment } from 'react'
 import { format, parseISO } from 'date-fns'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
@@ -272,10 +272,10 @@ export function CotacoesTable({
 
             // Linha Consolidada com Múltiplas OPs
             return (
-              <tbody key={group.key} className="border-b">
+              <Fragment key={group.key}>
                 <TableRow
                   className={cn(
-                    'cursor-pointer transition-colors font-medium',
+                    'cursor-pointer transition-colors font-medium border-b',
                     'bg-slate-50/80 hover:bg-slate-100/80 dark:bg-slate-800/60 dark:hover:bg-slate-800',
                     allGroupSelected && 'bg-blue-50/70 dark:bg-blue-950/40',
                   )}
@@ -426,7 +426,7 @@ export function CotacoesTable({
                       </TableCell>
                     </TableRow>
                   ))}
-              </tbody>
+              </Fragment>
             )
           })}
         </TableBody>

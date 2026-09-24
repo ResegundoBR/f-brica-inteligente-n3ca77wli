@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { NoTranslate } from '@/components/NoTranslate'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -208,11 +208,11 @@ export function TriageTable({
 
             // Grupo com múltiplas OPs
             return (
-              <tbody key={group.key} className="border-b">
+              <Fragment key={group.key}>
                 {/* Linha Cabeçalho do Grupo */}
                 <TableRow
                   className={cn(
-                    'cursor-pointer transition-colors font-medium',
+                    'cursor-pointer transition-colors font-medium border-b',
                     'bg-slate-50/80 hover:bg-slate-100/80 dark:bg-slate-800/60 dark:hover:bg-slate-800',
                     allGroupSelected && 'bg-blue-50/70 dark:bg-blue-950/40',
                   )}
@@ -444,7 +444,7 @@ export function TriageTable({
                       </TableRow>
                     )
                   })}
-              </tbody>
+              </Fragment>
             )
           })}
         </TableBody>

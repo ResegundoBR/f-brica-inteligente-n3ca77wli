@@ -424,6 +424,8 @@ export function EnhancedQuotationForm({
                 ? `Lote consolidado deste grupo (${totalGroupQty} un em ${groupList.length} OPs)`
                 : `Esta solicitação (${item.quantity} un)`
             }
+            itemDescription={item.description}
+            itemCode={item.code}
             onApplyTotal={handleApplyConsolidatedTotal}
             applyButtonLabel="Adotar quantidade consolidada"
           />

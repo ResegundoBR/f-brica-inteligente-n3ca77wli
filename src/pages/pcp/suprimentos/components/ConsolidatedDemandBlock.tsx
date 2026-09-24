@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   Link2,
   Layers,
@@ -7,7 +8,9 @@ import {
   ShoppingBag,
   Box,
   Lightbulb,
+  ExternalLink,
 } from 'lucide-react'
+import { OpMaterialsSummaryModal, OpModalTarget } from './OpMaterialsSummaryModal'
 import { Badge } from '@/components/ui/badge'
 import {
   Table,
@@ -61,6 +64,8 @@ export function ConsolidatedDemandBadge({
 interface ConsolidatedDemandBlockProps {
   consolidation?: ItemDemandConsolidation | null
   currentItemLabel?: string
+  itemDescription?: string
+  itemCode?: string
   onApplyTotal?: (suggestedQty: number) => void
   applyButtonLabel?: string
   className?: string
@@ -86,10 +91,15 @@ function formatDate(dateStr?: string): string {
 export function ConsolidatedDemandBlock({
   consolidation,
   currentItemLabel,
+  itemDescription,
+  itemCode,
   onApplyTotal,
   applyButtonLabel = 'Adotar quantidade consolidada',
   className,
 }: ConsolidatedDemandBlockProps) {
+  const [selectedOpTarget, setSelectedOpTarget] = useState<OpModalTarget | null>(null)
+  const [opModalOpen, setOpModalOpen] = useState(false)
+
   if (!consolidation || consolidation.otherDemands.length === 0) return null
 
   const {
@@ -105,6 +115,26 @@ export function ConsolidatedDemandBlock({
   const openShortageItems = otherDemands.filter((d) => d.demandType !== 'necessidade_futura')
   const futureDemandItems = otherDemands.filter((d) => d.demandType === 'necessidade_futura')
 
+  const handleOpenOpModal = (demand: OtherOpDemandItem) => {
+    setSelectedOpTarget({
+      orderId: demand.orderId,
+      opNumber: demand.opNumber,
+      orderNumber: demand.orderNumber,
+      clientName: demand.clientName,
+      productName: demand.productName,
+      deliveryDate: demand.deliveryDate,
+    })
+    setOpModalOpen(true)
+  }
+
+  // Título e código formatado para o cabeçalho do bloco
+  const headerItemTitle = [
+    itemCode ? itemCode.trim() : null,
+    itemDescription ? itemDescription.trim().toUpperCase() : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
   return (
     <div
       className={cn(
@@ -119,8 +149,16 @@ export function ConsolidatedDemandBlock({
             <Link2 className="size-4" />
           </div>
           <div>
-            <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wide text-amber-950 dark:text-amber-100 flex items-center gap-1.5">
+            <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wide text-amber-950 dark:text-amber-100 flex items-center gap-1.5 flex-wrap">
               <span>🔗 Este item também é necessário em outras OPs</span>
+              {headerItemTitle && (
+                <span
+                  className="font-mono font-semibold text-amber-900 dark:text-amber-200 text-xs px-1.5 py-0.5 rounded bg-amber-200/60 dark:bg-amber-900/50 notranslate"
+                  translate="no"
+                >
+                  {headerItemTitle}
+                </span>
+              )}
               <Badge
                 variant="outline"
                 className="text-[10px] px-1.5 py-0 h-4 border-amber-400 dark:border-amber-700 text-amber-900 dark:text-amber-300 font-semibold"
@@ -268,13 +306,23 @@ export function ConsolidatedDemandBlock({
                     className="font-semibold text-blue-600 dark:text-blue-400 notranslate"
                     translate="no"
                   >
-                    {demand.orderNumber}
+                    <span className="block font-semibold">{demand.orderNumber}</span>
                     {demand.clientName && (
                       <span
-                        className="block text-[10px] text-muted-foreground font-normal truncate max-w-[140px] notranslate"
+                        className="block text-[10px] text-muted-foreground font-normal truncate max-w-[170px] notranslate leading-tight mt-0.5"
                         translate="no"
+                        title={demand.clientName}
                       >
                         {demand.clientName}
+                      </span>
+                    )}
+                    {demand.productName && (
+                      <span
+                        className="block text-[10px] text-muted-foreground font-normal truncate max-w-[170px] notranslate leading-tight mt-0.5 italic"
+                        translate="no"
+                        title={demand.productName}
+                      >
+                        {demand.productName}
                       </span>
                     )}
                   </TableCell>
@@ -282,7 +330,19 @@ export function ConsolidatedDemandBlock({
                     className="font-medium text-slate-700 dark:text-slate-300 notranslate"
                     translate="no"
                   >
-                    {demand.opNumber}
+                    {demand.opNumber && demand.opNumber !== '-' ? (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenOpModal(demand)}
+                        title={`Clique para ver componentes da OP ${demand.opNumber}`}
+                        className="inline-flex items-center gap-1 font-mono font-bold text-blue-700 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-200 underline decoration-dotted underline-offset-2 hover:decoration-solid cursor-pointer transition-colors"
+                      >
+                        <span>{demand.opNumber}</span>
+                        <ExternalLink className="size-2.5 opacity-70" />
+                      </button>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     {isFuture ? (
@@ -403,6 +463,13 @@ export function ConsolidatedDemandBlock({
           </span>
         </p>
       )}
+
+      {/* Modal de Componentes da OP clicada */}
+      <OpMaterialsSummaryModal
+        open={opModalOpen}
+        onOpenChange={setOpModalOpen}
+        target={selectedOpTarget}
+      />
     </div>
   )
 }

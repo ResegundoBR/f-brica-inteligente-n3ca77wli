@@ -176,6 +176,8 @@ export function ComprasItemDialog({
               <ConsolidatedDemandBlock
                 consolidation={consolidation}
                 currentItemLabel={`Esta solicitação (${itemQuantity || item.quantity} un)`}
+                itemDescription={item.description}
+                itemCode={item.code}
                 onApplyTotal={handleApplyConsolidatedTotal}
                 applyButtonLabel="Sugerir e adotar total"
               />

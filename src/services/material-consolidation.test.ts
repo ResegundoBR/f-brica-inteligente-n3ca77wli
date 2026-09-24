@@ -142,6 +142,7 @@ describe('material-consolidation service', () => {
               status: 'Em Andamento',
               delivery_date: '2026-11-01',
               client_name: 'Cliente Futuro 1',
+              manual_product_name: 'Luminária Pétala',
             },
           },
         },
@@ -211,6 +212,7 @@ describe('material-consolidation service', () => {
       expect(futureDemands[0].quantity).toBe(3)
       expect(futureDemands[0].opNumber).toBe('000510/2026')
       expect(futureDemands[0].orderNumber).toBe('14010')
+      expect(futureDemands[0].productName).toBe('Luminária Pétala')
     })
 
     it('findConsolidatedDemandAsync calcula total consolidado com subtotais e sugestão de estoque', async () => {

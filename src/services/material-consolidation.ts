@@ -28,6 +28,7 @@ export interface OtherOpDemandItem {
   receivedQuantity: number
   status: string
   clientName?: string
+  productName?: string
 }
 
 export interface ItemStockInfo {
@@ -152,6 +153,8 @@ export function findOtherOpDemands(
     const orderNumber = order?.order_number || (s.order_id ? 'OP vinculada' : 'Req. Geral')
     const opNumber = order?.op_number || '-'
     const deliveryDate = order?.delivery_date || s.expected_date
+    const productName =
+      (order?.expand?.product_id as any)?.name || order?.manual_product_name || undefined
 
     otherDemands.push({
       shortageId: s.id,
@@ -165,6 +168,7 @@ export function findOtherOpDemands(
       receivedQuantity: Number(s.received_quantity) || 0,
       status: s.status,
       clientName: order?.client_name,
+      productName,
     })
   }
 
@@ -221,7 +225,7 @@ export async function findFutureEngineeringDemands(
 
     const materials = await pb.collection('pcp_order_materials').getFullList<PcpOrderMaterial>({
       filter,
-      expand: 'order_id',
+      expand: 'order_id,order_id.product_id',
       sort: '-created',
     })
 
@@ -267,6 +271,9 @@ export async function findFutureEngineeringDemands(
       const qty = Number(mat.quantity) || 0
       if (qty <= 0) continue
 
+      const futureProductName =
+        (order?.expand?.product_id as any)?.name || order?.manual_product_name || undefined
+
       futureDemands.push({
         shortageId: `future-${mat.id}`,
         demandType: 'necessidade_futura',
@@ -279,6 +286,7 @@ export async function findFutureEngineeringDemands(
         receivedQuantity: 0,
         status: order.status || 'OP em andamento',
         clientName: order.client_name,
+        productName: futureProductName,
       })
     }
 

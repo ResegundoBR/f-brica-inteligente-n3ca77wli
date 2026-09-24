@@ -309,6 +309,8 @@ export function QuotationDialog({
               <ConsolidatedDemandBlock
                 consolidation={consolidation}
                 currentItemLabel={`Esta solicitação (${item.quantity} un)`}
+                itemDescription={item.description}
+                itemCode={item.code}
                 onApplyTotal={(suggestedQty) => {
                   setEditQty(String(suggestedQty))
                   updateShortageItem(item.id, { quantity: suggestedQty })

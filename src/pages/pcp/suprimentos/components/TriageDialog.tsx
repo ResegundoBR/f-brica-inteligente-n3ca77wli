@@ -175,6 +175,8 @@ export function TriageDialog({
                 <ConsolidatedDemandBlock
                   consolidation={consolidation}
                   currentItemLabel={`Pedido ${item?.expand?.order_id?.order_number || 'Req. Geral'} (OP ${item?.expand?.order_id?.op_number || '-'})`}
+                  itemDescription={item?.description}
+                  itemCode={item?.code}
                 />
               )}
 

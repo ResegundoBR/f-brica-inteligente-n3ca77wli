@@ -20,6 +20,8 @@ import { ConsolidatedDemandBlock } from './ConsolidatedDemandBlock'
 import { UserActionBadge } from '@/components/UserActionBadge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
+import { findMostUrgentOp, checkQuotationDeliveryRisk } from './delivery-deadline-risk'
+import { QuotationDeadlineWarning } from './QuotationDeadlineWarning'
 
 interface EnhancedQuotationFormProps {
   item: MaterialShortage
@@ -116,6 +118,23 @@ export function EnhancedQuotationForm({
   const [saving, setSaving] = useState(false)
   const [copied, setCopied] = useState(false)
   const [showSupplierForm, setShowSupplierForm] = useState(false)
+
+  // OP mais urgente do contexto consolidado (do lote no modo grupo, da solicitação no item único)
+  const mostUrgentOp = useMemo(() => {
+    return findMostUrgentOp({
+      currentItem: item,
+      groupList: isMultiItem ? groupList : undefined,
+      consolidation,
+    })
+  }, [item, isMultiItem, groupList, consolidation])
+
+  // Verificação em tempo real do prazo que está sendo digitado
+  const typingDeliveryRisk = useMemo(() => {
+    return checkQuotationDeliveryRisk({
+      deliveryDays,
+      mostUrgentOp,
+    })
+  }, [deliveryDays, mostUrgentOp])
 
   const loadQuotations = async () => {
     try {
@@ -490,11 +509,23 @@ export function EnhancedQuotationForm({
                 type="number"
                 value={deliveryDays}
                 onChange={(e) => setDeliveryDays(e.target.value)}
-                className="h-8 text-sm notranslate"
+                className={cn(
+                  'h-8 text-sm notranslate',
+                  typingDeliveryRisk.hasRisk &&
+                    (typingDeliveryRisk.urgencyLevel === 'urgent'
+                      ? 'border-red-400 focus-visible:ring-red-400'
+                      : 'border-amber-400 focus-visible:ring-amber-400'),
+                )}
                 translate="no"
               />
             </div>
           </div>
+
+          {/* Aviso de Prazo × Vencimento da OP em tempo real na digitação */}
+          {typingDeliveryRisk.hasRisk && (
+            <QuotationDeadlineWarning checkResult={typingDeliveryRisk} />
+          )}
+
           <Button className="w-full" size="sm" onClick={handleAddQuotation} disabled={saving}>
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
             Adicionar Cotação
@@ -502,46 +533,65 @@ export function EnhancedQuotationForm({
         </div>
         {quotations.length > 0 && (
           <div className="space-y-1">
-            {quotations.map((q) => (
-              <div key={q.id} className="flex items-center gap-2 p-2 border rounded-lg">
-                <Button
-                  size="sm"
-                  variant={q.selected ? 'default' : 'outline'}
-                  className="h-6 px-2"
-                  onClick={() => handleSelectQuotation(q)}
+            {quotations.map((q) => {
+              const qRisk = checkQuotationDeliveryRisk({
+                deliveryDays: q.delivery_days,
+                mostUrgentOp,
+              })
+
+              return (
+                <div
+                  key={q.id}
+                  className={cn(
+                    'p-2 border rounded-lg transition-colors space-y-1.5',
+                    q.selected &&
+                      'bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800',
+                  )}
                 >
-                  {q.selected && <Check className="w-3 h-3 mr-1" />}
-                  {q.selected ? 'Sel.' : 'Sel.'}
-                </Button>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium notranslate" translate="no">
-                      {q.supplier}
-                    </p>
-                    <UserActionBadge
-                      user={q.expand?.quoted_by}
-                      date={q.created}
-                      prefix="por"
-                      compact={true}
-                    />
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant={q.selected ? 'default' : 'outline'}
+                      className="h-6 px-2"
+                      onClick={() => handleSelectQuotation(q)}
+                    >
+                      {q.selected && <Check className="w-3 h-3 mr-1" />}
+                      {q.selected ? 'Sel.' : 'Sel.'}
+                    </Button>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-1">
+                        <p className="text-sm font-medium notranslate truncate" translate="no">
+                          {q.supplier}
+                        </p>
+                        <UserActionBadge
+                          user={q.expand?.quoted_by}
+                          date={q.created}
+                          prefix="por"
+                          compact={true}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground notranslate" translate="no">
+                        R$ {q.price.toFixed(2)}
+                        {q.st_value ? ` • ST: R$ ${q.st_value.toFixed(2)}` : ''}
+                        {q.ipi_value ? ` • IPI: R$ ${q.ipi_value.toFixed(2)}` : ''}
+                        {` • ${q.delivery_days || '-'} dias`}
+                      </p>
+                    </div>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6 shrink-0"
+                      onClick={() => handleDeleteQuotation(q)}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </Button>
                   </div>
-                  <p className="text-xs text-muted-foreground notranslate" translate="no">
-                    R$ {q.price.toFixed(2)}
-                    {q.st_value ? ` • ST: R$ ${q.st_value.toFixed(2)}` : ''}
-                    {q.ipi_value ? ` • IPI: R$ ${q.ipi_value.toFixed(2)}` : ''}
-                    {` • ${q.delivery_days || '-'} dias`}
-                  </p>
+
+                  {/* Aviso de Prazo × Vencimento da OP para esta cotação salva */}
+                  {qRisk.hasRisk && <QuotationDeadlineWarning checkResult={qRisk} />}
                 </div>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-6 w-6"
-                  onClick={() => handleDeleteQuotation(q)}
-                >
-                  <Trash2 className="w-3 h-3" />
-                </Button>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
         <Button variant="outline" className="w-full" onClick={handleCopyWhatsApp}>

@@ -28,6 +28,8 @@ import { findOtherOpDemands } from '@/services/material-consolidation'
 import { ConsolidatedDemandBlock } from './ConsolidatedDemandBlock'
 import { toDateFieldValue } from '@/lib/pcp-utils'
 import { NoTranslate } from '@/components/NoTranslate'
+import { findMostUrgentOp, checkQuotationDeliveryRisk } from './delivery-deadline-risk'
+import { QuotationDeadlineWarning } from './QuotationDeadlineWarning'
 
 interface ComprasItemDialogProps {
   item: MaterialShortage | null
@@ -59,6 +61,14 @@ export function ComprasItemDialog({
     if (!item) return null
     return findOtherOpDemands(item, allShortages)
   }, [item, allShortages])
+
+  // OP mais urgente do contexto consolidado
+  const mostUrgentOp = useMemo(() => {
+    return findMostUrgentOp({
+      currentItem: item,
+      consolidation,
+    })
+  }, [item, consolidation])
 
   const fetchQuotations = useCallback(async () => {
     if (!item) return
@@ -205,37 +215,60 @@ export function ComprasItemDialog({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {quotations.map((q) => (
-                        <TableRow
-                          key={q.id}
-                          className={cn(
-                            'cursor-pointer transition-colors',
-                            selectedQuotationId === q.id && 'bg-primary/5',
-                          )}
-                          onClick={() => handleSelectQuotation(q.id)}
-                        >
-                          <TableCell>
-                            {selectedQuotationId === q.id && (
-                              <Check className="w-4 h-4 text-primary" />
+                      {quotations.map((q) => {
+                        const qRisk = checkQuotationDeliveryRisk({
+                          deliveryDays: q.delivery_days,
+                          mostUrgentOp,
+                        })
+
+                        return (
+                          <TableRow
+                            key={q.id}
+                            className={cn(
+                              'cursor-pointer transition-colors',
+                              selectedQuotationId === q.id && 'bg-primary/5',
                             )}
-                          </TableCell>
-                          <TableCell className="font-medium text-sm notranslate" translate="no">
-                            {q.supplier}
-                          </TableCell>
-                          <TableCell className="text-right text-sm notranslate" translate="no">
-                            {formatCurrency(q.price)}
-                          </TableCell>
-                          <TableCell className="text-right text-sm notranslate" translate="no">
-                            {q.delivery_days || '-'}
-                          </TableCell>
-                          <TableCell
-                            className="text-right text-sm font-semibold notranslate"
-                            translate="no"
+                            onClick={() => handleSelectQuotation(q.id)}
                           >
-                            {formatCurrency(q.price * (item.quantity || 0))}
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                            <TableCell>
+                              {selectedQuotationId === q.id && (
+                                <Check className="w-4 h-4 text-primary" />
+                              )}
+                            </TableCell>
+                            <TableCell className="font-medium text-sm notranslate" translate="no">
+                              <div className="space-y-1">
+                                <span>{q.supplier}</span>
+                                {qRisk.hasRisk && (
+                                  <div>
+                                    <QuotationDeadlineWarning checkResult={qRisk} compact={true} />
+                                  </div>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right text-sm notranslate" translate="no">
+                              {formatCurrency(q.price)}
+                            </TableCell>
+                            <TableCell className="text-right text-sm notranslate" translate="no">
+                              <span
+                                className={cn(
+                                  qRisk.hasRisk &&
+                                    (qRisk.urgencyLevel === 'urgent'
+                                      ? 'text-red-600 font-bold'
+                                      : 'text-amber-600 font-semibold'),
+                                )}
+                              >
+                                {q.delivery_days || '-'}
+                              </span>
+                            </TableCell>
+                            <TableCell
+                              className="text-right text-sm font-semibold notranslate"
+                              translate="no"
+                            >
+                              {formatCurrency(q.price * (item.quantity || 0))}
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
                     </TableBody>
                   </Table>
                 </div>

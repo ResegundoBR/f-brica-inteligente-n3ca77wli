@@ -44,6 +44,8 @@ import { findOtherOpDemands } from '@/services/material-consolidation'
 import { ConsolidatedDemandBlock } from './ConsolidatedDemandBlock'
 import { toDateFieldValue } from '@/lib/pcp-utils'
 import { UserActionBadge } from '@/components/UserActionBadge'
+import { findMostUrgentOp, checkQuotationDeliveryRisk } from './delivery-deadline-risk'
+import { QuotationDeadlineWarning } from './QuotationDeadlineWarning'
 
 export function QuotationDialog({
   item,
@@ -210,6 +212,20 @@ export function QuotationDialog({
     return findOtherOpDemands(item, allShortages)
   }, [item, allShortages])
 
+  const mostUrgentOp = useMemo(() => {
+    return findMostUrgentOp({
+      currentItem: item,
+      consolidation,
+    })
+  }, [item, consolidation])
+
+  const typingDeliveryRisk = useMemo(() => {
+    return checkQuotationDeliveryRisk({
+      deliveryDays,
+      mostUrgentOp,
+    })
+  }, [deliveryDays, mostUrgentOp])
+
   const handleCopy = () => {
     if (!item) return
     const extraMsg =
@@ -349,76 +365,97 @@ export function QuotationDialog({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {quotations.map((q) => (
-                      <TableRow
-                        key={q.id}
-                        className={cn(q.selected && 'bg-blue-50 dark:bg-blue-900/20')}
-                      >
-                        <TableCell className="font-medium text-sm">
-                          <div className="notranslate" translate="no">
-                            {q.supplier}
-                          </div>
-                        </TableCell>
-                        <TableCell
-                          className="text-right font-semibold text-sm notranslate"
-                          translate="no"
+                    {quotations.map((q) => {
+                      const qRisk = checkQuotationDeliveryRisk({
+                        deliveryDays: q.delivery_days,
+                        mostUrgentOp,
+                      })
+
+                      return (
+                        <TableRow
+                          key={q.id}
+                          className={cn(q.selected && 'bg-blue-50 dark:bg-blue-900/20')}
                         >
-                          R$ {Number(q.price).toFixed(2)}
-                        </TableCell>
-                        <TableCell
-                          className="text-right text-xs text-muted-foreground notranslate"
-                          translate="no"
-                        >
-                          {q.st_value != null && q.st_value > 0
-                            ? `R$ ${Number(q.st_value).toFixed(2)}`
-                            : '-'}
-                        </TableCell>
-                        <TableCell
-                          className="text-right text-xs text-muted-foreground notranslate"
-                          translate="no"
-                        >
-                          {q.ipi_value != null && q.ipi_value > 0
-                            ? `R$ ${Number(q.ipi_value).toFixed(2)}`
-                            : '-'}
-                        </TableCell>
-                        <TableCell className="text-center text-sm notranslate" translate="no">
-                          {q.delivery_days || '-'}
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                          <UserActionBadge
-                            user={q.expand?.quoted_by}
-                            date={q.created}
-                            prefix="por"
-                            compact={true}
-                            fallbackText="-"
-                          />
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {q.selected ? (
-                            <Badge className="bg-blue-600 text-white">Selecionado</Badge>
-                          ) : (
+                          <TableCell className="font-medium text-sm">
+                            <div className="notranslate" translate="no">
+                              {q.supplier}
+                            </div>
+                            {qRisk.hasRisk && (
+                              <div className="mt-1">
+                                <QuotationDeadlineWarning checkResult={qRisk} compact={true} />
+                              </div>
+                            )}
+                          </TableCell>
+                          <TableCell
+                            className="text-right font-semibold text-sm notranslate"
+                            translate="no"
+                          >
+                            R$ {Number(q.price).toFixed(2)}
+                          </TableCell>
+                          <TableCell
+                            className="text-right text-xs text-muted-foreground notranslate"
+                            translate="no"
+                          >
+                            {q.st_value != null && q.st_value > 0
+                              ? `R$ ${Number(q.st_value).toFixed(2)}`
+                              : '-'}
+                          </TableCell>
+                          <TableCell
+                            className="text-right text-xs text-muted-foreground notranslate"
+                            translate="no"
+                          >
+                            {q.ipi_value != null && q.ipi_value > 0
+                              ? `R$ ${Number(q.ipi_value).toFixed(2)}`
+                              : '-'}
+                          </TableCell>
+                          <TableCell className="text-center text-sm notranslate" translate="no">
+                            <span
+                              className={cn(
+                                qRisk.hasRisk &&
+                                  (qRisk.urgencyLevel === 'urgent'
+                                    ? 'text-red-600 font-bold'
+                                    : 'text-amber-600 font-semibold'),
+                              )}
+                            >
+                              {q.delivery_days || '-'}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                            <UserActionBadge
+                              user={q.expand?.quoted_by}
+                              date={q.created}
+                              prefix="por"
+                              compact={true}
+                              fallbackText="-"
+                            />
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {q.selected ? (
+                              <Badge className="bg-blue-600 text-white">Selecionado</Badge>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 text-xs"
+                                onClick={() => handleSelect(q.id)}
+                              >
+                                <Check className="size-3 mr-1" /> Selecionar
+                              </Button>
+                            )}
+                          </TableCell>
+                          <TableCell>
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="h-6 text-xs"
-                              onClick={() => handleSelect(q.id)}
+                              className="h-6 text-red-500"
+                              onClick={() => handleDelete(q.id)}
                             >
-                              <Check className="size-3 mr-1" /> Selecionar
+                              <Trash2 className="size-3" />
                             </Button>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-6 text-red-500"
-                            onClick={() => handleDelete(q.id)}
-                          >
-                            <Trash2 className="size-3" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
                   </TableBody>
                 </Table>
               </div>
@@ -482,9 +519,20 @@ export function QuotationDialog({
                     value={deliveryDays}
                     onChange={(e) => setDeliveryDays(e.target.value)}
                     placeholder="0"
+                    className={cn(
+                      'notranslate',
+                      typingDeliveryRisk.hasRisk &&
+                        (typingDeliveryRisk.urgencyLevel === 'urgent'
+                          ? 'border-red-400 focus-visible:ring-red-400'
+                          : 'border-amber-400 focus-visible:ring-amber-400'),
+                    )}
+                    translate="no"
                   />
                 </div>
               </div>
+              {typingDeliveryRisk.hasRisk && (
+                <QuotationDeadlineWarning checkResult={typingDeliveryRisk} />
+              )}
               <Button size="sm" onClick={handleAdd} disabled={!supplier.trim() || !price}>
                 <Plus className="size-4 mr-1" /> Adicionar Cotação
               </Button>

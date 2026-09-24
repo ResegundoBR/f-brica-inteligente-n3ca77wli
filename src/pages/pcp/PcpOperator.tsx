@@ -44,6 +44,7 @@ import {
   normalizeSearchText,
   sortFilaProductionOrders,
   formatLocalDate,
+  normalizeStage,
 } from '@/lib/pcp-utils'
 import { getMaterialAvailabilityStatus } from '@/lib/material-status'
 import { isBefore, startOfDay, parseISO } from 'date-fns'
@@ -1166,7 +1167,12 @@ export default function PcpOperator() {
       }
 
       setProcesses(procs)
-      setOrders(records)
+      setOrders(
+        records.map((r) => ({
+          ...r,
+          stage: normalizeStage(r.stage),
+        })),
+      )
 
       const [shortageRes, obsRes, materialsRes] = await Promise.all([
         pb.collection('material_shortages').getFullList<MaterialShortage>({
@@ -1276,7 +1282,7 @@ export default function PcpOperator() {
       if (activeRework) {
         // Conclui o retrabalho e restaura a OP para a etapa de origem
         await finishRework(activeRework.id, user?.id)
-        const targetStage = activeRework.origin_stage || 'Preparação'
+        const targetStage = normalizeStage(activeRework.origin_stage || 'Preparação')
 
         setOrders((prev) =>
           prev.map((o) =>
@@ -1331,13 +1337,14 @@ export default function PcpOperator() {
           ),
         )
       } else {
+        const normalizedNext = normalizeStage(nextStage)
         setOrders((prev) =>
           prev.map((o) =>
             o.id === op.id
               ? ({
                   ...o,
                   status: 'Fila',
-                  stage: nextStage as any,
+                  stage: normalizedNext as any,
                   started_at: '',
                   bottleneck_reason: 'Nenhum',
                   bottleneck_details: '',
@@ -1365,7 +1372,7 @@ export default function PcpOperator() {
       } else {
         await pb.collection('pcp_orders').update(op.id, {
           status: 'Fila',
-          stage: nextStage,
+          stage: normalizeStage(nextStage),
           started_at: '',
           bottleneck_reason: 'Nenhum',
           bottleneck_details: '',
@@ -1381,11 +1388,12 @@ export default function PcpOperator() {
   const handleReworkSubmit = async (
     op: PcpOrder,
     targetSector: string,
-    targetStage: string,
+    targetStageParam: string,
     description: string,
   ) => {
     const originSector = selectedSector
-    const originStage = op.stage
+    const originStage = normalizeStage(op.stage)
+    const targetStage = normalizeStage(targetStageParam)
 
     // Atualização otimista: stage=targetStage, status='Fila'
     setOrders((prev) =>

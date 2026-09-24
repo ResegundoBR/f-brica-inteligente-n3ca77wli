@@ -127,8 +127,12 @@ export function TabProcesses({
         filter: `product_id="${product.id}"`,
         sort: 'order',
       })
-      setProcesses(records)
-    } catch (err) {
+      setProcesses(
+        records.map((r) => ({
+          ...r,
+          kanban_stage: r.kanban_stage === 'Retoque' ? 'Retoques' : r.kanban_stage,
+        })),
+      )    } catch (err) {
       console.error('Error loading processes:', err)
     }
   }
@@ -251,7 +255,8 @@ export function TabProcesses({
     }
   }
 
-  const updateProcessKanbanStage = async (id: string, stage: string) => {
+  const updateProcessKanbanStage = async (id: string, rawStage: string) => {
+    const stage = rawStage === 'Retoque' ? 'Retoques' : rawStage
     if (isNew && setPendingProcesses) {
       setPendingProcesses(
         pendingProcesses.map((p) => (p.id === id ? { ...p, kanban_stage: stage } : p)),
@@ -262,7 +267,13 @@ export function TabProcesses({
       const updated = await pb
         .collection('product_processes')
         .update<ProductProcessModel>(id, { kanban_stage: stage })
-      setProcesses((prev) => prev.map((p) => (p.id === id ? updated : p)))
+      setProcesses((prev) =>
+        prev.map((p) =>
+          p.id === id
+            ? { ...updated, kanban_stage: updated.kanban_stage === 'Retoque' ? 'Retoques' : updated.kanban_stage }
+            : p,
+        ),
+      )
     } catch (err) {
       toast({ title: 'Erro ao atualizar etapa Kanban', variant: 'destructive' })
     }

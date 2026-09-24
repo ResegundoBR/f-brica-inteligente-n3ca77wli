@@ -58,7 +58,8 @@ export function usePcpOrders() {
     [],
   )
 
-  const updateOrderStage = useCallback(async (orderId: string, stage: string) => {
+  const updateOrderStage = useCallback(async (orderId: string, rawStage: string) => {
+    const stage = rawStage === 'Retoque' ? 'Retoques' : rawStage
     markOrderLocallyUpdated(orderId)
     // Atualização otimista
     updateLocalPcpOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, stage } : o)))

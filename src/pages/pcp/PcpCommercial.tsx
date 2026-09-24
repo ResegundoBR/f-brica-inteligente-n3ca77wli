@@ -19,7 +19,12 @@ import { Search, Truck, CheckCircle2, MessageSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PromisedDateBadge } from '@/components/PromisedDateBadge'
 import { PcpFilters } from './components/PcpFilters'
-import { filterByDeadline, isOrderOverdue, normalizeSearchText } from '@/lib/pcp-utils'
+import {
+  filterByDeadline,
+  isOrderOverdue,
+  normalizeSearchText,
+  normalizeStage,
+} from '@/lib/pcp-utils'
 import { OrderMessagesPanel } from '@/components/OrderMessagesPanel'
 
 const STAGES = [
@@ -81,7 +86,12 @@ export default function PcpCommercial() {
         }),
       ])
 
-      setOrders(records)
+      setOrders(
+        records.map((r) => ({
+          ...r,
+          stage: normalizeStage(r.stage),
+        })),
+      )
 
       const obsMap: Record<string, PcpOrderObservation[]> = {}
       obs.forEach((o) => {

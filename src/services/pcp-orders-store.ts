@@ -1,4 +1,5 @@
 import pb from '@/lib/pocketbase/client'
+import { normalizeStage } from '@/lib/pcp-utils'
 
 export type PcpOrderRecord = any
 
@@ -134,7 +135,10 @@ export async function fetchAllPcpOrders(force: boolean = false): Promise<PcpOrde
         expand: 'product_id,client_id,operator_id,promised_by,bottleneck_by',
         sort: '-manual_priority,-created',
       })
-      state.orders = records
+      state.orders = records.map((r: any) => ({
+        ...r,
+        stage: normalizeStage(r.stage),
+      }))
       state.initialized = true
       state.error = null
       rateLimitRetryCount = 0
@@ -252,11 +256,25 @@ export async function persistSequentialOrderUpdates(
   // Marcar IDs para não disparar refetch pelo realtime
   items.forEach((item) => markOrderLocallyUpdated(item.id))
 
+  // Normalizar stage no payload caso esteja presente
+  const sanitizedItems = items.map((item) => {
+    if (item.data && item.data.stage !== undefined) {
+      return {
+        ...item,
+        data: {
+          ...item.data,
+          stage: normalizeStage(item.data.stage),
+        },
+      }
+    }
+    return item
+  })
+
   // Executa em fila com concorrência limitada e pequeno throttle
   let index = 0
   async function worker() {
-    while (index < items.length) {
-      const current = items[index++]
+    while (index < sanitizedItems.length) {
+      const current = sanitizedItems[index++]
       try {
         await withRateLimitRetry(
           () => pb.collection('pcp_orders').update(current.id, current.data),

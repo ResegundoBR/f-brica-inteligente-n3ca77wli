@@ -734,7 +734,7 @@ function OperatorCard({
           </Button>
         )}
 
-        {!hasComposition && op.status !== 'Concluído' && onOpenWithdrawal && (
+        {op.status !== 'Concluído' && onOpenWithdrawal && (
           <Button
             size="lg"
             variant="default"

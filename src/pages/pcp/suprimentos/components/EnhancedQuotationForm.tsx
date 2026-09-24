@@ -63,6 +63,13 @@ export function EnhancedQuotationForm({
   const [quotations, setQuotations] = useState<Quotation[]>([])
   const [desc, setDesc] = useState(item.description)
   const [qty, setQty] = useState(String(isMultiItem ? totalGroupQty : item.quantity))
+
+  // Atualizar valores do formulário se o item ou total do grupo mudar
+  useEffect(() => {
+    setDesc(item.description || '')
+    setQty(String(isMultiItem ? totalGroupQty : item.quantity))
+  }, [item.description, item.quantity, isMultiItem, totalGroupQty])
+
   const [supplier, setSupplier] = useState('')
   const [price, setPrice] = useState('')
   const [stValue, setStValue] = useState('')
@@ -151,6 +158,7 @@ export function EnhancedQuotationForm({
   }
 
   const handleEditItem = async () => {
+    if (isMultiItem) return
     if (desc === item.description && qty === String(item.quantity)) return
     try {
       await pb.collection('material_shortages').update(item.id, {
@@ -191,24 +199,47 @@ export function EnhancedQuotationForm({
         <div className="grid grid-cols-3 gap-2 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
           <div className="col-span-2">
             <Label className="text-xs">Descrição</Label>
-            <Input
-              value={desc}
-              onChange={(e) => setDesc(e.target.value)}
-              className="h-8 text-sm notranslate"
-              translate="no"
-              onBlur={handleEditItem}
-            />
+            {isMultiItem ? (
+              <Input
+                value={desc}
+                readOnly
+                disabled
+                className="h-8 text-sm notranslate bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 cursor-not-allowed select-none"
+                translate="no"
+              />
+            ) : (
+              <Input
+                value={desc}
+                onChange={(e) => setDesc(e.target.value)}
+                className="h-8 text-sm notranslate"
+                translate="no"
+                onBlur={handleEditItem}
+              />
+            )}
           </div>
           <div>
-            <Label className="text-xs">Quantidade</Label>
-            <Input
-              type="number"
-              value={qty}
-              onChange={(e) => setQty(e.target.value)}
-              className="h-8 text-sm notranslate"
-              translate="no"
-              onBlur={handleEditItem}
-            />
+            <Label className="text-xs">
+              {isMultiItem ? 'Total do lote (somatório das OPs)' : 'Quantidade'}
+            </Label>
+            {isMultiItem ? (
+              <Input
+                type="text"
+                value={`${totalGroupQty} un`}
+                readOnly
+                disabled
+                className="h-8 text-sm font-semibold notranslate bg-slate-100 dark:bg-slate-900 text-blue-700 dark:text-blue-300 cursor-not-allowed select-none"
+                translate="no"
+              />
+            ) : (
+              <Input
+                type="number"
+                value={qty}
+                onChange={(e) => setQty(e.target.value)}
+                className="h-8 text-sm notranslate"
+                translate="no"
+                onBlur={handleEditItem}
+              />
+            )}
           </div>
         </div>
 

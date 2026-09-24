@@ -6,6 +6,7 @@ import {
   normalizeCode,
 } from './material-reservations'
 import { MaterialReservation } from '@/types'
+import { upsertMaterialShortage } from './material-shortages'
 
 export type SeparationStatus = 'Pendente' | 'Em_Separacao' | 'Concluida' | 'Cancelada'
 
@@ -318,7 +319,7 @@ export async function finalizeSeparation(
       const observation =
         `Falta gerada automaticamente na Separação do Operador${opsLabel}. Qtd: ${item.total_quantity} ${item.unit || 'UN'}.${item.cut_measurement ? ` Medida de corte: ${item.cut_measurement}.` : ''} ${item.notes || ''}`.trim()
 
-      const shortagePayload: Record<string, unknown> = {
+      const shortagePayload = {
         code: item.code || '',
         description: `${item.description || 'Material sem descrição'}${opsLabel}`,
         quantity: Number(item.total_quantity) || 1,
@@ -328,13 +329,13 @@ export async function finalizeSeparation(
         priority: 'Urgente',
         requested_by: currentUserId || null,
         observation: observation,
+        order_id: primaryOrderId || null,
       }
 
-      if (primaryOrderId) {
-        shortagePayload.order_id = primaryOrderId
-      }
-
-      await pb.collection('material_shortages').create(shortagePayload)
+      await upsertMaterialShortage(
+        shortagePayload,
+        pb.authStore.record?.name || pb.authStore.record?.email || 'Separação',
+      )
       shortagesCreatedCount += 1
     } catch (err) {
       console.error('Erro ao gerar falta para item de separação:', item, err)

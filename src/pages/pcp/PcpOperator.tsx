@@ -35,6 +35,10 @@ import {
   startRework,
   finishRework,
 } from '@/services/pcp-reworks'
+import { upsertMaterialShortage } from '@/services/material-shortages'
+import { getOrderMaterials } from '@/services/pcp-order-materials'
+import type { PcpOrderMaterial } from '@/types'
+import { NoTranslate } from '@/components/NoTranslate'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import {
@@ -390,13 +394,28 @@ function OperatorCard({
   const [reworkTargetStage, setReworkTargetStage] = useState<string>('Corte')
   const [reworkDescription, setReworkDescription] = useState('')
   const [missingItems, setMissingItems] = useState<
-    { description: string; code: string; quantity: number }[]
+    { description: string; code: string; quantity: number; unit?: string; bomQty?: number }[]
   >([])
+  const [bomMaterials, setBomMaterials] = useState<PcpOrderMaterial[]>([])
+  const [loadingBom, setLoadingBom] = useState(false)
 
   // Obter as etapas disponíveis para o setor de destino
   const targetSectorStages = useMemo(() => {
     return SECTORS[reworkTargetSector] || []
   }, [reworkTargetSector])
+
+  // Carregar materiais da BOM da OP quando o diálogo abrir ou o motivo virar 'Falta de Material'
+  useEffect(() => {
+    if (openBottleneck && op?.id) {
+      setLoadingBom(true)
+      getOrderMaterials(op.id)
+        .then((mats) => {
+          setBomMaterials(mats || [])
+        })
+        .catch(() => setBomMaterials([]))
+        .finally(() => setLoadingBom(false))
+    }
+  }, [openBottleneck, op?.id])
 
   const handleOpenBottleneckChange = (isOpen: boolean) => {
     setOpenBottleneck(isOpen)
@@ -408,6 +427,25 @@ function OperatorCard({
       setReworkTargetStage('Corte')
       setMissingItems([])
     }
+  }
+
+  // Preenche ou sugere campos ao selecionar da BOM
+  const handleSelectBomMaterial = (mat: PcpOrderMaterial) => {
+    // Se já estiver em missingItems, não duplica, só foca
+    const exists = missingItems.some(
+      (it) => (it.code && it.code === mat.code) || it.description === mat.description,
+    )
+    if (exists) return
+    setMissingItems((prev) => [
+      ...prev,
+      {
+        code: mat.code || '',
+        description: mat.description || '',
+        quantity: mat.quantity || 1,
+        unit: mat.unit || 'UN',
+        bomQty: mat.quantity || 1,
+      },
+    ])
   }
 
   const handleBottleneckSubmit = () => {
@@ -891,102 +929,200 @@ function OperatorCard({
                           {missingItems.length} {missingItems.length === 1 ? 'item' : 'itens'}
                         </span>
                       </div>
-                      {missingItems.map((item, idx) => (
-                        <div
-                          key={idx}
-                          className="flex flex-col sm:flex-row gap-2 sm:items-center p-2.5 sm:p-2 bg-white dark:bg-slate-950 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm"
-                        >
-                          {/* Linha 1 no mobile: Código + Botão Remover */}
-                          <div className="flex items-center gap-2 w-full sm:w-auto">
-                            <div className="flex-1 sm:w-24 sm:flex-initial">
-                              <label className="text-[10px] font-semibold text-muted-foreground block mb-0.5 sm:hidden">
-                                Código
-                              </label>
-                              <Input
-                                placeholder="Código"
-                                value={item.code}
-                                onChange={(e) => {
-                                  const newItems = [...missingItems]
-                                  newItems[idx].code = e.target.value
-                                  setMissingItems(newItems)
-                                }}
-                                className="w-full sm:w-24 text-xs h-9 bg-slate-50 dark:bg-slate-900 sm:bg-white sm:dark:bg-slate-950"
-                              />
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="sm:hidden h-9 px-2 text-red-500 hover:text-red-600 hover:bg-red-50 shrink-0 ml-auto flex items-center gap-1"
-                              onClick={() => {
-                                const newItems = [...missingItems]
-                                newItems.splice(idx, 1)
-                                setMissingItems(newItems)
-                              }}
-                              title="Remover material faltante"
-                            >
-                              <Trash className="size-4" />
-                              <span className="text-xs">Remover</span>
-                            </Button>
-                          </div>
 
-                          {/* Linha 2 no mobile: Descrição do material ocupando toda a largura */}
-                          <div className="w-full sm:flex-1 sm:min-w-0">
-                            <label className="text-[10px] font-semibold text-muted-foreground block mb-0.5 sm:hidden">
-                              Descrição do material
-                            </label>
-                            <MaterialDescriptionAutocomplete
-                              productId={op.product_id}
-                              value={item.description}
-                              onChange={(val) => {
-                                const newItems = [...missingItems]
-                                newItems[idx].description = val
-                                setMissingItems(newItems)
-                              }}
-                              onCodeChange={(code) => {
-                                const newItems = [...missingItems]
-                                newItems[idx].code = code
-                                setMissingItems(newItems)
-                              }}
-                              placeholder="Descrição do material..."
-                              inputClassName="text-xs h-9 bg-slate-50 dark:bg-slate-900 sm:bg-white sm:dark:bg-slate-950 w-full"
-                            />
+                      {/* Lista de referência da BOM (Engenharia) para facilitar seleção e evitar erro de unidade */}
+                      {bomMaterials.length > 0 && (
+                        <div className="p-2.5 rounded border border-blue-200 dark:border-blue-900 bg-blue-50/50 dark:bg-blue-950/20 text-xs space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-blue-900 dark:text-blue-300">
+                              📋 Materiais da BOM da OP (Engenharia):
+                            </span>
+                            <span className="text-[10px] text-blue-700 dark:text-blue-400">
+                              Clique para adicionar
+                            </span>
                           </div>
-
-                          {/* Linha 3 no mobile: Quantidade (e no desktop: Quantidade + Remover) */}
-                          <div className="flex items-center gap-2 w-full sm:w-auto">
-                            <div className="w-full sm:w-20">
-                              <label className="text-[10px] font-semibold text-muted-foreground block mb-0.5 sm:hidden">
-                                Quantidade
-                              </label>
-                              <Input
-                                type="number"
-                                min="1"
-                                placeholder="Qtd"
-                                value={item.quantity || ''}
-                                onChange={(e) => {
-                                  const newItems = [...missingItems]
-                                  newItems[idx].quantity = Number(e.target.value)
-                                  setMissingItems(newItems)
-                                }}
-                                className="w-full sm:w-20 text-xs h-9 bg-slate-50 dark:bg-slate-900 sm:bg-white sm:dark:bg-slate-950"
-                              />
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="hidden sm:inline-flex h-9 w-9 text-red-500 hover:text-red-600 hover:bg-red-50 shrink-0"
-                              onClick={() => {
-                                const newItems = [...missingItems]
-                                newItems.splice(idx, 1)
-                                setMissingItems(newItems)
-                              }}
-                              title="Remover material faltante"
-                            >
-                              <Trash className="size-4" />
-                            </Button>
+                          <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+                            {bomMaterials.map((bm) => (
+                              <button
+                                key={bm.id}
+                                type="button"
+                                onClick={() => handleSelectBomMaterial(bm)}
+                                className="inline-flex items-center gap-1 px-2 py-1 bg-white dark:bg-slate-800 border border-blue-300 dark:border-blue-700 rounded text-left hover:bg-blue-100 dark:hover:bg-blue-900/40 text-[11px] transition-colors"
+                              >
+                                <span className="font-semibold notranslate" translate="no">
+                                  {bm.code ? `${bm.code} — ` : ''}
+                                  {bm.description}
+                                </span>
+                                <span className="font-bold text-blue-700 dark:text-blue-300 ml-1">
+                                  ({bm.quantity} {bm.unit || 'UN'})
+                                </span>
+                              </button>
+                            ))}
                           </div>
                         </div>
-                      ))}
+                      )}
+
+                      {missingItems.map((item, idx) => {
+                        // Buscar referência na BOM por código ou descrição aproximada
+                        const matchedBom = bomMaterials.find(
+                          (bm) =>
+                            (item.code && bm.code && bm.code.trim() === item.code.trim()) ||
+                            (item.description &&
+                              bm.description &&
+                              bm.description.trim().toLowerCase() ===
+                                item.description.trim().toLowerCase()),
+                        )
+                        const bomQty = item.bomQty || matchedBom?.quantity
+                        const bomUnit = item.unit || matchedBom?.unit || 'UN'
+                        const isNonPcUnit =
+                          bomUnit &&
+                          !['PC', 'PÇ', 'PCS', 'UN', 'UND', 'UNIDADE'].includes(
+                            bomUnit.toUpperCase().trim(),
+                          )
+                        const isQuantityExcessive =
+                          bomQty !== undefined && bomQty > 0 && item.quantity > bomQty * 10
+
+                        return (
+                          <div
+                            key={idx}
+                            className="flex flex-col gap-2 p-2.5 bg-white dark:bg-slate-950 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm"
+                          >
+                            {/* Alerta se unidade não for PC ou quantidade for >10x a BOM */}
+                            {(isQuantityExcessive || isNonPcUnit) && (
+                              <div className="p-2 rounded bg-amber-50 border border-amber-300 text-amber-900 dark:bg-amber-950/30 dark:border-amber-700 dark:text-amber-200 text-xs flex items-start gap-1.5 font-medium">
+                                <AlertTriangle className="size-4 shrink-0 text-amber-600 mt-0.5" />
+                                <div>
+                                  {isQuantityExcessive && (
+                                    <div>
+                                      ⚠️ <strong>Atenção:</strong> Quantidade digitada (
+                                      {item.quantity}) é mais de 10x superior à da BOM ({bomQty}{' '}
+                                      {bomUnit}). Verifique se não houve confusão de unidades (ex: m
+                                      vs mm/un).
+                                    </div>
+                                  )}
+                                  {isNonPcUnit && (
+                                    <div>
+                                      📏 <strong>Unidade da Engenharia:</strong> Este item usa
+                                      unidade <strong>{bomUnit}</strong> (não é peça unitária).
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                              {/* Linha 1 no mobile: Código + Botão Remover */}
+                              <div className="flex items-center gap-2 w-full sm:w-auto">
+                                <div className="flex-1 sm:w-28 sm:flex-initial">
+                                  <label className="text-[10px] font-semibold text-muted-foreground block mb-0.5 sm:hidden">
+                                    Código
+                                  </label>
+                                  <Input
+                                    placeholder="Código"
+                                    value={item.code}
+                                    onChange={(e) => {
+                                      const newItems = [...missingItems]
+                                      newItems[idx].code = e.target.value
+                                      setMissingItems(newItems)
+                                    }}
+                                    className="w-full sm:w-28 text-xs h-9 bg-slate-50 dark:bg-slate-900 sm:bg-white sm:dark:bg-slate-950 notranslate"
+                                    translate="no"
+                                  />
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="sm:hidden h-9 px-2 text-red-500 hover:text-red-600 hover:bg-red-50 shrink-0 ml-auto flex items-center gap-1"
+                                  onClick={() => {
+                                    const newItems = [...missingItems]
+                                    newItems.splice(idx, 1)
+                                    setMissingItems(newItems)
+                                  }}
+                                  title="Remover material faltante"
+                                >
+                                  <Trash className="size-4" />
+                                  <span className="text-xs">Remover</span>
+                                </Button>
+                              </div>
+
+                              {/* Linha 2 no mobile: Descrição do material */}
+                              <div className="w-full sm:flex-1 sm:min-w-0">
+                                <label className="text-[10px] font-semibold text-muted-foreground block mb-0.5 sm:hidden">
+                                  Descrição do material
+                                </label>
+                                <div className="notranslate" translate="no">
+                                  <MaterialDescriptionAutocomplete
+                                    productId={op.product_id}
+                                    value={item.description}
+                                    onChange={(val) => {
+                                      const newItems = [...missingItems]
+                                      newItems[idx].description = val
+                                      setMissingItems(newItems)
+                                    }}
+                                    onCodeChange={(code) => {
+                                      const newItems = [...missingItems]
+                                      newItems[idx].code = code
+                                      setMissingItems(newItems)
+                                    }}
+                                    placeholder="Descrição do material..."
+                                    inputClassName="text-xs h-9 bg-slate-50 dark:bg-slate-900 sm:bg-white sm:dark:bg-slate-950 w-full notranslate"
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Linha 3 no mobile: Quantidade e Unidade */}
+                              <div className="flex items-center gap-2 w-full sm:w-auto">
+                                <div className="w-full sm:w-24">
+                                  <label className="text-[10px] font-semibold text-muted-foreground block mb-0.5 sm:hidden">
+                                    Quantidade
+                                  </label>
+                                  <div className="relative">
+                                    <Input
+                                      type="number"
+                                      step="any"
+                                      min="0.01"
+                                      placeholder="Qtd"
+                                      value={item.quantity || ''}
+                                      onChange={(e) => {
+                                        const newItems = [...missingItems]
+                                        newItems[idx].quantity = Number(e.target.value)
+                                        setMissingItems(newItems)
+                                      }}
+                                      className="w-full sm:w-24 text-xs h-9 bg-slate-50 dark:bg-slate-900 sm:bg-white sm:dark:bg-slate-950 pr-8"
+                                    />
+                                    {bomUnit && (
+                                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-semibold uppercase pointer-events-none">
+                                        {bomUnit}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="hidden sm:inline-flex h-9 w-9 text-red-500 hover:text-red-600 hover:bg-red-50 shrink-0"
+                                  onClick={() => {
+                                    const newItems = [...missingItems]
+                                    newItems.splice(idx, 1)
+                                    setMissingItems(newItems)
+                                  }}
+                                  title="Remover material faltante"
+                                >
+                                  <Trash className="size-4" />
+                                </Button>
+                              </div>
+                            </div>
+
+                            {/* Informação de referência da BOM para o item */}
+                            {matchedBom && (
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900 px-2 py-1 rounded">
+                                Referência da BOM: <strong>{matchedBom.description}</strong> —{' '}
+                                {matchedBom.quantity} {matchedBom.unit || 'UN'}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
                       <Button
                         variant="outline"
                         size="sm"
@@ -1420,15 +1556,18 @@ export default function PcpOperator() {
       if (reason === 'Falta de Material' && missingItems && missingItems.length > 0) {
         for (const item of missingItems) {
           if (!item.description || !item.quantity) continue
-          await pb.collection('material_shortages').create({
-            order_id: op.id,
-            description: item.description,
-            code: item.code,
-            quantity: item.quantity,
-            sector: selectedSector,
-            status: 'Pendente',
-            requested_by: user?.id,
-          })
+          await upsertMaterialShortage(
+            {
+              order_id: op.id,
+              description: item.description,
+              code: item.code,
+              quantity: item.quantity,
+              sector: selectedSector,
+              status: 'Pendente',
+              requested_by: user?.id,
+            },
+            user?.name || user?.email || 'Operador',
+          )
         }
       }
 
@@ -1515,18 +1654,21 @@ export default function PcpOperator() {
       return
     }
     try {
-      await pb.collection('material_shortages').create({
-        description: reqDesc,
-        code: reqCode,
-        quantity: reqQtd,
-        request_type: reqType,
-        priority: reqPriority,
-        observation: reqObs,
-        order_id: reqOrderId === 'none' ? '' : reqOrderId,
-        sector: selectedSector,
-        status: 'Pendente',
-        requested_by: user?.id,
-      })
+      await upsertMaterialShortage(
+        {
+          description: reqDesc,
+          code: reqCode,
+          quantity: reqQtd,
+          request_type: reqType,
+          priority: reqPriority,
+          observation: reqObs,
+          order_id: reqOrderId === 'none' ? '' : reqOrderId,
+          sector: selectedSector,
+          status: 'Pendente',
+          requested_by: user?.id,
+        },
+        user?.name || user?.email || 'Operador',
+      )
       toast({ title: 'Solicitação enviada com sucesso!' })
       setOpenRequest(false)
       setReqDesc('')

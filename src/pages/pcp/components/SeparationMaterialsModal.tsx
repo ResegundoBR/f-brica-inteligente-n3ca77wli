@@ -39,6 +39,7 @@ import {
   updateOrderMaterialStatus,
   createOrderMaterialsBatch,
 } from '@/services/pcp-order-materials'
+import { upsertMaterialShortage } from '@/services/material-shortages'
 import { createMovement } from '@/services/inventory'
 import type { PcpOrder, PcpOrderMaterial, PcpOrderMaterialSector, Product } from '@/types'
 
@@ -262,20 +263,23 @@ export function SeparationMaterialsModal({
     }
   }
 
-  /** Cria a solicitação automática em `material_shortages` (página Solicitações). */
+  /** Cria ou atualiza a solicitação com trava anti-duplicidade em `material_shortages`. */
   const createShortageRecord = async (mat: PcpOrderMaterial, qty: number, observation: string) => {
-    await pb.collection('material_shortages').create({
-      code: mat.code || '',
-      description: mat.description,
-      quantity: qty,
-      order_id: op?.id,
-      sector: 'Suprimentos',
-      status: 'Pendente',
-      request_type: 'Materiais',
-      priority: 'Urgente',
-      requested_by: user?.id,
-      observation,
-    })
+    await upsertMaterialShortage(
+      {
+        code: mat.code || '',
+        description: mat.description,
+        quantity: qty,
+        order_id: op?.id,
+        sector: 'Suprimentos',
+        status: 'Pendente',
+        request_type: 'Materiais',
+        priority: 'Urgente',
+        requested_by: user?.id,
+        observation,
+      },
+      user?.name || user?.email || 'Operador',
+    )
   }
 
   const markMaterialUpdated = (updated: PcpOrderMaterial) => {

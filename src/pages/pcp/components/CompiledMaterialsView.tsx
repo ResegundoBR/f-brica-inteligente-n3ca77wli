@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { CompiledMaterialItem, formatQuantity } from '@/services/pcp-programacao'
+import { upsertMaterialShortage } from '@/services/material-shortages'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -219,17 +220,19 @@ export function CompiledMaterialsView({
           item.orderNumbers.length > 0 ? item.orderNumbers.join(', ') : 'Compilado PCP'
         const observationText = `[Compilado PCP] Categoria: ${categoryLabel} | OPs de origem: ${opsLabel}`
 
-        await pb.collection('material_shortages').create({
-          code: item.code || '',
-          description: item.description,
-          quantity: qty,
-          unit: item.unit || 'UN',
-          sector: 'Suprimentos',
-          status: 'Pendente',
-          request_type: 'Materiais',
-          priority: 'Média',
-          observations: observationText,
-        })
+        await upsertMaterialShortage(
+          {
+            code: item.code || '',
+            description: item.description,
+            quantity: qty,
+            sector: 'Suprimentos',
+            status: 'Pendente',
+            request_type: 'Materiais',
+            priority: 'Sem pressa',
+            observation: observationText,
+          },
+          'Compilado PCP',
+        )
         createdCount++
       }
 

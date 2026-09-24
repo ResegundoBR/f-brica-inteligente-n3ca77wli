@@ -35,6 +35,7 @@ import {
   VALID_PRIORITIES,
   VALID_REQUEST_TYPES,
 } from '@/lib/shortage-utils'
+import { upsertMaterialShortage } from '@/services/material-shortages'
 
 export function NewShortageModal({
   open,
@@ -368,21 +369,24 @@ export function NewShortageModal({
 
       const safeUnitPrice = sanitizeNumber(unitPrice, 0, 0)
 
-      await pb.collection('material_shortages').create({
-        order_id: selectedOrderId === 'none' ? undefined : selectedOrderId,
-        description: sanitizeString(itemDesc),
-        code: sanitizeString(itemCode),
-        quantity: numQty,
-        sector: sanitizeString(sector),
-        status: 'Pendente',
-        priority: sanitizeSelectValue(priority, VALID_PRIORITIES, 'Sem pressa'),
-        request_type: sanitizeSelectValue(requestType, VALID_REQUEST_TYPES, 'Materiais'),
-        requested_by: user?.id,
-        observation: sanitizeString(observation),
-        unit_price: safeUnitPrice,
-      })
+      await upsertMaterialShortage(
+        {
+          order_id: selectedOrderId === 'none' ? undefined : selectedOrderId,
+          description: sanitizeString(itemDesc),
+          code: sanitizeString(itemCode),
+          quantity: numQty,
+          sector: sanitizeString(sector),
+          status: 'Pendente',
+          priority: sanitizeSelectValue(priority, VALID_PRIORITIES, 'Sem pressa'),
+          request_type: sanitizeSelectValue(requestType, VALID_REQUEST_TYPES, 'Materiais'),
+          requested_by: user?.id,
+          observation: sanitizeString(observation),
+          unit_price: safeUnitPrice,
+        },
+        user?.name || user?.email || 'Usuário',
+      )
 
-      toast({ title: 'Solicitação criada com sucesso' })
+      toast({ title: 'Solicitação registrada com sucesso' })
       onOpenChange(false)
     } catch (err: any) {
       const errors = extractFieldErrors(err)

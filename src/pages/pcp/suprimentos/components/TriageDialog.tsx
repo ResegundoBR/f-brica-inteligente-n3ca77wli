@@ -25,6 +25,11 @@ interface TriageDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onUpdate: () => void
+  onDirectCompra?: (
+    item: MaterialShortage,
+    groupItems?: MaterialShortage[],
+    selectedIds?: string[],
+  ) => void
 }
 
 export function TriageDialog({
@@ -35,6 +40,7 @@ export function TriageDialog({
   open,
   onOpenChange,
   onUpdate,
+  onDirectCompra,
 }: TriageDialogProps) {
   const [loading, setLoading] = useState<string | null>(null)
   const [phase, setPhase] = useState<'triage' | 'quotation'>(initialPhase)
@@ -208,6 +214,14 @@ export function TriageDialog({
             groupedItems={itemsToProcess}
             onUpdate={onUpdate}
             onClose={() => handleClose(false)}
+            onDirectCompra={
+              onDirectCompra
+                ? (selectedIds) => {
+                    onDirectCompra(currentItem!, itemsToProcess, selectedIds)
+                    handleClose(false)
+                  }
+                : undefined
+            }
           />
         )}
       </DialogContent>

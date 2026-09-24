@@ -29,7 +29,11 @@ interface CotacoesTableProps {
   onToggleSelectAll: () => void
   onToggleSelectGroup: (ids: string[]) => void
   onRowClick: (item: MaterialShortage, groupItems?: MaterialShortage[]) => void
-  onQuickCompra: (item: MaterialShortage, groupItems?: MaterialShortage[]) => void
+  onQuickCompra: (
+    item: MaterialShortage,
+    groupItems?: MaterialShortage[],
+    selectedGroupIds?: string[],
+  ) => void
   isNew: (id: string) => boolean
   grouped?: boolean
 }
@@ -271,6 +275,13 @@ export function CotacoesTable({
             }
 
             // Linha Consolidada com Múltiplas OPs
+            const selectedSubItems = group.items.filter((i) => selectedIds.has(i.id))
+            const isPartialSelection = someGroupSelected && !allGroupSelected
+            const selectedUnits = selectedSubItems.reduce(
+              (sum, curr) => sum + (Number(curr.quantity) || 0),
+              0,
+            )
+
             return (
               <Fragment key={group.key}>
                 <TableRow
@@ -278,6 +289,7 @@ export function CotacoesTable({
                     'cursor-pointer transition-colors font-medium border-b',
                     'bg-slate-50/80 hover:bg-slate-100/80 dark:bg-slate-800/60 dark:hover:bg-slate-800',
                     allGroupSelected && 'bg-blue-50/70 dark:bg-blue-950/40',
+                    isPartialSelection && 'bg-amber-50/50 dark:bg-amber-950/20',
                   )}
                   onClick={() => onRowClick(firstItem, group.items)}
                 >
@@ -356,14 +368,32 @@ export function CotacoesTable({
                     )}
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()} className="text-center">
-                    <Button
-                      size="sm"
-                      className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-xs"
-                      onClick={() => onQuickCompra(firstItem, group.items)}
-                    >
-                      <ShoppingCart className="size-3.5 mr-1" />
-                      Comprar Lote
-                    </Button>
+                    {isPartialSelection ? (
+                      <Button
+                        size="sm"
+                        className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white font-semibold shadow-xs"
+                        title={`Comprar apenas ${selectedSubItems.length} sublinha(s) selecionada(s) (${selectedUnits} un)`}
+                        onClick={() =>
+                          onQuickCompra(
+                            firstItem,
+                            group.items,
+                            selectedSubItems.map((i) => i.id),
+                          )
+                        }
+                      >
+                        <ShoppingCart className="size-3.5 mr-1" />
+                        Comprar selecionadas ({selectedUnits} un)
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-xs"
+                        onClick={() => onQuickCompra(firstItem, group.items)}
+                      >
+                        <ShoppingCart className="size-3.5 mr-1" />
+                        Comprar Lote
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
 

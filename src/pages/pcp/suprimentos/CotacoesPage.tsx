@@ -162,15 +162,58 @@ export default function CotacoesPage() {
     }
   }
 
-  const handleQuickCompra = async (item: MaterialShortage, groupItems?: MaterialShortage[]) => {
-    const itemsToAdvance = groupItems && groupItems.length > 0 ? groupItems : [item]
+  const handleQuickCompra = async (
+    item: MaterialShortage,
+    groupItems?: MaterialShortage[],
+    selectedGroupIds?: string[],
+  ) => {
+    // Se foram passados IDs específicos (ex: seleção parcial de sublinhas do lote), usa apenas eles.
+    // Caso contrário, usa groupItems ou o item único.
+    let itemsToAdvance: MaterialShortage[] = []
+    if (selectedGroupIds && selectedGroupIds.length > 0) {
+      const allGroup = groupItems && groupItems.length > 0 ? groupItems : [item]
+      const selectedSet = new Set(selectedGroupIds)
+      itemsToAdvance = allGroup.filter((i) => selectedSet.has(i.id))
+      if (itemsToAdvance.length === 0) {
+        itemsToAdvance = allGroup
+      }
+    } else if (groupItems && groupItems.length > 0) {
+      itemsToAdvance = groupItems
+    } else {
+      itemsToAdvance = [item]
+    }
+
     try {
-      await advanceGroupToCompra(itemsToAdvance.map((i) => i.id))
-      toast.success(
-        itemsToAdvance.length > 1
-          ? `Lote com ${itemsToAdvance.length} OPs enviado para Compras!`
-          : 'Item enviado direto para Compras',
-      )
+      const idsToAdvance = itemsToAdvance.map((i) => i.id)
+      await advanceGroupToCompra(idsToAdvance)
+      const isPartial = groupItems && groupItems.length > itemsToAdvance.length
+      const totalUnits = itemsToAdvance.reduce((sum, curr) => sum + (Number(curr.quantity) || 0), 0)
+
+      if (isPartial) {
+        toast.success(
+          `Compra parcial realizada: ${itemsToAdvance.length} OP(s) (${totalUnits} un) avançada(s) para Compras!`,
+        )
+      } else if (itemsToAdvance.length > 1) {
+        toast.success(
+          `Lote com ${itemsToAdvance.length} OPs (${totalUnits} un) enviado para Compras!`,
+        )
+      } else {
+        toast.success('Item enviado direto para Compras')
+      }
+
+      // Desmarcar os itens comprados do selectedIds se estivessem marcados
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        let changed = false
+        for (const id of idsToAdvance) {
+          if (next.has(id)) {
+            next.delete(id)
+            changed = true
+          }
+        }
+        return changed ? next : prev
+      })
+
       fetchData()
     } catch {
       toast.error('Erro ao enviar para Compras')
@@ -301,6 +344,9 @@ export default function CotacoesPage() {
           }
         }}
         onUpdate={fetchData}
+        onDirectCompra={(item, groupItems, selectedIds) =>
+          handleQuickCompra(item, groupItems, selectedIds)
+        }
       />
     </div>
   )

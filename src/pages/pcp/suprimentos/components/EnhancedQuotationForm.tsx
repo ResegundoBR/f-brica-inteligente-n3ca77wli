@@ -16,12 +16,17 @@ import { findOtherOpDemands } from '@/services/material-consolidation'
 import { ConsolidatedDemandBlock } from './ConsolidatedDemandBlock'
 import { UserActionBadge } from '@/components/UserActionBadge'
 
+import { Checkbox } from '@/components/ui/checkbox'
+import { ShoppingCart } from 'lucide-react'
+import { cn } from '@/lib/utils'
+
 interface EnhancedQuotationFormProps {
   item: MaterialShortage
   allShortages?: MaterialShortage[]
   groupedItems?: MaterialShortage[]
   onUpdate: () => void
   onClose: () => void
+  onDirectCompra?: (selectedIds: string[]) => void
 }
 
 export function EnhancedQuotationForm({
@@ -30,11 +35,27 @@ export function EnhancedQuotationForm({
   groupedItems = [],
   onUpdate,
   onClose,
+  onDirectCompra,
 }: EnhancedQuotationFormProps) {
   // Se groupedItems tiver itens deste mesmo código, usamos a quantidade consolidada total
   const groupList = groupedItems.length > 0 ? groupedItems : [item]
   const isMultiItem = groupList.length > 1
   const totalGroupQty = groupList.reduce((acc, curr) => acc + (Number(curr.quantity) || 0), 0)
+
+  // Sublinhas selecionadas no modal para compra do lote/parcial
+  const [selectedModalSubIds, setSelectedModalSubIds] = useState<Set<string>>(
+    () => new Set(groupList.map((i) => i.id)),
+  )
+
+  useEffect(() => {
+    setSelectedModalSubIds(new Set(groupList.map((i) => i.id)))
+  }, [groupList])
+
+  const modalSelectedUnits = useMemo(() => {
+    return groupList
+      .filter((i) => selectedModalSubIds.has(i.id))
+      .reduce((sum, curr) => sum + (Number(curr.quantity) || 0), 0)
+  }, [groupList, selectedModalSubIds])
 
   const consolidation = useMemo(() => {
     return findOtherOpDemands(item, allShortages)
@@ -191,20 +212,109 @@ export function EnhancedQuotationForm({
           </div>
         </div>
 
-        {/* Se for grupo consolidado de OPs, mostrar resumo das OPs atendidas */}
+        {/* Se for grupo consolidado de OPs, mostrar resumo e seleção das OPs atendidas */}
         {isMultiItem && (
-          <div className="p-3 bg-blue-50/70 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-900 text-xs space-y-2">
+          <div className="p-3 bg-blue-50/70 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-900 text-xs space-y-2.5">
             <div className="font-semibold text-blue-900 dark:text-blue-200 flex items-center justify-between">
-              <span>OPs consolidadas neste código:</span>
-              <span className="font-bold">{totalGroupQty} un total</span>
+              <span className="flex items-center gap-1.5">
+                <span>OPs do lote ({groupList.length} OPs):</span>
+              </span>
+              <span className="font-bold text-blue-700 dark:text-blue-300">
+                {selectedModalSubIds.size === groupList.length
+                  ? `${totalGroupQty} un (lote completo)`
+                  : `${modalSelectedUnits} de ${totalGroupQty} un selecionadas`}
+              </span>
             </div>
-            <div className="flex flex-wrap gap-1.5">
-              {groupList.map((gi) => (
-                <Badge key={gi.id} variant="secondary" className="text-[10px]">
-                  OP {gi.expand?.order_id?.op_number || gi.expand?.order_id?.order_number || '-'}:{' '}
-                  {gi.quantity} un
-                </Badge>
-              ))}
+
+            {/* Checkbox selecionar todas / limpar */}
+            <div className="flex items-center justify-between pb-1 border-b border-blue-200 dark:border-blue-800">
+              <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-700 dark:text-slate-300">
+                <Checkbox
+                  checked={
+                    selectedModalSubIds.size === groupList.length
+                      ? true
+                      : selectedModalSubIds.size > 0
+                        ? 'indeterminate'
+                        : false
+                  }
+                  onCheckedChange={(checked) => {
+                    if (checked) {
+                      setSelectedModalSubIds(new Set(groupList.map((i) => i.id)))
+                    } else {
+                      setSelectedModalSubIds(new Set())
+                    }
+                  }}
+                />
+                <span>Selecionar todas as sublinhas ({groupList.length} OPs)</span>
+              </label>
+
+              {onDirectCompra && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="default"
+                  disabled={selectedModalSubIds.size === 0}
+                  className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+                  onClick={() => {
+                    if (selectedModalSubIds.size > 0) {
+                      onDirectCompra(Array.from(selectedModalSubIds))
+                    }
+                  }}
+                >
+                  <ShoppingCart className="size-3.5 mr-1" />
+                  {selectedModalSubIds.size === groupList.length
+                    ? `Comprar Lote Completo (${totalGroupQty} un)`
+                    : `Comprar selecionadas (${modalSelectedUnits} un)`}
+                </Button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
+              {groupList.map((gi) => {
+                const isSelected = selectedModalSubIds.has(gi.id)
+                return (
+                  <label
+                    key={gi.id}
+                    className={cn(
+                      'flex items-center justify-between p-1.5 rounded border text-xs cursor-pointer transition-colors',
+                      isSelected
+                        ? 'bg-blue-100/70 border-blue-300 dark:bg-blue-900/50 dark:border-blue-700 text-blue-950 dark:text-blue-100 font-medium'
+                        : 'bg-white/60 border-slate-200 dark:bg-slate-900/40 dark:border-slate-800 text-slate-600 dark:text-slate-400',
+                    )}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={(checked) => {
+                          setSelectedModalSubIds((prev) => {
+                            const next = new Set(prev)
+                            if (checked) next.add(gi.id)
+                            else next.delete(gi.id)
+                            return next
+                          })
+                        }}
+                      />
+                      <span className="truncate">
+                        OP{' '}
+                        {gi.expand?.order_id?.op_number || gi.expand?.order_id?.order_number || '-'}{' '}
+                        <span className="text-[10px] text-muted-foreground">
+                          (
+                          {gi.expand?.order_id?.order_number
+                            ? `Ped ${gi.expand?.order_id?.order_number}`
+                            : 'Req'}
+                          )
+                        </span>
+                      </span>
+                    </div>
+                    <Badge
+                      variant={isSelected ? 'default' : 'outline'}
+                      className="text-[10px] ml-2 shrink-0"
+                    >
+                      {gi.quantity} un
+                    </Badge>
+                  </label>
+                )
+              })}
             </div>
           </div>
         )}

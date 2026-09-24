@@ -25,6 +25,8 @@ import { TriageTable } from './components/TriageTable'
 import { ProductDossierModal } from './components/ProductDossierModal'
 import { ProductSearchBar } from './components/ProductSearchBar'
 import { TriageDetailDialog } from './components/TriageDetailDialog'
+import { TriageGroupDetailDialog } from './components/TriageGroupDetailDialog'
+import { ShortageGroup } from '@/lib/shortage-grouping'
 import { NewShortageModal } from '@/pages/pcp/components/NewShortageModal'
 import { useShortageStore } from '@/stores/useShortageStore'
 import { useToast } from '@/hooks/use-toast'
@@ -35,14 +37,17 @@ export default function SolicitacoesPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [shortages, setShortages] = useState<MaterialShortage[]>([])
   const [selectedItem, setSelectedItem] = useState<MaterialShortage | null>(null)
+  const [selectedGroup, setSelectedGroup] = useState<ShortageGroup | null>(null)
   const [dossierOpen, setDossierOpen] = useState(false)
   const [dossierItem, setDossierItem] = useState<MaterialShortage | null>(null)
   const [batchSupplierOpen, setBatchSupplierOpen] = useState(false)
   const [batchSupplierValue, setBatchSupplierValue] = useState('')
   const [supplierSuggestions, setSupplierSuggestions] = useState<string[]>([])
   const [opFilter, setOpFilter] = useState('all')
+  const [searchQuery, setSearchQuery] = useState('')
   const [orders, setOrders] = useState<PcpOrder[]>([])
   const { toast } = useToast()
+  const setAvailableIds = useShortageStore((s) => s.setAvailableIds)
   const selectedIds = useShortageStore((s) => s.selectedIds)
   const clear = useShortageStore((s) => s.clear)
   const { markAsViewed } = useNewRequests()
@@ -74,11 +79,43 @@ export default function SolicitacoesPage() {
     setSelectedItem(item)
   }
 
+  const handleGroupClick = (group: ShortageGroup) => {
+    group.items.forEach((it) => markAsViewed(it.id))
+    setSelectedGroup(group)
+  }
+
   const handleCopyQuotation = () => {
     const items = shortages.filter((s) => selectedIds.includes(s.id))
     if (items.length === 0) return
-    navigator.clipboard.writeText(items.map((i) => `${i.quantity}x ${i.description}`).join('\n'))
-    toast({ title: 'Copiado!', description: 'Lista de cotação copiada.' })
+
+    // Consolidar cópia por código/descrição para cotação simplificada
+    const consolidatedMap = new Map<
+      string,
+      { code: string; description: string; totalQty: number }
+    >()
+    for (const item of items) {
+      const key = (item.code || item.description).trim().toLowerCase()
+      const existing = consolidatedMap.get(key)
+      if (existing) {
+        existing.totalQty += Number(item.quantity) || 0
+      } else {
+        consolidatedMap.set(key, {
+          code: item.code || '',
+          description: item.description,
+          totalQty: Number(item.quantity) || 0,
+        })
+      }
+    }
+
+    const textLines = Array.from(consolidatedMap.values()).map((c) =>
+      c.code ? `${c.totalQty}x ${c.code} - ${c.description}` : `${c.totalQty}x ${c.description}`,
+    )
+
+    navigator.clipboard.writeText(textLines.join('\n'))
+    toast({
+      title: 'Copiado!',
+      description: `Lista consolidada de cotação copiada (${consolidatedMap.size} item(ns), somando ${items.length} registro(s)).`,
+    })
     clear()
   }
 
@@ -123,8 +160,30 @@ export default function SolicitacoesPage() {
   const triagemItems = shortages.filter((s) => {
     if (s.status !== 'Pendente') return false
     if (opFilter !== 'all' && s.order_id !== opFilter) return false
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim()
+      const code = s.code?.toLowerCase() || ''
+      const desc = s.description?.toLowerCase() || ''
+      const order = s.expand?.order_id?.order_number?.toLowerCase() || ''
+      const op = s.expand?.order_id?.op_number?.toLowerCase() || ''
+      const req = s.expand?.requested_by?.name?.toLowerCase() || ''
+      if (
+        !code.includes(q) &&
+        !desc.includes(q) &&
+        !order.includes(q) &&
+        !op.includes(q) &&
+        !req.includes(q)
+      ) {
+        return false
+      }
+    }
     return true
   })
+
+  // Sincroniza availableIds do useShortageStore para seleção em lote completa
+  useEffect(() => {
+    setAvailableIds(triagemItems.map((i) => i.id))
+  }, [triagemItems, setAvailableIds])
 
   return (
     <div className="flex flex-col gap-6 p-4 md:p-8 bg-slate-50 min-h-[calc(100vh-4rem)] dark:bg-slate-950">
@@ -161,28 +220,45 @@ export default function SolicitacoesPage() {
         }
       />
       <NewShortageModal open={modalOpen} onOpenChange={setModalOpen} />
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-medium text-muted-foreground">Filtrar por OP:</span>
-        <Select value={opFilter} onValueChange={setOpFilter}>
-          <SelectTrigger className="w-[220px]">
-            <SelectValue placeholder="Todas as OPs" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todas as OPs</SelectItem>
-            {orders.map((o) => (
-              <SelectItem key={o.id} value={o.id}>
-                {o.op_number || o.order_number}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-muted-foreground">Filtrar por OP:</span>
+          <Select value={opFilter} onValueChange={setOpFilter}>
+            <SelectTrigger className="w-[220px]">
+              <SelectValue placeholder="Todas as OPs" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas as OPs</SelectItem>
+              {orders.map((o) => (
+                <SelectItem key={o.id} value={o.id}>
+                  {o.op_number || o.order_number}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="relative w-full sm:w-72">
+          <Input
+            placeholder="Buscar por código, descrição, OP, pedido..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="h-9 text-sm"
+          />
+        </div>
       </div>
       {triagemItems.length === 0 ? (
         <div className="p-8 text-center border-2 border-dashed rounded-xl border-slate-200 dark:border-slate-800 text-slate-400 font-medium">
           Nenhuma solicitação pendente.
         </div>
       ) : (
-        <TriageTable items={triagemItems} allShortages={shortages} onRowClick={handleRowClick} />
+        <TriageTable
+          items={triagemItems}
+          allShortages={shortages}
+          onRowClick={handleRowClick}
+          onGroupClick={handleGroupClick}
+          searchQuery={searchQuery}
+        />
       )}
       {selectedIds.length > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-fade-in-up">
@@ -253,6 +329,15 @@ export default function SolicitacoesPage() {
         open={!!selectedItem}
         onOpenChange={(o) => !o && setSelectedItem(null)}
         onAction={fetchShortages}
+      />
+      <TriageGroupDetailDialog
+        group={selectedGroup}
+        open={!!selectedGroup}
+        onOpenChange={(o) => !o && setSelectedGroup(null)}
+        onAction={() => {
+          fetchShortages()
+          clear()
+        }}
       />
       <ProductDossierModal
         open={dossierOpen}

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -20,6 +20,8 @@ import { ConsolidatedDemandBlock } from './ConsolidatedDemandBlock'
 interface TriageDialogProps {
   item: MaterialShortage | null
   allShortages?: MaterialShortage[]
+  groupedItems?: MaterialShortage[]
+  initialPhase?: 'triage' | 'quotation'
   open: boolean
   onOpenChange: (open: boolean) => void
   onUpdate: () => void
@@ -28,39 +30,57 @@ interface TriageDialogProps {
 export function TriageDialog({
   item,
   allShortages = [],
+  groupedItems = [],
+  initialPhase = 'triage',
   open,
   onOpenChange,
   onUpdate,
 }: TriageDialogProps) {
   const [loading, setLoading] = useState<string | null>(null)
-  const [phase, setPhase] = useState<'triage' | 'quotation'>('triage')
+  const [phase, setPhase] = useState<'triage' | 'quotation'>(initialPhase)
   const [triagedItem, setTriagedItem] = useState<MaterialShortage | null>(null)
 
   const currentItem = triagedItem || item
+  const itemsToProcess = groupedItems.length > 0 ? groupedItems : currentItem ? [currentItem] : []
+  const isMultiItem = itemsToProcess.length > 1
+  const totalGroupQty = itemsToProcess.reduce((acc, curr) => acc + (Number(curr.quantity) || 0), 0)
+
   const consolidation = useMemo(() => {
     if (!currentItem) return null
     return findOtherOpDemands(currentItem, allShortages)
   }, [currentItem, allShortages])
 
   const handleTriage = async (action: 'estoque' | 'cotacao') => {
-    if (!item) return
+    if (!item && itemsToProcess.length === 0) return
     setLoading(action)
     try {
       if (action === 'estoque') {
-        await pb.collection('material_shortages').update(item.id, {
-          status: 'Liberado_Estoque',
-        })
-        toast.success('Item liberado do estoque')
+        for (const it of itemsToProcess) {
+          await pb.collection('material_shortages').update(it.id, {
+            status: 'Liberado_Estoque',
+          })
+        }
+        toast.success(
+          isMultiItem
+            ? `${itemsToProcess.length} itens liberados do estoque`
+            : 'Item liberado do estoque',
+        )
         onUpdate()
         onOpenChange(false)
       } else {
         const today = new Date().toISOString().split('T')[0]
-        await pb.collection('material_shortages').update(item.id, {
-          quotation_date: today,
-        })
-        toast.success('Item enviado para cotação')
+        for (const it of itemsToProcess) {
+          await pb.collection('material_shortages').update(it.id, {
+            quotation_date: today,
+          })
+        }
+        toast.success(
+          isMultiItem
+            ? `${itemsToProcess.length} itens enviados para cotação`
+            : 'Item enviado para cotação',
+        )
         onUpdate()
-        setTriagedItem({ ...item, quotation_date: today })
+        setTriagedItem({ ...item!, quotation_date: today })
         setPhase('quotation')
       }
     } catch {
@@ -70,9 +90,16 @@ export function TriageDialog({
     }
   }
 
+  useEffect(() => {
+    if (open) {
+      setPhase(initialPhase)
+      setTriagedItem(null)
+    }
+  }, [open, initialPhase])
+
   const handleClose = (o: boolean) => {
     if (!o) {
-      setPhase('triage')
+      setPhase(initialPhase)
       setTriagedItem(null)
     }
     onOpenChange(o)
@@ -115,9 +142,13 @@ export function TriageDialog({
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-xs text-muted-foreground">Quantidade</span>
+                  <span className="text-xs text-muted-foreground">
+                    {isMultiItem ? 'Quantidade Total Consolidada' : 'Quantidade'}
+                  </span>
                   <span className="text-xs font-bold notranslate" translate="no">
-                    {item?.quantity}
+                    {isMultiItem
+                      ? `${totalGroupQty} un (${itemsToProcess.length} OPs)`
+                      : item?.quantity}
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -174,6 +205,7 @@ export function TriageDialog({
           <EnhancedQuotationForm
             item={currentItem!}
             allShortages={allShortages}
+            groupedItems={itemsToProcess}
             onUpdate={onUpdate}
             onClose={() => handleClose(false)}
           />

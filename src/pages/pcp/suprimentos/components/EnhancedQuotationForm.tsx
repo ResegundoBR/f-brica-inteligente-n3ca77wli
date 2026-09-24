@@ -19,6 +19,7 @@ import { UserActionBadge } from '@/components/UserActionBadge'
 interface EnhancedQuotationFormProps {
   item: MaterialShortage
   allShortages?: MaterialShortage[]
+  groupedItems?: MaterialShortage[]
   onUpdate: () => void
   onClose: () => void
 }
@@ -26,15 +27,21 @@ interface EnhancedQuotationFormProps {
 export function EnhancedQuotationForm({
   item,
   allShortages = [],
+  groupedItems = [],
   onUpdate,
   onClose,
 }: EnhancedQuotationFormProps) {
+  // Se groupedItems tiver itens deste mesmo código, usamos a quantidade consolidada total
+  const groupList = groupedItems.length > 0 ? groupedItems : [item]
+  const isMultiItem = groupList.length > 1
+  const totalGroupQty = groupList.reduce((acc, curr) => acc + (Number(curr.quantity) || 0), 0)
+
   const consolidation = useMemo(() => {
     return findOtherOpDemands(item, allShortages)
   }, [item, allShortages])
   const [quotations, setQuotations] = useState<Quotation[]>([])
   const [desc, setDesc] = useState(item.description)
-  const [qty, setQty] = useState(String(item.quantity))
+  const [qty, setQty] = useState(String(isMultiItem ? totalGroupQty : item.quantity))
   const [supplier, setSupplier] = useState('')
   const [price, setPrice] = useState('')
   const [stValue, setStValue] = useState('')
@@ -97,10 +104,15 @@ export function EnhancedQuotationForm({
 
   const handleSelectQuotation = async (q: Quotation) => {
     try {
-      await selectQuotation(q.id, item.id)
+      const extraIds = groupList.filter((it) => it.id !== item.id).map((it) => it.id)
+      await selectQuotation(q.id, item.id, extraIds)
       await loadQuotations()
       onUpdate()
-      toast.success('Fornecedor selecionado e dados sincronizados')
+      toast.success(
+        isMultiItem
+          ? `Fornecedor selecionado e sincronizado para as ${groupList.length} OPs do grupo`
+          : 'Fornecedor selecionado e dados sincronizados',
+      )
     } catch {
       toast.error('Erro ao selecionar')
     }
@@ -143,8 +155,16 @@ export function EnhancedQuotationForm({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Gerenciar Cotações</DialogTitle>
-        <DialogDescription>Adicione e compare cotações de fornecedores.</DialogDescription>
+        <DialogTitle>
+          {isMultiItem
+            ? `Gerenciar Cotações — Grupo Consolidado (${groupList.length} OPs)`
+            : 'Gerenciar Cotações'}
+        </DialogTitle>
+        <DialogDescription>
+          {isMultiItem
+            ? `Cotação única para o código ${item.code || '-'}. Preço e condições serão distribuídos entre as ${groupList.length} OPs.`
+            : 'Adicione e compare cotações de fornecedores.'}
+        </DialogDescription>
       </DialogHeader>
       <div className="space-y-4 max-h-[60vh] overflow-y-auto">
         <div className="grid grid-cols-3 gap-2 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
@@ -171,8 +191,26 @@ export function EnhancedQuotationForm({
           </div>
         </div>
 
-        {/* Bloco de consolidação de demanda com sugestão de quantidade total */}
-        {consolidation && consolidation.otherDemands.length > 0 && (
+        {/* Se for grupo consolidado de OPs, mostrar resumo das OPs atendidas */}
+        {isMultiItem && (
+          <div className="p-3 bg-blue-50/70 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-900 text-xs space-y-2">
+            <div className="font-semibold text-blue-900 dark:text-blue-200 flex items-center justify-between">
+              <span>OPs consolidadas neste código:</span>
+              <span className="font-bold">{totalGroupQty} un total</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {groupList.map((gi) => (
+                <Badge key={gi.id} variant="secondary" className="text-[10px]">
+                  OP {gi.expand?.order_id?.op_number || gi.expand?.order_id?.order_number || '-'}:{' '}
+                  {gi.quantity} un
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Bloco de consolidação de demanda com sugestão de quantidade total (para itens individuais) */}
+        {!isMultiItem && consolidation && consolidation.otherDemands.length > 0 && (
           <ConsolidatedDemandBlock
             consolidation={consolidation}
             currentItemLabel={`Esta solicitação (${item.quantity} un)`}

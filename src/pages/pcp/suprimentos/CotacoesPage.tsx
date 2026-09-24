@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { MaterialShortage } from '@/types'
 import { Tags, Copy, Check, Search, Layers, ArrowRight } from 'lucide-react'
-import { advanceToCompra } from '@/services/quotations'
+import { advanceToCompra, advanceGroupToCompra } from '@/services/quotations'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
 import { TriageDialog } from './components/TriageDialog'
 import { CotacoesTable } from './components/CotacoesTable'
@@ -23,6 +23,7 @@ export default function CotacoesPage() {
   const [categories, setCategories] = useState<ComponentCategory[]>([])
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
   const [selectedItem, setSelectedItem] = useState<MaterialShortage | null>(null)
+  const [selectedGroupItems, setSelectedGroupItems] = useState<MaterialShortage[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [copied, setCopied] = useState(false)
   const [search, setSearch] = useState('')
@@ -99,9 +100,10 @@ export default function CotacoesPage() {
     })
   }, [allCotacaoItems, selectedCategoryId, categoryGroups, search])
 
-  const handleRowClick = (item: MaterialShortage) => {
+  const handleRowClick = (item: MaterialShortage, groupItems?: MaterialShortage[]) => {
     markAsViewed(item.id)
     setSelectedItem(item)
+    setSelectedGroupItems(groupItems && groupItems.length > 0 ? groupItems : [item])
   }
 
   const toggleSelect = (id: string) => {
@@ -149,9 +151,7 @@ export default function CotacoesPage() {
     if (ids.length === 0) return
     try {
       setAdvancingBatch(true)
-      for (const id of ids) {
-        await advanceToCompra(id)
-      }
+      await advanceGroupToCompra(ids)
       toast.success(`${ids.length} item(ns) avançados para Compras em lote!`)
       setSelectedIds(new Set())
       fetchData()
@@ -162,26 +162,54 @@ export default function CotacoesPage() {
     }
   }
 
-  const handleQuickCompra = async (item: MaterialShortage) => {
+  const handleQuickCompra = async (item: MaterialShortage, groupItems?: MaterialShortage[]) => {
+    const itemsToAdvance = groupItems && groupItems.length > 0 ? groupItems : [item]
     try {
-      await advanceToCompra(item.id)
-      toast.success('Item enviado direto para Compras')
+      await advanceGroupToCompra(itemsToAdvance.map((i) => i.id))
+      toast.success(
+        itemsToAdvance.length > 1
+          ? `Lote com ${itemsToAdvance.length} OPs enviado para Compras!`
+          : 'Item enviado direto para Compras',
+      )
       fetchData()
     } catch {
-      toast.error('Erro ao enviar item para Compras')
+      toast.error('Erro ao enviar para Compras')
     }
   }
 
   const handleCopySelected = () => {
     const items = filteredCotacaoItems.filter((i) => selectedIds.has(i.id))
     if (items.length === 0) return
-    const text = `Solicitação de Cotação\n\n${items
-      .map((i, idx) => `${idx + 1}. ${i.description} - Qtde: ${i.quantity}`)
-      .join('\n')}\n\nFavor informar preço e prazo de entrega.`
+
+    // Consolidar cópia por código/descrição somando as quantidades
+    const consolidatedMap = new Map<
+      string,
+      { code: string; description: string; totalQty: number }
+    >()
+    for (const item of items) {
+      const key = (item.code || item.description).trim().toLowerCase()
+      const existing = consolidatedMap.get(key)
+      if (existing) {
+        existing.totalQty += Number(item.quantity) || 0
+      } else {
+        consolidatedMap.set(key, {
+          code: item.code || '',
+          description: item.description,
+          totalQty: Number(item.quantity) || 0,
+        })
+      }
+    }
+
+    const lines = Array.from(consolidatedMap.values()).map(
+      (c, idx) =>
+        `${idx + 1}. ${c.code ? `[${c.code}] ` : ''}${c.description} - Qtde Total: ${c.totalQty}`,
+    )
+
+    const text = `Solicitação de Cotação\n\n${lines.join('\n')}\n\nFavor informar preço e prazo de entrega.`
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
-      toast.success('Texto copiado para área de transferência')
+      toast.success('Texto copiado para área de transferência (quantidades consolidadas)')
     })
   }
 
@@ -263,8 +291,15 @@ export default function CotacoesPage() {
       <TriageDialog
         item={selectedItem}
         allShortages={shortages}
+        groupedItems={selectedGroupItems}
+        initialPhase="quotation"
         open={!!selectedItem}
-        onOpenChange={(o) => !o && setSelectedItem(null)}
+        onOpenChange={(o) => {
+          if (!o) {
+            setSelectedItem(null)
+            setSelectedGroupItems([])
+          }
+        }}
         onUpdate={fetchData}
       />
     </div>

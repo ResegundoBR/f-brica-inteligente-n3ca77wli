@@ -30,7 +30,11 @@ export const createQuotation = (data: {
   })
 }
 
-export const selectQuotation = async (quotationId: string, shortageId: string) => {
+export const selectQuotation = async (
+  quotationId: string,
+  shortageId: string,
+  extraShortageIds?: string[],
+) => {
   const all = await pb
     .collection('quotations')
     .getFullList({ filter: `material_shortage_id = "${shortageId}"` })
@@ -49,11 +53,14 @@ export const selectQuotation = async (quotationId: string, shortageId: string) =
           .split('T')[0]
       : undefined
 
-  await pb.collection('material_shortages').update(shortageId, {
-    supplier: selected.supplier,
-    unit_price: selected.price,
-    ...(expectedDate && { expected_date: expectedDate }),
-  })
+  const idsToUpdate = Array.from(new Set([shortageId, ...(extraShortageIds || [])]))
+  for (const sid of idsToUpdate) {
+    await pb.collection('material_shortages').update(sid, {
+      supplier: selected.supplier,
+      unit_price: selected.price,
+      ...(expectedDate && { expected_date: expectedDate }),
+    })
+  }
 
   return selected
 }
@@ -81,10 +88,58 @@ export const advanceToCompra = async (shortageId: string) => {
       status: 'Compra',
       supplier: selectedQuotation.supplier,
       unit_price: selectedQuotation.price,
+      purchase_date: new Date().toISOString().split('T')[0],
       ...(expectedDate && { expected_date: expectedDate }),
     })
   } else {
-    await pb.collection('material_shortages').update(shortageId, { status: 'Compra' })
+    await pb.collection('material_shortages').update(shortageId, {
+      status: 'Compra',
+      purchase_date: new Date().toISOString().split('T')[0],
+    })
+  }
+}
+
+/**
+ * Conclui a cotação e avança um grupo consolidado para Compras.
+ * Aplica os dados da cotação vencedora (fornecedor, preço unitário, prazo/data prevista)
+ * a todos os material_shortage individuais do grupo, preservando o rastreio por OP.
+ */
+export const advanceGroupToCompra = async (
+  itemIds: string[],
+  fallbackQuotation?: Quotation | null,
+) => {
+  for (const id of itemIds) {
+    let quotationToUse = fallbackQuotation || null
+    if (!quotationToUse) {
+      try {
+        quotationToUse = await pb
+          .collection('quotations')
+          .getFirstListItem<Quotation>(`material_shortage_id = "${id}" && selected = true`)
+      } catch {
+        // Sem cotação individual selecionada
+      }
+    }
+
+    if (quotationToUse) {
+      const expectedDate =
+        quotationToUse.delivery_days && quotationToUse.delivery_days > 0
+          ? new Date(Date.now() + quotationToUse.delivery_days * 24 * 60 * 60 * 1000)
+              .toISOString()
+              .split('T')[0]
+          : undefined
+      await pb.collection('material_shortages').update(id, {
+        status: 'Compra',
+        supplier: quotationToUse.supplier,
+        unit_price: quotationToUse.price,
+        purchase_date: new Date().toISOString().split('T')[0],
+        ...(expectedDate && { expected_date: expectedDate }),
+      })
+    } else {
+      await pb.collection('material_shortages').update(id, {
+        status: 'Compra',
+        purchase_date: new Date().toISOString().split('T')[0],
+      })
+    }
   }
 }
 

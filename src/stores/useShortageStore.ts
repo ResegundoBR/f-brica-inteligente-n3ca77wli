@@ -5,6 +5,7 @@ interface Store {
   selectedIds: string[]
   setAvailableIds: (ids: string[]) => void
   toggle: (id: string) => void
+  toggleMultiple: (ids: string[]) => void
   toggleAll: () => void
   clear: () => void
 }
@@ -28,6 +29,15 @@ export const useShortageStore = create<Store>((set) => ({
         ? state.selectedIds.filter((i) => i !== id)
         : [...state.selectedIds, id],
     })),
+  toggleMultiple: (ids) =>
+    set((state) => {
+      const allSelected = ids.every((id) => state.selectedIds.includes(id))
+      return {
+        selectedIds: allSelected
+          ? state.selectedIds.filter((id) => !ids.includes(id))
+          : Array.from(new Set([...state.selectedIds, ...ids])),
+      }
+    }),
   toggleAll: () =>
     set((state) => ({
       selectedIds:

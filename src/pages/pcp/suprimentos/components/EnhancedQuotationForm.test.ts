@@ -1,8 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { MaterialShortage } from '@/types'
-import pb from '@/lib/pocketbase/client'
 
-// Helper que replica a lógica de controle e proteção do EnhancedQuotationForm
+/**
+ * Função representativa da lógica executada no blur / edição de item do EnhancedQuotationForm:
+ * - Quando isMultiItem === true (grupo consolidado com mais de 1 OP), a edição no cabeçalho
+ *   é estritamente desabilitada/read-only e nenhuma chamada de update a material_shortages
+ *   pode ser disparada.
+ * - Quando isMultiItem === false (item avulso de 1 OP), se o usuário alterar a quantidade
+ *   ou descrição, a alteração é salva no respectivo registro.
+ */
 export function handleItemBlurAction({
   isMultiItem,
   item,
@@ -91,7 +97,7 @@ describe('EnhancedQuotationForm - Proteção contra corrupção de quantidade no
     updateShortageMock = vi.fn().mockResolvedValue({})
   })
 
-  it('no modo grupo consolidado (isMultiItem): blur no campo de quantidade NÃO altera o registro individual com a soma do grupo', () => {
+  it('no modo grupo consolidado (isMultiItem): blur no campo de quantidade NÃO altera o registro individual com a soma do grupo (nenhuma chamada de update a material_shortages a partir do cabeçalho do grupo)', () => {
     const isMultiItem = mockGroupList.length > 1
     expect(isMultiItem).toBe(true)
     expect(totalGroupQty).toBe(10)
@@ -107,6 +113,7 @@ describe('EnhancedQuotationForm - Proteção contra corrupção de quantidade no
 
     // Deve ser bloqueado
     expect(result).toBe(false)
+    // Nenhuma chamada de update para material_shortages
     expect(updateShortageMock).not.toHaveBeenCalled()
     // O registro individual mantém sua integridade de 1 un sem inflar para 10 un
     expect(mockItemOP1.quantity).toBe(1)
@@ -153,6 +160,21 @@ describe('EnhancedQuotationForm - Proteção contra corrupção de quantidade no
       item: mockItemOP1,
       desc: mockItemOP1.description,
       qty: String(mockItemOP1.quantity),
+      updateShortageRecord: updateShortageMock,
+    })
+
+    expect(result).toBe(false)
+    expect(updateShortageMock).not.toHaveBeenCalled()
+  })
+
+  it('no modo item único (NÃO isMultiItem): rejeita valores NaN sem disparar update', () => {
+    const isMultiItem = false
+
+    const result = handleItemBlurAction({
+      isMultiItem,
+      item: mockItemOP1,
+      desc: mockItemOP1.description,
+      qty: 'invalid-number',
       updateShortageRecord: updateShortageMock,
     })
 

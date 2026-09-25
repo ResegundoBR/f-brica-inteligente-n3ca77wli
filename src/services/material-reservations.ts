@@ -137,7 +137,18 @@ export async function reserveSeparatedItem(
       limit: 1,
     })
 
-    const qty = Number(item.total_quantity) || 0
+    const qty =
+      item.status === 'parcial' && item.separated_quantity !== undefined
+        ? Number(item.separated_quantity) || 0
+        : Number(item.total_quantity) || 0
+
+    if (qty <= 0) {
+      // Se quantidade a separar for 0, libera eventual reserva existente
+      if (existing.length > 0) {
+        await releaseSeparatedItem(separationId, item.id)
+      }
+      return null
+    }
 
     if (existing.length > 0) {
       const rec = existing[0]
@@ -220,7 +231,10 @@ export async function syncSeparationReservations(
   items: SeparationItem[],
 ): Promise<void> {
   for (const item of items) {
-    if (item.status === 'separado') {
+    if (
+      item.status === 'separado' ||
+      (item.status === 'parcial' && (item.separated_quantity ?? 0) > 0)
+    ) {
       await reserveSeparatedItem(separationId, item)
     } else {
       await releaseSeparatedItem(separationId, item.id)

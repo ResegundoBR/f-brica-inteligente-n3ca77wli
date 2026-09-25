@@ -36,6 +36,14 @@ import {
   finalizeSeparation,
 } from '@/services/material-separations'
 import {
+  searchUnifiedComponentsWithStock,
+  UnifiedComponentSearchResult,
+} from '@/services/components'
+import { logSeparationAction } from '@/services/pcp-separation-audit'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { ArrowLeftRight } from 'lucide-react'
+import {
   getStockAvailabilityForCodes,
   ComponentStockAvailability,
   normalizeCode,
@@ -57,6 +65,24 @@ export function OperatorSeparationTab() {
     Map<string, ComponentStockAvailability>
   >(new Map())
   const isMobile = useIsMobile()
+
+  // Estado do Diálogo de Falta Parcial
+  const [partialDialogOpen, setPartialDialogOpen] = useState(false)
+  const [partialItem, setPartialItem] = useState<SeparationItem | null>(null)
+  const [stockNowInput, setStockNowInput] = useState<string>('')
+  const [partialSaving, setPartialSaving] = useState(false)
+
+  // Estado do Diálogo de Troca / Substituição
+  const [swapDialogOpen, setSwapDialogOpen] = useState(false)
+  const [swapOriginalItem, setSwapOriginalItem] = useState<SeparationItem | null>(null)
+  const [swapSearchTerm, setSwapSearchTerm] = useState('')
+  const [swapSearching, setSwapSearching] = useState(false)
+  const [swapResults, setSwapResults] = useState<UnifiedComponentSearchResult[]>([])
+  const [selectedSubstitute, setSelectedSubstitute] = useState<UnifiedComponentSearchResult | null>(
+    null,
+  )
+  const [substituteQtyInput, setSubstituteQtyInput] = useState<string>('')
+  const [swapSaving, setSwapSaving] = useState(false)
 
   const loadData = async () => {
     try {
@@ -137,9 +163,293 @@ export function OperatorSeparationTab() {
     }
   }
 
+  // Abertura do diálogo de Falta Parcial
+  const handleOpenFaltaDialog = (item: SeparationItem) => {
+    setPartialItem(item)
+    // Pré-preenchido com o total solicitado (como pedido pelo usuário)
+    setStockNowInput(String(item.total_quantity ?? 0))
+    setPartialDialogOpen(true)
+  }
+
+  // Confirmação de Falta Parcial / Total
+  const handleConfirmFaltaParcial = async () => {
+    if (!partialItem) return
+    const totalRequested = Number(partialItem.total_quantity) || 0
+    const inStock = Number(stockNowInput.replace(',', '.'))
+
+    if (isNaN(inStock) || inStock < 0) {
+      toast({
+        title: 'Quantidade inválida',
+        description: 'Informe um valor maior ou igual a zero.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    if (inStock > totalRequested) {
+      toast({
+        title: 'Quantidade acima do solicitado',
+        description: `O solicitado é ${totalRequested} ${partialItem.unit || 'UN'}. Você não pode informar um valor maior.`,
+        variant: 'destructive',
+      })
+      return
+    }
+
+    setPartialSaving(true)
+    try {
+      const operatorName = pb.authStore.record?.name || pb.authStore.record?.email || 'Operador'
+      const unit = partialItem.unit || 'UN'
+
+      // CASO A: Tem em estoque = totalRequested -> o operador confirmou sem alterar (falta total) OU se inStock = 0
+      // "ao confirmar sem alterar vira falta total... se quantidade = 0 tratar como falta total de hoje"
+      const isTotalShortage = inStock === 0 || inStock === totalRequested
+
+      if (isTotalShortage) {
+        // Falta Total
+        setItemsDraft((prev) => {
+          const nextList: SeparationItem[] = prev.map((it) => {
+            if (it.id === partialItem.id) {
+              return {
+                ...it,
+                status: 'falta',
+                separated_quantity: 0,
+                shortage_quantity: totalRequested,
+                marked_at: new Date().toISOString(),
+                marked_by: pb.authStore.record?.id,
+                notes: `Falta total registrada pelo operador (${totalRequested} ${unit}).`,
+              }
+            }
+            return it
+          })
+          if (activeSeparation) {
+            updateSeparationItems(activeSeparation.id, nextList, 'Em_Separacao').catch(() => {})
+          }
+          return nextList
+        })
+
+        toast({
+          title: 'Falta total registrada',
+          description: `Item marcado com Falta de ${totalRequested} ${unit}. Solicitação será enviada a Suprimentos.`,
+        })
+      } else {
+        // Falta Parcial real (0 < inStock < totalRequested)
+        const separatedQty = inStock
+        const missingQty = Number((totalRequested - separatedQty).toFixed(4))
+
+        setItemsDraft((prev) => {
+          const nextList: SeparationItem[] = prev.map((it) => {
+            if (it.id === partialItem.id) {
+              return {
+                ...it,
+                status: 'parcial',
+                separated_quantity: separatedQty,
+                shortage_quantity: missingQty,
+                marked_at: new Date().toISOString(),
+                marked_by: pb.authStore.record?.id,
+                notes: `Parcial: ${separatedQty}/${totalRequested} ${unit} separados · ${missingQty} ${unit} em solicitação.`,
+              }
+            }
+            return it
+          })
+          if (activeSeparation) {
+            updateSeparationItems(activeSeparation.id, nextList, 'Em_Separacao').catch(() => {})
+          }
+          return nextList
+        })
+
+        // Auditoria em pcp_order_logs para cada OP envolvida
+        try {
+          await logSeparationAction({
+            orderIds: partialItem.order_ids || [],
+            opNumbers: partialItem.op_numbers || [],
+            action: 'Separação - Falta Parcial',
+            itemOriginal: {
+              code: partialItem.code,
+              description: partialItem.description,
+              quantityRequested: totalRequested,
+              unit: partialItem.unit,
+              cutMeasurement: partialItem.cut_measurement,
+            },
+            separatedQuantity: separatedQty,
+            shortageQuantity: missingQty,
+            operatorName,
+            notes: `Falta parcial na rodada de separação: ${separatedQty} ${unit} separados no estoque e ${missingQty} ${unit} em solicitação.`,
+          })
+        } catch (logErr) {
+          console.error('Erro ao auditar falta parcial:', logErr)
+        }
+
+        toast({
+          title: 'Falta Parcial registrada!',
+          description: `${separatedQty}/${totalRequested} ${unit} separados com reserva · ${missingQty} ${unit} em solicitação.`,
+        })
+      }
+
+      setPartialDialogOpen(false)
+      setPartialItem(null)
+    } finally {
+      setPartialSaving(false)
+    }
+  }
+
+  // Abertura do diálogo de Troca / Substituição
+  const handleOpenSwapDialog = (item: SeparationItem) => {
+    setSwapOriginalItem(item)
+    setSwapSearchTerm('')
+    setSwapResults([])
+    setSelectedSubstitute(null)
+    setSubstituteQtyInput(String(item.total_quantity ?? 0))
+    setSwapDialogOpen(true)
+  }
+
+  // Busca de componentes cadastrados no sistema oficial
+  const handleSearchSubstitutes = async (term: string) => {
+    setSwapSearchTerm(term)
+    if (!term.trim() || term.trim().length < 2) {
+      setSwapResults([])
+      return
+    }
+    setSwapSearching(true)
+    try {
+      const results = await searchUnifiedComponentsWithStock(term, 25)
+      setSwapResults(results)
+    } catch (err) {
+      console.error('Erro ao buscar componentes para substituição:', err)
+      toast({
+        title: 'Erro na busca',
+        description: 'Não foi possível carregar os componentes cadastrados.',
+        variant: 'destructive',
+      })
+    } finally {
+      setSwapSearching(false)
+    }
+  }
+
+  // Confirmação de Substituição
+  const handleConfirmSubstitution = async () => {
+    if (!swapOriginalItem || !selectedSubstitute) return
+    const substituteQty = Number(substituteQtyInput.replace(',', '.'))
+    if (isNaN(substituteQty) || substituteQty <= 0) {
+      toast({
+        title: 'Quantidade inválida',
+        description: 'Informe uma quantidade válida para o componente substituto.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    setSwapSaving(true)
+    try {
+      const operatorName = pb.authStore.record?.name || pb.authStore.record?.email || 'Operador'
+      const origCode = swapOriginalItem.code || 's/ código'
+      const origDesc = swapOriginalItem.description
+      const origQty = swapOriginalItem.total_quantity
+      const subCode = selectedSubstitute.code || 's/ código'
+      const subDesc = selectedSubstitute.description
+      const subUnit = selectedSubstitute.unit || swapOriginalItem.unit || 'UN'
+
+      // Cria novo item substituto na mesma rodada herdando as OPs
+      const substituteItem: SeparationItem = {
+        id: `swap-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        code: selectedSubstitute.code || '',
+        description: selectedSubstitute.description,
+        total_quantity: substituteQty,
+        unit: subUnit,
+        cut_measurement: null,
+        op_numbers: [...(swapOriginalItem.op_numbers || [])],
+        order_ids: [...(swapOriginalItem.order_ids || [])],
+        status: 'pendente',
+        notes: `Substituto oficial de [${origCode}] ${origDesc}`,
+        is_substitution: true,
+        original_item_id: swapOriginalItem.id,
+      }
+
+      setItemsDraft((prev) => {
+        const nextList: SeparationItem[] = prev.map((it) => {
+          if (it.id === swapOriginalItem.id) {
+            // O item ORIGINAL fica marcado como substituído e NÃO gera solicitação de compra
+            return {
+              ...it,
+              status: 'substituido' as any,
+              notes: `Substituído por [${subCode}] ${subDesc}`,
+              replaced_by_code: subCode,
+              replaced_by_description: subDesc,
+              marked_at: new Date().toISOString(),
+              marked_by: pb.authStore.record?.id,
+            }
+          }
+          return it
+        })
+
+        // Insere o substituto logo após o item original
+        const origIdx = nextList.findIndex((i) => i.id === swapOriginalItem.id)
+        if (origIdx >= 0) {
+          nextList.splice(origIdx + 1, 0, substituteItem)
+        } else {
+          nextList.push(substituteItem)
+        }
+
+        if (activeSeparation) {
+          updateSeparationItems(activeSeparation.id, nextList, 'Em_Separacao').catch(() => {})
+        }
+        return nextList
+      })
+
+      // Atualiza mapa de disponibilidade com o substituto
+      if (substituteItem.code) {
+        refreshAvailability([substituteItem])
+      }
+
+      // Auditoria em pcp_order_logs
+      try {
+        await logSeparationAction({
+          orderIds: swapOriginalItem.order_ids || [],
+          opNumbers: swapOriginalItem.op_numbers || [],
+          action: 'Separação - Substituição de Componente',
+          itemOriginal: {
+            code: origCode,
+            description: origDesc,
+            quantityRequested: origQty,
+            unit: swapOriginalItem.unit,
+            cutMeasurement: swapOriginalItem.cut_measurement,
+          },
+          substitute: {
+            code: subCode,
+            description: subDesc,
+            quantity: substituteQty,
+            unit: subUnit,
+          },
+          operatorName,
+          notes: `Substituição realizada na rodada de separação: ${origDesc} substituído por [${subCode}] ${subDesc}. O item substituto agora segue a conferência física normal.`,
+        })
+      } catch (logErr) {
+        console.error('Erro ao auditar substituição de componente:', logErr)
+      }
+
+      toast({
+        title: 'Componente Substituído!',
+        description: `Substituto [${subCode}] adicionado à lista para conferência física. Original marcado como substituído.`,
+      })
+
+      setSwapDialogOpen(false)
+      setSwapOriginalItem(null)
+      setSelectedSubstitute(null)
+    } finally {
+      setSwapSaving(false)
+    }
+  }
+
   const handleToggleItemStatus = (itemId: string, newStatus: 'separado' | 'falta') => {
     const targetItem = itemsDraft.find((i) => i.id === itemId)
-    if (targetItem && newStatus === 'separado' && targetItem.status !== 'separado') {
+    if (!targetItem) return
+
+    // Se clicar em Falta, abre o diálogo de confirmação conforme Requisito (1)
+    if (newStatus === 'falta' && targetItem.status !== 'falta') {
+      handleOpenFaltaDialog(targetItem)
+      return
+    }
+
+    if (newStatus === 'separado' && targetItem.status !== 'separado') {
       // Verificar disponibilidade no momento da marcação
       const norm = normalizeCode(targetItem.code)
       const stockInfo = stockAvailabilityMap.get(norm)
@@ -149,7 +459,7 @@ export function OperatorSeparationTab() {
       if (available < requested) {
         toast({
           title: 'Estoque insuficiente para separação!',
-          description: `Disponível no momento: ${available} ${stockInfo?.unit || targetItem.unit || 'UN'}. Solicitado: ${requested}. Favor marcar como Falta (🔴) para gerar solicitação a Suprimentos.`,
+          description: `Disponível no momento: ${available} ${stockInfo?.unit || targetItem.unit || 'UN'}. Solicitado: ${requested}. Favor usar Falta (🔴) para informar falta parcial ou total.`,
           variant: 'destructive',
         })
       }
@@ -166,6 +476,8 @@ export function OperatorSeparationTab() {
           return {
             ...item,
             status: nextStatus,
+            separated_quantity: nextStatus === 'separado' ? item.total_quantity : undefined,
+            shortage_quantity: undefined,
             marked_at: nextStatus !== 'pendente' ? new Date().toISOString() : undefined,
           }
         }
@@ -251,7 +563,9 @@ export function OperatorSeparationTab() {
 
   // Contadores do rascunho atual
   const countSeparated = itemsDraft.filter((i) => i.status === 'separado').length
+  const countPartial = itemsDraft.filter((i) => i.status === 'parcial').length
   const countShortage = itemsDraft.filter((i) => i.status === 'falta').length
+  const countSubstituted = itemsDraft.filter((i) => i.status === 'substituido').length
   const countPending = itemsDraft.filter((i) => !i.status || i.status === 'pendente').length
   const totalDraft = itemsDraft.length
 
@@ -590,37 +904,45 @@ export function OperatorSeparationTab() {
               </div>
             )}
 
-            {/* Linha 3: Contadores em UMA LINHA COMPACTA (Total / Separados / Faltas / Pendentes) */}
-            <div className="grid grid-cols-4 gap-1.5 text-center">
-              <div className="px-1.5 py-1 rounded bg-muted/50 border">
-                <span className="text-[9px] text-muted-foreground block leading-tight font-medium truncate">
+            {/* Linha 3: Contadores em UMA LINHA COMPACTA (Total / Separados / Parciais / Faltas / Pendentes) */}
+            <div className="grid grid-cols-5 gap-1 text-center">
+              <div className="px-1 py-1 rounded bg-muted/50 border">
+                <span className="text-[8px] text-muted-foreground block leading-tight font-medium truncate">
                   Total
                 </span>
-                <span className="text-sm font-bold text-foreground leading-tight">
+                <span className="text-xs font-bold text-foreground leading-tight">
                   {totalDraft}
                 </span>
               </div>
-              <div className="px-1.5 py-1 rounded bg-emerald-500/10 border border-emerald-500/30">
-                <span className="text-[9px] text-emerald-700 dark:text-emerald-400 block leading-tight font-medium truncate">
-                  🟢 Separados
+              <div className="px-1 py-1 rounded bg-emerald-500/10 border border-emerald-500/30">
+                <span className="text-[8px] text-emerald-700 dark:text-emerald-400 block leading-tight font-medium truncate">
+                  🟢 Sep.
                 </span>
-                <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400 leading-tight">
+                <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 leading-tight">
                   {countSeparated}
                 </span>
               </div>
-              <div className="px-1.5 py-1 rounded bg-rose-500/10 border border-rose-500/30">
-                <span className="text-[9px] text-rose-700 dark:text-rose-400 block leading-tight font-medium truncate">
-                  🔴 Faltas
+              <div className="px-1 py-1 rounded bg-amber-500/10 border border-amber-500/30">
+                <span className="text-[8px] text-amber-700 dark:text-amber-400 block leading-tight font-medium truncate">
+                  🟡 Parc.
                 </span>
-                <span className="text-sm font-bold text-rose-600 dark:text-rose-400 leading-tight">
+                <span className="text-xs font-bold text-amber-600 dark:text-amber-400 leading-tight">
+                  {countPartial}
+                </span>
+              </div>
+              <div className="px-1 py-1 rounded bg-rose-500/10 border border-rose-500/30">
+                <span className="text-[8px] text-rose-700 dark:text-rose-400 block leading-tight font-medium truncate">
+                  🔴 Falta
+                </span>
+                <span className="text-xs font-bold text-rose-600 dark:text-rose-400 leading-tight">
                   {countShortage}
                 </span>
               </div>
-              <div className="px-1.5 py-1 rounded bg-amber-500/10 border border-amber-500/30">
-                <span className="text-[9px] text-amber-700 dark:text-amber-400 block leading-tight font-medium truncate">
-                  ⏳ Pendentes
+              <div className="px-1 py-1 rounded bg-slate-500/10 border border-slate-500/30">
+                <span className="text-[8px] text-muted-foreground block leading-tight font-medium truncate">
+                  ⏳ Pend.
                 </span>
-                <span className="text-sm font-bold text-amber-600 dark:text-amber-400 leading-tight">
+                <span className="text-xs font-bold text-muted-foreground leading-tight">
                   {countPending}
                 </span>
               </div>
@@ -691,7 +1013,9 @@ export function OperatorSeparationTab() {
             ) : (
               filteredItemsDraft.map((item, index) => {
                 const isSeparated = item.status === 'separado'
+                const isPartial = item.status === 'parcial'
                 const isShortage = item.status === 'falta'
+                const isSubstituted = item.status === 'substituido'
                 const isReadOnly = activeSeparation.status === 'Concluida'
 
                 return (
@@ -700,14 +1024,18 @@ export function OperatorSeparationTab() {
                     className={`p-3 rounded-xl border transition-colors shadow-sm flex flex-col gap-2.5 ${
                       isSeparated
                         ? 'bg-emerald-500/10 border-emerald-500/50'
-                        : isShortage
-                          ? 'bg-rose-500/10 border-rose-500/50'
-                          : 'bg-card border-border'
+                        : isPartial
+                          ? 'bg-amber-500/10 border-amber-500/50'
+                          : isShortage
+                            ? 'bg-rose-500/10 border-rose-500/50'
+                            : isSubstituted
+                              ? 'bg-slate-500/10 border-slate-400/50 opacity-80'
+                              : 'bg-card border-border'
                     }`}
                   >
                     {/* Código do material + status atual (se readonly ou marcado) */}
                     <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         {item.code ? (
                           <NoTranslate
                             as="span"
@@ -721,6 +1049,14 @@ export function OperatorSeparationTab() {
                           </span>
                         )}
                         <span className="text-[10px] text-muted-foreground">#{index + 1}</span>
+                        {item.is_substitution && (
+                          <Badge
+                            variant="outline"
+                            className="bg-blue-500/10 text-blue-600 border-blue-400 text-[9px] h-4 px-1.5"
+                          >
+                            Substituto
+                          </Badge>
+                        )}
                       </div>
 
                       {isSeparated && (
@@ -728,12 +1064,25 @@ export function OperatorSeparationTab() {
                           <CheckCircle2 className="h-3 w-3" /> Separado
                         </Badge>
                       )}
+                      {isPartial && (
+                        <Badge className="bg-amber-500 text-white text-[10px] h-5 px-2 gap-1">
+                          <Package className="h-3 w-3" /> Parcial
+                        </Badge>
+                      )}
                       {isShortage && (
                         <Badge className="bg-rose-600 text-white text-[10px] h-5 px-2 gap-1">
                           <AlertTriangle className="h-3 w-3" /> Falta
                         </Badge>
                       )}
-                      {!isSeparated && !isShortage && (
+                      {isSubstituted && (
+                        <Badge
+                          variant="outline"
+                          className="bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-400 text-[10px] h-5 px-2 gap-1"
+                        >
+                          Substituído
+                        </Badge>
+                      )}
+                      {!isSeparated && !isPartial && !isShortage && !isSubstituted && (
                         <Badge variant="outline" className="text-[10px] h-5 text-muted-foreground">
                           Pendente
                         </Badge>
@@ -743,15 +1092,45 @@ export function OperatorSeparationTab() {
                     {/* Descrição em destaque */}
                     <NoTranslate
                       as="div"
-                      className="font-bold text-sm text-foreground leading-snug break-words"
+                      className={`font-bold text-sm text-foreground leading-snug break-words ${
+                        isSubstituted ? 'line-through opacity-70' : ''
+                      }`}
                     >
                       {item.description}
                     </NoTranslate>
 
+                    {/* Banner informativo de Falta Parcial ou Substituição */}
+                    {isPartial && (
+                      <div className="p-2 rounded bg-amber-500/15 border border-amber-500/30 text-[11px] text-amber-800 dark:text-amber-300 font-semibold flex items-center justify-between gap-2">
+                        <span>
+                          {item.separated_quantity ?? 0}/{item.total_quantity} {item.unit || 'UN'}{' '}
+                          separados
+                        </span>
+                        <span className="text-amber-900 dark:text-amber-200">
+                          {item.shortage_quantity ?? 0} {item.unit || 'UN'} em solicitação
+                        </span>
+                      </div>
+                    )}
+
+                    {isSubstituted && (
+                      <div className="p-2 rounded bg-slate-200/70 dark:bg-slate-800/70 border border-slate-300 dark:border-slate-700 text-[11px] text-foreground font-medium flex items-center gap-1.5">
+                        <ArrowLeftRight className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                        <span>
+                          Substituído por{' '}
+                          <NoTranslate as="strong" className="font-mono text-primary font-bold">
+                            [{item.replaced_by_code}]
+                          </NoTranslate>{' '}
+                          {item.replaced_by_description} (sem solicitação de compra)
+                        </span>
+                      </div>
+                    )}
+
                     {/* Qtd, OPs e Medida empilhados de forma limpa */}
                     <div className="space-y-1 text-xs">
                       <div className="flex items-center justify-between gap-2 pt-0.5">
-                        <span className="text-muted-foreground text-[11px]">Quantidade:</span>
+                        <span className="text-muted-foreground text-[11px]">
+                          Quantidade solicitada:
+                        </span>
                         <span className="font-bold text-foreground text-xs bg-muted px-2 py-0.5 rounded">
                           <NoTranslate as="span">
                             {Number(item.total_quantity).toLocaleString('pt-BR', {
@@ -818,35 +1197,47 @@ export function OperatorSeparationTab() {
                       )}
                     </div>
 
-                    {/* BOTÕES GRANDES PARA O CHÃO DE FÁBRICA (mínimo 44px de altura, fáceis de tocar) */}
-                    {!isReadOnly && (
-                      <div className="grid grid-cols-2 gap-2 pt-1">
+                    {/* BOTÕES GRANDES PARA O CHÃO DE FÁBRICA: Separado / Falta / Troca */}
+                    {!isReadOnly && !isSubstituted && (
+                      <div className="grid grid-cols-3 gap-1.5 pt-1">
                         <Button
                           type="button"
                           variant={isSeparated ? 'default' : 'outline'}
                           onClick={() => handleToggleItemStatus(item.id, 'separado')}
-                          className={`min-h-[44px] h-11 text-xs font-bold gap-2 transition-all shadow-sm ${
+                          className={`min-h-[44px] h-11 text-[11px] font-bold gap-1 transition-all shadow-sm ${
                             isSeparated
                               ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-500/50'
                               : 'border-2 border-emerald-600/50 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 active:bg-emerald-100'
                           }`}
                         >
-                          <CheckCircle2 className="h-4 w-4 shrink-0" />
+                          <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
                           <span>Separado</span>
                         </Button>
 
                         <Button
                           type="button"
-                          variant={isShortage ? 'default' : 'outline'}
+                          variant={isShortage || isPartial ? 'default' : 'outline'}
                           onClick={() => handleToggleItemStatus(item.id, 'falta')}
-                          className={`min-h-[44px] h-11 text-xs font-bold gap-2 transition-all shadow-sm ${
-                            isShortage
-                              ? 'bg-rose-600 hover:bg-rose-700 text-white ring-2 ring-rose-500/50'
+                          className={`min-h-[44px] h-11 text-[11px] font-bold gap-1 transition-all shadow-sm ${
+                            isShortage || isPartial
+                              ? isPartial
+                                ? 'bg-amber-600 hover:bg-amber-700 text-white ring-2 ring-amber-500/50'
+                                : 'bg-rose-600 hover:bg-rose-700 text-white ring-2 ring-rose-500/50'
                               : 'border-2 border-rose-600/50 text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 active:bg-rose-100'
                           }`}
                         >
-                          <AlertTriangle className="h-4 w-4 shrink-0" />
-                          <span>Falta</span>
+                          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                          <span>{isPartial ? 'Parcial' : 'Falta'}</span>
+                        </Button>
+
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => handleOpenSwapDialog(item)}
+                          className="min-h-[44px] h-11 text-[11px] font-bold gap-1 transition-all shadow-sm border-2 border-blue-600/50 text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 active:bg-blue-100"
+                        >
+                          <ArrowLeftRight className="h-3.5 w-3.5 shrink-0" />
+                          <span>Troca</span>
                         </Button>
                       </div>
                     )}
@@ -954,7 +1345,7 @@ export function OperatorSeparationTab() {
               </div>
 
               {/* BARRA DE PROGRESSO E CONTADORES */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-2">
                 <div className="p-2 bg-muted/50 rounded-lg border text-center">
                   <span className="text-[10px] text-muted-foreground block font-medium">
                     Total de Itens
@@ -967,17 +1358,23 @@ export function OperatorSeparationTab() {
                   </span>
                   <span className="text-base font-bold text-emerald-600">{countSeparated}</span>
                 </div>
+                <div className="p-2 bg-amber-500/10 rounded-lg border border-amber-500/20 text-center">
+                  <span className="text-[10px] text-amber-700 dark:text-amber-400 block font-medium">
+                    🟡 Parciais
+                  </span>
+                  <span className="text-base font-bold text-amber-600">{countPartial}</span>
+                </div>
                 <div className="p-2 bg-rose-500/10 rounded-lg border border-rose-500/20 text-center">
                   <span className="text-[10px] text-rose-700 dark:text-rose-400 block font-medium">
                     🔴 Faltas
                   </span>
                   <span className="text-base font-bold text-rose-600">{countShortage}</span>
                 </div>
-                <div className="p-2 bg-amber-500/10 rounded-lg border border-amber-500/20 text-center">
-                  <span className="text-[10px] text-amber-700 dark:text-amber-400 block font-medium">
+                <div className="p-2 bg-slate-500/10 rounded-lg border border-slate-500/20 text-center">
+                  <span className="text-[10px] text-muted-foreground block font-medium">
                     ⏳ Pendentes
                   </span>
-                  <span className="text-base font-bold text-amber-600">{countPending}</span>
+                  <span className="text-base font-bold text-muted-foreground">{countPending}</span>
                 </div>
               </div>
 
@@ -1043,7 +1440,9 @@ export function OperatorSeparationTab() {
                   ) : (
                     filteredItemsDraft.map((item, index) => {
                       const isSeparated = item.status === 'separado'
+                      const isPartial = item.status === 'parcial'
                       const isShortage = item.status === 'falta'
+                      const isSubstituted = item.status === 'substituido'
                       const isReadOnly = activeSeparation.status === 'Concluida'
 
                       return (
@@ -1052,9 +1451,13 @@ export function OperatorSeparationTab() {
                           className={`p-3 rounded-xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
                             isSeparated
                               ? 'bg-emerald-500/10 border-emerald-500/40 shadow-sm'
-                              : isShortage
-                                ? 'bg-rose-500/10 border-rose-500/40 shadow-sm'
-                                : 'bg-card border-border hover:border-slate-400/50'
+                              : isPartial
+                                ? 'bg-amber-500/10 border-amber-500/40 shadow-sm'
+                                : isShortage
+                                  ? 'bg-rose-500/10 border-rose-500/40 shadow-sm'
+                                  : isSubstituted
+                                    ? 'bg-slate-500/10 border-slate-400/50 opacity-80'
+                                    : 'bg-card border-border hover:border-slate-400/50'
                           }`}
                         >
                           <div className="space-y-1 flex-1 min-w-0">
@@ -1071,9 +1474,19 @@ export function OperatorSeparationTab() {
                                   s/ código
                                 </span>
                               )}
+                              {item.is_substitution && (
+                                <Badge
+                                  variant="outline"
+                                  className="bg-blue-500/10 text-blue-600 border-blue-400 text-[10px] h-5 px-1.5"
+                                >
+                                  Substituto
+                                </Badge>
+                              )}
                               <NoTranslate
                                 as="span"
-                                className="font-semibold text-sm text-foreground break-words"
+                                className={`font-semibold text-sm text-foreground break-words ${
+                                  isSubstituted ? 'line-through opacity-70' : ''
+                                }`}
                               >
                                 {item.description}
                               </NoTranslate>
@@ -1101,7 +1514,7 @@ export function OperatorSeparationTab() {
                                 as="span"
                                 className="font-semibold text-foreground bg-muted/80 px-2 py-0.5 rounded text-xs"
                               >
-                                Qtd:{' '}
+                                Solicitado:{' '}
                                 {Number(item.total_quantity).toLocaleString('pt-BR', {
                                   maximumFractionDigits: 2,
                                 })}{' '}
@@ -1138,11 +1551,41 @@ export function OperatorSeparationTab() {
                                 )
                               })()}
                             </div>
+
+                            {/* Banner informativo desktop para Parcial ou Substituição */}
+                            {isPartial && (
+                              <div className="mt-1 px-2 py-1 rounded bg-amber-500/15 border border-amber-500/30 text-[11px] text-amber-800 dark:text-amber-300 font-semibold inline-flex items-center gap-2">
+                                <span>
+                                  🟡 {item.separated_quantity ?? 0}/{item.total_quantity}{' '}
+                                  {item.unit || 'UN'} separados
+                                </span>
+                                <span>·</span>
+                                <span className="text-amber-900 dark:text-amber-200">
+                                  {item.shortage_quantity ?? 0} {item.unit || 'UN'} em solicitação
+                                </span>
+                              </div>
+                            )}
+
+                            {isSubstituted && (
+                              <div className="mt-1 px-2 py-1 rounded bg-slate-200/70 dark:bg-slate-800/70 border border-slate-300 dark:border-slate-700 text-[11px] text-foreground font-medium inline-flex items-center gap-1.5">
+                                <ArrowLeftRight className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                                <span>
+                                  Substituído por{' '}
+                                  <NoTranslate
+                                    as="strong"
+                                    className="font-mono text-primary font-bold"
+                                  >
+                                    [{item.replaced_by_code}]
+                                  </NoTranslate>{' '}
+                                  {item.replaced_by_description} (sem solicitação de compra)
+                                </span>
+                              </div>
+                            )}
                           </div>
 
-                          {/* BOTÕES DE AÇÃO DO OPERADOR: 🟢 SEPARADO / 🔴 FALTA */}
-                          {!isReadOnly ? (
-                            <div className="flex items-center gap-2 shrink-0">
+                          {/* BOTÕES DE AÇÃO DO OPERADOR: 🟢 SEPARADO / 🔴 FALTA / 🔄 TROCA */}
+                          {!isReadOnly && !isSubstituted ? (
+                            <div className="flex items-center gap-1.5 shrink-0">
                               <Button
                                 type="button"
                                 size="sm"
@@ -1161,29 +1604,54 @@ export function OperatorSeparationTab() {
                               <Button
                                 type="button"
                                 size="sm"
-                                variant={isShortage ? 'default' : 'outline'}
+                                variant={isShortage || isPartial ? 'default' : 'outline'}
                                 onClick={() => handleToggleItemStatus(item.id, 'falta')}
                                 className={`h-9 px-3 gap-1.5 font-bold transition-all text-xs ${
-                                  isShortage
-                                    ? 'bg-rose-600 hover:bg-rose-700 text-white ring-2 ring-rose-500/30 shadow'
+                                  isShortage || isPartial
+                                    ? isPartial
+                                      ? 'bg-amber-600 hover:bg-amber-700 text-white ring-2 ring-amber-500/30 shadow'
+                                      : 'bg-rose-600 hover:bg-rose-700 text-white ring-2 ring-rose-500/30 shadow'
                                     : 'border-rose-600/40 text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40'
                                 }`}
                               >
                                 <AlertTriangle className="h-4 w-4" />
-                                Falta
+                                {isPartial ? 'Parcial' : 'Falta'}
+                              </Button>
+
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleOpenSwapDialog(item)}
+                                className="h-9 px-3 gap-1.5 font-bold transition-all text-xs border-blue-600/40 text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40"
+                              >
+                                <ArrowLeftRight className="h-4 w-4" />
+                                Troca
                               </Button>
                             </div>
                           ) : (
-                            <div className="shrink-0">
+                            <div className="shrink-0 flex items-center gap-1.5">
                               {isSeparated ? (
                                 <Badge className="bg-emerald-600 text-white text-xs gap-1 py-1 px-2.5">
                                   <CheckCircle2 className="h-3.5 w-3.5" />
                                   Separado
                                 </Badge>
+                              ) : isPartial ? (
+                                <Badge className="bg-amber-600 text-white text-xs gap-1 py-1 px-2.5">
+                                  <Package className="h-3.5 w-3.5" />
+                                  Parcial
+                                </Badge>
                               ) : isShortage ? (
                                 <Badge className="bg-rose-600 text-white text-xs gap-1 py-1 px-2.5">
                                   <AlertTriangle className="h-3.5 w-3.5" />
                                   Falta
+                                </Badge>
+                              ) : isSubstituted ? (
+                                <Badge
+                                  variant="outline"
+                                  className="bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-400 text-xs gap-1 py-1 px-2.5"
+                                >
+                                  Substituído
                                 </Badge>
                               ) : (
                                 <Badge variant="outline" className="text-xs">
@@ -1261,6 +1729,360 @@ export function OperatorSeparationTab() {
           </DialogContent>
         </Dialog>
       ) : null}
+
+      {/* DIÁLOGO 1: FALTA PARCIAL */}
+      {partialDialogOpen && partialItem && (
+        <Dialog open={partialDialogOpen} onOpenChange={setPartialDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <div className="flex items-center gap-2 text-rose-600">
+                <AlertTriangle className="h-5 w-5" />
+                <DialogTitle>Informar Falta de Material</DialogTitle>
+              </div>
+              <DialogDescription className="text-xs">
+                Confirme a quantidade disponível agora no estoque para este item.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3 py-2 text-xs">
+              <div className="p-3 rounded-lg bg-muted/60 border space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground font-medium">Código:</span>
+                  <NoTranslate as="span" className="font-mono font-bold text-foreground">
+                    {partialItem.code || 's/ código'}
+                  </NoTranslate>
+                </div>
+                <div>
+                  <span className="text-muted-foreground font-medium block">Descrição:</span>
+                  <NoTranslate as="div" className="font-semibold text-foreground mt-0.5 text-xs">
+                    {partialItem.description}
+                  </NoTranslate>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground font-medium">Unidade:</span>
+                  <span className="font-mono font-semibold">{partialItem.unit || 'UN'}</span>
+                </div>
+                {partialItem.cut_measurement && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground font-medium">Medida de corte:</span>
+                    <Badge
+                      variant="secondary"
+                      className="font-mono text-[10px] notranslate"
+                      translate="no"
+                    >
+                      {partialItem.cut_measurement}
+                    </Badge>
+                  </div>
+                )}
+                <div className="flex items-center justify-between pt-1 border-t">
+                  <span className="text-muted-foreground font-bold">
+                    Quantidade solicitada total:
+                  </span>
+                  <span className="font-bold text-sm text-foreground">
+                    {partialItem.total_quantity} {partialItem.unit || 'UN'}
+                  </span>
+                </div>
+                {partialItem.op_numbers && partialItem.op_numbers.length > 0 && (
+                  <div className="pt-1 text-[11px] text-muted-foreground">
+                    <span className="font-medium">OPs envolvidas:</span>{' '}
+                    <NoTranslate as="span" className="font-mono">
+                      {partialItem.op_numbers.join(', ')}
+                    </NoTranslate>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1.5 pt-1">
+                <Label
+                  htmlFor="stockNow"
+                  className="text-xs font-semibold flex items-center justify-between"
+                >
+                  <span>Tem em estoque agora ({partialItem.unit || 'UN'}):</span>
+                  <span className="text-[10px] text-muted-foreground font-normal">
+                    0 ≤ quantidade ≤ {partialItem.total_quantity}
+                  </span>
+                </Label>
+                <Input
+                  id="stockNow"
+                  type="number"
+                  step="any"
+                  min="0"
+                  max={partialItem.total_quantity}
+                  value={stockNowInput}
+                  onChange={(e) => setStockNowInput(e.target.value)}
+                  placeholder={`Ex: ${partialItem.total_quantity}`}
+                  className="font-mono text-sm"
+                  autoFocus
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  • Se mantiver <strong>{partialItem.total_quantity}</strong> (sem alterar) ou
+                  colocar <strong>0</strong>: vira <strong>Falta Total</strong>.
+                  <br />• Se colocar um valor parcial (ex:{' '}
+                  {Math.max(1, Math.floor(partialItem.total_quantity / 2))}): essa quantidade é{' '}
+                  <strong>separada agora</strong> com reserva, e a{' '}
+                  <strong>diferença restante</strong> é enviada para compra em Suprimentos.
+                </p>
+              </div>
+
+              {/* Pré-visualização do resultado */}
+              {(() => {
+                const totalReq = Number(partialItem.total_quantity) || 0
+                const num = Number(stockNowInput.replace(',', '.'))
+                if (!isNaN(num) && num >= 0 && num <= totalReq) {
+                  if (num === 0 || num === totalReq) {
+                    return (
+                      <div className="p-2 rounded bg-rose-500/10 border border-rose-500/30 text-rose-700 dark:text-rose-400 text-[11px]">
+                        <strong>Resultado: Falta Total.</strong> Solicitação de {totalReq}{' '}
+                        {partialItem.unit || 'UN'} será enviada a Suprimentos.
+                      </div>
+                    )
+                  }
+                  const missing = Number((totalReq - num).toFixed(4))
+                  return (
+                    <div className="p-2 rounded bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 text-[11px] space-y-0.5">
+                      <div>
+                        <strong>Resultado: Falta Parcial.</strong>
+                      </div>
+                      <div>
+                        • Separar agora no kit:{' '}
+                        <strong>
+                          {num} {partialItem.unit || 'UN'}
+                        </strong>
+                      </div>
+                      <div>
+                        • Solicitação de compra para Suprimentos:{' '}
+                        <strong>
+                          {missing} {partialItem.unit || 'UN'}
+                        </strong>
+                      </div>
+                    </div>
+                  )
+                }
+                return null
+              })()}
+            </div>
+
+            <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setPartialDialogOpen(false)}
+                disabled={partialSaving}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                className="bg-rose-600 hover:bg-rose-700 text-white font-bold"
+                onClick={handleConfirmFaltaParcial}
+                disabled={partialSaving}
+              >
+                {partialSaving ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                    Gravando...
+                  </>
+                ) : (
+                  'Confirmar Falta'
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* DIÁLOGO 2: TROCA / SUBSTITUIÇÃO */}
+      {swapDialogOpen && swapOriginalItem && (
+        <Dialog open={swapDialogOpen} onOpenChange={setSwapDialogOpen}>
+          <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
+            <DialogHeader>
+              <div className="flex items-center gap-2 text-blue-600">
+                <ArrowLeftRight className="h-5 w-5" />
+                <DialogTitle>Trocar / Substituir Componente</DialogTitle>
+              </div>
+              <DialogDescription className="text-xs">
+                Selecione um componente substituto no cadastro oficial do sistema.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3 py-1 text-xs overflow-y-auto pr-1 flex-1">
+              {/* Item Original */}
+              <div className="p-2.5 rounded-lg bg-muted/60 border space-y-1">
+                <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wide">
+                  Item Original que será substituído:
+                </span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <NoTranslate as="span" className="font-mono font-bold text-foreground">
+                    [{swapOriginalItem.code || 's/ código'}]
+                  </NoTranslate>
+                  <NoTranslate as="span" className="text-foreground">
+                    {swapOriginalItem.description}
+                  </NoTranslate>
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  Solicitado:{' '}
+                  <strong>
+                    {swapOriginalItem.total_quantity} {swapOriginalItem.unit || 'UN'}
+                  </strong>
+                  {swapOriginalItem.cut_measurement
+                    ? ` · Medida: ${swapOriginalItem.cut_measurement}`
+                    : ''}
+                </div>
+                <div className="text-[10px] text-amber-600 font-medium">
+                  ℹ️ O item original ficará marcado como substituído e NÃO gerará solicitação de
+                  compra.
+                </div>
+              </div>
+
+              {/* Busca de Substituto */}
+              <div className="space-y-1.5">
+                <Label htmlFor="searchSub" className="text-xs font-semibold">
+                  Buscar Substituto no Cadastro Oficial:
+                </Label>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="searchSub"
+                    type="text"
+                    value={swapSearchTerm}
+                    onChange={(e) => handleSearchSubstitutes(e.target.value)}
+                    placeholder="Digite código ou descrição (mínimo 2 letras)..."
+                    className="pl-8 text-xs h-9"
+                    autoFocus
+                  />
+                  {swapSearching && (
+                    <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+                  )}
+                </div>
+              </div>
+
+              {/* Lista de Resultados Oficiais */}
+              <div className="space-y-1 max-h-48 overflow-y-auto border rounded-lg p-1 bg-background">
+                {swapResults.length === 0 ? (
+                  <div className="p-4 text-center text-muted-foreground text-xs">
+                    {swapSearchTerm.trim().length < 2
+                      ? 'Digite pelo menos 2 caracteres para buscar no cadastro oficial.'
+                      : 'Nenhum componente encontrado no cadastro com esse termo.'}
+                  </div>
+                ) : (
+                  swapResults.map((comp) => {
+                    const isSelected = selectedSubstitute?.id === comp.id
+                    return (
+                      <div
+                        key={comp.id}
+                        onClick={() => setSelectedSubstitute(comp)}
+                        className={`p-2 rounded cursor-pointer transition-colors text-xs flex items-center justify-between gap-2 border ${
+                          isSelected
+                            ? 'bg-blue-500/15 border-blue-500 text-blue-900 dark:text-blue-200'
+                            : 'hover:bg-muted border-transparent'
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <NoTranslate as="span" className="font-mono font-bold">
+                              {comp.code}
+                            </NoTranslate>
+                            <Badge variant="outline" className="text-[9px] h-4 px-1 font-mono">
+                              {comp.unit || 'UN'}
+                            </Badge>
+                          </div>
+                          <NoTranslate
+                            as="div"
+                            className="truncate text-foreground font-medium text-[11px] mt-0.5"
+                          >
+                            {comp.description}
+                          </NoTranslate>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <span className="text-[10px] text-muted-foreground block">Estoque</span>
+                          <span className="font-mono font-bold text-xs text-foreground">
+                            {comp.stock_quantity ?? 0}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+
+              {/* Componente Selecionado + Quantidade */}
+              {selectedSubstitute && (
+                <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/30 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-blue-900 dark:text-blue-300">
+                      Substituto Selecionado:
+                    </span>
+                    <Badge className="bg-blue-600 text-white text-[10px]">Confirmado</Badge>
+                  </div>
+                  <div>
+                    <NoTranslate as="span" className="font-mono font-bold text-xs">
+                      [{selectedSubstitute.code}]
+                    </NoTranslate>{' '}
+                    <NoTranslate as="span" className="text-xs">
+                      {selectedSubstitute.description}
+                    </NoTranslate>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground flex items-center justify-between">
+                    <span>Estoque cadastrado disponível:</span>
+                    <span className="font-mono font-bold text-foreground">
+                      {selectedSubstitute.stock_quantity ?? 0} {selectedSubstitute.unit || 'UN'}
+                    </span>
+                  </div>
+
+                  <div className="pt-1 space-y-1">
+                    <Label htmlFor="subQty" className="text-xs font-semibold">
+                      Quantidade a separar do substituto (
+                      {selectedSubstitute.unit || swapOriginalItem.unit || 'UN'}):
+                    </Label>
+                    <Input
+                      id="subQty"
+                      type="number"
+                      step="any"
+                      min="0.001"
+                      value={substituteQtyInput}
+                      onChange={(e) => setSubstituteQtyInput(e.target.value)}
+                      className="font-mono text-xs h-8 bg-background"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setSwapDialogOpen(false)}
+                disabled={swapSaving}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                className="bg-blue-600 hover:bg-blue-700 text-white font-bold gap-1.5"
+                onClick={handleConfirmSubstitution}
+                disabled={swapSaving || !selectedSubstitute}
+              >
+                {swapSaving ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Confirmando...
+                  </>
+                ) : (
+                  <>
+                    <ArrowLeftRight className="h-4 w-4" />
+                    Confirmar Substituição
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* MODAL DE CONFIRMAÇÃO EXPLÍCITA ANTES DE FINALIZAR A RODADA */}
       {confirmFinalizeOpen && (

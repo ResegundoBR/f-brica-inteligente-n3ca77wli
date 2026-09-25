@@ -465,6 +465,11 @@ export function PcpOrderDetails({
                         {log.stage && (
                           <div className="text-xs text-muted-foreground">Etapa: {log.stage}</div>
                         )}
+                        {log.details && (
+                          <div className="text-xs text-muted-foreground mt-1 bg-slate-100 dark:bg-slate-800/60 p-2 rounded whitespace-pre-wrap break-words font-mono">
+                            {log.details}
+                          </div>
+                        )}
                         {log.expand?.user_id && (
                           <div className="text-xs text-muted-foreground mt-1">
                             Por: {log.expand.user_id.name || log.expand.user_id.email}

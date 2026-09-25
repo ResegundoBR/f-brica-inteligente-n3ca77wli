@@ -10,7 +10,7 @@ import { upsertMaterialShortage } from './material-shortages'
 
 export type SeparationStatus = 'Pendente' | 'Em_Separacao' | 'Concluida' | 'Cancelada'
 
-export type SeparationItemStatus = 'pendente' | 'separado' | 'falta'
+export type SeparationItemStatus = 'pendente' | 'separado' | 'falta' | 'parcial' | 'substituido'
 
 export interface SeparationItem {
   id: string // unique item id within the separation round
@@ -25,6 +25,14 @@ export interface SeparationItem {
   marked_at?: string
   marked_by?: string
   notes?: string
+  // Falta Parcial
+  separated_quantity?: number
+  shortage_quantity?: number
+  // Troca / Substituição
+  is_substitution?: boolean
+  replaced_by_code?: string
+  replaced_by_description?: string
+  original_item_id?: string
 }
 
 export interface MaterialSeparation {
@@ -123,13 +131,17 @@ export async function updateSeparationItems(
   items: SeparationItem[],
   status?: SeparationStatus,
 ): Promise<MaterialSeparation> {
-  const separated = items.filter((i) => i.status === 'separado')
-  const shortages = items.filter((i) => i.status === 'falta')
+  const separated = items.filter((i) => i.status === 'separado' || i.status === 'parcial')
+  const shortages = items.filter(
+    (i) => i.status === 'falta' || (i.status === 'parcial' && (i.shortage_quantity ?? 0) > 0),
+  )
 
   const payload: Record<string, unknown> = {
     items,
-    separated_count: separated.length,
-    shortage_count: shortages.length,
+    separated_count: items.filter((i) => i.status === 'separado' || i.status === 'parcial').length,
+    shortage_count: items.filter(
+      (i) => i.status === 'falta' || (i.status === 'parcial' && (i.shortage_quantity ?? 0) > 0),
+    ).length,
     separated_items: separated,
     shortage_items: shortages,
   }
@@ -177,6 +189,7 @@ export async function finalizeSeparation(
 ): Promise<FinalizeSeparationResult> {
   const currentUserId = pb.authStore.record?.id
   const separated = items.filter((i) => i.status === 'separado')
+  const parciais = items.filter((i) => i.status === 'parcial')
   const shortages = items.filter((i) => i.status === 'falta')
 
   // Buscar dados da rodada para obter programacao_id / nome
@@ -222,6 +235,29 @@ export async function finalizeSeparation(
       if (!codeNorm) continue
       const existing = separatedByCode.get(codeNorm)
       const qty = Number(item.total_quantity) || 0
+      if (qty <= 0) continue
+      if (existing) {
+        existing.qty += qty
+      } else {
+        separatedByCode.set(codeNorm, {
+          code: item.code,
+          description: item.description,
+          qty,
+          orderId: item.order_ids?.[0],
+        })
+      }
+    }
+
+    // Incluir também os parciais (apenas a parcela separated_quantity)
+    for (const item of parciais) {
+      const codeNorm = normalizeCode(item.code)
+      if (!codeNorm) continue
+      const qty =
+        item.separated_quantity !== undefined
+          ? Number(item.separated_quantity) || 0
+          : Number(item.total_quantity) || 0
+      if (qty <= 0) continue
+      const existing = separatedByCode.get(codeNorm)
       if (existing) {
         existing.qty += qty
       } else {
@@ -303,8 +339,12 @@ export async function finalizeSeparation(
   // Criar faltas no material_shortages para cada item marcado como falta
   // Respeitando exatamente o schema de material_shortages:
   // code, description, quantity, sector, status, order_id, request_type, priority, requested_by, observation
+  // Obs.: itens substituídos (status === 'substituido') NÃO geram falta!
   let shortagesCreatedCount = 0
+
+  // 1) Faltas totais
   for (const item of shortages) {
+    if (item.status === 'substituido') continue
     try {
       const primaryOrderId = item.order_ids?.[0] || null
       const primaryOp =
@@ -342,14 +382,62 @@ export async function finalizeSeparation(
     }
   }
 
+  // 2) Faltas parciais: APENAS a diferença (shortage_quantity)
+  for (const item of parciais) {
+    const diff = Number(item.shortage_quantity) || 0
+    if (diff <= 0) continue
+    try {
+      const primaryOrderId = item.order_ids?.[0] || null
+      const primaryOp =
+        item.op_numbers?.[0] || (item.op_numbers?.length ? item.op_numbers.join(', ') : 'Separação')
+      const opsLabel =
+        item.op_numbers?.length > 1
+          ? ` (OPs: ${item.op_numbers.join(', ')})`
+          : primaryOp
+            ? ` (OP: ${primaryOp})`
+            : ''
+
+      const sepQty = item.separated_quantity ?? item.total_quantity - diff
+      const observation =
+        `Falta Parcial gerada na Separação do Operador${opsLabel}. Separados: ${sepQty}/${item.total_quantity} ${item.unit || 'UN'}. Faltam: ${diff} ${item.unit || 'UN'}.${item.cut_measurement ? ` Medida de corte: ${item.cut_measurement}.` : ''} ${item.notes || ''}`.trim()
+
+      const shortagePayload = {
+        code: item.code || '',
+        description: `${item.description || 'Material sem descrição'}${opsLabel}`,
+        quantity: diff,
+        sector: 'Suprimentos',
+        status: 'Pendente',
+        request_type: 'Materiais',
+        priority: 'Urgente',
+        requested_by: currentUserId || null,
+        observation: observation,
+        order_id: primaryOrderId || null,
+      }
+
+      await upsertMaterialShortage(
+        shortagePayload,
+        pb.authStore.record?.name || pb.authStore.record?.email || 'Separação',
+      )
+      shortagesCreatedCount += 1
+    } catch (err) {
+      console.error('Erro ao gerar falta parcial para item de separação:', item, err)
+    }
+  }
+
   // Atualizar rodada para Concluída
+  const allSeparatedRecords = [...separated, ...parciais]
+  const allShortageRecords = [
+    ...shortages,
+    ...parciais.filter((p) => (p.shortage_quantity ?? 0) > 0),
+  ]
+
   const payload = {
     status: 'Concluida' as SeparationStatus,
     items,
-    separated_items: separated,
-    shortage_items: shortages,
-    separated_count: separated.length,
-    shortage_count: shortages.length,
+    separated_items: allSeparatedRecords,
+    shortage_items: allShortageRecords,
+    separated_count: allSeparatedRecords.length,
+    shortage_count: allShortageRecords.length,
     finished_by: currentUserId || null,
     finished_at: new Date().toISOString(),
   }

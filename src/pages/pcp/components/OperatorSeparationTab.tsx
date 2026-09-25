@@ -48,6 +48,11 @@ import {
   ComponentStockAvailability,
   normalizeCode,
 } from '@/services/material-reservations'
+import {
+  loadRoundOpAllocations,
+  getItemAllocationKey,
+  OpAllocation,
+} from '@/services/pcp-separation-allocations'
 import pb from '@/lib/pocketbase/client'
 import { toast } from '@/hooks/use-toast'
 
@@ -64,6 +69,8 @@ export function OperatorSeparationTab() {
   const [stockAvailabilityMap, setStockAvailabilityMap] = useState<
     Map<string, ComponentStockAvailability>
   >(new Map())
+  const [opAllocationsMap, setOpAllocationsMap] = useState<Map<string, OpAllocation[]>>(new Map())
+  const [allocationsLoading, setAllocationsLoading] = useState(false)
   const isMobile = useIsMobile()
 
   // Estado do Diálogo de Falta Parcial
@@ -153,6 +160,24 @@ export function OperatorSeparationTab() {
 
     // Carregar disponibilidade de estoque em tempo real para os itens
     refreshAvailability(draft)
+
+    // Carregar rateio de componentes por OP da BOM (pcp_order_materials)
+    const orderIds = sep.order_ids || []
+    if (orderIds.length > 0) {
+      setAllocationsLoading(true)
+      loadRoundOpAllocations(orderIds, draft)
+        .then((allocMap) => {
+          setOpAllocationsMap(allocMap)
+        })
+        .catch((err) => {
+          console.error('Erro ao carregar rateio por OP:', err)
+        })
+        .finally(() => {
+          setAllocationsLoading(false)
+        })
+    } else {
+      setOpAllocationsMap(new Map())
+    }
 
     // Se estiver Pendente e o operador abriu, podemos colocar como Em_Separacao no backend
     if (sep.status === 'Pendente') {
@@ -1141,6 +1166,84 @@ export function OperatorSeparationTab() {
                         </span>
                       </div>
 
+                      {/* MINI-RATEIO POR OP (Mobile) — apenas para itens com 2+ OPs */}
+                      {(() => {
+                        const hasMultipleOps = (item.order_ids?.length || 0) > 1
+                        if (!hasMultipleOps) return null
+
+                        const allocKey = getItemAllocationKey(item)
+                        const allocations = opAllocationsMap.get(allocKey)
+
+                        return (
+                          <div className="pt-1 pb-0.5 space-y-1">
+                            <span className="text-[10px] text-muted-foreground font-semibold block">
+                              Rateio por OP:
+                            </span>
+                            {allocationsLoading && !allocations ? (
+                              <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                                <Loader2 className="h-3 w-3 animate-spin text-blue-600" />
+                                <span>Buscando BOM das OPs...</span>
+                              </div>
+                            ) : allocations && allocations.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {allocations.map((alloc, aIdx) => (
+                                  <span
+                                    key={alloc.orderId || aIdx}
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/80 border text-[10px] font-medium leading-none text-foreground"
+                                  >
+                                    <NoTranslate
+                                      as="span"
+                                      className="font-mono font-semibold text-blue-700 dark:text-blue-400"
+                                    >
+                                      {alloc.opNumber}
+                                    </NoTranslate>
+                                    <span className="text-muted-foreground">→</span>
+                                    {alloc.quantity !== null && alloc.quantity !== undefined ? (
+                                      <NoTranslate as="span" className="font-bold">
+                                        {Number(alloc.quantity).toLocaleString('pt-BR', {
+                                          maximumFractionDigits: 2,
+                                        })}{' '}
+                                        {alloc.unit || item.unit || 'un'}
+                                      </NoTranslate>
+                                    ) : (
+                                      <span
+                                        className="text-muted-foreground font-bold notranslate"
+                                        translate="no"
+                                        title="Não encontrado na BOM desta OP"
+                                      >
+                                        —
+                                      </span>
+                                    )}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="flex flex-wrap gap-1">
+                                {item.order_ids?.map((oId, oIdx) => {
+                                  const fallbackOp = item.op_numbers?.[oIdx] || `OP ${oIdx + 1}`
+                                  return (
+                                    <span
+                                      key={oId || oIdx}
+                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/60 border text-[10px] text-muted-foreground"
+                                    >
+                                      <NoTranslate as="span" className="font-mono">
+                                        {fallbackOp.startsWith('OP')
+                                          ? fallbackOp
+                                          : `OP ${fallbackOp}`}
+                                      </NoTranslate>
+                                      <span>→</span>
+                                      <span className="notranslate" translate="no">
+                                        —
+                                      </span>
+                                    </span>
+                                  )
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })()}
+
                       {/* DISPONIBILIDADE DO ITEM NO ESTOQUE (Mobile) */}
                       {(() => {
                         const norm = normalizeCode(item.code)
@@ -1520,6 +1623,86 @@ export function OperatorSeparationTab() {
                                 })}{' '}
                                 {item.unit}
                               </NoTranslate>
+
+                              {/* MINI-RATEIO POR OP (Desktop) — apenas para itens com 2+ OPs */}
+                              {(() => {
+                                const hasMultipleOps = (item.order_ids?.length || 0) > 1
+                                if (!hasMultipleOps) return null
+
+                                const allocKey = getItemAllocationKey(item)
+                                const allocations = opAllocationsMap.get(allocKey)
+
+                                return (
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="text-[11px] text-muted-foreground font-semibold">
+                                      Rateio:
+                                    </span>
+                                    {allocationsLoading && !allocations ? (
+                                      <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                                        <Loader2 className="h-3 w-3 animate-spin text-blue-600" />
+                                        <span>BOM...</span>
+                                      </span>
+                                    ) : allocations && allocations.length > 0 ? (
+                                      <div className="flex flex-wrap items-center gap-1">
+                                        {allocations.map((alloc, aIdx) => (
+                                          <span
+                                            key={alloc.orderId || aIdx}
+                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/80 border text-[11px] font-medium leading-none text-foreground"
+                                          >
+                                            <NoTranslate
+                                              as="span"
+                                              className="font-mono font-semibold text-blue-700 dark:text-blue-400"
+                                            >
+                                              {alloc.opNumber}
+                                            </NoTranslate>
+                                            <span className="text-muted-foreground">→</span>
+                                            {alloc.quantity !== null &&
+                                            alloc.quantity !== undefined ? (
+                                              <NoTranslate as="span" className="font-bold">
+                                                {Number(alloc.quantity).toLocaleString('pt-BR', {
+                                                  maximumFractionDigits: 2,
+                                                })}{' '}
+                                                {alloc.unit || item.unit || 'un'}
+                                              </NoTranslate>
+                                            ) : (
+                                              <span
+                                                className="text-muted-foreground font-bold notranslate"
+                                                translate="no"
+                                                title="Não encontrado na BOM desta OP"
+                                              >
+                                                —
+                                              </span>
+                                            )}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <div className="flex flex-wrap items-center gap-1">
+                                        {item.order_ids?.map((oId, oIdx) => {
+                                          const fallbackOp =
+                                            item.op_numbers?.[oIdx] || `OP ${oIdx + 1}`
+                                          return (
+                                            <span
+                                              key={oId || oIdx}
+                                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/60 border text-[11px] text-muted-foreground"
+                                            >
+                                              <NoTranslate as="span" className="font-mono">
+                                                {fallbackOp.startsWith('OP')
+                                                  ? fallbackOp
+                                                  : `OP ${fallbackOp}`}
+                                              </NoTranslate>
+                                              <span>→</span>
+                                              <span className="notranslate" translate="no">
+                                                —
+                                              </span>
+                                            </span>
+                                          )
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+                                )
+                              })()}
 
                               {/* BADGE DE DISPONIBILIDADE (Desktop) */}
                               {(() => {

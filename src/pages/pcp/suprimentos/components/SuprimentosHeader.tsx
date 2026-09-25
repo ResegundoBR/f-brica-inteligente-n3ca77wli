@@ -69,6 +69,7 @@ export function SuprimentosHeader({
   })
   useRealtime('pcp_material_min_levels', fetchAlerts)
   useRealtime('inventory', fetchAlerts)
+  useRealtime('components', fetchAlerts)
   useRealtime('material_reservations', fetchAlerts)
 
   return (

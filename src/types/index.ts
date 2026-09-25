@@ -412,6 +412,7 @@ export interface MasterComponent {
   code: string
   description: string
   unit?: string
+  min_quantity?: number
   category?: string
   active?: boolean
   source?: 'inventory' | 'catalog' | 'manual' | 'imported'

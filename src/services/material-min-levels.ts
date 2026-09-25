@@ -23,11 +23,94 @@ export interface PcpMaterialMinLevel {
  */
 export async function getMaterialMinLevels(): Promise<PcpMaterialMinLevel[]> {
   try {
-    const list = await pb.collection('pcp_material_min_levels').getFullList<PcpMaterialMinLevel>({
-      sort: 'material_code',
-      expand: 'updated_by',
-    })
-    return list
+    // 1. Busca componentes e inventário com min_quantity definido (> 0)
+    const [comps, invs, legacyLevels] = await Promise.all([
+      pb
+        .collection('components')
+        .getFullList<any>({
+          filter: 'min_quantity > 0',
+          sort: 'code',
+        })
+        .catch(() => []),
+      pb
+        .collection('inventory')
+        .getFullList<any>({
+          filter: 'min_quantity > 0',
+          sort: 'code',
+        })
+        .catch(() => []),
+      pb
+        .collection('pcp_material_min_levels')
+        .getFullList<PcpMaterialMinLevel>({
+          sort: 'material_code',
+          expand: 'updated_by',
+        })
+        .catch(() => []),
+    ])
+
+    const resultMap = new Map<string, PcpMaterialMinLevel>()
+
+    // Unifica legacyLevels primeiro
+    for (const lvl of legacyLevels) {
+      const code = (lvl.material_code || '').trim()
+      const norm = normalizeCode(code)
+      if (norm && Number(lvl.min_level) > 0) {
+        resultMap.set(norm, {
+          id: lvl.id,
+          material_code: code,
+          material_description: lvl.material_description || '',
+          min_level: Number(lvl.min_level) || 0,
+          updated_by: lvl.updated_by,
+          created: lvl.created,
+          updated: lvl.updated,
+          expand: lvl.expand,
+        })
+      }
+    }
+
+    // Sobrepõe ou complementa com inventory
+    for (const inv of invs) {
+      const code = (inv.code || '').trim()
+      const norm = normalizeCode(code)
+      const minVal = Number(inv.min_quantity) || 0
+      if (norm && minVal > 0) {
+        const existing = resultMap.get(norm)
+        resultMap.set(norm, {
+          id: existing?.id || inv.id,
+          material_code: code || existing?.material_code || '',
+          material_description: inv.description || existing?.material_description || '',
+          min_level: minVal,
+          updated_by: existing?.updated_by,
+          created: existing?.created || inv.created,
+          updated: inv.updated || existing?.updated || '',
+          expand: existing?.expand,
+        })
+      }
+    }
+
+    // Sobrepõe ou complementa com components
+    for (const comp of comps) {
+      const code = (comp.code || '').trim()
+      const norm = normalizeCode(code)
+      const minVal = Number(comp.min_quantity) || 0
+      if (norm && minVal > 0) {
+        const existing = resultMap.get(norm)
+        resultMap.set(norm, {
+          id: existing?.id || comp.id,
+          material_code: code || existing?.material_code || '',
+          material_description: comp.description || existing?.material_description || '',
+          min_level: minVal,
+          updated_by: existing?.updated_by,
+          created: existing?.created || comp.created,
+          updated: comp.updated || existing?.updated || '',
+          expand: existing?.expand,
+        })
+      }
+    }
+
+    return Array.from(resultMap.values()).sort((a, b) =>
+      a.material_code.localeCompare(b.material_code),
+    )
   } catch (err) {
     console.error('Erro ao buscar níveis mínimos de materiais:', err)
     return []
@@ -89,15 +172,57 @@ export async function setMaterialMinLevel(input: {
     payload.material_description = input.description.trim()
   }
 
+  let savedRecord: PcpMaterialMinLevel
   if (existingId) {
-    return await pb
+    savedRecord = await pb
       .collection('pcp_material_min_levels')
       .update<PcpMaterialMinLevel>(existingId, payload, { expand: 'updated_by' })
+  } else {
+    savedRecord = await pb
+      .collection('pcp_material_min_levels')
+      .create<PcpMaterialMinLevel>(payload, { expand: 'updated_by' })
   }
 
-  return await pb
-    .collection('pcp_material_min_levels')
-    .create<PcpMaterialMinLevel>(payload, { expand: 'updated_by' })
+  // Sincroniza diretamente no cadastro do componente e estoque para consistência imediata
+  try {
+    const cleanCode = input.code.trim().replace(/["'\\]/g, '')
+    const [matchingComps, matchingInvs] = await Promise.all([
+      pb
+        .collection('components')
+        .getFullList<any>({
+          filter: `code = "${cleanCode}"`,
+        })
+        .catch(() => []),
+      pb
+        .collection('inventory')
+        .getFullList<any>({
+          filter: `code = "${cleanCode}"`,
+        })
+        .catch(() => []),
+    ])
+
+    for (const comp of matchingComps) {
+      await pb
+        .collection('components')
+        .update(comp.id, {
+          min_quantity: Math.max(0, Number(input.min_level) || 0),
+        })
+        .catch(() => {})
+    }
+
+    for (const inv of matchingInvs) {
+      await pb
+        .collection('inventory')
+        .update(inv.id, {
+          min_quantity: Math.max(0, Number(input.min_level) || 0),
+        })
+        .catch(() => {})
+    }
+  } catch {
+    /* intentionally ignored */
+  }
+
+  return savedRecord
 }
 
 export interface MaterialMinLevelAlertItem {

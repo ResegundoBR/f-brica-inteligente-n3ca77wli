@@ -126,6 +126,11 @@ export const searchUnifiedComponentsWithStock = async (
 
     const hasStock = !!inv && inv.quantity !== undefined && inv.quantity !== null
 
+    const resolvedMin =
+      comp.min_quantity !== undefined && comp.min_quantity !== null
+        ? comp.min_quantity
+        : inv?.min_quantity
+
     return {
       id: comp.id,
       code: comp.code || (inv ? inv.code : ''),
@@ -135,7 +140,7 @@ export const searchUnifiedComponentsWithStock = async (
       active: comp.active !== false,
       inventory_id: inv ? inv.id : undefined,
       stock_quantity: inv ? inv.quantity : undefined,
-      min_quantity: inv ? inv.min_quantity : undefined,
+      min_quantity: resolvedMin,
       has_stock: hasStock,
       deactivated_by: comp.deactivated_by,
       deactivated_at: comp.deactivated_at,

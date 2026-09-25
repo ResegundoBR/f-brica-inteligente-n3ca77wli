@@ -52,7 +52,16 @@ export default function EstoquePage() {
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
   const [dossierOpen, setDossierOpen] = useState(false)
   const [dossierItem, setDossierItem] = useState<Inventory | null>(null)
-  const [editItem, setEditItem] = useState<Inventory | null>(null)
+  const [editItem, setEditItem] = useState<{
+    id?: string
+    componentId?: string
+    code: string
+    description: string
+    quantity?: number
+    min_quantity?: number
+    unit?: string
+    isCatalogOnly?: boolean
+  } | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [newCode, setNewCode] = useState('')
   const [newDesc, setNewDesc] = useState('')
@@ -114,6 +123,7 @@ export default function EstoquePage() {
   useRealtime('material_reservations', fetchInventory)
   useRealtime('material_separations', fetchInventory)
   useRealtime('pcp_material_min_levels', fetchInventory)
+  useRealtime('components', fetchInventory)
 
   const selectedItem = inventory.find((i) => i.id === selectedItemId) ?? null
 
@@ -270,6 +280,30 @@ export default function EstoquePage() {
         allMinLevels={minLevels}
         isManager={isManager}
         onReload={fetchInventory}
+        onEditItem={(alertItem) => {
+          const norm = normalizeCode(alertItem.code)
+          const matchedInv = inventory.find((inv) => normalizeCode(inv.code) === norm)
+          if (matchedInv) {
+            setEditItem({
+              id: matchedInv.id,
+              componentId: (matchedInv as any).component_id,
+              code: matchedInv.code,
+              description: matchedInv.description,
+              quantity: matchedInv.quantity,
+              min_quantity: matchedInv.min_quantity,
+              unit: matchedInv.unit,
+              isCatalogOnly: false,
+            })
+          } else {
+            setEditItem({
+              code: alertItem.code,
+              description: alertItem.description || '',
+              min_quantity: alertItem.minLevel || 0,
+              unit: 'un',
+              isCatalogOnly: true,
+            })
+          }
+        }}
       />
 
       {/* Barra de busca na listagem de estoque */}
@@ -423,7 +457,16 @@ export default function EstoquePage() {
                           className="h-7 px-2 text-xs"
                           onClick={(e) => {
                             e.stopPropagation()
-                            setEditItem(item)
+                            setEditItem({
+                              id: item.id,
+                              componentId: (item as any).component_id,
+                              code: item.code,
+                              description: item.description,
+                              quantity: item.quantity,
+                              min_quantity: item.min_quantity,
+                              unit: item.unit,
+                              isCatalogOnly: false,
+                            })
                           }}
                           title="Editar código, descrição, estoque mínimo e unidade"
                         >
@@ -459,20 +502,7 @@ export default function EstoquePage() {
       <EditInventoryItemDialog
         open={!!editItem}
         onOpenChange={(open) => !open && setEditItem(null)}
-        item={
-          editItem
-            ? {
-                id: editItem.id,
-                componentId: (editItem as any).component_id,
-                code: editItem.code,
-                description: editItem.description,
-                quantity: editItem.quantity,
-                min_quantity: editItem.min_quantity,
-                unit: editItem.unit,
-                isCatalogOnly: false,
-              }
-            : null
-        }
+        item={editItem}
         onSaved={fetchInventory}
       />
 

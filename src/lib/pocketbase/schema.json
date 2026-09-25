@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-24T22:22:00.380Z",
+  "generatedAt": "2026-09-25T13:58:54.410Z",
   "collections": [
     {
       "name": "users",
@@ -2595,6 +2595,12 @@
           "required": false,
           "system": false,
           "collectionRef": "component_categories"
+        },
+        {
+          "name": "min_quantity",
+          "type": "number",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [

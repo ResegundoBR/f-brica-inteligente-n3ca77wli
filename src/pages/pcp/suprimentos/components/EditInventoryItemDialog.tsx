@@ -113,6 +113,7 @@ export function EditInventoryItemDialog({
             updatedComp = await pb.collection('components').update<MasterComponent>(compId, {
               code: trimmedCode,
               description: trimmedDesc,
+              min_quantity: parsedMin,
               unit: trimmedUnit,
             })
           } catch (compErr) {
@@ -132,6 +133,7 @@ export function EditInventoryItemDialog({
                   .update<MasterComponent>(matchedComps[0].id, {
                     code: trimmedCode,
                     description: trimmedDesc,
+                    min_quantity: parsedMin,
                     unit: trimmedUnit,
                   })
               }
@@ -148,6 +150,7 @@ export function EditInventoryItemDialog({
             updatedComp = await pb.collection('components').update<MasterComponent>(compId, {
               code: trimmedCode,
               description: trimmedDesc,
+              min_quantity: parsedMin,
               unit: trimmedUnit,
             })
           } catch (compErr: any) {
@@ -249,23 +252,22 @@ export function EditInventoryItemDialog({
               </div>
             </div>
 
-            {/* Estoque Mínimo */}
+            {/* Estoque Mínimo Desejado */}
             <div className="space-y-1.5">
               <Label htmlFor="edit-item-min" className="text-xs font-semibold">
-                Estoque Mín.
+                Estoque Mínimo Desejado
               </Label>
               <Input
                 id="edit-item-min"
                 type="number"
                 min="0"
-                step="1"
+                step="any"
                 value={minQuantity}
                 onChange={(e) => setMinQuantity(e.target.value)}
-                className="h-9 text-xs sm:text-sm"
-                disabled={isSaving || isCatalogOnly}
-                title={
-                  isCatalogOnly ? 'Item somente catálogo não possui estoque mínimo' : undefined
-                }
+                placeholder="0"
+                className="h-9 text-xs sm:text-sm font-mono notranslate"
+                translate="no"
+                disabled={isSaving}
               />
             </div>
 

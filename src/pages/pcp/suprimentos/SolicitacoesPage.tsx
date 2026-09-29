@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { Button } from '@/components/ui/button'
@@ -11,8 +11,8 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { MaterialShortage, PcpOrder } from '@/types'
-import { ClipboardList, Plus, Copy, Tag } from 'lucide-react'
+import { MaterialShortage, PcpOrder, ComponentCategory, MasterComponent } from '@/types'
+import { ClipboardList, Plus, Copy, Tag, Layers } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -26,16 +26,24 @@ import { ProductDossierModal } from './components/ProductDossierModal'
 import { ProductSearchBar } from './components/ProductSearchBar'
 import { TriageDetailDialog } from './components/TriageDetailDialog'
 import { TriageGroupDetailDialog } from './components/TriageGroupDetailDialog'
+import { CategoryFilterChips } from './components/CategoryFilterChips'
 import { ShortageGroup } from '@/lib/shortage-grouping'
 import { NewShortageModal } from '@/pages/pcp/components/NewShortageModal'
 import { useShortageStore } from '@/stores/useShortageStore'
 import { useToast } from '@/hooks/use-toast'
 import { useNewRequests } from '@/hooks/use-new-requests'
 import { extractFieldErrors } from '@/lib/pocketbase/errors'
+import { getMasterComponents } from '@/services/components'
+import { getComponentCategories } from '@/services/component-categories'
+import { useCategoryGroups, groupShortagesByCategory } from '@/hooks/use-category-groups'
 
 export default function SolicitacoesPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [shortages, setShortages] = useState<MaterialShortage[]>([])
+  const [components, setComponents] = useState<MasterComponent[]>([])
+  const [categories, setCategories] = useState<ComponentCategory[]>([])
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
+  const [groupedByCategory, setGroupedByCategory] = useState(true)
   const [selectedItem, setSelectedItem] = useState<MaterialShortage | null>(null)
   const [selectedGroup, setSelectedGroup] = useState<ShortageGroup | null>(null)
   const [dossierOpen, setDossierOpen] = useState(false)
@@ -49,30 +57,40 @@ export default function SolicitacoesPage() {
   const { toast } = useToast()
   const setAvailableIds = useShortageStore((s) => s.setAvailableIds)
   const selectedIds = useShortageStore((s) => s.selectedIds)
+  const toggleMultiple = useShortageStore((s) => s.toggleMultiple)
   const clear = useShortageStore((s) => s.clear)
   const { markAsViewed } = useNewRequests()
 
-  const fetchShortages = async () => {
+  const fetchData = async () => {
     try {
-      const res = await pb.collection('material_shortages').getFullList<MaterialShortage>({
-        sort: '-created',
-        expand: 'order_id,order_id.product_id,requested_by',
-      })
-      setShortages(res)
+      const [shortRes, compRes, catRes] = await Promise.all([
+        pb.collection('material_shortages').getFullList<MaterialShortage>({
+          sort: '-created',
+          expand: 'order_id,order_id.product_id,requested_by',
+        }),
+        getMasterComponents('', { includeInactive: true, expand: 'category' }),
+        getComponentCategories(),
+      ])
+      setShortages(shortRes)
+      setComponents(compRes)
+      setCategories(catRes)
     } catch {
       /* intentionally ignored */
     }
   }
 
   useEffect(() => {
-    fetchShortages()
+    fetchData()
     pb.collection('pcp_orders')
       .getFullList<PcpOrder>({ sort: '-created' })
       .then(setOrders)
       .catch(() => {})
     return () => clear()
   }, [clear])
-  useRealtime('material_shortages', fetchShortages)
+
+  useRealtime('material_shortages', fetchData)
+  useRealtime('components', fetchData)
+  useRealtime('component_categories', fetchData)
 
   const handleRowClick = (item: MaterialShortage) => {
     markAsViewed(item.id)
@@ -157,28 +175,54 @@ export default function SolicitacoesPage() {
     }
   }
 
-  const triagemItems = shortages.filter((s) => {
-    if (s.status !== 'Pendente') return false
-    if (opFilter !== 'all' && s.order_id !== opFilter) return false
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim()
-      const code = s.code?.toLowerCase() || ''
-      const desc = s.description?.toLowerCase() || ''
-      const order = s.expand?.order_id?.order_number?.toLowerCase() || ''
-      const op = s.expand?.order_id?.op_number?.toLowerCase() || ''
-      const req = s.expand?.requested_by?.name?.toLowerCase() || ''
-      if (
-        !code.includes(q) &&
-        !desc.includes(q) &&
-        !order.includes(q) &&
-        !op.includes(q) &&
-        !req.includes(q)
-      ) {
-        return false
+  const allPendingItems = useMemo(() => {
+    return shortages.filter((s) => {
+      if (s.status !== 'Pendente') return false
+      if (opFilter !== 'all' && s.order_id !== opFilter) return false
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim()
+        const code = s.code?.toLowerCase() || ''
+        const desc = s.description?.toLowerCase() || ''
+        const order = s.expand?.order_id?.order_number?.toLowerCase() || ''
+        const op = s.expand?.order_id?.op_number?.toLowerCase() || ''
+        const req = s.expand?.requested_by?.name?.toLowerCase() || ''
+        if (
+          !code.includes(q) &&
+          !desc.includes(q) &&
+          !order.includes(q) &&
+          !op.includes(q) &&
+          !req.includes(q)
+        ) {
+          return false
+        }
       }
+      return true
+    })
+  }, [shortages, opFilter, searchQuery])
+
+  // Agrupamento por categoria usando a mesma lógica de Cotações e Compras
+  const categoryGroups = useCategoryGroups(allPendingItems, components, categories)
+
+  const triagemItems = useMemo(() => {
+    if (selectedCategoryId === null) return allPendingItems
+    const activeGroup = categoryGroups.find((g) => g.categoryId === selectedCategoryId)
+    return activeGroup ? activeGroup.items : []
+  }, [allPendingItems, selectedCategoryId, categoryGroups])
+
+  // Conjunto de IDs selecionados para o CategoryFilterChips
+  const selectedIdsSet = useMemo(() => new Set(selectedIds), [selectedIds])
+
+  const handleSelectCategoryItems = (ids: string[]) => {
+    const allSelected = ids.every((id) => selectedIds.includes(id))
+    if (allSelected) {
+      // Remove todos os ids da seleção
+      toggleMultiple(ids)
+    } else {
+      // Adiciona os que faltam
+      const missing = ids.filter((id) => !selectedIds.includes(id))
+      toggleMultiple(missing)
     }
-    return true
-  })
+  }
 
   // Sincroniza availableIds do useShortageStore para seleção em lote completa
   useEffect(() => {
@@ -238,18 +282,93 @@ export default function SolicitacoesPage() {
           </Select>
         </div>
 
-        <div className="relative w-full sm:w-72">
-          <Input
-            placeholder="Buscar por código, descrição, OP, pedido..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-9 text-sm"
-          />
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setGroupedByCategory((g) => !g)}
+            className="h-9 text-xs gap-1.5"
+          >
+            <Layers className="w-4 h-4" />
+            {groupedByCategory ? 'Ver em Lista Única' : 'Agrupar por Categoria'}
+          </Button>
+
+          <div className="relative w-full sm:w-72">
+            <Input
+              placeholder="Buscar por código, descrição, OP, pedido..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-9 text-sm"
+            />
+          </div>
         </div>
       </div>
+
+      {/* TOTALIZAÇÃO E CHIPS POR CATEGORIA DO COMPONENTE */}
+      <CategoryFilterChips
+        categoryGroups={categoryGroups}
+        selectedCategoryId={selectedCategoryId}
+        onSelectCategory={setSelectedCategoryId}
+        onSelectCategoryItems={handleSelectCategoryItems}
+        selectedIds={selectedIdsSet}
+        actionLabel="Selecionar todos da categoria"
+      />
+
       {triagemItems.length === 0 ? (
         <div className="p-8 text-center border-2 border-dashed rounded-xl border-slate-200 dark:border-slate-800 text-slate-400 font-medium">
-          Nenhuma solicitação pendente.
+          {searchQuery.trim()
+            ? 'Nenhuma solicitação encontrada para a busca.'
+            : 'Nenhuma solicitação pendente.'}
+        </div>
+      ) : groupedByCategory && selectedCategoryId === null ? (
+        <div className="space-y-6">
+          {categoryGroups.map((group) => {
+            const groupItemIds = group.items.map((i) => i.id)
+            const allGroupSelected =
+              groupItemIds.length > 0 && groupItemIds.every((id) => selectedIds.includes(id))
+
+            return (
+              <div
+                key={group.categoryId}
+                className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden"
+              >
+                {/* Cabeçalho do Grupo por Categoria */}
+                <div className="flex items-center justify-between px-4 py-3 bg-slate-50/90 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 flex-wrap gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <Tag className="w-4 h-4 text-primary" />
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                      <span className="notranslate" translate="no">
+                        {group.categoryName}
+                      </span>
+                      <span className="text-xs font-normal text-muted-foreground">
+                        ({group.totalItems} {group.totalItems === 1 ? 'item' : 'itens'})
+                      </span>
+                    </h3>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleSelectCategoryItems(groupItemIds)}
+                      className="h-7 text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      {allGroupSelected ? 'Desmarcar categoria' : 'Selecionar categoria'}
+                    </Button>
+                  </div>
+                </div>
+
+                <TriageTable
+                  items={group.items}
+                  allShortages={shortages}
+                  onRowClick={handleRowClick}
+                  onGroupClick={handleGroupClick}
+                  searchQuery={searchQuery}
+                />
+              </div>
+            )
+          })}
         </div>
       ) : (
         <TriageTable
@@ -328,14 +447,14 @@ export default function SolicitacoesPage() {
         allShortages={shortages}
         open={!!selectedItem}
         onOpenChange={(o) => !o && setSelectedItem(null)}
-        onAction={fetchShortages}
+        onAction={fetchData}
       />
       <TriageGroupDetailDialog
         group={selectedGroup}
         open={!!selectedGroup}
         onOpenChange={(o) => !o && setSelectedGroup(null)}
         onAction={() => {
-          fetchShortages()
+          fetchData()
           clear()
         }}
       />

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { Button } from '@/components/ui/button'
@@ -7,16 +7,12 @@ import { MaterialShortage } from '@/types'
 import { PackageCheck, Layers } from 'lucide-react'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
 import { SmartReceiveDialog } from './components/SmartReceiveDialog'
-import { RecebimentoTable } from './components/RecebimentoTable'
+import { RecebimentoTable, buildRecebimentoDisplayItems } from './components/RecebimentoTable'
 import { useToast } from '@/hooks/use-toast'
-import { getErrorMessage } from '@/lib/pocketbase/errors'
-import { checkAndUpdateAffectedOcs } from '@/services/oc-receiving-automation'
 
 export default function RecebimentoPage() {
   const [shortages, setShortages] = useState<MaterialShortage[]>([])
-  const [receiveInputs, setReceiveInputs] = useState<Record<string, string>>({})
   const [codeInputs, setCodeInputs] = useState<Record<string, string>>({})
-  const [loading, setLoading] = useState<Record<string, boolean>>({})
   const [smartReceiveItem, setSmartReceiveItem] = useState<MaterialShortage | null>(null)
   const [grouped, setGrouped] = useState(false)
   const { toast } = useToast()
@@ -45,80 +41,12 @@ export default function RecebimentoPage() {
 
   useRealtime('material_shortages', fetchShortages)
 
-  const handleReceive = async (item: MaterialShortage) => {
-    const inputVal = receiveInputs[item.id]
-    if (!inputVal) {
-      toast({
-        title: 'Erro',
-        description: 'Informe a quantidade recebida.',
-        variant: 'destructive',
-      })
-      return
-    }
-    const numQty = Number(inputVal)
-    if (!Number.isFinite(numQty) || numQty <= 0) {
-      toast({ title: 'Erro', description: 'Quantidade inválida.', variant: 'destructive' })
-      return
-    }
-
-    const currentReceived = Number(item.received_quantity) || 0
-    const total = Number(item.quantity) || 0
-    const newReceivedQty = currentReceived + numQty
-
-    if (total > 0 && newReceivedQty > total) {
-      toast({
-        title: 'Erro',
-        description: `A quantidade recebida (${newReceivedQty}) excede o total solicitado (${total}).`,
-        variant: 'destructive',
-      })
-      return
-    }
-
-    const newStatus = total > 0 && newReceivedQty >= total ? 'Recebido' : 'Recebido_Parcial'
-    const enteredCode = (codeInputs[item.id] ?? item.code ?? '').trim()
-    const resolvedCode = enteredCode || `REF-${item.id.slice(-6).toUpperCase()}`
-
-    setLoading((prev) => ({ ...prev, [item.id]: true }))
-    try {
-      await pb.collection('material_shortages').update(item.id, {
-        received_quantity: newReceivedQty,
-        status: newStatus,
-        code: resolvedCode,
-        received_by: pb.authStore.record?.id || undefined,
-      })
-
-      toast({
-        title: 'Recebimento confirmado',
-        description: `${numQty} unidade(s) recebidas. Total: ${newReceivedQty}/${total}.`,
-      })
-
-      // Automatizar atualização de status de OC vinculada se todos os itens estiverem totalmente recebidos
-      await checkAndUpdateAffectedOcs([item.id], {
-        customToast: (opts) => toast({ title: opts.title, description: opts.description }),
-      })
-
-      setReceiveInputs((prev) => {
-        const next = { ...prev }
-        delete next[item.id]
-        return next
-      })
-      setCodeInputs((prev) => {
-        const next = { ...prev }
-        delete next[item.id]
-        return next
-      })
-      fetchShortages()
-    } catch (err: unknown) {
-      toast({ title: 'Erro', description: getErrorMessage(err), variant: 'destructive' })
-    } finally {
-      setLoading((prev) => ({ ...prev, [item.id]: false }))
-    }
-  }
+  const displayItems = useMemo(() => buildRecebimentoDisplayItems(shortages), [shortages])
 
   const summary = {
-    total: shortages.length,
-    partial: shortages.filter((s) => s.status === 'Recebido_Parcial').length,
-    purchase: shortages.filter((s) => s.status === 'Compra').length,
+    total: displayItems.length,
+    partial: displayItems.filter((d) => d.status === 'Recebido_Parcial').length,
+    purchase: displayItems.filter((d) => d.status === 'Compra').length,
   }
 
   return (

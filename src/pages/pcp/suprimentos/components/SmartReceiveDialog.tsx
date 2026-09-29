@@ -65,14 +65,12 @@ export function SmartReceiveDialog({
         // Se fizer parte de um lote explícito (batch_id), busca primariamente TODOS os membros do lote
         if (item.batch_id) {
           const batchFilter = `batch_id = "${item.batch_id}" && (status = "Compra" || status = "Recebido_Parcial" || status = "Recebido")`
-          const batchRes = await pb.collection('material_shortages').getFullList<MaterialShortage>({
+          let batchRes = await pb.collection('material_shortages').getFullList<MaterialShortage>({
             filter: batchFilter,
             expand: 'order_id,order_id.product_id,order_id.client_id',
             sort: 'created',
           })
           if (batchRes.length > 0) {
-            setRelated(batchRes)
-
             // Identifica o representante do lote (com batch_info ou primeiro)
             const parent = batchRes.find((x) => x.batch_info?.is_batch_parent) || item
             const actualQty = parent.batch_info?.actual_quantity
@@ -84,14 +82,26 @@ export function SmartReceiveDialog({
                 !x.observation?.includes('Compra para estoque') &&
                 x.id !== parent.batch_info?.surplus_shortage_id,
             )
-            const surplusMember = batchRes.find(
+            // Localiza excedente: prioriza surplus_shortage_id do batch_info, ou o mais recente ativo
+            const surplusCandidates = batchRes.filter(
               (x) =>
                 !x.order_id &&
                 (x.observation?.includes('Compra para estoque') ||
                   x.id === parent.batch_info?.surplus_shortage_id),
             )
+            const surplusMember =
+              surplusCandidates.find((x) => x.id === parent.batch_info?.surplus_shortage_id) ||
+              surplusCandidates[surplusCandidates.length - 1]
 
-            // 1. Pré-preenche a quantidade total recebida com a quantidade real do lote (ex.: 19 un)
+            // Limpa da lista de exibição quaisquer excedentes duplicados que não sejam o surplusMember escolhido
+            if (surplusCandidates.length > 1 && surplusMember) {
+              batchRes = batchRes.filter(
+                (x) => !surplusCandidates.includes(x) || x.id === surplusMember.id,
+              )
+            }
+            setRelated(batchRes)
+
+            // 1. Pré-preenche a quantidade total recebida com a quantidade real do lote (ex.: 17 un da OC)
             if (actualQty && actualQty > 0) {
               setTotalReceived(String(actualQty))
             } else if (surplusMember && Number(surplusMember.quantity) > 0) {

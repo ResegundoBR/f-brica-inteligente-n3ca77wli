@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { MaterialShortage } from '@/types'
+import { buildRecebimentoDisplayItems } from './RecebimentoTable'
 
 /**
  * Função utilitária que espelha a lógica de pré-inicialização do SmartReceiveDialog
@@ -20,12 +21,15 @@ export function calculateBatchSmartReceiveInitialState(
       x.id !== parent?.batch_info?.surplus_shortage_id,
   )
 
-  const surplusMember = batchItems.find(
+  const surplusCandidates = batchItems.filter(
     (x) =>
       !x.order_id &&
       (x.observation?.includes('Compra para estoque') ||
         x.id === parent?.batch_info?.surplus_shortage_id),
   )
+  const surplusMember =
+    surplusCandidates.find((x) => x.id === parent?.batch_info?.surplus_shortage_id) ||
+    surplusCandidates[surplusCandidates.length - 1]
 
   let totalReceived = '0'
   if (actualQty && actualQty > 0) {
@@ -164,5 +168,52 @@ describe('SmartReceiveDialog - Recebimento de Lote com Quantidade Adicional / Ex
     expect(state.totalReceived).toBe('19')
     expect(state.totalDistributed).toBe(10)
     expect(state.surplusToInventory).toBe(9)
+  })
+
+  it('buildRecebimentoDisplayItems agrupa registros com o mesmo batch_id em UMA ÚNICA LINHA exibindo a quantidade real (17 un da OC)', () => {
+    // Cenário real do Soquete E27 com a OC 38.911:
+    // 3 solicitações de OPs (1, 5, 4 un) + 1 excedente mantido (7 un) + duplicado cancelado (9 un)
+    const op1: MaterialShortage = {
+      ...mockOp1,
+      batch_id: 'lote_soquete_e27_retroativo',
+      batch_info: {
+        is_batch_parent: true,
+        actual_quantity: 17,
+        requested_total: 10,
+        surplus_quantity: 7,
+        sub_shortage_ids: ['owbbm9ibmq0pntn', 'pvja5jo8r1l36bv', 'rwszhhy714twx1e'],
+        surplus_shortage_id: '5hcl185ovv57nai',
+      },
+    }
+    const op2: MaterialShortage = { ...mockOp2, batch_id: 'lote_soquete_e27_retroativo' }
+    const op3: MaterialShortage = { ...mockOp3, batch_id: 'lote_soquete_e27_retroativo' }
+    const surplus7: MaterialShortage = {
+      id: '5hcl185ovv57nai',
+      code: '05090003',
+      description: 'Soquete e27',
+      quantity: 7,
+      batch_id: 'lote_soquete_e27_retroativo',
+      status: 'Compra',
+      observation:
+        'Compra para estoque (excedente de lote consolidado: 17 un compradas − 10 un solicitadas)',
+      sector: 'Acabamento',
+      created: '2026-09-29T22:16:40Z',
+      updated: '2026-09-29T22:28:20Z',
+    }
+
+    const testShortages = [op1, op2, op3, surplus7]
+    const displayItems = buildRecebimentoDisplayItems(testShortages)
+
+    // Deve gerar exatamente 1 linha de lote consolidado
+    expect(displayItems).toHaveLength(1)
+    const batchRow = displayItems[0]
+
+    expect(batchRow.type).toBe('batch')
+    expect(batchRow.id).toBe('lote_soquete_e27_retroativo')
+    // Quantidade total exibida deve ser 17 (quantidade real da OC) e NÃO a soma de registros
+    expect(batchRow.totalQuantity).toBe(17)
+    expect(batchRow.opQuantity).toBe(10)
+    expect(batchRow.surplusQuantity).toBe(7)
+    expect(batchRow.opItems).toHaveLength(3)
   })
 })

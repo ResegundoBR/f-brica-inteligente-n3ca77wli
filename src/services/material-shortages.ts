@@ -65,9 +65,15 @@ export async function upsertMaterialShortage(
   const orderId = input.order_id && input.order_id !== 'none' ? input.order_id : null
   const newQty = Number(input.quantity) || 0
 
+  const batchId = (input.batch_id as string | undefined)?.trim() || null
+
   // 1. Montar filtro para buscar registro em aberto
   let searchFilter = ''
-  if (orderId && cleanCode) {
+  if (batchId && !orderId) {
+    // Registro de excedente/estoque vinculado a um lote específico:
+    // Garante que NUNCA nasçam dois registros de excedente para o mesmo lote
+    searchFilter = `(${OPEN_SHORTAGE_STATUS_FILTER}) && (order_id = '' || order_id = null) && batch_id = '${batchId.replace(/'/g, "\\'")}'`
+  } else if (orderId && cleanCode) {
     // Mesmo código E mesmo order_id
     searchFilter = `(${OPEN_SHORTAGE_STATUS_FILTER}) && order_id = '${orderId}' && code = '${cleanCode.replace(/'/g, "\\'")}'`
   } else if (!orderId && cleanCode && cleanDesc && cleanSector) {
@@ -126,6 +132,12 @@ export async function upsertMaterialShortage(
     if (input.priority) updatePayload.priority = input.priority
     if (input.request_type) updatePayload.request_type = input.request_type
     if (input.unit_price !== undefined) updatePayload.unit_price = input.unit_price
+    if (input.supplier !== undefined) updatePayload.supplier = input.supplier
+    if (input.expected_date !== undefined) updatePayload.expected_date = input.expected_date
+    if (input.purchase_date !== undefined) updatePayload.purchase_date = input.purchase_date
+    if (input.status) updatePayload.status = input.status
+    if (input.batch_id !== undefined) updatePayload.batch_id = input.batch_id
+    if (input.batch_info !== undefined) updatePayload.batch_info = input.batch_info
     if (input.requested_by) updatePayload.requested_by = input.requested_by
 
     const updated = await pb
@@ -156,6 +168,18 @@ export async function upsertMaterialShortage(
   }
   if (input.expected_date) {
     createPayload.expected_date = input.expected_date
+  }
+  if (input.purchase_date) {
+    createPayload.purchase_date = input.purchase_date
+  }
+  if (input.supplier) {
+    createPayload.supplier = input.supplier
+  }
+  if (input.batch_id) {
+    createPayload.batch_id = input.batch_id
+  }
+  if (input.batch_info) {
+    createPayload.batch_info = input.batch_info
   }
 
   const created = await pb.collection('material_shortages').create<MaterialShortage>(createPayload)

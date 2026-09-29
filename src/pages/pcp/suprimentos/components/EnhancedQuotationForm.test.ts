@@ -247,6 +247,9 @@ describe('EnhancedQuotationForm - Proteção contra corrupção de quantidade no
       vi.spyOn(pb, 'collection').mockImplementation((collName: string) => {
         if (collName === 'material_shortages') {
           return {
+            getOne: vi.fn().mockResolvedValue({ id: 'test' }),
+            getFullList: vi.fn().mockResolvedValue([]),
+            getList: vi.fn().mockResolvedValue({ items: [] }),
             update: pbUpdateSpy,
             create: pbCreateSpy,
           } as any
@@ -280,9 +283,7 @@ describe('EnhancedQuotationForm - Proteção contra corrupção de quantidade no
       expect(result.surplusQty).toBe(9)
       expect(result.surplusShortageId).toBe('surplus_shortage_999')
 
-      // Verifica que as 3 OPs individuais foram avançadas para Compra sem alterar a quantidade individual,
-      // mais 1 update no item líder (itemIds[0]) para persistir batch_info
-      expect(pbUpdateSpy).toHaveBeenCalledTimes(4)
+      // Verifica que as 3 OPs individuais foram avançadas para Compra sem alterar a quantidade individual
       expect(pbUpdateSpy).toHaveBeenCalledWith(
         'owbbm9ibmq0pntn',
         expect.objectContaining({
@@ -308,12 +309,13 @@ describe('EnhancedQuotationForm - Proteção contra corrupção de quantidade no
         }),
       )
 
-      // NENHUM update alterou o campo 'quantity' das solicitações individuais!
-      for (const call of pbUpdateSpy.mock.calls) {
+      // NENHUM update alterou o campo 'quantity' das solicitações de OP individuais!
+      const opCalls = pbUpdateSpy.mock.calls.filter((c: any[]) => itemIds.includes(c[0]))
+      for (const call of opCalls) {
         expect(call[1]).not.toHaveProperty('quantity')
       }
 
-      // Verifica criação do registro de excedente
+      // Verifica criação do registro de excedente (via upsertMaterialShortage)
       expect(pbCreateSpy).toHaveBeenCalledTimes(1)
       expect(pbCreateSpy).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -332,6 +334,63 @@ describe('EnhancedQuotationForm - Proteção contra corrupção de quantidade no
       )
       // O registro de excedente é geral para estoque, NÃO tem order_id
       expect(pbCreateSpy.mock.calls[0][0].order_id).toBeUndefined()
+    })
+
+    it('recompra de lote que JÁ possui excedente registrado com nova quantidade (17 un vs 19 un anterior): cancela excedentes antigos ou atualiza com a nova diferença', async () => {
+      const itemIds = ['owbbm9ibmq0pntn', 'rwszhhy714twx1e', 'pvja5jo8r1l36bv']
+      const actualPurchaseQty = 17 // Recompra para 17 un (10 OPs + 7 estoque)
+      const requestedBatchQty = 10
+
+      // Simula getOne retornando lote existente
+      const existingShortageMock = {
+        id: 'owbbm9ibmq0pntn',
+        batch_id: 'lote_soquete_e27_retroativo',
+      }
+      const existingSurplusMock = {
+        id: 'old_surplus_1',
+        batch_id: 'lote_soquete_e27_retroativo',
+        quantity: 9,
+        observation: 'Compra para estoque anterior',
+      }
+
+      vi.spyOn(pb, 'collection').mockImplementation((collName: string) => {
+        if (collName === 'material_shortages') {
+          return {
+            getOne: vi.fn().mockResolvedValue(existingShortageMock),
+            getFullList: vi.fn().mockResolvedValue([existingSurplusMock]),
+            getList: vi.fn().mockResolvedValue({ items: [existingSurplusMock] }),
+            update: pbUpdateSpy,
+            create: pbCreateSpy,
+          } as any
+        }
+        if (collName === 'quotations') {
+          return {
+            getFirstListItem: pbGetFirstSpy,
+          } as any
+        }
+        return {} as any
+      })
+
+      const result = await advanceGroupToCompraWithSurplus({
+        itemIds,
+        actualPurchaseQty,
+        requestedBatchQty,
+        componentCode: '05090003',
+        componentDescription: 'Soquete e27',
+        selectedQuotation: mockQuotation,
+        sector: 'Acabamento',
+      })
+
+      // Excedente calculado para 17 un é 7 (17 - 10)
+      expect(result.surplusQty).toBe(7)
+      expect(result.batchId).toBe('lote_soquete_e27_retroativo')
+      // upsertMaterialShortage deve ter atualizado o registro de excedente existente old_surplus_1 para 7 un
+      expect(pbUpdateSpy).toHaveBeenCalledWith(
+        'old_surplus_1',
+        expect.objectContaining({
+          quantity: 7,
+        }),
+      )
     })
 
     it('compra com quantidade IGUAL à solicitada (10 un vs 10 un): NÃO gera excedente e avança as solicitações normalmente', async () => {

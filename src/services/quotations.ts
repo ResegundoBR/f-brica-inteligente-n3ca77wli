@@ -1,5 +1,6 @@
 import pb from '@/lib/pocketbase/client'
-import { Quotation } from '@/types'
+import { Quotation, MaterialShortage } from '@/types'
+import { upsertMaterialShortage } from './material-shortages'
 
 export const getQuotations = () =>
   pb
@@ -211,8 +212,28 @@ export const advanceGroupToCompraWithSurplus = async ({
     return { advancedCount: 0, surplusQty: 0 }
   }
 
-  // Gera um batchId único para rastrear este lote consolidado na página Compras e Recebimento
-  const batchId = `lote_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`
+  // 0. Verificar se os itens já pertencem a um lote existente (recompra)
+  let resolvedBatchId: string | undefined = undefined
+  try {
+    const existingShortages = await Promise.all(
+      itemIds.map((id) =>
+        pb
+          .collection('material_shortages')
+          .getOne<MaterialShortage>(id)
+          .catch(() => null),
+      ),
+    )
+    const existingBatchId = existingShortages.find((s) => s && s.batch_id)?.batch_id
+    if (existingBatchId) {
+      resolvedBatchId = existingBatchId
+    }
+  } catch {
+    // prossegue gerando novo se falhar
+  }
+
+  // Gera um batchId único para rastrear este lote consolidado na página Compras e Recebimento caso não exista
+  const batchId =
+    resolvedBatchId || `lote_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`
 
   // 1. Resolver cotação selecionada para aplicar a todo o lote
   let quotationToUse = selectedQuotation || null
@@ -253,38 +274,77 @@ export const advanceGroupToCompraWithSurplus = async ({
   const unitPrice =
     quotationToUse?.price && quotationToUse.price > 0 ? quotationToUse.price : undefined
 
-  // 4. Se houver excedente (> 0), registrar a "Compra para estoque" com o mesmo batch_id
+  // 4. RECOMPRA SUBSTITUI / TRAVA ANTI-DUPLICIDADE:
+  // Se já existirem registros de excedente para este lote ("Compra para estoque"),
+  // cancelar os antigos excedentes redundantes (ou se surplus == 0, cancelar todos)
+  try {
+    const existingSurplusList = await pb
+      .collection('material_shortages')
+      .getFullList<MaterialShortage>({
+        filter: `batch_id = "${batchId}" && (order_id = "" || order_id = null) && (status = "Compra" || status = "Pendente" || status = "Cotação")`,
+      })
+    for (const oldSurplus of existingSurplusList) {
+      if (surplus === 0) {
+        // Se a recompra é exata (sem excedente), cancela os excedentes antigos
+        await pb.collection('material_shortages').update(oldSurplus.id, {
+          status: 'Cancelado',
+          observation:
+            `${oldSurplus.observation || ''} | Cancelado por recompra do lote sem excedente`.trim(),
+        })
+      }
+    }
+  } catch (err) {
+    console.warn('Erro ao verificar/limpar excedentes antigos de recompra:', err)
+  }
+
+  // 5. Se houver excedente (> 0), registrar ou atualizar a "Compra para estoque" usando a trava anti-duplicidade (upsertMaterialShortage)
   if (surplus > 0) {
-    const shortagePayload: Record<string, any> = {
-      description: componentDescription,
-      code: componentCode ? componentCode.trim() : undefined,
-      quantity: surplus,
-      sector: sector || 'Suprimentos',
-      status: 'Compra',
-      priority: 'Sem pressa',
-      request_type: 'Materiais',
-      purchase_date: today,
-      supplier: quotationToUse?.supplier || undefined,
-      unit_price: unitPrice,
-      requested_by: currentUserId,
-      batch_id: batchId,
-      observation: `Compra para estoque (excedente de lote consolidado: ${actualPurchaseQty} un compradas − ${requestedBatchQty} un solicitadas)`,
-    }
-
-    if (expectedDate) {
-      shortagePayload.expected_date = expectedDate
-    }
-
     try {
-      const created = await pb.collection('material_shortages').create(shortagePayload)
-      surplusShortageId = created.id
+      const upsertRes = await upsertMaterialShortage(
+        {
+          description: componentDescription,
+          code: componentCode ? componentCode.trim() : undefined,
+          quantity: surplus,
+          sector: sector || 'Suprimentos',
+          status: 'Compra',
+          priority: 'Sem pressa',
+          request_type: 'Materiais',
+          purchase_date: today,
+          supplier: quotationToUse?.supplier || undefined,
+          unit_price: unitPrice,
+          expected_date: expectedDate,
+          requested_by: currentUserId,
+          batch_id: batchId,
+          observation: `Compra para estoque (excedente de lote consolidado: ${actualPurchaseQty} un compradas − ${requestedBatchQty} un solicitadas)`,
+        },
+        pb.authStore.record?.name || pb.authStore.record?.email || 'Sistema',
+      )
+      surplusShortageId = upsertRes.record.id
+
+      // Se havia múltiplos excedentes antigos em aberto do mesmo lote, garante o cancelamento de qualquer outro
+      try {
+        const otherSurpluses = await pb
+          .collection('material_shortages')
+          .getFullList<MaterialShortage>({
+            filter: `batch_id = "${batchId}" && (order_id = "" || order_id = null) && id != "${surplusShortageId}" && (status = "Compra" || status = "Pendente" || status = "Cotação")`,
+          })
+        for (const extra of otherSurpluses) {
+          await pb.collection('material_shortages').update(extra.id, {
+            status: 'Cancelado',
+            observation:
+              `${extra.observation || ''} | Cancelado por substituição em recompra de lote`.trim(),
+          })
+        }
+      } catch {
+        /* intentionally ignored */
+      }
     } catch (err) {
       console.error('Erro ao registrar excedente como compra para estoque:', err)
       throw err
     }
   }
 
-  // 5. Atualizar metadata batch_info na primeira solicitação (representante do lote)
+  // 6. Atualizar metadata batch_info na primeira solicitação (representante do lote)
   // para permitir reconstrução fiel da linha consolidada na tela de Compras
   try {
     const leadItemId = itemIds[0]

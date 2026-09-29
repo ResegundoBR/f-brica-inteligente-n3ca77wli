@@ -62,37 +62,54 @@ export function SmartReceiveDialog({
     setFreight('')
     const fetchRelated = async () => {
       try {
-        // Se fizer parte de um lote explícito (batch_id), busca primariamente os membros do lote
+        // Se fizer parte de um lote explícito (batch_id), busca primariamente TODOS os membros do lote
         if (item.batch_id) {
           const batchFilter = `batch_id = "${item.batch_id}" && (status = "Compra" || status = "Recebido_Parcial" || status = "Recebido")`
           const batchRes = await pb.collection('material_shortages').getFullList<MaterialShortage>({
             filter: batchFilter,
-            expand: 'order_id,order_id.product_id',
+            expand: 'order_id,order_id.product_id,order_id.client_id',
             sort: 'created',
           })
           if (batchRes.length > 0) {
             setRelated(batchRes)
 
-            // Se for lote com batch_info preenchido, pré-preenche o total recebido com a quantidade real do lote
+            // Identifica o representante do lote (com batch_info ou primeiro)
             const parent = batchRes.find((x) => x.batch_info?.is_batch_parent) || item
             const actualQty = parent.batch_info?.actual_quantity
+
+            // Separar membros de OP vs membros de excedente
+            const opMembers = batchRes.filter(
+              (x) =>
+                Boolean(x.order_id) &&
+                !x.observation?.includes('Compra para estoque') &&
+                x.id !== parent.batch_info?.surplus_shortage_id,
+            )
+            const surplusMember = batchRes.find(
+              (x) =>
+                !x.order_id &&
+                (x.observation?.includes('Compra para estoque') ||
+                  x.id === parent.batch_info?.surplus_shortage_id),
+            )
+
+            // 1. Pré-preenche a quantidade total recebida com a quantidade real do lote (ex.: 19 un)
             if (actualQty && actualQty > 0) {
               setTotalReceived(String(actualQty))
+            } else if (surplusMember && Number(surplusMember.quantity) > 0) {
+              const opSum = opMembers.reduce((s, x) => s + (Number(x.quantity) || 0), 0)
+              setTotalReceived(String(opSum + Number(surplusMember.quantity)))
             } else {
               const sumTotal = batchRes.reduce((s, x) => s + (Number(x.quantity) || 0), 0)
               setTotalReceived(String(sumTotal))
             }
 
-            // Pré-distribui automaticamente as quantidades das OPs
+            // 2. Pré-distribui as quantidades exatas para baixa das OPs vinculadas (ex.: 1/5/4)
             const initialDist: Record<string, string> = {}
-            for (const bItem of batchRes) {
-              if (bItem.order_id) {
-                const needed = Number(bItem.quantity) || 0
-                const already = Number(bItem.received_quantity) || 0
-                const rem = Math.max(0, needed - already)
-                if (rem > 0) {
-                  initialDist[bItem.id] = String(rem)
-                }
+            for (const bItem of opMembers) {
+              const needed = Number(bItem.quantity) || 0
+              const already = Number(bItem.received_quantity) || 0
+              const rem = Math.max(0, needed - already)
+              if (rem > 0) {
+                initialDist[bItem.id] = String(rem)
               }
             }
             setDistributions(initialDist)
@@ -100,13 +117,14 @@ export function SmartReceiveDialog({
           }
         }
 
+        // Caso item avulso ou sem lote explícito: busca solicitações correlatas do mesmo código/descrição
         const code = (item.code || '').trim()
         const filter = code
           ? `code = "${code}" && (status = "Compra" || status = "Recebido_Parcial")`
           : `description = "${item.description}" && (status = "Compra" || status = "Recebido_Parcial")`
         const res = await pb.collection('material_shortages').getFullList<MaterialShortage>({
           filter,
-          expand: 'order_id,order_id.product_id',
+          expand: 'order_id,order_id.product_id,order_id.client_id',
           sort: 'created',
         })
         setRelated(res.length > 0 ? res : [item])
@@ -156,21 +174,51 @@ export function SmartReceiveDialog({
     setSaving(true)
     try {
       const traceabilityInfo: TraceabilityInfo = {
-        code: item?.code || '',
-        description: item?.description || '',
+        code: item?.code || related[0]?.code || '',
+        description: item?.description || related[0]?.description || '',
         purchase_date: purchaseDate ? `${toDateFieldValue(purchaseDate)} 12:00:00.000Z` : undefined,
         arrival_date: arrivalDate ? `${toDateFieldValue(arrivalDate)} 12:00:00.000Z` : undefined,
         unit_price: numUnitPrice > 0 ? numUnitPrice : undefined,
         freight: numFreight > 0 ? numFreight : undefined,
       }
+
+      // 1. Executa a distribuição via endpoint backend (Entrada total_received no inventory + Saída para cada OP)
+      // O excedente (received - distribuído) permanece como saldo líquido positivo em `inventory`
       await distributeMaterials(distArray, received, traceabilityInfo, item?.id)
+
+      // 2. Se este lote tiver registro de excedente ("Compra para estoque" sem order_id),
+      // atualiza também esse registro para 'Recebido' para refletir a baixa completa do lote na gestão de suprimentos
+      const surplusRecord = related.find(
+        (x) =>
+          !x.order_id &&
+          (x.observation?.includes('Compra para estoque') ||
+            x.id === item?.batch_info?.surplus_shortage_id),
+      )
+      if (surplusRecord && surplusRecord.status !== 'Recebido') {
+        try {
+          const surplusTargetQty = Number(surplusRecord.quantity) || surplus
+          await pb.collection('material_shortages').update(surplusRecord.id, {
+            status: 'Recebido',
+            received_quantity: surplusTargetQty,
+            received_by: pb.authStore.record?.id || undefined,
+            ...(traceabilityInfo.code && { code: traceabilityInfo.code }),
+          })
+        } catch (surplusErr) {
+          console.warn('Não foi possível marcar registro de excedente como Recebido:', surplusErr)
+        }
+      }
+
       toast({
         title: 'Distribuição concluída',
-        description: `${received} unidade(s) recebidas. ${totalDistributed} distribuídas. ${surplus} em estoque.`,
+        description: `${received} unidade(s) recebidas: ${totalDistributed} distribuídas para as OPs e ${surplus} unidade(s) adicionadas ao saldo de estoque.`,
       })
 
       // Automatizar atualização de status de OCs afetadas se todos os itens estiverem totalmente recebidos
-      const affectedIds = [...distArray.map((d) => d.shortage_id), ...(item?.id ? [item.id] : [])]
+      const affectedIds = [
+        ...distArray.map((d) => d.shortage_id),
+        ...(item?.id ? [item.id] : []),
+        ...(surplusRecord ? [surplusRecord.id] : []),
+      ]
       await checkAndUpdateAffectedOcs(affectedIds, {
         customToast: (opts) => toast({ title: opts.title, description: opts.description }),
       })
@@ -204,28 +252,56 @@ export function SmartReceiveDialog({
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border">
-              <div className="flex justify-between text-sm">
-                <span className="font-semibold notranslate" translate="no">
-                  {item?.description}
-                </span>
-                {item?.code && (
-                  <Badge variant="outline" className="text-xs notranslate" translate="no">
-                    {item.code}
+            <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border space-y-2">
+              <div className="flex justify-between text-sm items-center">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold notranslate" translate="no">
+                    {item?.description || related[0]?.description}
+                  </span>
+                  {item?.batch_id && (
+                    <Badge className="bg-blue-100 text-blue-900 border-blue-300 dark:bg-blue-950 dark:text-blue-200 text-[10px]">
+                      Lote Consolidado
+                    </Badge>
+                  )}
+                </div>
+                {(item?.code || related[0]?.code) && (
+                  <Badge variant="outline" className="text-xs notranslate font-mono" translate="no">
+                    {item?.code || related[0]?.code}
                   </Badge>
                 )}
               </div>
-              <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
+
+              {item?.batch_id && (
+                <div className="text-xs text-blue-800 dark:text-blue-300 bg-blue-50/70 dark:bg-blue-950/40 p-2 rounded border border-blue-200 dark:border-blue-900 flex flex-wrap items-center justify-between gap-2">
+                  <span>
+                    Membros do Lote:{' '}
+                    <strong>
+                      {related.filter((x) => Boolean(x.order_id)).length} OPs vinculadas
+                    </strong>
+                    {surplus > 0 || related.some((x) => !x.order_id)
+                      ? ' + Excedente p/ Estoque'
+                      : ''}
+                  </span>
+                  <span className="font-bold text-blue-900 dark:text-blue-200">
+                    Qtd Lote Real: {totalReceived || totalNeeded} un
+                  </span>
+                </div>
+              )}
+
+              <div className="flex gap-4 mt-1 text-xs text-muted-foreground">
                 <span>
-                  Total necessário:{' '}
+                  Demanda das OPs:{' '}
                   <strong className="text-foreground notranslate" translate="no">
-                    {totalNeeded}
+                    {related
+                      .filter((x) => Boolean(x.order_id))
+                      .reduce((s, x) => s + (Number(x.quantity) || 0), 0) || totalNeeded}{' '}
+                    un
                   </strong>
                 </span>
                 <span>
                   Já recebido:{' '}
                   <strong className="text-foreground notranslate" translate="no">
-                    {totalAlreadyReceived}
+                    {totalAlreadyReceived} un
                   </strong>
                 </span>
               </div>
@@ -373,11 +449,26 @@ export function SmartReceiveDialog({
             </div>
 
             {surplus > 0 && (
-              <div className="flex items-center gap-2 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
-                <Warehouse className="size-4 text-amber-600" />
-                <span className="text-sm font-medium text-amber-800 dark:text-amber-300">
-                  Excedente: {surplus} unidade(s) <ArrowRight className="inline size-3" /> Estoque
-                </span>
+              <div className="flex flex-col gap-1 p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-lg text-emerald-900 dark:text-emerald-200">
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <Warehouse className="size-4 text-emerald-600" />
+                  <span>
+                    Excedente Direcionado ao Estoque:{' '}
+                    <strong className="notranslate" translate="no">
+                      +{surplus} unidade(s)
+                    </strong>
+                  </span>
+                  <ArrowRight className="inline size-3 text-emerald-600" />
+                  <Badge className="bg-emerald-600 text-white font-bold text-[10px]">
+                    Saldo Inventário Geral
+                  </Badge>
+                </div>
+                <p className="text-xs text-emerald-700 dark:text-emerald-300 pl-6">
+                  Este saldo excedente integrará imediatamente o saldo do inventário (
+                  <code>inventory</code>), ficando visível ao alerta de estoque mínimo (
+                  <code>pcp_material_min_levels</code>) e aos blocos de disponibilidade de
+                  separação.
+                </p>
               </div>
             )}
 

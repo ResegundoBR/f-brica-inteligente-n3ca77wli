@@ -280,8 +280,9 @@ describe('EnhancedQuotationForm - Proteção contra corrupção de quantidade no
       expect(result.surplusQty).toBe(9)
       expect(result.surplusShortageId).toBe('surplus_shortage_999')
 
-      // Verifica que as 3 OPs individuais foram avançadas para Compra sem alterar a quantidade individual
-      expect(pbUpdateSpy).toHaveBeenCalledTimes(3)
+      // Verifica que as 3 OPs individuais foram avançadas para Compra sem alterar a quantidade individual,
+      // mais 1 update no item líder (itemIds[0]) para persistir batch_info
+      expect(pbUpdateSpy).toHaveBeenCalledTimes(4)
       expect(pbUpdateSpy).toHaveBeenCalledWith(
         'owbbm9ibmq0pntn',
         expect.objectContaining({
@@ -351,8 +352,8 @@ describe('EnhancedQuotationForm - Proteção contra corrupção de quantidade no
       expect(result.surplusQty).toBe(0)
       expect(result.surplusShortageId).toBeUndefined()
 
-      // 3 updates para Compra
-      expect(pbUpdateSpy).toHaveBeenCalledTimes(3)
+      // 3 updates para Compra + 1 update de batch_info no item líder
+      expect(pbUpdateSpy).toHaveBeenCalledTimes(4)
       // NENHUM create chamado para registro de excedente
       expect(pbCreateSpy).not.toHaveBeenCalled()
     })

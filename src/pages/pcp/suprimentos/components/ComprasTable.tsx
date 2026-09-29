@@ -15,6 +15,7 @@ import { NoTranslate } from '@/components/NoTranslate'
 import { useSupplierGroups } from '@/hooks/use-supplier-groups'
 import { SupplierGroupSection } from './SupplierGroupSection'
 import { useMemo, useState, Fragment } from 'react'
+import { cn } from '@/lib/utils'
 import { findOtherOpDemands } from '@/services/material-consolidation'
 import { ConsolidatedDemandBadge } from './ConsolidatedDemandBlock'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -508,6 +509,28 @@ export function ComprasTable({
     return map
   }, [displayItems, shortagesPool])
 
+  // Agrupamento por fornecedor respeitando os displayItems (declarado incondicionalmente antes de qualquer return)
+  const supplierDisplayGroups = useMemo(() => {
+    const map = new Map<string, ComprasDisplayItem[]>()
+    for (const dItem of displayItems) {
+      const sup = dItem.supplier || 'Sem Fornecedor'
+      const arr = map.get(sup) || []
+      arr.push(dItem)
+      map.set(sup, arr)
+    }
+
+    return Array.from(map.entries()).map(([supplier, groupItems]) => {
+      const totalValue = groupItems.reduce((sum, it) => sum + it.totalValue, 0)
+      const allItemIds = groupItems.flatMap((it) => it.allMemberIds)
+      return {
+        supplier: supplier === 'Sem Fornecedor' ? '' : supplier,
+        displayItems: groupItems,
+        allItemIds,
+        totalValue,
+      }
+    })
+  }, [displayItems])
+
   if (!grouped) {
     return (
       <div className="bg-white dark:bg-slate-900 rounded-lg border shadow-sm overflow-hidden">
@@ -530,28 +553,6 @@ export function ComprasTable({
       </div>
     )
   }
-
-  // Agrupamento por fornecedor respeitando os displayItems
-  const supplierDisplayGroups = useMemo(() => {
-    const map = new Map<string, ComprasDisplayItem[]>()
-    for (const dItem of displayItems) {
-      const sup = dItem.supplier || 'Sem Fornecedor'
-      const arr = map.get(sup) || []
-      arr.push(dItem)
-      map.set(sup, arr)
-    }
-
-    return Array.from(map.entries()).map(([supplier, groupItems]) => {
-      const totalValue = groupItems.reduce((sum, it) => sum + it.totalValue, 0)
-      const allItemIds = groupItems.flatMap((it) => it.allMemberIds)
-      return {
-        supplier: supplier === 'Sem Fornecedor' ? '' : supplier,
-        displayItems: groupItems,
-        allItemIds,
-        totalValue,
-      }
-    })
-  }, [displayItems])
 
   return (
     <div className="space-y-3">

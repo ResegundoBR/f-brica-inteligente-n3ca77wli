@@ -8,7 +8,7 @@ import { Plus, Copy, Check, Loader2, Trash2, ShoppingCart } from 'lucide-react'
 import { MaterialShortage, Quotation } from '@/types'
 import { toast } from 'sonner'
 import pb from '@/lib/pocketbase/client'
-import { selectQuotation } from '@/services/quotations'
+import { selectQuotation, getQuotationsByShortage, createQuotation } from '@/services/quotations'
 import { SupplierSearch } from './SupplierSearch'
 import { SupplierFormDialog } from './SupplierFormDialog'
 import {
@@ -226,7 +226,6 @@ export function EnhancedQuotationForm({
                 delivery_days: q.delivery_days,
                 st_value: q.st_value,
                 ipi_value: q.ipi_value,
-                selected: true,
               })
               await selectQuotation(created.id, subId)
             }

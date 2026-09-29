@@ -341,6 +341,20 @@ export interface MaterialShortage {
   quotation_date?: string
   received_by?: string
   distributed_by?: string
+  batch_id?: string
+  batch_info?: {
+    is_batch_parent?: boolean
+    actual_quantity?: number
+    requested_total?: number
+    surplus_quantity?: number
+    sub_shortage_ids?: string[]
+    surplus_shortage_id?: string
+    selected_quotation_id?: string
+    supplier?: string
+    unit_price?: number
+    delivery_days?: number
+    expected_date?: string
+  }
   created: string
   updated: string
   expand?: {

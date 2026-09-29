@@ -10,6 +10,13 @@ export interface ShortageGroup {
   highestPriority?: string
   hasNew: boolean
   opCount: number
+  // Metadados adicionais quando o grupo se comporta como compra em lote
+  isBatchGroup?: boolean
+  batchId?: string
+  actualQuantity?: number
+  surplusQty?: number
+  surplusItem?: MaterialShortage
+  opItems?: MaterialShortage[]
 }
 
 const PRIORITY_ORDER: Record<string, number> = {

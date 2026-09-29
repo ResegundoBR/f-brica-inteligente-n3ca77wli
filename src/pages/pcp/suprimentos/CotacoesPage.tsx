@@ -151,16 +151,17 @@ export default function CotacoesPage() {
   }
 
   const handleBatchAdvanceToCompra = async () => {
-    const ids = Array.from(selectedIds)
-    if (ids.length === 0) return
+    if (selectedIds.size === 0) return
+    setAdvancingBatch(true)
     try {
-      setAdvancingBatch(true)
-      await advanceGroupToCompra(ids)
-      toast.success(`${ids.length} item(ns) avançados para Compras em lote!`)
+      const ids = Array.from(selectedIds)
+      const batchId = `lote_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`
+      await advanceGroupToCompra(ids, undefined, batchId)
+      toast.success(`${ids.length} itens avançados para Compras em lote único`)
       setSelectedIds(new Set())
       fetchData()
     } catch {
-      toast.error('Erro ao avançar itens selecionados para Compras')
+      toast.error('Erro ao avançar itens')
     } finally {
       setAdvancingBatch(false)
     }
@@ -199,6 +200,9 @@ export default function CotacoesPage() {
       const idsToAdvance = itemsToAdvance.map((i) => i.id)
       const totalUnits = itemsToAdvance.reduce((sum, curr) => sum + (Number(curr.quantity) || 0), 0)
 
+      const isBatch =
+        itemsToAdvance.length > 1 || (extraCompraInfo && extraCompraInfo.actualPurchaseQty > 0)
+
       if (extraCompraInfo && extraCompraInfo.actualPurchaseQty > totalUnits) {
         // Compra com excedente adicional para estoque
         const res = await advanceGroupToCompraWithSurplus({
@@ -211,25 +215,26 @@ export default function CotacoesPage() {
           sector: extraCompraInfo.sector || item.sector,
         })
         toast.success(
-          `Lote com ${itemsToAdvance.length} OPs (${totalUnits} un) + ${res.surplusQty} un para Estoque Geral enviados para Compras! (Total comprado: ${extraCompraInfo.actualPurchaseQty} un)`,
+          `Lote com ${itemsToAdvance.length} OPs (${totalUnits} un) + ${res.surplusQty} un para Estoque Geral enviados para Compras como lote único! (Total: ${extraCompraInfo.actualPurchaseQty} un)`,
         )
-      } else {
-        await advanceGroupToCompra(idsToAdvance, extraCompraInfo?.selectedQuotation)
+      } else if (isBatch) {
+        const batchId = `lote_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`
+        await advanceGroupToCompra(idsToAdvance, extraCompraInfo?.selectedQuotation, batchId)
         const isPartial = groupItems && groupItems.length > itemsToAdvance.length
 
         if (isPartial) {
           toast.success(
-            `Compra parcial realizada: ${itemsToAdvance.length} OP(s) (${totalUnits} un) avançada(s) para Compras!`,
-          )
-        } else if (itemsToAdvance.length > 1) {
-          toast.success(
-            `Lote com ${itemsToAdvance.length} OPs (${totalUnits} un) enviado para Compras!`,
+            `Compra parcial realizada: ${itemsToAdvance.length} OP(s) (${totalUnits} un) avançada(s) para Compras em lote!`,
           )
         } else {
-          toast.success('Item enviado direto para Compras')
+          toast.success(
+            `Lote com ${itemsToAdvance.length} OPs (${totalUnits} un) enviado para Compras em linha de lote consolidada!`,
+          )
         }
+      } else {
+        await advanceGroupToCompra(idsToAdvance, extraCompraInfo?.selectedQuotation)
+        toast.success('Item enviado direto para Compras')
       }
-
       // Desmarcar os itens comprados do selectedIds se estivessem marcados
       setSelectedIds((prev) => {
         const next = new Set(prev)

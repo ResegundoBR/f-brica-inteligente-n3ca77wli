@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-29T21:43:12.129Z",
+  "generatedAt": "2026-09-29T22:05:59.661Z",
   "collections": [
     {
       "name": "users",
@@ -1486,6 +1486,18 @@
           "required": false,
           "system": false,
           "collectionRef": "users"
+        },
+        {
+          "name": "batch_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "batch_info",
+          "type": "json",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
@@ -1493,7 +1505,8 @@
         "CREATE INDEX idx_material_shortages_status ON material_shortages (status)",
         "CREATE INDEX `idx_material_shortages_requested_by` ON `material_shortages` (requested_by)",
         "CREATE INDEX `idx_material_shortages_code` ON `material_shortages` (code)",
-        "CREATE INDEX `idx_material_shortages_description` ON `material_shortages` (description)"
+        "CREATE INDEX `idx_material_shortages_description` ON `material_shortages` (description)",
+        "CREATE INDEX `idx_material_shortages_batch_id` ON `material_shortages` (batch_id)"
       ]
     },
     {

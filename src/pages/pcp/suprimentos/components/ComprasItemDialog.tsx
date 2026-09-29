@@ -106,7 +106,36 @@ export function ComprasItemDialog({
         const date = new Date(Date.now() + selected.delivery_days * 86400000)
         setExpectedDate(toDateFieldValue(date))
       }
-      toast.success('Cotação selecionada e campos preenchidos')
+
+      // Se este item fizer parte de um lote consolidado (batch_id ou sub_shortage_ids), sincroniza em todos os membros do lote
+      const batchMates = (item.batch_info?.sub_shortage_ids || []).filter((id) => id !== item.id)
+      if (item.batch_id || batchMates.length > 0) {
+        const otherIds =
+          batchMates.length > 0
+            ? batchMates
+            : allShortages
+                .filter((s) => s.batch_id === item.batch_id && s.id !== item.id)
+                .map((s) => s.id)
+
+        for (const sid of otherIds) {
+          try {
+            await pb.collection('material_shortages').update(sid, {
+              supplier: selected.supplier,
+              unit_price: selected.price,
+              ...(selected.delivery_days &&
+                selected.delivery_days > 0 && {
+                  expected_date: new Date(Date.now() + selected.delivery_days * 86400000)
+                    .toISOString()
+                    .split('T')[0],
+                }),
+            })
+          } catch (mErr) {
+            console.warn('Erro ao propagar cotação para membro do lote:', sid, mErr)
+          }
+        }
+      }
+
+      toast.success('Cotação selecionada e aplicada ao lote')
       onUpdate()
     } catch {
       toast.error('Erro ao selecionar cotação')
@@ -117,12 +146,40 @@ export function ComprasItemDialog({
     if (!item) return
     setSaving(true)
     try {
-      await pb.collection('material_shortages').update(item.id, {
+      const updateData: Record<string, any> = {
         supplier,
         quantity: itemQuantity || item.quantity,
         ...(unitPrice && { unit_price: Number(unitPrice) }),
         ...(expectedDate && { expected_date: `${toDateFieldValue(expectedDate)} 12:00:00.000Z` }),
-      })
+      }
+
+      await pb.collection('material_shortages').update(item.id, updateData)
+
+      // Se fizer parte de um lote, sincroniza fornecedor, valor unitário e prazo com todos os membros
+      const batchMates = (item.batch_info?.sub_shortage_ids || []).filter((id) => id !== item.id)
+      const siblingIds =
+        batchMates.length > 0
+          ? batchMates
+          : item.batch_id
+            ? allShortages
+                .filter((s) => s.batch_id === item.batch_id && s.id !== item.id)
+                .map((s) => s.id)
+            : []
+
+      for (const sid of siblingIds) {
+        try {
+          await pb.collection('material_shortages').update(sid, {
+            supplier,
+            ...(unitPrice && { unit_price: Number(unitPrice) }),
+            ...(expectedDate && {
+              expected_date: `${toDateFieldValue(expectedDate)} 12:00:00.000Z`,
+            }),
+          })
+        } catch (sErr) {
+          console.warn('Erro ao sincronizar membro do lote:', sid, sErr)
+        }
+      }
+
       toast.success('Dados salvos com sucesso')
       onUpdate()
       onOpenChange(false)

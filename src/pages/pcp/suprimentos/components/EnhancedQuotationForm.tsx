@@ -209,6 +209,33 @@ export function EnhancedQuotationForm({
     try {
       const extraIds = groupList.filter((it) => it.id !== item.id).map((it) => it.id)
       await selectQuotation(q.id, item.id, extraIds)
+
+      // Garantir que a cotação equivalente exista e esteja marcada nos sub-itens
+      if (isMultiItem && extraIds.length > 0) {
+        for (const subId of extraIds) {
+          try {
+            const subQuotes = await getQuotationsByShortage(subId)
+            const matching = subQuotes.find((sq) => sq.supplier === q.supplier)
+            if (matching) {
+              await selectQuotation(matching.id, subId)
+            } else {
+              const created = await createQuotation({
+                material_shortage_id: subId,
+                supplier: q.supplier,
+                price: q.price,
+                delivery_days: q.delivery_days,
+                st_value: q.st_value,
+                ipi_value: q.ipi_value,
+                selected: true,
+              })
+              await selectQuotation(created.id, subId)
+            }
+          } catch (propErr) {
+            console.warn('Erro ao propagar cotação para sub-item do grupo:', subId, propErr)
+          }
+        }
+      }
+
       await loadQuotations()
       onUpdate()
       toast.success(

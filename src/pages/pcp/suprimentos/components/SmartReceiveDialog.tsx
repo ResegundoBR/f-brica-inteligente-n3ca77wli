@@ -62,6 +62,44 @@ export function SmartReceiveDialog({
     setFreight('')
     const fetchRelated = async () => {
       try {
+        // Se fizer parte de um lote explícito (batch_id), busca primariamente os membros do lote
+        if (item.batch_id) {
+          const batchFilter = `batch_id = "${item.batch_id}" && (status = "Compra" || status = "Recebido_Parcial" || status = "Recebido")`
+          const batchRes = await pb.collection('material_shortages').getFullList<MaterialShortage>({
+            filter: batchFilter,
+            expand: 'order_id,order_id.product_id',
+            sort: 'created',
+          })
+          if (batchRes.length > 0) {
+            setRelated(batchRes)
+
+            // Se for lote com batch_info preenchido, pré-preenche o total recebido com a quantidade real do lote
+            const parent = batchRes.find((x) => x.batch_info?.is_batch_parent) || item
+            const actualQty = parent.batch_info?.actual_quantity
+            if (actualQty && actualQty > 0) {
+              setTotalReceived(String(actualQty))
+            } else {
+              const sumTotal = batchRes.reduce((s, x) => s + (Number(x.quantity) || 0), 0)
+              setTotalReceived(String(sumTotal))
+            }
+
+            // Pré-distribui automaticamente as quantidades das OPs
+            const initialDist: Record<string, string> = {}
+            for (const bItem of batchRes) {
+              if (bItem.order_id) {
+                const needed = Number(bItem.quantity) || 0
+                const already = Number(bItem.received_quantity) || 0
+                const rem = Math.max(0, needed - already)
+                if (rem > 0) {
+                  initialDist[bItem.id] = String(rem)
+                }
+              }
+            }
+            setDistributions(initialDist)
+            return
+          }
+        }
+
         const code = (item.code || '').trim()
         const filter = code
           ? `code = "${code}" && (status = "Compra" || status = "Recebido_Parcial")`

@@ -18,10 +18,12 @@ import {
   Tags,
   CheckSquare,
   Loader2,
+  Plus,
 } from 'lucide-react'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
 import { RoleGuard } from '@/components/RoleGuard'
 import { ComponentCategoriesDialog } from './components/ComponentCategoriesDialog'
+import { CreateComponentDialog } from './components/CreateComponentDialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -101,8 +103,9 @@ export default function ComponentesPage() {
   const [inventory, setInventory] = useState<Inventory[]>([])
   const [categories, setCategories] = useState<ComponentCategory[]>([])
 
-  // Modal de Gestão de Categorias
+  // Modal de Gestão de Categorias e Novo Componente
   const [categoriesModalOpen, setCategoriesModalOpen] = useState(false)
+  const [createComponentModalOpen, setCreateComponentModalOpen] = useState(false)
 
   // Filtros de busca e seleção
   const [searchTerm, setSearchTerm] = useState('')
@@ -142,6 +145,7 @@ export default function ComponentesPage() {
     componentId?: string
     code: string
     description: string
+    category?: string | null
     quantity?: number
     min_quantity?: number
     unit?: string
@@ -443,8 +447,9 @@ export default function ComponentesPage() {
       componentId: item.component.id,
       code: item.code,
       description: item.description,
+      category: item.categoryId || item.component.category,
       quantity: item.stockQuantity,
-      min_quantity: item.inventoryItem?.min_quantity,
+      min_quantity: item.inventoryItem?.min_quantity ?? item.component.min_quantity,
       unit: item.unit,
       isCatalogOnly,
     })
@@ -559,6 +564,17 @@ export default function ComponentesPage() {
         icon={Boxes}
         action={
           <div className="flex items-center gap-2">
+            {/* Botão Novo Componente */}
+            <Button
+              size="sm"
+              onClick={() => setCreateComponentModalOpen(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white text-xs gap-1.5 shadow-sm"
+              title="Cadastrar novo componente no Cadastro Mestre"
+            >
+              <Plus className="size-3.5" />
+              Novo Componente
+            </Button>
+
             <RoleGuard module="suprimentos">
               <Button
                 variant="outline"
@@ -1416,10 +1432,19 @@ export default function ComponentesPage() {
       <EditInventoryItemDialog
         item={editInventoryItem}
         open={!!editInventoryItem}
+        categories={categories}
         onOpenChange={(open) => {
           if (!open) setEditInventoryItem(null)
         }}
         onSaved={() => loadData(true)}
+      />
+
+      {/* Modal de Criação de Novo Componente */}
+      <CreateComponentDialog
+        open={createComponentModalOpen}
+        onOpenChange={setCreateComponentModalOpen}
+        categories={categories}
+        onCreated={() => loadData(true)}
       />
 
       {/* Modal de Gestão de Categorias (somente gestor/admin) */}

@@ -41,6 +41,8 @@ import {
 import { MaterialMinLevelAlertBlock } from './components/MaterialMinLevelAlertBlock'
 import { useAuth } from '@/hooks/use-auth'
 import { isPcpManager } from '@/lib/message-sector'
+import { getComponentCategories } from '@/services/component-categories'
+import { ComponentCategory } from '@/types'
 
 export default function EstoquePage() {
   const { user } = useAuth()
@@ -48,6 +50,7 @@ export default function EstoquePage() {
   const [minLevels, setMinLevels] = useState<PcpMaterialMinLevel[]>([])
   const [minLevelAlerts, setMinLevelAlerts] = useState<MaterialMinLevelAlertItem[]>([])
   const [inventory, setInventory] = useState<Inventory[]>([])
+  const [categories, setCategories] = useState<ComponentCategory[]>([])
   const [reservationsMap, setReservationsMap] = useState<Map<string, number>>(new Map())
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
   const [dossierOpen, setDossierOpen] = useState(false)
@@ -72,14 +75,16 @@ export default function EstoquePage() {
 
   const fetchInventory = async () => {
     try {
-      const [res, resvMap, levels] = await Promise.all([
+      const [res, resvMap, levels, cats] = await Promise.all([
         getInventory(),
         getActiveReservationsMap(),
         getMaterialMinLevels(),
+        getComponentCategories({ includeInactive: true }).catch(() => []),
       ])
       setInventory(res)
       setReservationsMap(resvMap)
       setMinLevels(levels)
+      if (cats) setCategories(cats)
 
       // Montar mapa de disponibilidade para os alertas de estoque mínimo
       const invByCode = new Map<string, any>()
@@ -503,6 +508,8 @@ export default function EstoquePage() {
         open={!!editItem}
         onOpenChange={(open) => !open && setEditItem(null)}
         item={editItem}
+        categories={categories}
+        showCreateComponentSuggestion={true}
         onSaved={fetchInventory}
       />
 

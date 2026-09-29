@@ -156,18 +156,72 @@ export const createMasterComponent = async (data: {
   code?: string
   description: string
   unit?: string
-  category?: string
+  category?: string | null
   source?: 'inventory' | 'catalog' | 'manual' | 'imported'
   active?: boolean
+  min_quantity?: number
 }): Promise<MasterComponent> => {
+  const cat = data.category?.trim()
   return pb.collection('components').create<MasterComponent>({
     code: data.code?.trim() || '',
     description: data.description.trim(),
     unit: data.unit?.trim() || 'un',
-    category: data.category?.trim() || undefined,
+    category: cat || null,
     source: data.source || 'manual',
     active: data.active !== undefined ? data.active : true,
+    min_quantity: data.min_quantity !== undefined ? data.min_quantity : 0,
   })
+}
+
+export const updateMasterComponent = async (
+  id: string,
+  data: {
+    code?: string
+    description?: string
+    unit?: string
+    category?: string | null
+    active?: boolean
+    min_quantity?: number
+  },
+): Promise<MasterComponent> => {
+  const payload: Record<string, any> = {}
+  if (data.code !== undefined) payload.code = data.code.trim()
+  if (data.description !== undefined) payload.description = data.description.trim()
+  if (data.unit !== undefined) payload.unit = data.unit.trim()
+  if (data.category !== undefined) {
+    payload.category = data.category && data.category.trim() ? data.category.trim() : null
+  }
+  if (data.active !== undefined) payload.active = data.active
+  if (data.min_quantity !== undefined) payload.min_quantity = data.min_quantity
+
+  return pb.collection('components').update<MasterComponent>(id, payload, {
+    expand: 'deactivated_by,category',
+  })
+}
+
+/**
+ * Verifica se já existe componente com o código informado (case-insensitive).
+ * Pode ignorar um id específico para validação em edição.
+ */
+export const checkDuplicateComponentCode = async (
+  code: string,
+  excludeId?: string,
+): Promise<{ exists: boolean; existingComponent?: MasterComponent }> => {
+  const cleanCode = code.trim().replace(/["'\\]/g, '')
+  if (!cleanCode) return { exists: false }
+
+  try {
+    const list = await pb.collection('components').getFullList<MasterComponent>({
+      filter: `code = "${cleanCode}"`,
+    })
+    const matched = list.find((c) => !excludeId || c.id !== excludeId)
+    if (matched) {
+      return { exists: true, existingComponent: matched }
+    }
+  } catch {
+    // fallback se filtro falhar
+  }
+  return { exists: false }
 }
 
 /**

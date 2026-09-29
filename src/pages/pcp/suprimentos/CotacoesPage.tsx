@@ -5,7 +5,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { MaterialShortage } from '@/types'
 import { Tags, Copy, Check, Search, Layers, ArrowRight } from 'lucide-react'
-import { advanceToCompra, advanceGroupToCompra } from '@/services/quotations'
+import {
+  advanceToCompra,
+  advanceGroupToCompra,
+  advanceGroupToCompraWithSurplus,
+} from '@/services/quotations'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
 import { TriageDialog } from './components/TriageDialog'
 import { CotacoesTable } from './components/CotacoesTable'
@@ -166,6 +170,14 @@ export default function CotacoesPage() {
     item: MaterialShortage,
     groupItems?: MaterialShortage[],
     selectedGroupIds?: string[],
+    extraCompraInfo?: {
+      actualPurchaseQty: number
+      requestedBatchQty: number
+      componentCode?: string
+      componentDescription: string
+      selectedQuotation?: any
+      sector?: string
+    },
   ) => {
     // Se foram passados IDs específicos (ex: seleção parcial de sublinhas do lote), usa apenas eles.
     // Caso contrário, usa groupItems ou o item único.
@@ -185,20 +197,37 @@ export default function CotacoesPage() {
 
     try {
       const idsToAdvance = itemsToAdvance.map((i) => i.id)
-      await advanceGroupToCompra(idsToAdvance)
-      const isPartial = groupItems && groupItems.length > itemsToAdvance.length
       const totalUnits = itemsToAdvance.reduce((sum, curr) => sum + (Number(curr.quantity) || 0), 0)
 
-      if (isPartial) {
+      if (extraCompraInfo && extraCompraInfo.actualPurchaseQty > totalUnits) {
+        // Compra com excedente adicional para estoque
+        const res = await advanceGroupToCompraWithSurplus({
+          itemIds: idsToAdvance,
+          actualPurchaseQty: extraCompraInfo.actualPurchaseQty,
+          requestedBatchQty: totalUnits,
+          componentCode: extraCompraInfo.componentCode ?? item.code,
+          componentDescription: extraCompraInfo.componentDescription || item.description,
+          selectedQuotation: extraCompraInfo.selectedQuotation,
+          sector: extraCompraInfo.sector || item.sector,
+        })
         toast.success(
-          `Compra parcial realizada: ${itemsToAdvance.length} OP(s) (${totalUnits} un) avançada(s) para Compras!`,
-        )
-      } else if (itemsToAdvance.length > 1) {
-        toast.success(
-          `Lote com ${itemsToAdvance.length} OPs (${totalUnits} un) enviado para Compras!`,
+          `Lote com ${itemsToAdvance.length} OPs (${totalUnits} un) + ${res.surplusQty} un para Estoque Geral enviados para Compras! (Total comprado: ${extraCompraInfo.actualPurchaseQty} un)`,
         )
       } else {
-        toast.success('Item enviado direto para Compras')
+        await advanceGroupToCompra(idsToAdvance, extraCompraInfo?.selectedQuotation)
+        const isPartial = groupItems && groupItems.length > itemsToAdvance.length
+
+        if (isPartial) {
+          toast.success(
+            `Compra parcial realizada: ${itemsToAdvance.length} OP(s) (${totalUnits} un) avançada(s) para Compras!`,
+          )
+        } else if (itemsToAdvance.length > 1) {
+          toast.success(
+            `Lote com ${itemsToAdvance.length} OPs (${totalUnits} un) enviado para Compras!`,
+          )
+        } else {
+          toast.success('Item enviado direto para Compras')
+        }
       }
 
       // Desmarcar os itens comprados do selectedIds se estivessem marcados
@@ -344,8 +373,8 @@ export default function CotacoesPage() {
           }
         }}
         onUpdate={fetchData}
-        onDirectCompra={(item, groupItems, selectedIds) =>
-          handleQuickCompra(item, groupItems, selectedIds)
+        onDirectCompra={(item, groupItems, selectedIds, extraCompraInfo) =>
+          handleQuickCompra(item, groupItems, selectedIds, extraCompraInfo)
         }
       />
     </div>

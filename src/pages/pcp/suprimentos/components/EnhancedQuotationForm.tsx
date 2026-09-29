@@ -29,7 +29,17 @@ interface EnhancedQuotationFormProps {
   groupedItems?: MaterialShortage[]
   onUpdate: () => void
   onClose: () => void
-  onDirectCompra?: (selectedIds: string[]) => void
+  onDirectCompra?: (
+    selectedIds: string[],
+    extraCompraInfo?: {
+      actualPurchaseQty: number
+      requestedBatchQty: number
+      componentCode?: string
+      componentDescription: string
+      selectedQuotation?: Quotation | null
+      sector?: string
+    },
+  ) => void
 }
 
 export function EnhancedQuotationForm({
@@ -103,6 +113,14 @@ export function EnhancedQuotationForm({
   const [desc, setDesc] = useState(item.description)
   // No modo grupo consolidado: exibe a quantidade consolidada total do contexto
   const [qty, setQty] = useState(String(isMultiItem ? totalGroupQty : item.quantity))
+
+  // Quantidade real de compra informada pelo comprador para o lote (permite compra adicional)
+  const [purchaseQty, setPurchaseQty] = useState(String(modalSelectedUnits))
+
+  // Atualiza purchaseQty padrão quando a seleção de sublinhas muda (se o usuário ainda não tiver customizado ou se mudar a seleção)
+  useEffect(() => {
+    setPurchaseQty(String(modalSelectedUnits))
+  }, [modalSelectedUnits])
 
   // Atualizar valores do formulário se o item ou total do grupo mudar
   useEffect(() => {
@@ -248,8 +266,13 @@ export function EnhancedQuotationForm({
   const handleApplyConsolidatedTotal = (suggestedQty: number) => {
     setQty(String(suggestedQty))
     if (isMultiItem) {
+      // Pré-preenche o campo da Quantidade Real de Compra com a sugestão consolidada
+      setPurchaseQty(String(suggestedQty))
+      const diff = Math.max(0, suggestedQty - modalSelectedUnits)
       toast.success(
-        `Quantidade total ajustada para ${suggestedQty} un para cotação conjunta (sem alterar registros individuais)`,
+        diff > 0
+          ? `Quantidade de compra preenchida com ${suggestedQty} un (+${diff} un excedente para estoque, solicitações mantidas)`
+          : `Quantidade de compra ajustada para ${suggestedQty} un`,
       )
       return
     }
@@ -263,6 +286,39 @@ export function EnhancedQuotationForm({
       .catch(() => {
         toast.error('Erro ao atualizar quantidade do item')
       })
+  }
+
+  // Cotação selecionada atualmente (se houver)
+  const currentSelectedQuotation = useMemo(() => {
+    return quotations.find((q) => q.selected) || null
+  }, [quotations])
+
+  // Cálculo do excedente do lote
+  const parsedActualPurchaseQty = Number(purchaseQty) || 0
+  const isFullBatch = selectedModalSubIds.size === groupList.length
+  const requestedBaseQty = isFullBatch ? totalGroupQty : modalSelectedUnits
+  const surplusQty = Math.max(0, parsedActualPurchaseQty - requestedBaseQty)
+  const hasSurplus = surplusQty > 0
+  const isPurchaseQtyInvalid = parsedActualPurchaseQty < requestedBaseQty
+
+  const handleConfirmGroupPurchase = () => {
+    if (!onDirectCompra || selectedModalSubIds.size === 0) return
+
+    if (isPurchaseQtyInvalid) {
+      toast.error(
+        `A quantidade real de compra (${parsedActualPurchaseQty} un) não pode ser menor que a soma solicitada das OPs selecionadas (${requestedBaseQty} un).`,
+      )
+      return
+    }
+
+    onDirectCompra(Array.from(selectedModalSubIds), {
+      actualPurchaseQty: parsedActualPurchaseQty,
+      requestedBatchQty: requestedBaseQty,
+      componentCode: item.code,
+      componentDescription: item.description,
+      selectedQuotation: currentSelectedQuotation,
+      sector: item.sector,
+    })
   }
 
   return (
@@ -368,19 +424,108 @@ export function EnhancedQuotationForm({
                   type="button"
                   size="sm"
                   variant="default"
-                  disabled={selectedModalSubIds.size === 0}
+                  disabled={selectedModalSubIds.size === 0 || isPurchaseQtyInvalid}
                   className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
-                  onClick={() => {
-                    if (selectedModalSubIds.size > 0) {
-                      onDirectCompra(Array.from(selectedModalSubIds))
-                    }
-                  }}
+                  onClick={handleConfirmGroupPurchase}
                 >
                   <ShoppingCart className="size-3.5 mr-1" />
-                  {selectedModalSubIds.size === groupList.length
-                    ? `Comprar Lote Completo (${totalGroupQty} un)`
-                    : `Comprar selecionadas (${modalSelectedUnits} un)`}
+                  {hasSurplus
+                    ? `Comprar ${parsedActualPurchaseQty} un (${requestedBaseQty} OPs + ${surplusQty} Estoque)`
+                    : selectedModalSubIds.size === groupList.length
+                      ? `Comprar Lote Completo (${totalGroupQty} un)`
+                      : `Comprar selecionadas (${modalSelectedUnits} un)`}
                 </Button>
+              )}
+            </div>
+
+            {/* Linha de Quantidade Real de Compra (Permite compras adicionais para estoque) */}
+            <div className="p-2 bg-white/80 dark:bg-slate-900/80 rounded border border-blue-200 dark:border-blue-800 space-y-1.5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <Label className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                      Quantidade real de compra (un):
+                    </Label>
+                    <span className="text-[11px] text-muted-foreground">
+                      (mínimo solicitado:{' '}
+                      <strong className="notranslate" translate="no">
+                        {requestedBaseQty} un
+                      </strong>
+                      )
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Compre mais para caixa fechada ou necessidades futuras. O excedente será
+                    registrado como{' '}
+                    <strong className="text-slate-700 dark:text-slate-300">
+                      &ldquo;Compra para estoque&rdquo;
+                    </strong>{' '}
+                    sem alterar as OPs.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <Input
+                    type="number"
+                    min={requestedBaseQty}
+                    step="1"
+                    value={purchaseQty}
+                    onChange={(e) => setPurchaseQty(e.target.value)}
+                    className={cn(
+                      'h-8 w-28 text-center text-sm font-bold notranslate',
+                      hasSurplus &&
+                        'border-emerald-500 bg-emerald-50/50 text-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200',
+                      isPurchaseQtyInvalid &&
+                        'border-red-500 bg-red-50 text-red-900 dark:bg-red-950/30 dark:text-red-200',
+                    )}
+                    translate="no"
+                  />
+                  {consolidation?.totalConsolidatedQuantity &&
+                    consolidation.totalConsolidatedQuantity > requestedBaseQty && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-8 text-xs font-medium border-amber-300 bg-amber-50/70 hover:bg-amber-100 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
+                        onClick={() =>
+                          handleApplyConsolidatedTotal(consolidation.totalConsolidatedQuantity)
+                        }
+                        title="Adota a quantidade da consolidação com necessidades futuras"
+                      >
+                        Consolidado ({consolidation.totalConsolidatedQuantity} un)
+                      </Button>
+                    )}
+                </div>
+              </div>
+
+              {/* Feedback visual do excedente ou validação */}
+              {hasSurplus && (
+                <div className="flex items-center justify-between text-[11px] font-medium text-emerald-700 dark:text-emerald-300 pt-1 border-t border-emerald-100 dark:border-emerald-900/50">
+                  <span className="flex items-center gap-1">
+                    <span>
+                      Excedente calculado:{' '}
+                      <strong className="notranslate" translate="no">
+                        +{surplusQty} un
+                      </strong>
+                    </span>
+                    <span>&bull;</span>
+                    <span>Registrado como &ldquo;Compra para estoque&rdquo; (geral)</span>
+                  </span>
+                  {currentSelectedQuotation?.price ? (
+                    <span className="notranslate" translate="no">
+                      Custo adicional estimado: R${' '}
+                      {(surplusQty * currentSelectedQuotation.price).toFixed(2)} (R${' '}
+                      {currentSelectedQuotation.price.toFixed(2)}/un)
+                    </span>
+                  ) : null}
+                </div>
+              )}
+
+              {isPurchaseQtyInvalid && (
+                <div className="text-[11px] font-medium text-red-600 dark:text-red-400 pt-1">
+                  A quantidade informada não pode ser inferior ao total solicitado do lote (
+                  {requestedBaseQty} un).
+                </div>
               )}
             </div>
 

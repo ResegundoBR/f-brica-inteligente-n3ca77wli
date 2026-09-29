@@ -29,6 +29,14 @@ interface TriageDialogProps {
     item: MaterialShortage,
     groupItems?: MaterialShortage[],
     selectedIds?: string[],
+    extraCompraInfo?: {
+      actualPurchaseQty: number
+      requestedBatchQty: number
+      componentCode?: string
+      componentDescription: string
+      selectedQuotation?: any
+      sector?: string
+    },
   ) => void
 }
 
@@ -218,8 +226,8 @@ export function TriageDialog({
             onClose={() => handleClose(false)}
             onDirectCompra={
               onDirectCompra
-                ? (selectedIds) => {
-                    onDirectCompra(currentItem!, itemsToProcess, selectedIds)
+                ? (selectedIds, extraCompraInfo) => {
+                    onDirectCompra(currentItem!, itemsToProcess, selectedIds, extraCompraInfo)
                     handleClose(false)
                   }
                 : undefined

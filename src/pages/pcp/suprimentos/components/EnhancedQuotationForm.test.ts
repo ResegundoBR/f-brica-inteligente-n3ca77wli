@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { MaterialShortage } from '@/types'
+import { MaterialShortage, Quotation } from '@/types'
+import { advanceGroupToCompraWithSurplus } from '@/services/quotations'
+import pb from '@/lib/pocketbase/client'
 
 /**
  * Função representativa da lógica executada no blur / edição de item do EnhancedQuotationForm:
@@ -218,6 +220,141 @@ describe('EnhancedQuotationForm - Proteção contra corrupção de quantidade no
     expect(setLocalQtyMock).toHaveBeenCalledWith('15')
     expect(updateShortageMock).toHaveBeenCalledWith('owbbm9ibmq0pntn', {
       quantity: 15,
+    })
+  })
+
+  describe('Compra com Quantidade Adicional / Excedente para Estoque', () => {
+    const mockQuotation: Quotation = {
+      id: 'quot_123',
+      material_shortage_id: 'owbbm9ibmq0pntn',
+      supplier: 'Fornecedor Alpha',
+      price: 15.5,
+      delivery_days: 7,
+      selected: true,
+      created: '2026-09-23T15:50:00Z',
+      updated: '2026-09-23T15:50:00Z',
+    }
+
+    let pbUpdateSpy: any
+    let pbCreateSpy: any
+    let pbGetFirstSpy: any
+
+    beforeEach(() => {
+      pbUpdateSpy = vi.fn().mockResolvedValue({})
+      pbCreateSpy = vi.fn().mockResolvedValue({ id: 'surplus_shortage_999' })
+      pbGetFirstSpy = vi.fn().mockResolvedValue(mockQuotation)
+
+      vi.spyOn(pb, 'collection').mockImplementation((collName: string) => {
+        if (collName === 'material_shortages') {
+          return {
+            update: pbUpdateSpy,
+            create: pbCreateSpy,
+          } as any
+        }
+        if (collName === 'quotations') {
+          return {
+            getFirstListItem: pbGetFirstSpy,
+          } as any
+        }
+        return {} as any
+      })
+    })
+
+    it('compra com quantidade MAIOR que a solicitada (19 un vs 10 un): avança as OPs com quantidades intactas e cria registro de excedente como "Compra para estoque"', async () => {
+      const itemIds = ['owbbm9ibmq0pntn', 'rwszhhy714twx1e', 'pvja5jo8r1l36bv']
+      const actualPurchaseQty = 19
+      const requestedBatchQty = 10 // 1 + 4 + 5 = 10 un
+
+      const result = await advanceGroupToCompraWithSurplus({
+        itemIds,
+        actualPurchaseQty,
+        requestedBatchQty,
+        componentCode: '05090003',
+        componentDescription: 'Soquete e27',
+        selectedQuotation: mockQuotation,
+        sector: 'Acabamento',
+      })
+
+      // Resultado reporta avanço e excedente correto (19 - 10 = 9)
+      expect(result.advancedCount).toBe(3)
+      expect(result.surplusQty).toBe(9)
+      expect(result.surplusShortageId).toBe('surplus_shortage_999')
+
+      // Verifica que as 3 OPs individuais foram avançadas para Compra sem alterar a quantidade individual
+      expect(pbUpdateSpy).toHaveBeenCalledTimes(3)
+      expect(pbUpdateSpy).toHaveBeenCalledWith(
+        'owbbm9ibmq0pntn',
+        expect.objectContaining({
+          status: 'Compra',
+          supplier: 'Fornecedor Alpha',
+          unit_price: 15.5,
+        }),
+      )
+      expect(pbUpdateSpy).toHaveBeenCalledWith(
+        'rwszhhy714twx1e',
+        expect.objectContaining({
+          status: 'Compra',
+          supplier: 'Fornecedor Alpha',
+          unit_price: 15.5,
+        }),
+      )
+      expect(pbUpdateSpy).toHaveBeenCalledWith(
+        'pvja5jo8r1l36bv',
+        expect.objectContaining({
+          status: 'Compra',
+          supplier: 'Fornecedor Alpha',
+          unit_price: 15.5,
+        }),
+      )
+
+      // NENHUM update alterou o campo 'quantity' das solicitações individuais!
+      for (const call of pbUpdateSpy.mock.calls) {
+        expect(call[1]).not.toHaveProperty('quantity')
+      }
+
+      // Verifica criação do registro de excedente
+      expect(pbCreateSpy).toHaveBeenCalledTimes(1)
+      expect(pbCreateSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: 'Soquete e27',
+          code: '05090003',
+          quantity: 9, // Excedente: 19 - 10 = 9
+          status: 'Compra',
+          supplier: 'Fornecedor Alpha',
+          unit_price: 15.5,
+          sector: 'Acabamento',
+          request_type: 'Materiais',
+          observation: expect.stringContaining(
+            'Compra para estoque (excedente de lote consolidado: 19 un compradas − 10 un solicitadas)',
+          ),
+        }),
+      )
+      // O registro de excedente é geral para estoque, NÃO tem order_id
+      expect(pbCreateSpy.mock.calls[0][0].order_id).toBeUndefined()
+    })
+
+    it('compra com quantidade IGUAL à solicitada (10 un vs 10 un): NÃO gera excedente e avança as solicitações normalmente', async () => {
+      const itemIds = ['owbbm9ibmq0pntn', 'rwszhhy714twx1e', 'pvja5jo8r1l36bv']
+      const actualPurchaseQty = 10
+      const requestedBatchQty = 10
+
+      const result = await advanceGroupToCompraWithSurplus({
+        itemIds,
+        actualPurchaseQty,
+        requestedBatchQty,
+        componentCode: '05090003',
+        componentDescription: 'Soquete e27',
+        selectedQuotation: mockQuotation,
+      })
+
+      expect(result.advancedCount).toBe(3)
+      expect(result.surplusQty).toBe(0)
+      expect(result.surplusShortageId).toBeUndefined()
+
+      // 3 updates para Compra
+      expect(pbUpdateSpy).toHaveBeenCalledTimes(3)
+      // NENHUM create chamado para registro de excedente
+      expect(pbCreateSpy).not.toHaveBeenCalled()
     })
   })
 })

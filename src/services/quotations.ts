@@ -143,6 +143,102 @@ export const advanceGroupToCompra = async (
   }
 }
 
+export interface GroupPurchaseWithSurplusParams {
+  itemIds: string[]
+  actualPurchaseQty: number
+  requestedBatchQty: number
+  componentCode?: string
+  componentDescription: string
+  selectedQuotation?: Quotation | null
+  sector?: string
+}
+
+export interface GroupPurchaseWithSurplusResult {
+  advancedCount: number
+  surplusQty: number
+  surplusShortageId?: string
+}
+
+/**
+ * Avança o lote de OPs selecionadas para Compras mantendo as quantidades originais intactas.
+ * Se a quantidade real informada for maior que a solicitada (ex.: 19 vs 10 un), registra o excedente (ex.: 9 un)
+ * como "Compra para estoque" do componente — registro próprio sem vínculo a OP (order_id: null/undefined),
+ * com fornecedor, data, quem comprou e preço proporcional da cotação selecionada.
+ * Na etapa de recebimento, essa solicitação de estoque geral é recebida normalmente ou distribuída,
+ * ingressando no saldo disponível de estoque (inventory) e visível a reservas/estoque mínimo.
+ * Quando a quantidade real = solicitada, nenhum excedente é gerado.
+ */
+export const advanceGroupToCompraWithSurplus = async ({
+  itemIds,
+  actualPurchaseQty,
+  requestedBatchQty,
+  componentCode,
+  componentDescription,
+  selectedQuotation,
+  sector = 'Suprimentos',
+}: GroupPurchaseWithSurplusParams): Promise<GroupPurchaseWithSurplusResult> => {
+  if (itemIds.length === 0) {
+    return { advancedCount: 0, surplusQty: 0 }
+  }
+
+  // 1. Avançar todas as solicitações selecionadas mantendo quantidades originais intactas
+  await advanceGroupToCompra(itemIds, selectedQuotation)
+
+  // 2. Calcular excedente de compra
+  const surplus = Math.max(0, Number(actualPurchaseQty || 0) - Number(requestedBatchQty || 0))
+
+  let surplusShortageId: string | undefined = undefined
+
+  // 3. Se houver excedente (> 0), registrar a "Compra para estoque"
+  if (surplus > 0) {
+    const today = new Date().toISOString().split('T')[0]
+    const currentUserId = pb.authStore.record?.id || undefined
+
+    const expectedDate =
+      selectedQuotation?.delivery_days && selectedQuotation.delivery_days > 0
+        ? new Date(Date.now() + selectedQuotation.delivery_days * 24 * 60 * 60 * 1000)
+            .toISOString()
+            .split('T')[0]
+        : undefined
+
+    const unitPrice =
+      selectedQuotation?.price && selectedQuotation.price > 0 ? selectedQuotation.price : undefined
+
+    const shortagePayload: Record<string, any> = {
+      description: componentDescription,
+      code: componentCode ? componentCode.trim() : undefined,
+      quantity: surplus,
+      sector: sector || 'Suprimentos',
+      status: 'Compra',
+      priority: 'Sem pressa',
+      request_type: 'Materiais',
+      purchase_date: today,
+      supplier: selectedQuotation?.supplier || undefined,
+      unit_price: unitPrice,
+      requested_by: currentUserId,
+      observation: `Compra para estoque (excedente de lote consolidado: ${actualPurchaseQty} un compradas − ${requestedBatchQty} un solicitadas)`,
+    }
+
+    if (expectedDate) {
+      shortagePayload.expected_date = expectedDate
+    }
+
+    try {
+      const created = await pb.collection('material_shortages').create(shortagePayload)
+      surplusShortageId = created.id
+    } catch (err) {
+      console.error('Erro ao registrar excedente como compra para estoque:', err)
+      throw err
+    }
+  }
+
+  return {
+    advancedCount: itemIds.length,
+    surplusQty: surplus,
+    surplusShortageId,
+  }
+}
+
 export const sendDirectToCompra = (
   shortageId: string,
   data?: { supplier?: string; unit_price?: number; expected_date?: string },

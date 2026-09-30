@@ -377,8 +377,13 @@ export const advanceGroupToCompraWithSurplus = async ({
 
 export const sendDirectToCompra = (
   shortageId: string,
-  data?: { supplier?: string; unit_price?: number; expected_date?: string },
-) => pb.collection('material_shortages').update(shortageId, { status: 'Compra', ...data })
+  data?: { supplier?: string; unit_price?: number; expected_date?: string; purchase_date?: string },
+) =>
+  pb.collection('material_shortages').update(shortageId, {
+    status: 'Compra',
+    purchase_date: data?.purchase_date || new Date().toISOString().split('T')[0],
+    ...data,
+  })
 
 export const updateShortageItem = (
   shortageId: string,

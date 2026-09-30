@@ -16,7 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { ShoppingCart, FileText, XCircle, Loader2, Layers } from 'lucide-react'
+import { ShoppingCart, FileText, XCircle, Loader2, Layers, ShoppingBag } from 'lucide-react'
 import { ShortageGroup } from '@/lib/shortage-grouping'
 import { formatQuantity } from '@/lib/utils'
 import { format, parseISO } from 'date-fns'
@@ -24,6 +24,7 @@ import pb from '@/lib/pocketbase/client'
 import { useToast } from '@/hooks/use-toast'
 import { NoTranslate } from '@/components/NoTranslate'
 import { UserActionBadge } from '@/components/UserActionBadge'
+import { advanceGroupToCompra } from '@/services/quotations'
 
 interface TriageGroupDetailDialogProps {
   group: ShortageGroup | null
@@ -65,6 +66,29 @@ export function TriageGroupDetailDialog({
       toast({
         title: 'Erro ao processar lote',
         description: err.message || 'Falha ao atualizar registros.',
+        variant: 'destructive',
+      })
+    } finally {
+      setLoadingAction(null)
+    }
+  }
+
+  const handleSendGroupToCompra = async () => {
+    setLoadingAction('Compra')
+    try {
+      const ids = group.items.map((it) => it.id)
+      const batchId = `lote_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`
+      await advanceGroupToCompra(ids, undefined, batchId)
+      toast({
+        title: 'Lote enviado para compras',
+        description: `${group.items.length} registro(s) de ${group.description} (${formatQuantity(group.totalQuantity)} un) enviados diretamente para Compras em lote consolidado.`,
+      })
+      onOpenChange(false)
+      onAction()
+    } catch (err: any) {
+      toast({
+        title: 'Erro ao enviar lote para compras',
+        description: err.message || 'Falha ao atualizar registros do lote.',
         variant: 'destructive',
       })
     } finally {
@@ -189,7 +213,19 @@ export function TriageGroupDetailDialog({
           </p>
         </div>
 
-        <DialogFooter className="gap-2">
+        <DialogFooter className="flex flex-col sm:flex-row gap-2">
+          <Button
+            className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+            onClick={handleSendGroupToCompra}
+            disabled={!!loadingAction}
+          >
+            {loadingAction === 'Compra' ? (
+              <Loader2 className="size-4 mr-2 animate-spin" />
+            ) : (
+              <ShoppingBag className="size-4 mr-2" />
+            )}
+            Enviar Compras
+          </Button>
           <Button
             className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
             onClick={() => handleGroupAction('Cotação')}
@@ -200,7 +236,7 @@ export function TriageGroupDetailDialog({
             ) : (
               <ShoppingCart className="size-4 mr-2" />
             )}
-            Autorizar e Enviar Grupo para Cotação
+            Para Cotação
           </Button>
           <Button
             className="flex-1 bg-red-600 hover:bg-red-700 text-white"

@@ -7,12 +7,14 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { ShoppingCart, FileText, XCircle } from 'lucide-react'
+import { ShoppingCart, FileText, XCircle, ShoppingBag, Loader2 } from 'lucide-react'
 import { MaterialShortage } from '@/types'
 import { formatQuantity } from '@/lib/utils'
 import { format, parseISO } from 'date-fns'
 import pb from '@/lib/pocketbase/client'
 import { useToast } from '@/hooks/use-toast'
+import { sendDirectToCompra } from '@/services/quotations'
+import { useState } from 'react'
 
 import { useMemo } from 'react'
 import { findOtherOpDemands } from '@/services/material-consolidation'
@@ -34,6 +36,7 @@ export function TriageDetailDialog({
   onAction,
 }: TriageDetailDialogProps) {
   const { toast } = useToast()
+  const [submitting, setSubmitting] = useState(false)
   const consolidation = useMemo(() => {
     if (!item) return null
     return findOtherOpDemands(item, allShortages)
@@ -42,6 +45,7 @@ export function TriageDetailDialog({
   if (!item) return null
 
   const handleTriage = async (status: 'Cotação' | 'Cancelado') => {
+    setSubmitting(true)
     try {
       await pb.collection('material_shortages').update(item.id, { status })
       toast({
@@ -51,6 +55,33 @@ export function TriageDetailDialog({
       onAction()
     } catch (err: any) {
       toast({ title: 'Erro', description: err.message, variant: 'destructive' })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleSendDirectToCompra = async () => {
+    setSubmitting(true)
+    try {
+      const today = new Date().toISOString().split('T')[0]
+      await sendDirectToCompra(item.id, {
+        purchase_date: today,
+        ...(item.supplier ? { supplier: item.supplier } : {}),
+      })
+      toast({
+        title: 'Enviado para compras',
+        description: `Item ${item.description} enviado diretamente para Compras.`,
+      })
+      onOpenChange(false)
+      onAction()
+    } catch (err: any) {
+      toast({
+        title: 'Erro ao enviar para compras',
+        description: err.message || 'Falha ao atualizar registro.',
+        variant: 'destructive',
+      })
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -117,16 +148,30 @@ export function TriageDetailDialog({
             />
           )}
         </div>
-        <DialogFooter className="gap-2">
+        <DialogFooter className="flex flex-col sm:flex-row gap-2">
+          <Button
+            className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+            onClick={handleSendDirectToCompra}
+            disabled={submitting}
+          >
+            {submitting ? (
+              <Loader2 className="size-4 mr-2 animate-spin" />
+            ) : (
+              <ShoppingBag className="size-4 mr-2" />
+            )}
+            Enviar Compras
+          </Button>
           <Button
             className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
             onClick={() => handleTriage('Cotação')}
+            disabled={submitting}
           >
             <ShoppingCart className="size-4 mr-2" /> Para Cotação
           </Button>
           <Button
             className="flex-1 bg-red-600 hover:bg-red-700 text-white"
             onClick={() => handleTriage('Cancelado')}
+            disabled={submitting}
           >
             <XCircle className="size-4 mr-2" /> Reprovar
           </Button>

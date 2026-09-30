@@ -8,6 +8,16 @@ export type KnownSector = (typeof SECTOR_ORDER)[number]
 export const NO_SECTOR_LABEL = 'Sem setor'
 
 /**
+ * Identifica se um código de componente é uma peça fabricada internamente durante o processo (inicia por 'FAB').
+ * Peças fabricadas internamente (ex: FAB01075, FAB01090) são produzidas durante a própria fabricação
+ * e não existem previamente no estoque para a separação física inicial.
+ */
+export function isFabricatedCode(code?: string | null): boolean {
+  if (!code) return false
+  return code.trim().toUpperCase().startsWith('FAB')
+}
+
+/**
  * Normaliza os valores de setor gravados na BOM (pcp_order_materials).
  * No banco real estão como FABRICAÇÃO / PREPARAÇÃO / MONTAGEM / EXPEDIÇÃO
  * ou Fabricação / Preparação / Montagem / Expedição.
@@ -99,6 +109,11 @@ export function buildSectorGroups(input: BuildSectorGroupsInput): SectorGroup[] 
   groupsMap.set(NO_SECTOR_LABEL, [])
 
   for (const item of items) {
+    // Componentes FAB são fabricados internamente durante o processo e não entram na separação
+    if (isFabricatedCode(item.code)) {
+      continue
+    }
+
     const orderIds = item.order_ids && item.order_ids.length > 0 ? item.order_ids : []
 
     // Se o item não tem order_ids ou a lista de materiais BOM está vazia

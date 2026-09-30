@@ -231,9 +231,12 @@ export async function syncSeparationReservations(
   items: SeparationItem[],
 ): Promise<void> {
   for (const item of items) {
+    // Componentes FAB não geram reserva no estoque
+    const isFab = item.code ? item.code.trim().toUpperCase().startsWith('FAB') : false
     if (
-      item.status === 'separado' ||
-      (item.status === 'parcial' && (item.separated_quantity ?? 0) > 0)
+      !isFab &&
+      (item.status === 'separado' ||
+        (item.status === 'parcial' && (item.separated_quantity ?? 0) > 0))
     ) {
       await reserveSeparatedItem(separationId, item)
     } else {

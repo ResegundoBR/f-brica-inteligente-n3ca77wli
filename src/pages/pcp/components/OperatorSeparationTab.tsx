@@ -59,6 +59,8 @@ import {
   SectorItemCard,
   SECTOR_ORDER,
   NO_SECTOR_LABEL,
+  KnownSector,
+  isFabricatedCode,
 } from '@/services/pcp-separation-sectors'
 import { SeparationMessageModal, SeparationOpOption } from './SeparationMessageModal'
 import type { PcpOrderMaterial, PcpOrder } from '@/types'
@@ -75,6 +77,9 @@ export function OperatorSeparationTab() {
   const [finalizing, setFinalizing] = useState(false)
   const [confirmFinalizeOpen, setConfirmFinalizeOpen] = useState(false)
   const [filterQuery, setFilterQuery] = useState('')
+  const [selectedSectorFilter, setSelectedSectorFilter] = useState<
+    'TODOS' | KnownSector | typeof NO_SECTOR_LABEL
+  >('TODOS')
   const [opsExpanded, setOpsExpanded] = useState(false)
   const [stockAvailabilityMap, setStockAvailabilityMap] = useState<
     Map<string, ComponentStockAvailability>
@@ -172,10 +177,13 @@ export function OperatorSeparationTab() {
     setActiveSeparation(sep)
     setOpsExpanded(false)
     setFilterQuery('')
-    const draft = (sep.items || []).map((item) => ({
-      ...item,
-      status: item.status || 'pendente',
-    }))
+    setSelectedSectorFilter('TODOS')
+    const draft = (sep.items || [])
+      .filter((item) => !isFabricatedCode(item.code))
+      .map((item) => ({
+        ...item,
+        status: item.status || 'pendente',
+      }))
     // Cria cópia profunda dos itens para manipulação local
     setItemsDraft(draft)
 
@@ -652,13 +660,19 @@ export function OperatorSeparationTab() {
   }, [itemsDraft, filterQuery])
 
   // Agrupamento por setor estrito: Fabricação -> Preparação -> Montagem -> Expedição -> Sem setor
-  const sectorGroups = useMemo(() => {
+  const allSectorGroups = useMemo(() => {
     return buildSectorGroups({
       items: filteredItemsDraft,
       bomMaterials,
       orders: roundOrders,
     })
   }, [filteredItemsDraft, bomMaterials, roundOrders])
+
+  // Aplica o filtro de setor no topo do modal (TODOS = ordem canônica completa; setor escolhido = só aquele bloco)
+  const sectorGroups = useMemo(() => {
+    if (selectedSectorFilter === 'TODOS') return allSectorGroups
+    return allSectorGroups.filter((g) => g.sector === selectedSectorFilter)
+  }, [allSectorGroups, selectedSectorFilter])
 
   // Abertura do diálogo de mensagem da OP para um item/card
   const handleOpenMessageModal = (card: SectorItemCard) => {

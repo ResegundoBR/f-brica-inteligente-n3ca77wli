@@ -7,6 +7,9 @@ import {
 } from './material-reservations'
 import { MaterialReservation } from '@/types'
 import { upsertMaterialShortage } from './material-shortages'
+import { isFabricatedCode } from './pcp-separation-sectors'
+
+export { isFabricatedCode } from './pcp-separation-sectors'
 
 export type SeparationStatus = 'Pendente' | 'Em_Separacao' | 'Concluida' | 'Cancelada'
 
@@ -231,6 +234,7 @@ export async function finalizeSeparation(
       { code: string; description: string; qty: number; orderId?: string }
     >()
     for (const item of separated) {
+      if (isFabricatedCode(item.code)) continue
       const codeNorm = normalizeCode(item.code)
       if (!codeNorm) continue
       const existing = separatedByCode.get(codeNorm)
@@ -250,6 +254,7 @@ export async function finalizeSeparation(
 
     // Incluir também os parciais (apenas a parcela separated_quantity)
     for (const item of parciais) {
+      if (isFabricatedCode(item.code)) continue
       const codeNorm = normalizeCode(item.code)
       if (!codeNorm) continue
       const qty =
@@ -345,6 +350,7 @@ export async function finalizeSeparation(
   // 1) Faltas totais
   for (const item of shortages) {
     if (item.status === 'substituido') continue
+    if (isFabricatedCode(item.code)) continue
     try {
       const primaryOrderId = item.order_ids?.[0] || null
       const primaryOp =
@@ -384,6 +390,7 @@ export async function finalizeSeparation(
 
   // 2) Faltas parciais: APENAS a diferença (shortage_quantity)
   for (const item of parciais) {
+    if (isFabricatedCode(item.code)) continue
     const diff = Number(item.shortage_quantity) || 0
     if (diff <= 0) continue
     try {

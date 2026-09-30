@@ -26,6 +26,11 @@ interface TriageTableProps {
   onRowClick: (item: MaterialShortage) => void
   onGroupClick?: (group: ShortageGroup) => void
   searchQuery?: string
+  /**
+   * Se fornecido, o checkbox do cabeçalho controla apenas as linhas desta tabela/bloco,
+   * exibindo estado indeterminate quando parcialmente selecionado.
+   */
+  onToggleBlockSelect?: (ids: string[]) => void
 }
 
 export function TriageTable({
@@ -33,6 +38,7 @@ export function TriageTable({
   onRowClick,
   onGroupClick,
   searchQuery = '',
+  onToggleBlockSelect,
 }: TriageTableProps) {
   const selectedIds = useShortageStore((s) => s.selectedIds)
   const toggle = useShortageStore((s) => s.toggle)
@@ -81,7 +87,27 @@ export function TriageTable({
   }
 
   const allItemIds = useMemo(() => items.map((i) => i.id), [items])
-  const allSelected = allItemIds.length > 0 && allItemIds.every((id) => selectedIds.includes(id))
+  const selectedCountInBlock = useMemo(
+    () => allItemIds.filter((id) => selectedIds.includes(id)).length,
+    [allItemIds, selectedIds],
+  )
+  const allBlockSelected = allItemIds.length > 0 && selectedCountInBlock === allItemIds.length
+  const someBlockSelected = !allBlockSelected && selectedCountInBlock > 0
+
+  const handleHeaderCheckboxChange = () => {
+    if (onToggleBlockSelect) {
+      onToggleBlockSelect(allItemIds)
+    } else {
+      // Quando não há callback específico de bloco, alterna todas as linhas desta tabela
+      toggleMultiple(allItemIds)
+    }
+  }
+
+  const headerCheckedState = allBlockSelected
+    ? true
+    : someBlockSelected
+      ? ('indeterminate' as const)
+      : false
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-lg border shadow-sm overflow-hidden">
@@ -89,7 +115,11 @@ export function TriageTable({
         <TableHeader className="bg-slate-50 dark:bg-slate-800/50">
           <TableRow>
             <TableHead className="w-[44px]">
-              <Checkbox checked={allSelected} onCheckedChange={() => toggleAll()} />
+              <Checkbox
+                checked={headerCheckedState}
+                onCheckedChange={handleHeaderCheckboxChange}
+                aria-label="Selecionar todas as linhas deste bloco"
+              />
             </TableHead>
             <TableHead className="w-[60px]">Status</TableHead>
             <TableHead className="w-[85px]">Data</TableHead>

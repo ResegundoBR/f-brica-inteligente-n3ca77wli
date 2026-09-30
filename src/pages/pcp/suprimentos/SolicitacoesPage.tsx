@@ -365,6 +365,7 @@ export default function SolicitacoesPage() {
                   onRowClick={handleRowClick}
                   onGroupClick={handleGroupClick}
                   searchQuery={searchQuery}
+                  onToggleBlockSelect={handleSelectCategoryItems}
                 />
               </div>
             )
@@ -377,6 +378,7 @@ export default function SolicitacoesPage() {
           onRowClick={handleRowClick}
           onGroupClick={handleGroupClick}
           searchQuery={searchQuery}
+          onToggleBlockSelect={handleSelectCategoryItems}
         />
       )}
       {selectedIds.length > 0 && (

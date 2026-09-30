@@ -53,7 +53,17 @@ import {
   getItemAllocationKey,
   OpAllocation,
 } from '@/services/pcp-separation-allocations'
+import {
+  buildSectorGroups,
+  SectorGroup,
+  SectorItemCard,
+  SECTOR_ORDER,
+  NO_SECTOR_LABEL,
+} from '@/services/pcp-separation-sectors'
+import { SeparationMessageModal, SeparationOpOption } from './SeparationMessageModal'
+import type { PcpOrderMaterial, PcpOrder } from '@/types'
 import pb from '@/lib/pocketbase/client'
+import { MessageSquare } from 'lucide-react'
 import { toast } from '@/hooks/use-toast'
 
 export function OperatorSeparationTab() {
@@ -71,7 +81,18 @@ export function OperatorSeparationTab() {
   >(new Map())
   const [opAllocationsMap, setOpAllocationsMap] = useState<Map<string, OpAllocation[]>>(new Map())
   const [allocationsLoading, setAllocationsLoading] = useState(false)
+  const [bomMaterials, setBomMaterials] = useState<PcpOrderMaterial[]>([])
+  const [roundOrders, setRoundOrders] = useState<PcpOrder[]>([])
   const isMobile = useIsMobile()
+
+  // Estado do Diálogo de Mensagem da OP
+  const [messageModalOpen, setMessageModalOpen] = useState(false)
+  const [messageTargetItem, setMessageTargetItem] = useState<{
+    code?: string
+    description: string
+    sectorName?: string
+    opOptions: SeparationOpOption[]
+  } | null>(null)
 
   // Estado do Diálogo de Falta Parcial
   const [partialDialogOpen, setPartialDialogOpen] = useState(false)
@@ -161,22 +182,46 @@ export function OperatorSeparationTab() {
     // Carregar disponibilidade de estoque em tempo real para os itens
     refreshAvailability(draft)
 
-    // Carregar rateio de componentes por OP da BOM (pcp_order_materials)
+    // Carregar rateio de componentes por OP da BOM (pcp_order_materials) e setores
     const orderIds = sep.order_ids || []
     if (orderIds.length > 0) {
       setAllocationsLoading(true)
-      loadRoundOpAllocations(orderIds, draft)
-        .then((allocMap) => {
+      Promise.all([
+        loadRoundOpAllocations(orderIds, draft),
+        (async () => {
+          try {
+            // Carrega BOM e Orders para agrupamento por setor
+            const idFilter = orderIds.map((id) => `order_id='${id}'`).join(' || ')
+            const [bomsRes, ordersRes] = await Promise.all([
+              pb.collection('pcp_order_materials').getFullList<PcpOrderMaterial>({
+                filter: idFilter,
+              }),
+              pb.collection('pcp_orders').getFullList<PcpOrder>({
+                filter: orderIds.map((id) => `id='${id}'`).join(' || '),
+              }),
+            ])
+            return { boms: bomsRes, orders: ordersRes }
+          } catch (e) {
+            console.error('Erro ao buscar BOM/Ordens para setores:', e)
+            return { boms: [], orders: [] }
+          }
+        })(),
+      ])
+        .then(([allocMap, { boms, orders }]) => {
           setOpAllocationsMap(allocMap)
+          setBomMaterials(boms)
+          setRoundOrders(orders)
         })
         .catch((err) => {
-          console.error('Erro ao carregar rateio por OP:', err)
+          console.error('Erro ao carregar rateio por OP e setores:', err)
         })
         .finally(() => {
           setAllocationsLoading(false)
         })
     } else {
       setOpAllocationsMap(new Map())
+      setBomMaterials([])
+      setRoundOrders([])
     }
 
     // Se estiver Pendente e o operador abriu, podemos colocar como Em_Separacao no backend
@@ -606,6 +651,39 @@ export function OperatorSeparationTab() {
     })
   }, [itemsDraft, filterQuery])
 
+  // Agrupamento por setor estrito: Fabricação -> Preparação -> Montagem -> Expedição -> Sem setor
+  const sectorGroups = useMemo(() => {
+    return buildSectorGroups({
+      items: filteredItemsDraft,
+      bomMaterials,
+      orders: roundOrders,
+    })
+  }, [filteredItemsDraft, bomMaterials, roundOrders])
+
+  // Abertura do diálogo de mensagem da OP para um item/card
+  const handleOpenMessageModal = (card: SectorItemCard) => {
+    const item = card.item
+    // Constrói lista de OPs disponíveis a partir de sectorAllocations ou order_ids
+    const opOptions: SeparationOpOption[] =
+      card.sectorAllocations && card.sectorAllocations.length > 0
+        ? card.sectorAllocations.map((a) => ({
+            orderId: a.orderId,
+            opNumber: a.opNumber,
+          }))
+        : (item.order_ids || []).map((oId, idx) => ({
+            orderId: oId,
+            opNumber: item.op_numbers?.[idx] || oId,
+          }))
+
+    setMessageTargetItem({
+      code: item.code,
+      description: item.description,
+      sectorName: card.sector,
+      opOptions,
+    })
+    setMessageModalOpen(true)
+  }
+
   const pendingSeparations = separations.filter(
     (s) => s.status === 'Pendente' || s.status === 'Em_Separacao',
   )
@@ -1024,326 +1102,371 @@ export function OperatorSeparationTab() {
             )}
           </div>
 
-          {/* LISTA MOBILE: ROLAGEM NATIVA POR TOQUE (overflow-y-auto com touch-pan-y) */}
+          {/* LISTA MOBILE AGRUPADA POR SETOR COM ROLAGEM NATIVA POR TOQUE */}
           <div
-            className="flex-1 overflow-y-auto touch-pan-y overscroll-contain p-3 space-y-2.5 pb-24"
+            className="flex-1 overflow-y-auto touch-pan-y overscroll-contain p-3 space-y-4 pb-24"
             style={{ WebkitOverflowScrolling: 'touch' }}
           >
-            {filteredItemsDraft.length === 0 ? (
+            {sectorGroups.length === 0 ? (
               <div className="p-8 text-center text-sm text-muted-foreground border-2 border-dashed rounded-xl my-4">
                 {filterQuery
                   ? 'Nenhum material encontrado com o filtro aplicado.'
                   : 'Nenhum material nesta rodada.'}
               </div>
             ) : (
-              filteredItemsDraft.map((item, index) => {
-                const isSeparated = item.status === 'separado'
-                const isPartial = item.status === 'parcial'
-                const isShortage = item.status === 'falta'
-                const isSubstituted = item.status === 'substituido'
-                const isReadOnly = activeSeparation.status === 'Concluida'
+              sectorGroups.map((group) => {
+                const sectorColorClass =
+                  group.sector === 'Fabricação'
+                    ? 'border-l-blue-500 bg-blue-500/5'
+                    : group.sector === 'Preparação'
+                      ? 'border-l-amber-500 bg-amber-500/5'
+                      : group.sector === 'Montagem'
+                        ? 'border-l-emerald-500 bg-emerald-500/5'
+                        : group.sector === 'Expedição'
+                          ? 'border-l-purple-500 bg-purple-500/5'
+                          : 'border-l-slate-400 bg-slate-500/5'
 
                 return (
-                  <div
-                    key={item.id || index}
-                    className={`p-3 rounded-xl border transition-colors shadow-sm flex flex-col gap-2.5 ${
-                      isSeparated
-                        ? 'bg-emerald-500/10 border-emerald-500/50'
-                        : isPartial
-                          ? 'bg-amber-500/10 border-amber-500/50'
-                          : isShortage
-                            ? 'bg-rose-500/10 border-rose-500/50'
-                            : isSubstituted
-                              ? 'bg-slate-500/10 border-slate-400/50 opacity-80'
-                              : 'bg-card border-border'
-                    }`}
-                  >
-                    {/* Código do material + status atual (se readonly ou marcado) */}
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {item.code ? (
-                          <NoTranslate
-                            as="span"
-                            className="font-mono font-bold text-xs px-2 py-0.5 rounded bg-muted text-foreground border"
-                          >
-                            {item.code}
-                          </NoTranslate>
-                        ) : (
-                          <span className="text-[11px] text-muted-foreground italic">
-                            s/ código
-                          </span>
-                        )}
-                        <span className="text-[10px] text-muted-foreground">#{index + 1}</span>
-                        {item.is_substitution && (
-                          <Badge
-                            variant="outline"
-                            className="bg-blue-500/10 text-blue-600 border-blue-400 text-[9px] h-4 px-1.5"
-                          >
-                            Substituto
-                          </Badge>
-                        )}
+                  <div key={group.sector} className="space-y-2">
+                    {/* Cabeçalho do Setor (Mobile) */}
+                    <div
+                      className={`flex items-center justify-between px-3 py-2 rounded-lg border-l-4 border bg-muted/60 ${sectorColorClass}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Layers className="h-4 w-4 text-foreground/70" />
+                        <span className="font-bold text-xs uppercase tracking-wide text-foreground">
+                          {group.sector}
+                        </span>
                       </div>
-
-                      {isSeparated && (
-                        <Badge className="bg-emerald-600 text-white text-[10px] h-5 px-2 gap-1">
-                          <CheckCircle2 className="h-3 w-3" /> Separado
-                        </Badge>
-                      )}
-                      {isPartial && (
-                        <Badge className="bg-amber-500 text-white text-[10px] h-5 px-2 gap-1">
-                          <Package className="h-3 w-3" /> Parcial
-                        </Badge>
-                      )}
-                      {isShortage && (
-                        <Badge className="bg-rose-600 text-white text-[10px] h-5 px-2 gap-1">
-                          <AlertTriangle className="h-3 w-3" /> Falta
-                        </Badge>
-                      )}
-                      {isSubstituted && (
-                        <Badge
-                          variant="outline"
-                          className="bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-400 text-[10px] h-5 px-2 gap-1"
-                        >
-                          Substituído
-                        </Badge>
-                      )}
-                      {!isSeparated && !isPartial && !isShortage && !isSubstituted && (
-                        <Badge variant="outline" className="text-[10px] h-5 text-muted-foreground">
-                          Pendente
-                        </Badge>
-                      )}
+                      <Badge variant="secondary" className="font-mono text-[10px] h-5 px-2">
+                        {group.cards.length} {group.cards.length === 1 ? 'item' : 'itens'}
+                      </Badge>
                     </div>
 
-                    {/* Descrição em destaque */}
-                    <NoTranslate
-                      as="div"
-                      className={`font-bold text-sm text-foreground leading-snug break-words ${
-                        isSubstituted ? 'line-through opacity-70' : ''
-                      }`}
-                    >
-                      {item.description}
-                    </NoTranslate>
+                    {/* Cards do Setor (Mobile) */}
+                    <div className="space-y-2.5">
+                      {group.cards.map((card, index) => {
+                        const item = card.item
+                        const isSeparated = item.status === 'separado'
+                        const isPartial = item.status === 'parcial'
+                        const isShortage = item.status === 'falta'
+                        const isSubstituted = item.status === 'substituido'
+                        const isReadOnly = activeSeparation.status === 'Concluida'
 
-                    {/* Banner informativo de Falta Parcial ou Substituição */}
-                    {isPartial && (
-                      <div className="p-2 rounded bg-amber-500/15 border border-amber-500/30 text-[11px] text-amber-800 dark:text-amber-300 font-semibold flex items-center justify-between gap-2">
-                        <span>
-                          {item.separated_quantity ?? 0}/{item.total_quantity} {item.unit || 'UN'}{' '}
-                          separados
-                        </span>
-                        <span className="text-amber-900 dark:text-amber-200">
-                          {item.shortage_quantity ?? 0} {item.unit || 'UN'} em solicitação
-                        </span>
-                      </div>
-                    )}
+                        const opNumbersToDisplay =
+                          card.sectorOpNumbers.length > 0
+                            ? card.sectorOpNumbers
+                            : item.op_numbers || []
 
-                    {isSubstituted && (
-                      <div className="p-2 rounded bg-slate-200/70 dark:bg-slate-800/70 border border-slate-300 dark:border-slate-700 text-[11px] text-foreground font-medium flex items-center gap-1.5">
-                        <ArrowLeftRight className="h-3.5 w-3.5 text-blue-600 shrink-0" />
-                        <span>
-                          Substituído por{' '}
-                          <NoTranslate as="strong" className="font-mono text-primary font-bold">
-                            [{item.replaced_by_code}]
-                          </NoTranslate>{' '}
-                          {item.replaced_by_description} (sem solicitação de compra)
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Qtd, OPs e Medida empilhados de forma limpa */}
-                    <div className="space-y-1 text-xs">
-                      <div className="flex items-center justify-between gap-2 pt-0.5">
-                        <span className="text-muted-foreground text-[11px]">
-                          Quantidade solicitada:
-                        </span>
-                        <span className="font-bold text-foreground text-xs bg-muted px-2 py-0.5 rounded">
-                          <NoTranslate as="span">
-                            {Number(item.total_quantity).toLocaleString('pt-BR', {
-                              maximumFractionDigits: 2,
-                            })}{' '}
-                            {item.unit}
-                          </NoTranslate>
-                        </span>
-                      </div>
-
-                      {/* MINI-RATEIO POR OP (Mobile) — apenas para itens com 2+ OPs */}
-                      {(() => {
-                        const hasMultipleOps = (item.order_ids?.length || 0) > 1
-                        if (!hasMultipleOps) return null
-
-                        const allocKey = getItemAllocationKey(item)
-                        const allocations = opAllocationsMap.get(allocKey)
+                        const displayQty = card.sectorQuantity ?? item.total_quantity
+                        const hasMultipleOps = opNumbersToDisplay.length > 1
 
                         return (
-                          <div className="pt-1 pb-0.5 space-y-1">
-                            <span className="text-[10px] text-muted-foreground font-semibold block">
-                              Rateio por OP:
-                            </span>
-                            {allocationsLoading && !allocations ? (
-                              <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                                <Loader2 className="h-3 w-3 animate-spin text-blue-600" />
-                                <span>Buscando BOM das OPs...</span>
-                              </div>
-                            ) : allocations && allocations.length > 0 ? (
-                              <div className="flex flex-wrap gap-1">
-                                {allocations.map((alloc, aIdx) => (
-                                  <span
-                                    key={alloc.orderId || aIdx}
-                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/80 border text-[10px] font-medium leading-none text-foreground"
+                          <div
+                            key={card.cardKey || item.id || index}
+                            className={`p-3 rounded-xl border transition-colors shadow-sm flex flex-col gap-2.5 ${
+                              isSeparated
+                                ? 'bg-emerald-500/10 border-emerald-500/50'
+                                : isPartial
+                                  ? 'bg-amber-500/10 border-amber-500/50'
+                                  : isShortage
+                                    ? 'bg-rose-500/10 border-rose-500/50'
+                                    : isSubstituted
+                                      ? 'bg-slate-500/10 border-slate-400/50 opacity-80'
+                                      : 'bg-card border-border'
+                            }`}
+                          >
+                            {/* Código do material + status atual */}
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {item.code ? (
+                                  <NoTranslate
+                                    as="span"
+                                    className="font-mono font-bold text-xs px-2 py-0.5 rounded bg-muted text-foreground border"
                                   >
-                                    <NoTranslate
-                                      as="span"
-                                      className="font-mono font-semibold text-blue-700 dark:text-blue-400"
-                                    >
-                                      {alloc.opNumber}
-                                    </NoTranslate>
-                                    <span className="text-muted-foreground">→</span>
-                                    {alloc.quantity !== null && alloc.quantity !== undefined ? (
-                                      <NoTranslate as="span" className="font-bold">
-                                        {Number(alloc.quantity).toLocaleString('pt-BR', {
-                                          maximumFractionDigits: 2,
-                                        })}{' '}
-                                        {alloc.unit || item.unit || 'un'}
-                                      </NoTranslate>
-                                    ) : (
-                                      <span
-                                        className="text-muted-foreground font-bold notranslate"
-                                        translate="no"
-                                        title="Não encontrado na BOM desta OP"
-                                      >
-                                        —
-                                      </span>
-                                    )}
+                                    {item.code}
+                                  </NoTranslate>
+                                ) : (
+                                  <span className="text-[11px] text-muted-foreground italic">
+                                    s/ código
                                   </span>
-                                ))}
+                                )}
+                                <span className="text-[10px] text-muted-foreground">
+                                  #{index + 1}
+                                </span>
+                                {item.is_substitution && (
+                                  <Badge
+                                    variant="outline"
+                                    className="bg-blue-500/10 text-blue-600 border-blue-400 text-[9px] h-4 px-1.5"
+                                  >
+                                    Substituto
+                                  </Badge>
+                                )}
                               </div>
-                            ) : (
-                              <div className="flex flex-wrap gap-1">
-                                {item.order_ids?.map((oId, oIdx) => {
-                                  const fallbackOp = item.op_numbers?.[oIdx] || `OP ${oIdx + 1}`
-                                  return (
-                                    <span
-                                      key={oId || oIdx}
-                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/60 border text-[10px] text-muted-foreground"
-                                    >
-                                      <NoTranslate as="span" className="font-mono">
-                                        {fallbackOp.startsWith('OP')
-                                          ? fallbackOp
-                                          : `OP ${fallbackOp}`}
-                                      </NoTranslate>
-                                      <span>→</span>
-                                      <span className="notranslate" translate="no">
-                                        —
-                                      </span>
+
+                              {isSeparated && (
+                                <Badge className="bg-emerald-600 text-white text-[10px] h-5 px-2 gap-1">
+                                  <CheckCircle2 className="h-3 w-3" /> Separado
+                                </Badge>
+                              )}
+                              {isPartial && (
+                                <Badge className="bg-amber-500 text-white text-[10px] h-5 px-2 gap-1">
+                                  <Package className="h-3 w-3" /> Parcial
+                                </Badge>
+                              )}
+                              {isShortage && (
+                                <Badge className="bg-rose-600 text-white text-[10px] h-5 px-2 gap-1">
+                                  <AlertTriangle className="h-3 w-3" /> Falta
+                                </Badge>
+                              )}
+                              {isSubstituted && (
+                                <Badge
+                                  variant="outline"
+                                  className="bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-400 text-[10px] h-5 px-2 gap-1"
+                                >
+                                  Substituído
+                                </Badge>
+                              )}
+                              {!isSeparated && !isPartial && !isShortage && !isSubstituted && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] h-5 text-muted-foreground"
+                                >
+                                  Pendente
+                                </Badge>
+                              )}
+                            </div>
+
+                            {/* Descrição em destaque */}
+                            <NoTranslate
+                              as="div"
+                              className={`font-bold text-sm text-foreground leading-snug break-words ${
+                                isSubstituted ? 'line-through opacity-70' : ''
+                              }`}
+                            >
+                              {item.description}
+                            </NoTranslate>
+
+                            {/* Banner informativo de Falta Parcial ou Substituição */}
+                            {isPartial && (
+                              <div className="p-2 rounded bg-amber-500/15 border border-amber-500/30 text-[11px] text-amber-800 dark:text-amber-300 font-semibold flex items-center justify-between gap-2">
+                                <span>
+                                  {item.separated_quantity ?? 0}/{item.total_quantity}{' '}
+                                  {item.unit || 'UN'} separados
+                                </span>
+                                <span className="text-amber-900 dark:text-amber-200">
+                                  {item.shortage_quantity ?? 0} {item.unit || 'UN'} em solicitação
+                                </span>
+                              </div>
+                            )}
+
+                            {isSubstituted && (
+                              <div className="p-2 rounded bg-slate-200/70 dark:bg-slate-800/70 border border-slate-300 dark:border-slate-700 text-[11px] text-foreground font-medium flex items-center gap-1.5">
+                                <ArrowLeftRight className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                                <span>
+                                  Substituído por{' '}
+                                  <NoTranslate
+                                    as="strong"
+                                    className="font-mono text-primary font-bold"
+                                  >
+                                    [{item.replaced_by_code}]
+                                  </NoTranslate>{' '}
+                                  {item.replaced_by_description} (sem solicitação de compra)
+                                </span>
+                              </div>
+                            )}
+
+                            {/* Qtd, OPs e Medida empilhados de forma limpa */}
+                            <div className="space-y-1 text-xs">
+                              <div className="flex items-center justify-between gap-2 pt-0.5">
+                                <span className="text-muted-foreground text-[11px]">
+                                  Solicitado ({group.sector}):
+                                </span>
+                                <span className="font-bold text-foreground text-xs bg-muted px-2 py-0.5 rounded">
+                                  <NoTranslate as="span">
+                                    {Number(displayQty).toLocaleString('pt-BR', {
+                                      maximumFractionDigits: 2,
+                                    })}{' '}
+                                    {item.unit}
+                                  </NoTranslate>
+                                </span>
+                              </div>
+
+                              {/* MINI-RATEIO POR OP (Mobile) — apenas para itens com 2+ OPs no setor */}
+                              {hasMultipleOps && (
+                                <div className="pt-1 pb-0.5 space-y-1">
+                                  <span className="text-[10px] text-muted-foreground font-semibold block">
+                                    Rateio por OP ({group.sector}):
+                                  </span>
+                                  {card.sectorAllocations && card.sectorAllocations.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1">
+                                      {card.sectorAllocations.map((alloc, aIdx) => (
+                                        <span
+                                          key={alloc.orderId || aIdx}
+                                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/80 border text-[10px] font-medium leading-none text-foreground"
+                                        >
+                                          <NoTranslate
+                                            as="span"
+                                            className="font-mono font-semibold text-blue-700 dark:text-blue-400"
+                                          >
+                                            {alloc.opNumber}
+                                          </NoTranslate>
+                                          <span className="text-muted-foreground">→</span>
+                                          {alloc.quantity !== null &&
+                                          alloc.quantity !== undefined ? (
+                                            <NoTranslate as="span" className="font-bold">
+                                              {Number(alloc.quantity).toLocaleString('pt-BR', {
+                                                maximumFractionDigits: 2,
+                                              })}{' '}
+                                              {alloc.unit || item.unit || 'un'}
+                                            </NoTranslate>
+                                          ) : (
+                                            <span
+                                              className="text-muted-foreground font-bold notranslate"
+                                              translate="no"
+                                            >
+                                              —
+                                            </span>
+                                          )}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <div className="flex flex-wrap gap-1">
+                                      {opNumbersToDisplay.map((op, oIdx) => (
+                                        <span
+                                          key={op || oIdx}
+                                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/60 border text-[10px] text-muted-foreground font-mono"
+                                        >
+                                          {op}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* DISPONIBILIDADE DO ITEM NO ESTOQUE (Mobile) */}
+                              {(() => {
+                                const norm = normalizeCode(item.code)
+                                const stockInfo = stockAvailabilityMap.get(norm)
+                                const available = stockInfo ? stockInfo.availableStock : 0
+                                const requested = Number(displayQty) || 0
+                                const isInsufficient = available < requested
+                                return (
+                                  <div className="flex items-center justify-between gap-2 pt-0.5">
+                                    <span className="text-muted-foreground text-[11px]">
+                                      Disponível:
                                     </span>
-                                  )
-                                })}
+                                    <div className="flex items-center gap-1.5">
+                                      <Badge
+                                        variant={isInsufficient ? 'destructive' : 'secondary'}
+                                        className={`h-5 px-2 text-[10px] font-mono font-bold notranslate ${
+                                          isInsufficient
+                                            ? 'bg-rose-600 text-white animate-pulse'
+                                            : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 border-emerald-300'
+                                        }`}
+                                        translate="no"
+                                      >
+                                        {available} {stockInfo?.unit || item.unit || 'UN'}
+                                      </Badge>
+                                      {isInsufficient && !isSeparated && (
+                                        <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400">
+                                          Marcar 🔴 Falta
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                )
+                              })()}
+
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-muted-foreground text-[11px]">OPs:</span>
+                                <NoTranslate
+                                  as="span"
+                                  className="font-mono font-medium text-foreground text-[11px] truncate max-w-[200px] text-right"
+                                >
+                                  {opNumbersToDisplay.join(', ') || 'N/A'}
+                                </NoTranslate>
+                              </div>
+
+                              {item.cut_measurement && (
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-muted-foreground text-[11px]">
+                                    Medida corte:
+                                  </span>
+                                  <Badge
+                                    variant="secondary"
+                                    className="h-5 px-1.5 text-[10px] font-mono text-foreground notranslate"
+                                    translate="no"
+                                  >
+                                    {item.cut_measurement}
+                                  </Badge>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* BOTÕES DE AÇÃO: Separado / Falta / Troca / Mensagem */}
+                            {!isReadOnly && !isSubstituted && (
+                              <div className="grid grid-cols-4 gap-1.5 pt-1">
+                                <Button
+                                  type="button"
+                                  variant={isSeparated ? 'default' : 'outline'}
+                                  onClick={() => handleToggleItemStatus(item.id, 'separado')}
+                                  className={`min-h-[44px] h-11 text-[11px] font-bold gap-1 transition-all shadow-sm ${
+                                    isSeparated
+                                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-500/50'
+                                      : 'border-2 border-emerald-600/50 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 active:bg-emerald-100'
+                                  }`}
+                                >
+                                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                                  <span className="truncate">Separado</span>
+                                </Button>
+
+                                <Button
+                                  type="button"
+                                  variant={isShortage || isPartial ? 'default' : 'outline'}
+                                  onClick={() => handleToggleItemStatus(item.id, 'falta')}
+                                  className={`min-h-[44px] h-11 text-[11px] font-bold gap-1 transition-all shadow-sm ${
+                                    isShortage || isPartial
+                                      ? isPartial
+                                        ? 'bg-amber-600 hover:bg-amber-700 text-white ring-2 ring-amber-500/50'
+                                        : 'bg-rose-600 hover:bg-rose-700 text-white ring-2 ring-rose-500/50'
+                                      : 'border-2 border-rose-600/50 text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 active:bg-rose-100'
+                                  }`}
+                                >
+                                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                                  <span className="truncate">
+                                    {isPartial ? 'Parcial' : 'Falta'}
+                                  </span>
+                                </Button>
+
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => handleOpenSwapDialog(item)}
+                                  className="min-h-[44px] h-11 text-[11px] font-bold gap-1 transition-all shadow-sm border-2 border-blue-600/50 text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 active:bg-blue-100"
+                                >
+                                  <ArrowLeftRight className="h-3.5 w-3.5 shrink-0" />
+                                  <span className="truncate">Troca</span>
+                                </Button>
+
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => handleOpenMessageModal(card)}
+                                  className="min-h-[44px] h-11 text-[11px] font-bold gap-1 transition-all shadow-sm border-2 border-slate-300 dark:border-slate-700 text-foreground hover:bg-muted active:bg-muted/80"
+                                  title="Enviar mensagem sobre o componente para o PCP"
+                                >
+                                  <MessageSquare className="h-3.5 w-3.5 shrink-0 text-blue-600" />
+                                  <span className="truncate">Mensagem</span>
+                                </Button>
                               </div>
                             )}
                           </div>
                         )
-                      })()}
-
-                      {/* DISPONIBILIDADE DO ITEM NO ESTOQUE (Mobile) */}
-                      {(() => {
-                        const norm = normalizeCode(item.code)
-                        const stockInfo = stockAvailabilityMap.get(norm)
-                        const available = stockInfo ? stockInfo.availableStock : 0
-                        const requested = Number(item.total_quantity) || 0
-                        const isInsufficient = available < requested
-                        return (
-                          <div className="flex items-center justify-between gap-2 pt-0.5">
-                            <span className="text-muted-foreground text-[11px]">Disponível:</span>
-                            <div className="flex items-center gap-1.5">
-                              <Badge
-                                variant={isInsufficient ? 'destructive' : 'secondary'}
-                                className={`h-5 px-2 text-[10px] font-mono font-bold notranslate ${
-                                  isInsufficient
-                                    ? 'bg-rose-600 text-white animate-pulse'
-                                    : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 border-emerald-300'
-                                }`}
-                                translate="no"
-                              >
-                                {available} {stockInfo?.unit || item.unit || 'UN'}
-                              </Badge>
-                              {isInsufficient && !isSeparated && (
-                                <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400">
-                                  Marcar 🔴 Falta
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        )
-                      })()}
-
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-muted-foreground text-[11px]">OPs:</span>
-                        <NoTranslate
-                          as="span"
-                          className="font-mono font-medium text-foreground text-[11px] truncate max-w-[200px] text-right"
-                        >
-                          {item.op_numbers?.join(', ') || 'N/A'}
-                        </NoTranslate>
-                      </div>
-
-                      {item.cut_measurement && (
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-muted-foreground text-[11px]">Medida corte:</span>
-                          <Badge
-                            variant="secondary"
-                            className="h-5 px-1.5 text-[10px] font-mono text-foreground notranslate"
-                            translate="no"
-                          >
-                            {item.cut_measurement}
-                          </Badge>
-                        </div>
-                      )}
+                      })}
                     </div>
-
-                    {/* BOTÕES GRANDES PARA O CHÃO DE FÁBRICA: Separado / Falta / Troca */}
-                    {!isReadOnly && !isSubstituted && (
-                      <div className="grid grid-cols-3 gap-1.5 pt-1">
-                        <Button
-                          type="button"
-                          variant={isSeparated ? 'default' : 'outline'}
-                          onClick={() => handleToggleItemStatus(item.id, 'separado')}
-                          className={`min-h-[44px] h-11 text-[11px] font-bold gap-1 transition-all shadow-sm ${
-                            isSeparated
-                              ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-500/50'
-                              : 'border-2 border-emerald-600/50 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 active:bg-emerald-100'
-                          }`}
-                        >
-                          <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                          <span>Separado</span>
-                        </Button>
-
-                        <Button
-                          type="button"
-                          variant={isShortage || isPartial ? 'default' : 'outline'}
-                          onClick={() => handleToggleItemStatus(item.id, 'falta')}
-                          className={`min-h-[44px] h-11 text-[11px] font-bold gap-1 transition-all shadow-sm ${
-                            isShortage || isPartial
-                              ? isPartial
-                                ? 'bg-amber-600 hover:bg-amber-700 text-white ring-2 ring-amber-500/50'
-                                : 'bg-rose-600 hover:bg-rose-700 text-white ring-2 ring-rose-500/50'
-                              : 'border-2 border-rose-600/50 text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 active:bg-rose-100'
-                          }`}
-                        >
-                          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                          <span>{isPartial ? 'Parcial' : 'Falta'}</span>
-                        </Button>
-
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => handleOpenSwapDialog(item)}
-                          className="min-h-[44px] h-11 text-[11px] font-bold gap-1 transition-all shadow-sm border-2 border-blue-600/50 text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 active:bg-blue-100"
-                        >
-                          <ArrowLeftRight className="h-3.5 w-3.5 shrink-0" />
-                          <span>Troca</span>
-                        </Button>
-                      </div>
-                    )}
                   </div>
                 )
               })
@@ -1530,319 +1653,353 @@ export function OperatorSeparationTab() {
               </div>
             </DialogHeader>
 
-            {/* LISTA INTERATIVA DE ITENS */}
+            {/* LISTA INTERATIVA DE ITENS AGRUPADA POR SETORES (Desktop) */}
             <div className="flex-1 min-h-0 flex flex-col py-2">
               <ScrollArea className="flex-1 max-h-[50vh] pr-2">
-                <div className="space-y-2">
-                  {filteredItemsDraft.length === 0 ? (
+                <div className="space-y-5">
+                  {sectorGroups.length === 0 ? (
                     <div className="p-8 text-center text-sm text-muted-foreground border-2 border-dashed rounded-xl my-4">
                       {filterQuery
                         ? 'Nenhum material encontrado com o filtro aplicado.'
                         : 'Nenhum material nesta rodada.'}
                     </div>
                   ) : (
-                    filteredItemsDraft.map((item, index) => {
-                      const isSeparated = item.status === 'separado'
-                      const isPartial = item.status === 'parcial'
-                      const isShortage = item.status === 'falta'
-                      const isSubstituted = item.status === 'substituido'
-                      const isReadOnly = activeSeparation.status === 'Concluida'
+                    sectorGroups.map((group) => {
+                      const sectorHeaderBg =
+                        group.sector === 'Fabricação'
+                          ? 'border-l-blue-500 bg-blue-500/10 text-blue-950 dark:text-blue-200'
+                          : group.sector === 'Preparação'
+                            ? 'border-l-amber-500 bg-amber-500/10 text-amber-950 dark:text-amber-200'
+                            : group.sector === 'Montagem'
+                              ? 'border-l-emerald-500 bg-emerald-500/10 text-emerald-950 dark:text-emerald-200'
+                              : group.sector === 'Expedição'
+                                ? 'border-l-purple-500 bg-purple-500/10 text-purple-950 dark:text-purple-200'
+                                : 'border-l-slate-400 bg-muted/60 text-foreground'
 
                       return (
-                        <div
-                          key={item.id || index}
-                          className={`p-3 rounded-xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                            isSeparated
-                              ? 'bg-emerald-500/10 border-emerald-500/40 shadow-sm'
-                              : isPartial
-                                ? 'bg-amber-500/10 border-amber-500/40 shadow-sm'
-                                : isShortage
-                                  ? 'bg-rose-500/10 border-rose-500/40 shadow-sm'
-                                  : isSubstituted
-                                    ? 'bg-slate-500/10 border-slate-400/50 opacity-80'
-                                    : 'bg-card border-border hover:border-slate-400/50'
-                          }`}
-                        >
-                          <div className="space-y-1 flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              {item.code ? (
-                                <NoTranslate
-                                  as="span"
-                                  className="font-mono font-bold text-xs px-2 py-0.5 rounded bg-muted text-foreground"
-                                >
-                                  {item.code}
-                                </NoTranslate>
-                              ) : (
-                                <span className="text-xs text-muted-foreground italic">
-                                  s/ código
-                                </span>
-                              )}
-                              {item.is_substitution && (
-                                <Badge
-                                  variant="outline"
-                                  className="bg-blue-500/10 text-blue-600 border-blue-400 text-[10px] h-5 px-1.5"
-                                >
-                                  Substituto
-                                </Badge>
-                              )}
-                              <NoTranslate
-                                as="span"
-                                className={`font-semibold text-sm text-foreground break-words ${
-                                  isSubstituted ? 'line-through opacity-70' : ''
-                                }`}
-                              >
-                                {item.description}
-                              </NoTranslate>
+                        <div key={group.sector} className="space-y-2.5">
+                          {/* Cabeçalho do Bloco de Setor */}
+                          <div
+                            className={`flex items-center justify-between px-3 py-2 rounded-lg border border-l-4 font-bold text-xs uppercase tracking-wider ${sectorHeaderBg}`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <Layers className="h-4 w-4" />
+                              <span>{group.sector}</span>
                             </div>
-
-                            <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-                              <NoTranslate
-                                as="span"
-                                className="flex items-center gap-1 font-mono font-semibold text-foreground"
-                              >
-                                OPs: {item.op_numbers?.join(', ') || 'N/A'}
-                              </NoTranslate>
-
-                              {item.cut_measurement && (
-                                <Badge
-                                  variant="secondary"
-                                  className="h-5 px-1.5 text-[10px] font-mono notranslate"
-                                  translate="no"
-                                >
-                                  Medida de corte: {item.cut_measurement}
-                                </Badge>
-                              )}
-
-                              <NoTranslate
-                                as="span"
-                                className="font-semibold text-foreground bg-muted/80 px-2 py-0.5 rounded text-xs"
-                              >
-                                Solicitado:{' '}
-                                {Number(item.total_quantity).toLocaleString('pt-BR', {
-                                  maximumFractionDigits: 2,
-                                })}{' '}
-                                {item.unit}
-                              </NoTranslate>
-
-                              {/* MINI-RATEIO POR OP (Desktop) — apenas para itens com 2+ OPs */}
-                              {(() => {
-                                const hasMultipleOps = (item.order_ids?.length || 0) > 1
-                                if (!hasMultipleOps) return null
-
-                                const allocKey = getItemAllocationKey(item)
-                                const allocations = opAllocationsMap.get(allocKey)
-
-                                return (
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="text-[11px] text-muted-foreground font-semibold">
-                                      Rateio:
-                                    </span>
-                                    {allocationsLoading && !allocations ? (
-                                      <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-                                        <Loader2 className="h-3 w-3 animate-spin text-blue-600" />
-                                        <span>BOM...</span>
-                                      </span>
-                                    ) : allocations && allocations.length > 0 ? (
-                                      <div className="flex flex-wrap items-center gap-1">
-                                        {allocations.map((alloc, aIdx) => (
-                                          <span
-                                            key={alloc.orderId || aIdx}
-                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/80 border text-[11px] font-medium leading-none text-foreground"
-                                          >
-                                            <NoTranslate
-                                              as="span"
-                                              className="font-mono font-semibold text-blue-700 dark:text-blue-400"
-                                            >
-                                              {alloc.opNumber}
-                                            </NoTranslate>
-                                            <span className="text-muted-foreground">→</span>
-                                            {alloc.quantity !== null &&
-                                            alloc.quantity !== undefined ? (
-                                              <NoTranslate as="span" className="font-bold">
-                                                {Number(alloc.quantity).toLocaleString('pt-BR', {
-                                                  maximumFractionDigits: 2,
-                                                })}{' '}
-                                                {alloc.unit || item.unit || 'un'}
-                                              </NoTranslate>
-                                            ) : (
-                                              <span
-                                                className="text-muted-foreground font-bold notranslate"
-                                                translate="no"
-                                                title="Não encontrado na BOM desta OP"
-                                              >
-                                                —
-                                              </span>
-                                            )}
-                                          </span>
-                                        ))}
-                                      </div>
-                                    ) : (
-                                      <div className="flex flex-wrap items-center gap-1">
-                                        {item.order_ids?.map((oId, oIdx) => {
-                                          const fallbackOp =
-                                            item.op_numbers?.[oIdx] || `OP ${oIdx + 1}`
-                                          return (
-                                            <span
-                                              key={oId || oIdx}
-                                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/60 border text-[11px] text-muted-foreground"
-                                            >
-                                              <NoTranslate as="span" className="font-mono">
-                                                {fallbackOp.startsWith('OP')
-                                                  ? fallbackOp
-                                                  : `OP ${fallbackOp}`}
-                                              </NoTranslate>
-                                              <span>→</span>
-                                              <span className="notranslate" translate="no">
-                                                —
-                                              </span>
-                                            </span>
-                                          )
-                                        })}
-                                      </div>
-                                    )}
-                                  </div>
-                                )
-                              })()}
-
-                              {/* BADGE DE DISPONIBILIDADE (Desktop) */}
-                              {(() => {
-                                const norm = normalizeCode(item.code)
-                                const stockInfo = stockAvailabilityMap.get(norm)
-                                const available = stockInfo ? stockInfo.availableStock : 0
-                                const requested = Number(item.total_quantity) || 0
-                                const isInsufficient = available < requested
-                                return (
-                                  <div className="flex items-center gap-1.5">
-                                    <Badge
-                                      variant={isInsufficient ? 'destructive' : 'secondary'}
-                                      className={`h-5 px-2 text-[10px] font-mono font-bold notranslate ${
-                                        isInsufficient
-                                          ? 'bg-rose-600 text-white animate-pulse'
-                                          : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 border-emerald-300'
-                                      }`}
-                                      translate="no"
-                                      title={`Estoque total: ${stockInfo?.totalStock ?? 0} | Reservado: ${stockInfo?.reservedStock ?? 0} | Disponível: ${available}`}
-                                    >
-                                      Disponível: {available} {stockInfo?.unit || item.unit || 'UN'}
-                                    </Badge>
-                                    {isInsufficient && !isSeparated && (
-                                      <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400">
-                                        ⚠️ Insuficiente — marcar 🔴
-                                      </span>
-                                    )}
-                                  </div>
-                                )
-                              })()}
-                            </div>
-
-                            {/* Banner informativo desktop para Parcial ou Substituição */}
-                            {isPartial && (
-                              <div className="mt-1 px-2 py-1 rounded bg-amber-500/15 border border-amber-500/30 text-[11px] text-amber-800 dark:text-amber-300 font-semibold inline-flex items-center gap-2">
-                                <span>
-                                  🟡 {item.separated_quantity ?? 0}/{item.total_quantity}{' '}
-                                  {item.unit || 'UN'} separados
-                                </span>
-                                <span>·</span>
-                                <span className="text-amber-900 dark:text-amber-200">
-                                  {item.shortage_quantity ?? 0} {item.unit || 'UN'} em solicitação
-                                </span>
-                              </div>
-                            )}
-
-                            {isSubstituted && (
-                              <div className="mt-1 px-2 py-1 rounded bg-slate-200/70 dark:bg-slate-800/70 border border-slate-300 dark:border-slate-700 text-[11px] text-foreground font-medium inline-flex items-center gap-1.5">
-                                <ArrowLeftRight className="h-3.5 w-3.5 text-blue-600 shrink-0" />
-                                <span>
-                                  Substituído por{' '}
-                                  <NoTranslate
-                                    as="strong"
-                                    className="font-mono text-primary font-bold"
-                                  >
-                                    [{item.replaced_by_code}]
-                                  </NoTranslate>{' '}
-                                  {item.replaced_by_description} (sem solicitação de compra)
-                                </span>
-                              </div>
-                            )}
+                            <Badge variant="secondary" className="font-mono text-xs font-semibold">
+                              {group.cards.length} {group.cards.length === 1 ? 'item' : 'itens'}
+                            </Badge>
                           </div>
 
-                          {/* BOTÕES DE AÇÃO DO OPERADOR: 🟢 SEPARADO / 🔴 FALTA / 🔄 TROCA */}
-                          {!isReadOnly && !isSubstituted ? (
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant={isSeparated ? 'default' : 'outline'}
-                                onClick={() => handleToggleItemStatus(item.id, 'separado')}
-                                className={`h-9 px-3 gap-1.5 font-bold transition-all text-xs ${
-                                  isSeparated
-                                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-500/30 shadow'
-                                    : 'border-emerald-600/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
-                                }`}
-                              >
-                                <CheckCircle2 className="h-4 w-4" />
-                                Separado
-                              </Button>
+                          {/* Cards do Setor */}
+                          <div className="space-y-2">
+                            {group.cards.map((card, index) => {
+                              const item = card.item
+                              const isSeparated = item.status === 'separado'
+                              const isPartial = item.status === 'parcial'
+                              const isShortage = item.status === 'falta'
+                              const isSubstituted = item.status === 'substituido'
+                              const isReadOnly = activeSeparation.status === 'Concluida'
 
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant={isShortage || isPartial ? 'default' : 'outline'}
-                                onClick={() => handleToggleItemStatus(item.id, 'falta')}
-                                className={`h-9 px-3 gap-1.5 font-bold transition-all text-xs ${
-                                  isShortage || isPartial
-                                    ? isPartial
-                                      ? 'bg-amber-600 hover:bg-amber-700 text-white ring-2 ring-amber-500/30 shadow'
-                                      : 'bg-rose-600 hover:bg-rose-700 text-white ring-2 ring-rose-500/30 shadow'
-                                    : 'border-rose-600/40 text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40'
-                                }`}
-                              >
-                                <AlertTriangle className="h-4 w-4" />
-                                {isPartial ? 'Parcial' : 'Falta'}
-                              </Button>
+                              const opNumbersToDisplay =
+                                card.sectorOpNumbers.length > 0
+                                  ? card.sectorOpNumbers
+                                  : item.op_numbers || []
 
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleOpenSwapDialog(item)}
-                                className="h-9 px-3 gap-1.5 font-bold transition-all text-xs border-blue-600/40 text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40"
-                              >
-                                <ArrowLeftRight className="h-4 w-4" />
-                                Troca
-                              </Button>
-                            </div>
-                          ) : (
-                            <div className="shrink-0 flex items-center gap-1.5">
-                              {isSeparated ? (
-                                <Badge className="bg-emerald-600 text-white text-xs gap-1 py-1 px-2.5">
-                                  <CheckCircle2 className="h-3.5 w-3.5" />
-                                  Separado
-                                </Badge>
-                              ) : isPartial ? (
-                                <Badge className="bg-amber-600 text-white text-xs gap-1 py-1 px-2.5">
-                                  <Package className="h-3.5 w-3.5" />
-                                  Parcial
-                                </Badge>
-                              ) : isShortage ? (
-                                <Badge className="bg-rose-600 text-white text-xs gap-1 py-1 px-2.5">
-                                  <AlertTriangle className="h-3.5 w-3.5" />
-                                  Falta
-                                </Badge>
-                              ) : isSubstituted ? (
-                                <Badge
-                                  variant="outline"
-                                  className="bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-400 text-xs gap-1 py-1 px-2.5"
+                              const displayQty = card.sectorQuantity ?? item.total_quantity
+                              const hasMultipleOps = opNumbersToDisplay.length > 1
+
+                              return (
+                                <div
+                                  key={card.cardKey || item.id || index}
+                                  className={`p-3 rounded-xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                                    isSeparated
+                                      ? 'bg-emerald-500/10 border-emerald-500/40 shadow-sm'
+                                      : isPartial
+                                        ? 'bg-amber-500/10 border-amber-500/40 shadow-sm'
+                                        : isShortage
+                                          ? 'bg-rose-500/10 border-rose-500/40 shadow-sm'
+                                          : isSubstituted
+                                            ? 'bg-slate-500/10 border-slate-400/50 opacity-80'
+                                            : 'bg-card border-border hover:border-slate-400/50'
+                                  }`}
                                 >
-                                  Substituído
-                                </Badge>
-                              ) : (
-                                <Badge variant="outline" className="text-xs">
-                                  Pendente
-                                </Badge>
-                              )}
-                            </div>
-                          )}
+                                  <div className="space-y-1 flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      {item.code ? (
+                                        <NoTranslate
+                                          as="span"
+                                          className="font-mono font-bold text-xs px-2 py-0.5 rounded bg-muted text-foreground"
+                                        >
+                                          {item.code}
+                                        </NoTranslate>
+                                      ) : (
+                                        <span className="text-xs text-muted-foreground italic">
+                                          s/ código
+                                        </span>
+                                      )}
+                                      {item.is_substitution && (
+                                        <Badge
+                                          variant="outline"
+                                          className="bg-blue-500/10 text-blue-600 border-blue-400 text-[10px] h-5 px-1.5"
+                                        >
+                                          Substituto
+                                        </Badge>
+                                      )}
+                                      <NoTranslate
+                                        as="span"
+                                        className={`font-semibold text-sm text-foreground break-words ${
+                                          isSubstituted ? 'line-through opacity-70' : ''
+                                        }`}
+                                      >
+                                        {item.description}
+                                      </NoTranslate>
+                                    </div>
+
+                                    <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                                      <NoTranslate
+                                        as="span"
+                                        className="flex items-center gap-1 font-mono font-semibold text-foreground"
+                                      >
+                                        OPs: {opNumbersToDisplay.join(', ') || 'N/A'}
+                                      </NoTranslate>
+
+                                      {item.cut_measurement && (
+                                        <Badge
+                                          variant="secondary"
+                                          className="h-5 px-1.5 text-[10px] font-mono notranslate"
+                                          translate="no"
+                                        >
+                                          Medida de corte: {item.cut_measurement}
+                                        </Badge>
+                                      )}
+
+                                      <NoTranslate
+                                        as="span"
+                                        className="font-semibold text-foreground bg-muted/80 px-2 py-0.5 rounded text-xs"
+                                      >
+                                        Solicitado ({group.sector}):{' '}
+                                        {Number(displayQty).toLocaleString('pt-BR', {
+                                          maximumFractionDigits: 2,
+                                        })}{' '}
+                                        {item.unit}
+                                      </NoTranslate>
+
+                                      {/* MINI-RATEIO POR OP (Desktop) — apenas para itens com 2+ OPs no setor */}
+                                      {hasMultipleOps && (
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          <span className="text-[11px] text-muted-foreground font-semibold">
+                                            Rateio:
+                                          </span>
+                                          {card.sectorAllocations &&
+                                          card.sectorAllocations.length > 0 ? (
+                                            <div className="flex flex-wrap items-center gap-1">
+                                              {card.sectorAllocations.map((alloc, aIdx) => (
+                                                <span
+                                                  key={alloc.orderId || aIdx}
+                                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/80 border text-[11px] font-medium leading-none text-foreground"
+                                                >
+                                                  <NoTranslate
+                                                    as="span"
+                                                    className="font-mono font-semibold text-blue-700 dark:text-blue-400"
+                                                  >
+                                                    {alloc.opNumber}
+                                                  </NoTranslate>
+                                                  <span className="text-muted-foreground">→</span>
+                                                  {alloc.quantity !== null &&
+                                                  alloc.quantity !== undefined ? (
+                                                    <NoTranslate as="span" className="font-bold">
+                                                      {Number(alloc.quantity).toLocaleString(
+                                                        'pt-BR',
+                                                        {
+                                                          maximumFractionDigits: 2,
+                                                        },
+                                                      )}{' '}
+                                                      {alloc.unit || item.unit || 'un'}
+                                                    </NoTranslate>
+                                                  ) : (
+                                                    <span
+                                                      className="text-muted-foreground font-bold notranslate"
+                                                      translate="no"
+                                                    >
+                                                      —
+                                                    </span>
+                                                  )}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          ) : (
+                                            <div className="flex flex-wrap items-center gap-1">
+                                              {opNumbersToDisplay.map((op, oIdx) => (
+                                                <span
+                                                  key={op || oIdx}
+                                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/60 border text-[11px] text-muted-foreground font-mono"
+                                                >
+                                                  {op}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+
+                                      {/* BADGE DE DISPONIBILIDADE (Desktop) */}
+                                      {(() => {
+                                        const norm = normalizeCode(item.code)
+                                        const stockInfo = stockAvailabilityMap.get(norm)
+                                        const available = stockInfo ? stockInfo.availableStock : 0
+                                        const requested = Number(displayQty) || 0
+                                        const isInsufficient = available < requested
+                                        return (
+                                          <div className="flex items-center gap-1.5">
+                                            <Badge
+                                              variant={isInsufficient ? 'destructive' : 'secondary'}
+                                              className={`h-5 px-2 text-[10px] font-mono font-bold notranslate ${
+                                                isInsufficient
+                                                  ? 'bg-rose-600 text-white animate-pulse'
+                                                  : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 border-emerald-300'
+                                              }`}
+                                              translate="no"
+                                              title={`Estoque total: ${stockInfo?.totalStock ?? 0} | Reservado: ${stockInfo?.reservedStock ?? 0} | Disponível: ${available}`}
+                                            >
+                                              Disponível: {available}{' '}
+                                              {stockInfo?.unit || item.unit || 'UN'}
+                                            </Badge>
+                                            {isInsufficient && !isSeparated && (
+                                              <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400">
+                                                ⚠️ Insuficiente — marcar 🔴
+                                              </span>
+                                            )}
+                                          </div>
+                                        )
+                                      })()}
+                                    </div>
+
+                                    {/* Banner informativo desktop para Parcial ou Substituição */}
+                                    {isPartial && (
+                                      <div className="mt-1 px-2 py-1 rounded bg-amber-500/15 border border-amber-500/30 text-[11px] text-amber-800 dark:text-amber-300 font-semibold inline-flex items-center gap-2">
+                                        <span>
+                                          🟡 {item.separated_quantity ?? 0}/{item.total_quantity}{' '}
+                                          {item.unit || 'UN'} separados
+                                        </span>
+                                        <span>·</span>
+                                        <span className="text-amber-900 dark:text-amber-200">
+                                          {item.shortage_quantity ?? 0} {item.unit || 'UN'} em
+                                          solicitação
+                                        </span>
+                                      </div>
+                                    )}
+
+                                    {isSubstituted && (
+                                      <div className="mt-1 px-2 py-1 rounded bg-slate-200/70 dark:bg-slate-800/70 border border-slate-300 dark:border-slate-700 text-[11px] text-foreground font-medium inline-flex items-center gap-1.5">
+                                        <ArrowLeftRight className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                                        <span>
+                                          Substituído por{' '}
+                                          <NoTranslate
+                                            as="strong"
+                                            className="font-mono text-primary font-bold"
+                                          >
+                                            [{item.replaced_by_code}]
+                                          </NoTranslate>{' '}
+                                          {item.replaced_by_description} (sem solicitação de compra)
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* BOTÕES DE AÇÃO DO OPERADOR: 🟢 SEPARADO / 🔴 FALTA / 🔄 TROCA / 💬 MENSAGEM */}
+                                  {!isReadOnly && !isSubstituted ? (
+                                    <div className="flex items-center gap-1.5 shrink-0 flex-wrap sm:flex-nowrap">
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant={isSeparated ? 'default' : 'outline'}
+                                        onClick={() => handleToggleItemStatus(item.id, 'separado')}
+                                        className={`h-9 px-3 gap-1.5 font-bold transition-all text-xs ${
+                                          isSeparated
+                                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-500/30 shadow'
+                                            : 'border-emerald-600/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
+                                        }`}
+                                      >
+                                        <CheckCircle2 className="h-4 w-4" />
+                                        Separado
+                                      </Button>
+
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant={isShortage || isPartial ? 'default' : 'outline'}
+                                        onClick={() => handleToggleItemStatus(item.id, 'falta')}
+                                        className={`h-9 px-3 gap-1.5 font-bold transition-all text-xs ${
+                                          isShortage || isPartial
+                                            ? isPartial
+                                              ? 'bg-amber-600 hover:bg-amber-700 text-white ring-2 ring-amber-500/30 shadow'
+                                              : 'bg-rose-600 hover:bg-rose-700 text-white ring-2 ring-rose-500/30 shadow'
+                                            : 'border-rose-600/40 text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40'
+                                        }`}
+                                      >
+                                        <AlertTriangle className="h-4 w-4" />
+                                        {isPartial ? 'Parcial' : 'Falta'}
+                                      </Button>
+
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => handleOpenSwapDialog(item)}
+                                        className="h-9 px-3 gap-1.5 font-bold transition-all text-xs border-blue-600/40 text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40"
+                                      >
+                                        <ArrowLeftRight className="h-4 w-4" />
+                                        Troca
+                                      </Button>
+
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => handleOpenMessageModal(card)}
+                                        className="h-9 px-3 gap-1.5 font-bold transition-all text-xs border-slate-300 dark:border-slate-700 text-foreground hover:bg-muted"
+                                        title="Enviar mensagem sobre o componente para o PCP"
+                                      >
+                                        <MessageSquare className="h-4 w-4 text-blue-600" />
+                                        Mensagem
+                                      </Button>
+                                    </div>
+                                  ) : (
+                                    <div className="shrink-0 flex items-center gap-1.5">
+                                      {isSeparated ? (
+                                        <Badge className="bg-emerald-600 text-white text-xs gap-1 py-1 px-2.5">
+                                          <CheckCircle2 className="h-3.5 w-3.5" />
+                                          Separado
+                                        </Badge>
+                                      ) : isPartial ? (
+                                        <Badge className="bg-amber-600 text-white text-xs gap-1 py-1 px-2.5">
+                                          <Package className="h-3.5 w-3.5" />
+                                          Parcial
+                                        </Badge>
+                                      ) : isShortage ? (
+                                        <Badge className="bg-rose-600 text-white text-xs gap-1 py-1 px-2.5">
+                                          <AlertTriangle className="h-3.5 w-3.5" />
+                                          Falta
+                                        </Badge>
+                                      ) : isSubstituted ? (
+                                        <Badge
+                                          variant="outline"
+                                          className="bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-400 text-xs gap-1 py-1 px-2.5"
+                                        >
+                                          Substituído
+                                        </Badge>
+                                      ) : (
+                                        <Badge variant="outline" className="text-xs">
+                                          Pendente
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
                         </div>
                       )
                     })
@@ -2265,6 +2422,18 @@ export function OperatorSeparationTab() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+      )}
+
+      {/* DIÁLOGO 3: MENSAGEM PARA O PCP (integrado ao fluxo de mensagens da OP) */}
+      {messageModalOpen && messageTargetItem && (
+        <SeparationMessageModal
+          open={messageModalOpen}
+          onOpenChange={setMessageModalOpen}
+          itemCode={messageTargetItem.code}
+          itemDescription={messageTargetItem.description}
+          sectorName={messageTargetItem.sectorName}
+          opOptions={messageTargetItem.opOptions}
+        />
       )}
 
       {/* MODAL DE CONFIRMAÇÃO EXPLÍCITA ANTES DE FINALIZAR A RODADA */}

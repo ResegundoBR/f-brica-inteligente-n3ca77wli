@@ -21,6 +21,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { AlertTriangle, Plus, Check, Pencil, Layers, Info } from 'lucide-react'
 import { NoTranslate } from '@/components/NoTranslate'
+import { formatQuantity } from '@/lib/utils'
 import { useToast } from '@/hooks/use-toast'
 import {
   PcpMaterialMinLevel,
@@ -135,23 +136,23 @@ export function MaterialMinLevelAlertBlock({
                       <NoTranslate as="span">{item.description || '—'}</NoTranslate>
                     </TableCell>
                     <TableCell className="text-right font-mono text-muted-foreground notranslate">
-                      {item.totalStock} {item.unit}
+                      {formatQuantity(item.totalStock)} {item.unit}
                     </TableCell>
                     <TableCell className="text-right font-mono font-semibold text-amber-700 dark:text-amber-400 notranslate">
-                      {item.reservedStock} {item.unit}
+                      {formatQuantity(item.reservedStock)} {item.unit}
                     </TableCell>
                     <TableCell className="text-right font-mono font-bold text-slate-900 dark:text-slate-100 notranslate">
-                      {item.availableStock} {item.unit}
+                      {formatQuantity(item.availableStock)} {item.unit}
                     </TableCell>
                     <TableCell className="text-right font-mono font-semibold text-slate-700 dark:text-slate-300 notranslate">
-                      {item.minLevel} {item.unit}
+                      {formatQuantity(item.minLevel)} {item.unit}
                     </TableCell>
                     <TableCell className="text-right">
                       <Badge
                         variant="destructive"
                         className="font-mono font-bold text-[11px] px-2 py-0.5"
                       >
-                        -{item.difference} {item.unit}
+                        -{formatQuantity(item.difference)} {item.unit}
                       </Badge>
                     </TableCell>
                     {isManager && onEditItem && (

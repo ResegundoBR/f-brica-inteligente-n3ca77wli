@@ -15,7 +15,7 @@ import { NoTranslate } from '@/components/NoTranslate'
 import { useSupplierGroups } from '@/hooks/use-supplier-groups'
 import { SupplierGroupSection } from './SupplierGroupSection'
 import { useMemo, useState, Fragment } from 'react'
-import { cn } from '@/lib/utils'
+import { cn, formatQuantity } from '@/lib/utils'
 import { findOtherOpDemands } from '@/services/material-consolidation'
 import { ConsolidatedDemandBadge } from './ConsolidatedDemandBlock'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -270,7 +270,7 @@ function ComprasDisplayRow({
                 <span>
                   Rateio:{' '}
                   <strong className="text-slate-700 dark:text-slate-300">
-                    {displayItem.opQuantity} un
+                    {formatQuantity(displayItem.opQuantity)} un
                   </strong>{' '}
                   para {displayItem.opItems.length} OPs
                 </span>
@@ -278,7 +278,7 @@ function ComprasDisplayRow({
                   <>
                     <span>&bull;</span>
                     <span className="text-emerald-700 dark:text-emerald-300 font-medium">
-                      +{displayItem.surplusQuantity} un Compra para estoque
+                      +{formatQuantity(displayItem.surplusQuantity)} un Compra para estoque
                     </span>
                   </>
                 )}
@@ -294,18 +294,21 @@ function ComprasDisplayRow({
         <TableCell className="text-right text-sm font-bold">
           <div className="flex flex-col items-end">
             <NoTranslate as="span" className={cn(isBatch && 'text-blue-700 dark:text-blue-300')}>
-              {displayItem.totalQuantity} un
+              {formatQuantity(displayItem.totalQuantity)} un
             </NoTranslate>
             {isBatch && displayItem.surplusQuantity > 0 && (
               <span className="text-[10px] text-emerald-600 dark:text-emerald-400">
-                ({displayItem.opQuantity} + {displayItem.surplusQuantity})
+                ({formatQuantity(displayItem.opQuantity)} +{' '}
+                {formatQuantity(displayItem.surplusQuantity)})
               </span>
             )}
           </div>
         </TableCell>
 
         <TableCell className="text-right text-xs text-muted-foreground">
-          <NoTranslate as="span">{displayItem.receivedQuantity || '-'}</NoTranslate>
+          <NoTranslate as="span">
+            {displayItem.receivedQuantity ? formatQuantity(displayItem.receivedQuantity) : '-'}
+          </NoTranslate>
         </TableCell>
 
         <TableCell className="text-right text-sm">
@@ -372,7 +375,7 @@ function ComprasDisplayRow({
                   Rastreio interno do lote — Rateio por OP e Estoque:
                 </span>
                 <span className="text-blue-700 dark:text-blue-300 font-bold">
-                  Total real do lote: {displayItem.totalQuantity} un
+                  Total real do lote: {formatQuantity(displayItem.totalQuantity)} un
                 </span>
               </div>
 
@@ -380,7 +383,8 @@ function ComprasDisplayRow({
                 {/* Solicitações das OPs */}
                 <div className="space-y-1">
                   <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                    OPs Vinculadas ({displayItem.opItems.length} OPs — {displayItem.opQuantity} un):
+                    OPs Vinculadas ({displayItem.opItems.length} OPs —{' '}
+                    {formatQuantity(displayItem.opQuantity)} un):
                   </div>
                   <div className="space-y-1">
                     {displayItem.opItems.map((opItem) => {
@@ -408,7 +412,7 @@ function ComprasDisplayRow({
                             )}
                           </div>
                           <Badge variant="outline" className="text-[11px] font-bold">
-                            {opItem.quantity} un
+                            {formatQuantity(opItem.quantity)} un
                           </Badge>
                         </div>
                       )
@@ -429,7 +433,7 @@ function ComprasDisplayRow({
                           Compra para estoque (Excedente)
                         </span>
                         <Badge className="bg-emerald-600 text-white font-bold text-[11px]">
-                          +{displayItem.surplusQuantity} un
+                          +{formatQuantity(displayItem.surplusQuantity)} un
                         </Badge>
                       </div>
                       <p className="text-[11px] text-emerald-700 dark:text-emerald-300">
@@ -440,7 +444,7 @@ function ComprasDisplayRow({
                   ) : (
                     <div className="p-2 rounded bg-slate-50 dark:bg-slate-800/40 border text-[11px] text-muted-foreground">
                       Nenhum excedente adicionado. O lote atende exatamente a soma solicitada pelas
-                      OPs ({displayItem.opQuantity} un).
+                      OPs ({formatQuantity(displayItem.opQuantity)} un).
                     </div>
                   )}
                 </div>

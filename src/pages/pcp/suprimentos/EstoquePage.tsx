@@ -28,7 +28,7 @@ import { EditInventoryItemDialog } from './components/EditInventoryItemDialog'
 import { ProductDossierModal } from './components/ProductDossierModal'
 import { ProductSearchBar } from './components/ProductSearchBar'
 import { useToast } from '@/hooks/use-toast'
-import { cn } from '@/lib/utils'
+import { cn, formatQuantity } from '@/lib/utils'
 import { NoTranslate } from '@/components/NoTranslate'
 import { getInventory, createInventoryItem } from '@/services/inventory'
 import { getActiveReservationsMap, normalizeCode } from '@/services/material-reservations'
@@ -227,7 +227,7 @@ export default function EstoquePage() {
               className="text-2xl font-bold text-slate-800 dark:text-slate-100 notranslate"
               translate="no"
             >
-              {totalItems}
+              {formatQuantity(totalItems)}
             </p>
           </CardContent>
         </Card>
@@ -242,7 +242,7 @@ export default function EstoquePage() {
               className="text-2xl font-bold text-amber-600 dark:text-amber-400 notranslate"
               translate="no"
             >
-              {totalReserved}
+              {formatQuantity(totalReserved)}
             </p>
           </CardContent>
         </Card>
@@ -257,7 +257,7 @@ export default function EstoquePage() {
               className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 notranslate"
               translate="no"
             >
-              {totalAvailable}
+              {formatQuantity(totalAvailable)}
             </p>
           </CardContent>
         </Card>
@@ -387,7 +387,7 @@ export default function EstoquePage() {
                         as="span"
                         className="font-semibold text-slate-800 dark:text-slate-200"
                       >
-                        {totalStock}
+                        {formatQuantity(totalStock)}
                       </NoTranslate>
                     </TableCell>
                     <TableCell className="text-right">
@@ -396,7 +396,7 @@ export default function EstoquePage() {
                           as="span"
                           className="font-bold text-amber-600 dark:text-amber-400"
                         >
-                          {reservedStock}
+                          {formatQuantity(reservedStock)}
                         </NoTranslate>
                       ) : (
                         <span className="text-muted-foreground text-xs">0</span>
@@ -414,11 +414,11 @@ export default function EstoquePage() {
                               : 'text-emerald-600 dark:text-emerald-400',
                         )}
                       >
-                        {availableStock}
+                        {formatQuantity(availableStock)}
                       </NoTranslate>
                     </TableCell>
                     <TableCell className="text-right text-sm text-muted-foreground">
-                      <NoTranslate as="span">{item.min_quantity || 0}</NoTranslate>
+                      <NoTranslate as="span">{formatQuantity(item.min_quantity || 0)}</NoTranslate>
                     </TableCell>
                     <TableCell className="text-xs">
                       <NoTranslate as="span">{item.unit || '-'}</NoTranslate>

@@ -25,7 +25,7 @@ import {
   FastForward,
   Loader2,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, formatQuantity } from '@/lib/utils'
 import { MaterialShortage, Quotation } from '@/types'
 import {
   getQuotationsByShortage,
@@ -230,10 +230,10 @@ export function QuotationDialog({
     if (!item) return
     const extraMsg =
       consolidation && consolidation.totalOtherQuantity > 0
-        ? ` (Consolidado com outras OPs: ${consolidation.totalConsolidatedQuantity})`
+        ? ` (Consolidado com outras OPs: ${formatQuantity(consolidation.totalConsolidatedQuantity)})`
         : ''
     navigator.clipboard.writeText(
-      `Item: ${item.description} - Quantidade: ${item.quantity}${extraMsg}`,
+      `Item: ${item.description} - Quantidade: ${formatQuantity(item.quantity)}${extraMsg}`,
     )
     toast({ title: 'Copiado!', description: 'Texto copiado para área de transferência.' })
   }
@@ -294,7 +294,7 @@ export function QuotationDialog({
                   <>
                     <span className="text-muted-foreground">Quantidade:</span>
                     <NoTranslate as="span" className="font-medium">
-                      {item.quantity}
+                      {formatQuantity(item.quantity)}
                     </NoTranslate>
                     <Button
                       size="sm"
@@ -324,7 +324,7 @@ export function QuotationDialog({
             {consolidation && consolidation.otherDemands.length > 0 && (
               <ConsolidatedDemandBlock
                 consolidation={consolidation}
-                currentItemLabel={`Esta solicitação (${item.quantity} un)`}
+                currentItemLabel={`Esta solicitação (${formatQuantity(item.quantity)} un)`}
                 itemDescription={item.description}
                 itemCode={item.code}
                 onApplyTotal={(suggestedQty) => {
@@ -333,7 +333,7 @@ export function QuotationDialog({
                     .then(() => {
                       toast({
                         title: 'Quantidade atualizada',
-                        description: `Qtde alterada para ${suggestedQty} un (total consolidado).`,
+                        description: `Qtde alterada para ${formatQuantity(suggestedQty)} un (total consolidado).`,
                       })
                       onUpdate?.()
                     })

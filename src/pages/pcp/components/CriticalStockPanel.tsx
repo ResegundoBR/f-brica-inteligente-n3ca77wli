@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Inventory } from '@/types'
 import { AlertTriangle, PackageX } from 'lucide-react'
+import { formatQuantity } from '@/lib/utils'
 
 interface CriticalStockPanelProps {
   inventory: Inventory[]
@@ -38,9 +39,11 @@ export function CriticalStockPanel({ inventory }: CriticalStockPanelProps) {
                 </div>
                 <div className="text-right shrink-0">
                   <p className="text-xs font-bold text-red-600">
-                    {item.quantity} {item.unit || ''}
+                    {formatQuantity(item.quantity)} {item.unit || ''}
                   </p>
-                  <p className="text-[10px] text-muted-foreground">Mín: {item.min_quantity || 0}</p>
+                  <p className="text-[10px] text-muted-foreground">
+                    Mín: {formatQuantity(item.min_quantity || 0)}
+                  </p>
                 </div>
                 <Badge variant="destructive" className="text-[9px] shrink-0">
                   Crítico

@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/table'
 import { ShoppingCart, FileText, XCircle, Loader2, Layers } from 'lucide-react'
 import { ShortageGroup } from '@/lib/shortage-grouping'
+import { formatQuantity } from '@/lib/utils'
 import { format, parseISO } from 'date-fns'
 import pb from '@/lib/pocketbase/client'
 import { useToast } from '@/hooks/use-toast'
@@ -98,7 +99,7 @@ export function TriageGroupDetailDialog({
                 className="font-bold text-blue-700 dark:text-blue-300 notranslate"
                 translate="no"
               >
-                {group.totalQuantity} un
+                {formatQuantity(group.totalQuantity)} un
               </span>
             </div>
             <div>
@@ -151,7 +152,7 @@ export function TriageGroupDetailDialog({
                         {it.created ? format(parseISO(it.created), 'dd/MM/yy') : '-'}
                       </TableCell>
                       <TableCell className="text-right font-bold notranslate" translate="no">
-                        {it.quantity}
+                        {formatQuantity(it.quantity)}
                       </TableCell>
                       <TableCell>{it.sector || '-'}</TableCell>
                       <TableCell>

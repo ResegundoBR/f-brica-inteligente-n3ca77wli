@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import pb from '@/lib/pocketbase/client'
 import { MaterialShortage, OrdemCompra, OrdemCompraItem } from '@/types'
+import { formatQuantity } from '@/lib/utils'
 import {
   Dialog,
   DialogContent,
@@ -130,7 +131,8 @@ export function DeleteShortageDialog({
                 </span>
               )}
               <span>
-                Quantidade: <strong className="text-foreground">{item.quantity}</strong>
+                Quantidade:{' '}
+                <strong className="text-foreground">{formatQuantity(item.quantity)}</strong>
               </span>
               {item.supplier && (
                 <span>
@@ -162,7 +164,8 @@ export function DeleteShortageDialog({
                     {linkedOcs.map((l) => (
                       <li key={l.item.id}>
                         {l.oc?.oc_number ? `OC Nº ${l.oc.oc_number}` : `OC ID ${l.item.oc_id}`}
-                        {l.oc?.supplier ? ` (${l.oc.supplier})` : ''} — {l.item.quantity} un
+                        {l.oc?.supplier ? ` (${l.oc.supplier})` : ''} —{' '}
+                        {formatQuantity(l.item.quantity)} un
                         {l.oc?.status ? ` [${l.oc.status}]` : ''}
                       </li>
                     ))}

@@ -469,6 +469,19 @@ export function getNextStageForOp(
   return ALL_CANONICAL_STAGES[currentIdx + 1]
 }
 
+/**
+ * Formata quantidades numéricas para exibição no app PCP sem dízimas de ponto flutuante.
+ * - Converte números com dízimas periódicas/imprecisão de IEEE 754 para até 2 casas decimais (pt-BR).
+ * - Sem minimumFractionDigits: inteiros aparecem limpos (ex: 10 -> "10", 0 -> "0").
+ * - Valores fracionários (metros, mm, etc.): até 2 casas decimais (ex: 5.8084 -> "5,81", 183.4464 -> "183,45").
+ */
+export function formatQuantity(val: number | string | null | undefined): string {
+  if (val === null || val === undefined || val === '') return '0'
+  const num = typeof val === 'number' ? val : parseFloat(String(val).replace(',', '.'))
+  if (Number.isNaN(num)) return '0'
+  return num.toLocaleString('pt-BR', { maximumFractionDigits: 2 })
+}
+
 export function getPromisedDateInfo(
   promisedDateStr: string | undefined | null,
   status?: string,

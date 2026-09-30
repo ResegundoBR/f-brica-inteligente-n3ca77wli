@@ -24,7 +24,7 @@ import pb from '@/lib/pocketbase/client'
 import { distributeMaterials, type TraceabilityInfo } from '@/services/material-distribution'
 import { useToast } from '@/hooks/use-toast'
 import { getErrorMessage } from '@/lib/pocketbase/errors'
-import { toDateFieldValue } from '@/lib/pcp-utils'
+import { toDateFieldValue, formatQuantity } from '@/lib/pcp-utils'
 import { checkAndUpdateAffectedOcs } from '@/services/oc-receiving-automation'
 
 interface SmartReceiveDialogProps {
@@ -293,7 +293,7 @@ export function SmartReceiveDialog({
                       : ''}
                   </span>
                   <span className="font-bold text-blue-900 dark:text-blue-200">
-                    Qtd Lote Real: {totalReceived || totalNeeded} un
+                    Qtd Lote Real: {formatQuantity(totalReceived || totalNeeded)} un
                   </span>
                 </div>
               )}
@@ -302,16 +302,18 @@ export function SmartReceiveDialog({
                 <span>
                   Demanda das OPs:{' '}
                   <strong className="text-foreground notranslate" translate="no">
-                    {related
-                      .filter((x) => Boolean(x.order_id))
-                      .reduce((s, x) => s + (Number(x.quantity) || 0), 0) || totalNeeded}{' '}
+                    {formatQuantity(
+                      related
+                        .filter((x) => Boolean(x.order_id))
+                        .reduce((s, x) => s + (Number(x.quantity) || 0), 0) || totalNeeded,
+                    )}{' '}
                     un
                   </strong>
                 </span>
                 <span>
                   Já recebido:{' '}
                   <strong className="text-foreground notranslate" translate="no">
-                    {totalAlreadyReceived} un
+                    {formatQuantity(totalAlreadyReceived)} un
                   </strong>
                 </span>
               </div>
@@ -422,13 +424,13 @@ export function SmartReceiveDialog({
                           {product?.name || (isWithoutOp ? 'Material sem OP vinculada' : '-')}
                         </TableCell>
                         <TableCell className="text-right text-sm notranslate" translate="no">
-                          {needed}
+                          {formatQuantity(needed)}
                         </TableCell>
                         <TableCell
                           className="text-right text-sm text-muted-foreground notranslate"
                           translate="no"
                         >
-                          {alreadyRcvd}
+                          {formatQuantity(alreadyRcvd)}
                         </TableCell>
                         <TableCell>
                           {isWithoutOp ? (
@@ -465,7 +467,7 @@ export function SmartReceiveDialog({
                   <span>
                     Excedente Direcionado ao Estoque:{' '}
                     <strong className="notranslate" translate="no">
-                      +{surplus} unidade(s)
+                      +{formatQuantity(surplus)} unidade(s)
                     </strong>
                   </span>
                   <ArrowRight className="inline size-3 text-emerald-600" />
@@ -486,11 +488,11 @@ export function SmartReceiveDialog({
               <span className="text-sm text-muted-foreground">
                 Distribuído:{' '}
                 <strong className="text-foreground notranslate" translate="no">
-                  {totalDistributed}
+                  {formatQuantity(totalDistributed)}
                 </strong>{' '}
                 /{' '}
                 <span className="notranslate" translate="no">
-                  {Number(totalReceived) || 0}
+                  {formatQuantity(Number(totalReceived) || 0)}
                 </span>
               </span>
             </div>

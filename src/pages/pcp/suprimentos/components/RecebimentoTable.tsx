@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/table'
 import { MaterialShortage } from '@/types'
 import { CheckCircle, Layers, ChevronDown, ChevronRight, Warehouse, Package } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, formatQuantity } from '@/lib/utils'
 import { SupplierGroupSection } from './SupplierGroupSection'
 
 export interface RecebimentoDisplayItem {
@@ -246,7 +246,7 @@ function RecebimentoRow({
                 <span>
                   Rateio:{' '}
                   <strong className="text-slate-700 dark:text-slate-300">
-                    {displayItem.opQuantity} un
+                    {formatQuantity(displayItem.opQuantity)} un
                   </strong>{' '}
                   para {displayItem.opItems.length} OPs
                 </span>
@@ -254,7 +254,7 @@ function RecebimentoRow({
                   <>
                     <span>&bull;</span>
                     <span className="text-emerald-700 dark:text-emerald-300 font-medium">
-                      +{displayItem.surplusQuantity} un Compra para estoque
+                      +{formatQuantity(displayItem.surplusQuantity)} un Compra para estoque
                     </span>
                   </>
                 )}
@@ -268,11 +268,12 @@ function RecebimentoRow({
               as="span"
               className={cn(isBatch && 'text-blue-700 dark:text-blue-300 font-bold')}
             >
-              {total}
+              {formatQuantity(total)}
             </NoTranslate>
             {isBatch && displayItem.surplusQuantity > 0 && (
               <span className="text-[10px] text-emerald-600 dark:text-emerald-400">
-                ({displayItem.opQuantity} + {displayItem.surplusQuantity})
+                ({formatQuantity(displayItem.opQuantity)} +{' '}
+                {formatQuantity(displayItem.surplusQuantity)})
               </span>
             )}
           </div>
@@ -285,11 +286,11 @@ function RecebimentoRow({
             )}
             translate="no"
           >
-            {received}
+            {formatQuantity(received)}
           </span>
           <span className="text-xs text-muted-foreground notranslate" translate="no">
             {' '}
-            / {total}
+            / {formatQuantity(total)}
           </span>
         </TableCell>
         <TableCell className="text-xs notranslate" translate="no">
@@ -339,7 +340,7 @@ function RecebimentoRow({
                   Rastreio interno do lote — Rateio por OP e Estoque:
                 </span>
                 <span className="text-blue-700 dark:text-blue-300 font-bold">
-                  Total real do lote: {displayItem.totalQuantity} un
+                  Total real do lote: {formatQuantity(displayItem.totalQuantity)} un
                 </span>
               </div>
 
@@ -347,7 +348,8 @@ function RecebimentoRow({
                 {/* OPs vinculadas */}
                 <div className="space-y-1">
                   <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                    OPs Vinculadas ({displayItem.opItems.length} OPs — {displayItem.opQuantity} un):
+                    OPs Vinculadas ({displayItem.opItems.length} OPs —{' '}
+                    {formatQuantity(displayItem.opQuantity)} un):
                   </div>
                   <div className="space-y-1">
                     {displayItem.opItems.map((opItem) => {
@@ -375,7 +377,7 @@ function RecebimentoRow({
                             )}
                           </div>
                           <Badge variant="outline" className="text-[11px] font-bold">
-                            {opItem.quantity} un
+                            {formatQuantity(opItem.quantity)} un
                           </Badge>
                         </div>
                       )
@@ -396,7 +398,7 @@ function RecebimentoRow({
                           Compra para estoque (Excedente)
                         </span>
                         <Badge className="bg-emerald-600 text-white font-bold text-[11px]">
-                          +{displayItem.surplusQuantity} un
+                          +{formatQuantity(displayItem.surplusQuantity)} un
                         </Badge>
                       </div>
                       <p className="text-[11px] text-emerald-700 dark:text-emerald-300">
@@ -407,7 +409,7 @@ function RecebimentoRow({
                   ) : (
                     <div className="p-2 rounded bg-slate-50 dark:bg-slate-800/40 border text-[11px] text-muted-foreground">
                       Nenhum excedente adicionado. O lote atende exatamente a soma solicitada pelas
-                      OPs ({displayItem.opQuantity} un).
+                      OPs ({formatQuantity(displayItem.opQuantity)} un).
                     </div>
                   )}
                 </div>

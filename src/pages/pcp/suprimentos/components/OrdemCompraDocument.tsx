@@ -10,6 +10,7 @@ import { OrdemCompra, OrdemCompraItem } from '@/types'
 import { format, parseISO } from 'date-fns'
 import { Printer } from 'lucide-react'
 import { UserActionBadge } from '@/components/UserActionBadge'
+import { formatQuantity } from '@/lib/utils'
 
 interface OrdemCompraDocumentProps {
   oc: OrdemCompra | null
@@ -55,7 +56,7 @@ export function OrdemCompraDocument({ oc, items, open, onOpenChange }: OrdemComp
         const st = Number(it.st_value) || 0
         const ipi = Number(it.ipi_value) || 0
         const itTotal = it.total ?? (it.quantity || 0) * (it.unit_price || 0) + st + ipi
-        return `<tr><td>${it.code || '-'}</td><td>${it.description}</td><td class="r">${it.quantity}</td><td class="r">${formatCurrency(it.unit_price || 0)}</td><td class="r">${st > 0 ? formatCurrency(st) : '-'}</td><td class="r">${ipi > 0 ? formatCurrency(ipi) : '-'}</td><td class="r">${formatCurrency(itTotal)}</td></tr>`
+        return `<tr><td>${it.code || '-'}</td><td>${it.description}</td><td class="r">${formatQuantity(it.quantity)}</td><td class="r">${formatCurrency(it.unit_price || 0)}</td><td class="r">${st > 0 ? formatCurrency(st) : '-'}</td><td class="r">${ipi > 0 ? formatCurrency(ipi) : '-'}</td><td class="r">${formatCurrency(itTotal)}</td></tr>`
       })
       .join('')
 
@@ -199,7 +200,7 @@ export function OrdemCompraDocument({ oc, items, open, onOpenChange }: OrdemComp
                       {it.description}
                     </td>
                     <td className="text-right py-2 text-sm notranslate" translate="no">
-                      {it.quantity}
+                      {formatQuantity(it.quantity)}
                     </td>
                     <td className="text-right py-2 text-sm notranslate" translate="no">
                       {formatCurrency(it.unit_price || 0)}

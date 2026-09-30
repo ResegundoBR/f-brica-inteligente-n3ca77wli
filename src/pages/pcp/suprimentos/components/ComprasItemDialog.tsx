@@ -21,7 +21,7 @@ import { MaterialShortage, Quotation } from '@/types'
 import { getQuotationsByShortage, selectQuotation } from '@/services/quotations'
 import { toast } from 'sonner'
 import { Loader2, Save, Check, Trash2 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, formatQuantity } from '@/lib/utils'
 import pb from '@/lib/pocketbase/client'
 import { useMemo } from 'react'
 import { findOtherOpDemands } from '@/services/material-consolidation'
@@ -225,7 +225,8 @@ export function ComprasItemDialog({
                 </span>
               )}
               <span className="ml-2">
-                — Qtde: <NoTranslate as="span">{itemQuantity || item.quantity}</NoTranslate>
+                — Qtde:{' '}
+                <NoTranslate as="span">{formatQuantity(itemQuantity || item.quantity)}</NoTranslate>
               </span>
               {item.expand?.order_id?.order_number && (
                 <span className="ml-2">
@@ -242,7 +243,7 @@ export function ComprasItemDialog({
             {consolidation && consolidation.otherDemands.length > 0 && (
               <ConsolidatedDemandBlock
                 consolidation={consolidation}
-                currentItemLabel={`Esta solicitação (${itemQuantity || item.quantity} un)`}
+                currentItemLabel={`Esta solicitação (${formatQuantity(itemQuantity || item.quantity)} un)`}
                 itemDescription={item.description}
                 itemCode={item.code}
                 onApplyTotal={handleApplyConsolidatedTotal}

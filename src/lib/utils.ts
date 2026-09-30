@@ -18,3 +18,8 @@ export const NOTRANSLATE_CLASS = 'notranslate'
 export const noTranslateAttrs = {
   translate: 'no' as const,
 }
+
+/**
+ * Re-exporta formatQuantity canônico para conveniência
+ */
+export { formatQuantity } from './pcp-utils'

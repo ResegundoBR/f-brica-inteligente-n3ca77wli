@@ -28,7 +28,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { useToast } from '@/hooks/use-toast'
-import { cn } from '@/lib/utils'
+import { cn, formatQuantity } from '@/lib/utils'
 import { NoTranslate } from '@/components/NoTranslate'
 import { useRealtime } from '@/hooks/use-realtime'
 import {
@@ -430,7 +430,7 @@ export default function ReservasPorProgramacaoPage() {
                         Estoque Total
                       </div>
                       <div className="font-mono font-bold text-xs sm:text-sm text-foreground notranslate">
-                        {item.totalStock}
+                        {formatQuantity(item.totalStock)}
                       </div>
                     </div>
 
@@ -440,7 +440,7 @@ export default function ReservasPorProgramacaoPage() {
                         Reservado
                       </div>
                       <div className="font-mono font-bold text-xs sm:text-sm text-amber-600 dark:text-amber-400 notranslate">
-                        {item.reservedStock}
+                        {formatQuantity(item.reservedStock)}
                       </div>
                     </div>
 
@@ -450,7 +450,7 @@ export default function ReservasPorProgramacaoPage() {
                         Disponível
                       </div>
                       <div className="font-mono font-bold text-xs sm:text-sm text-emerald-600 dark:text-emerald-400 notranslate">
-                        {item.availableStock}
+                        {formatQuantity(item.availableStock)}
                       </div>
                     </div>
 
@@ -462,14 +462,14 @@ export default function ReservasPorProgramacaoPage() {
                             <CheckCircle2 className="size-3" /> Coberto
                           </Badge>
                           <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-semibold mt-0.5">
-                            Sobra: +{item.surplus} {item.unit}
+                            Sobra: +{formatQuantity(item.surplus)} {item.unit}
                           </span>
                         </div>
                       ) : (
                         <div className="inline-flex flex-col items-end">
                           <Badge variant="destructive" className="font-bold text-xs gap-1">
-                            <AlertTriangle className="size-3" /> Déficit: -{item.deficit}{' '}
-                            {item.unit}
+                            <AlertTriangle className="size-3" /> Déficit: -
+                            {formatQuantity(item.deficit)} {item.unit}
                           </Badge>
                           <span className="text-[10px] text-red-600 dark:text-red-400 font-bold mt-0.5">
                             Necessário comprar
@@ -529,7 +529,7 @@ export default function ReservasPorProgramacaoPage() {
                               </span>
                             </TableCell>
                             <TableCell className="text-right font-mono font-bold text-foreground notranslate">
-                              {op.quantity} {item.unit}
+                              {formatQuantity(op.quantity)} {item.unit}
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-1 flex-wrap">

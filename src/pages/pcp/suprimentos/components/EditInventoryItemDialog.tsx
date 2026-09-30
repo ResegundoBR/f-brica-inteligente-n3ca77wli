@@ -15,6 +15,7 @@ import { useToast } from '@/hooks/use-toast'
 import pb from '@/lib/pocketbase/client'
 import { updateInventoryItem } from '@/services/inventory'
 import { Inventory, MasterComponent, ComponentCategory } from '@/types'
+import { formatQuantity } from '@/lib/utils'
 import { getComponentCategories } from '@/services/component-categories'
 import { createMasterComponent, checkDuplicateComponentCode } from '@/services/components'
 import { Pencil, Lock, Sparkles, Check, Loader2, Tags } from 'lucide-react'
@@ -375,7 +376,7 @@ export function EditInventoryItemDialog({
                 </Label>
               </div>
               <div className="h-9 px-3 py-1.5 bg-slate-100 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-md flex items-center justify-between text-xs font-bold text-slate-700 dark:text-slate-300 select-none">
-                <span>{item.quantity ?? 0}</span>
+                <span>{formatQuantity(item.quantity ?? 0)}</span>
                 <span className="text-[10px] font-normal text-muted-foreground">
                   {item.unit || 'un'}
                 </span>

@@ -24,7 +24,7 @@ import { Inventory, InventoryMovement } from '@/types'
 import { getMovementsByInventory, createMovement } from '@/services/inventory'
 import { useToast } from '@/hooks/use-toast'
 import { UserActionBadge } from '@/components/UserActionBadge'
-import { cn } from '@/lib/utils'
+import { cn, formatQuantity } from '@/lib/utils'
 import { format, parseISO, isValid } from 'date-fns'
 
 function fmtDate(val?: string) {
@@ -138,7 +138,7 @@ export function InventoryItemDialog({
                   isLow ? 'text-red-600' : 'text-slate-800 dark:text-slate-200',
                 )}
               >
-                {item.quantity} {item.unit}
+                {formatQuantity(item.quantity)} {item.unit}
               </NoTranslate>
             </div>
             <div className="bg-slate-50 dark:bg-slate-800/50 p-2 rounded border">
@@ -146,7 +146,7 @@ export function InventoryItemDialog({
                 Estoque Mín.
               </span>
               <NoTranslate as="span" className="font-semibold text-sm">
-                {item.min_quantity || 0} {item.unit}
+                {formatQuantity(item.min_quantity || 0)} {item.unit}
               </NoTranslate>
             </div>
             <div className="bg-slate-50 dark:bg-slate-800/50 p-2 rounded border">
@@ -224,13 +224,13 @@ export function InventoryItemDialog({
                             )}
                           >
                             {m.type === 'Entrada' ? '+' : '-'}
-                            {m.quantity}
+                            {formatQuantity(m.quantity)}
                           </TableCell>
                           <TableCell
                             className="text-xs text-right font-semibold whitespace-nowrap notranslate"
                             translate="no"
                           >
-                            {m.balance_after != null ? m.balance_after : '-'}
+                            {m.balance_after != null ? formatQuantity(m.balance_after) : '-'}
                           </TableCell>
                           <TableCell
                             className="text-xs whitespace-nowrap notranslate"

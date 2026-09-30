@@ -19,7 +19,7 @@ import { SupplierGroupSection } from './SupplierGroupSection'
 import { UserActionBadge } from '@/components/UserActionBadge'
 import { ChevronDown, ChevronRight, Layers, ShoppingCart } from 'lucide-react'
 import { groupShortagesByCode, ShortageGroup } from '@/lib/shortage-grouping'
-import { cn } from '@/lib/utils'
+import { cn, formatQuantity } from '@/lib/utils'
 
 interface CotacoesTableProps {
   items: MaterialShortage[]
@@ -146,7 +146,7 @@ export function CotacoesTable({
                         </NoTranslate>
                       </TableCell>
                       <TableCell className="text-right text-sm font-semibold">
-                        <NoTranslate as="span">{item.quantity}</NoTranslate>
+                        <NoTranslate as="span">{formatQuantity(item.quantity)}</NoTranslate>
                       </TableCell>
                       <TableCell>
                         {item.priority && (
@@ -251,7 +251,7 @@ export function CotacoesTable({
                     {singleItem.unit_price ? `R$ ${singleItem.unit_price.toFixed(2)}` : '-'}
                   </TableCell>
                   <TableCell className="text-right text-sm font-semibold">
-                    <NoTranslate as="span">{singleItem.quantity}</NoTranslate>
+                    <NoTranslate as="span">{formatQuantity(singleItem.quantity)}</NoTranslate>
                   </TableCell>
                   <TableCell>
                     {singleItem.priority && (
@@ -349,7 +349,7 @@ export function CotacoesTable({
                     {activePrice ? `R$ ${activePrice.toFixed(2)}` : '-'}
                   </TableCell>
                   <TableCell className="text-right text-sm font-extrabold text-blue-700 dark:text-blue-300">
-                    <NoTranslate as="span">{group.totalQuantity} un</NoTranslate>
+                    <NoTranslate as="span">{formatQuantity(group.totalQuantity)} un</NoTranslate>
                   </TableCell>
                   <TableCell>
                     {group.highestPriority && (
@@ -382,7 +382,7 @@ export function CotacoesTable({
                         }
                       >
                         <ShoppingCart className="size-3.5 mr-1" />
-                        Comprar selecionadas ({selectedUnits} un)
+                        Comprar selecionadas ({formatQuantity(selectedUnits)} un)
                       </Button>
                     ) : (
                       <Button
@@ -435,7 +435,7 @@ export function CotacoesTable({
                         {subItem.unit_price ? `R$ ${subItem.unit_price.toFixed(2)}` : '-'}
                       </TableCell>
                       <TableCell className="text-right text-xs font-bold text-slate-800 dark:text-slate-200">
-                        <NoTranslate as="span">{subItem.quantity} un</NoTranslate>
+                        <NoTranslate as="span">{formatQuantity(subItem.quantity)} un</NoTranslate>
                       </TableCell>
                       <TableCell>
                         {subItem.priority && (

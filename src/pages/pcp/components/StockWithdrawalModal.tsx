@@ -15,7 +15,7 @@ import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
 import { useAuth } from '@/hooks/use-auth'
 import { createMovement } from '@/services/inventory'
-import { normalizeSearchText } from '@/lib/pcp-utils'
+import { normalizeSearchText, formatQuantity } from '@/lib/pcp-utils'
 import type { PcpOrder, Inventory } from '@/types'
 import {
   Package,
@@ -275,7 +275,7 @@ export function StockWithdrawalModal({
                         variant="secondary"
                         className="shrink-0 text-[10px] font-semibold bg-slate-100 dark:bg-slate-800"
                       >
-                        Saldo: {item.quantity} {item.unit || 'un'}
+                        Saldo: {formatQuantity(item.quantity)} {item.unit || 'un'}
                       </Badge>
                     </button>
                   ))
@@ -307,7 +307,7 @@ export function StockWithdrawalModal({
                   Saldo Disponível
                 </span>
                 <span className="text-base font-black text-primary">
-                  {currentStock} {selectedItem.unit || 'un'}
+                  {formatQuantity(currentStock)} {selectedItem.unit || 'un'}
                 </span>
               </div>
             </div>
@@ -337,9 +337,9 @@ export function StockWithdrawalModal({
               <div className="flex-1 space-y-0.5">
                 <p className="font-bold">Atenção: Quantidade maior que o saldo em estoque!</p>
                 <p className="text-xs text-amber-800 dark:text-amber-300">
-                  A quantidade solicitada ({numQty}) supera o saldo atual ({currentStock}{' '}
-                  {selectedItem?.unit || 'un'}). A saída será registrada normalmente sem bloquear o
-                  envio.
+                  A quantidade solicitada ({formatQuantity(numQty)}) supera o saldo atual (
+                  {formatQuantity(currentStock)} {selectedItem?.unit || 'un'}). A saída será
+                  registrada normalmente sem bloquear o envio.
                 </p>
               </div>
             </div>

@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ShoppingCart, FileText, XCircle } from 'lucide-react'
 import { MaterialShortage } from '@/types'
+import { formatQuantity } from '@/lib/utils'
 import { format, parseISO } from 'date-fns'
 import pb from '@/lib/pocketbase/client'
 import { useToast } from '@/hooks/use-toast'
@@ -73,7 +74,7 @@ export function TriageDetailDialog({
             <div>
               <span className="text-muted-foreground">Quantidade:</span>{' '}
               <span className="font-medium notranslate" translate="no">
-                {item.quantity}
+                {formatQuantity(item.quantity)}
               </span>
             </div>
             <div>

@@ -19,7 +19,7 @@ import {
 import { ConsolidatedDemandBlock } from './ConsolidatedDemandBlock'
 import { UserActionBadge } from '@/components/UserActionBadge'
 import { Checkbox } from '@/components/ui/checkbox'
-import { cn } from '@/lib/utils'
+import { cn, formatQuantity } from '@/lib/utils'
 import { findMostUrgentOp, checkQuotationDeliveryRisk } from './delivery-deadline-risk'
 import { QuotationDeadlineWarning } from './QuotationDeadlineWarning'
 
@@ -518,7 +518,7 @@ export function EnhancedQuotationForm({
                         }
                         title="Adota a quantidade da consolidação com necessidades futuras"
                       >
-                        Consolidado ({consolidation.totalConsolidatedQuantity} un)
+                        Consolidado ({formatQuantity(consolidation.totalConsolidatedQuantity)} un)
                       </Button>
                     )}
                 </div>
@@ -531,7 +531,7 @@ export function EnhancedQuotationForm({
                     <span>
                       Excedente calculado:{' '}
                       <strong className="notranslate" translate="no">
-                        +{surplusQty} un
+                        +{formatQuantity(surplusQty)} un
                       </strong>
                     </span>
                     <span>&bull;</span>
@@ -550,7 +550,7 @@ export function EnhancedQuotationForm({
               {isPurchaseQtyInvalid && (
                 <div className="text-[11px] font-medium text-red-600 dark:text-red-400 pt-1">
                   A quantidade informada não pode ser inferior ao total solicitado do lote (
-                  {requestedBaseQty} un).
+                  {formatQuantity(requestedBaseQty)} un).
                 </div>
               )}
             </div>
@@ -596,7 +596,7 @@ export function EnhancedQuotationForm({
                       variant={isSelected ? 'default' : 'outline'}
                       className="text-[10px] ml-2 shrink-0"
                     >
-                      {gi.quantity} un
+                      {formatQuantity(gi.quantity)} un
                     </Badge>
                   </label>
                 )
@@ -611,8 +611,8 @@ export function EnhancedQuotationForm({
             consolidation={consolidation}
             currentItemLabel={
               isMultiItem
-                ? `Lote consolidado deste grupo (${totalGroupQty} un em ${groupList.length} OPs)`
-                : `Esta solicitação (${item.quantity} un)`
+                ? `Lote consolidado deste grupo (${formatQuantity(totalGroupQty)} un em ${groupList.length} OPs)`
+                : `Esta solicitação (${formatQuantity(item.quantity)} un)`
             }
             itemDescription={item.description}
             itemCode={item.code}

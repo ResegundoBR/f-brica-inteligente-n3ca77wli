@@ -31,7 +31,7 @@ import {
   ArrowLeftRight,
   Search,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, formatQuantity } from '@/lib/utils'
 import { useToast } from '@/hooks/use-toast'
 import { UserActionBadge } from '@/components/UserActionBadge'
 import { useAuth } from '@/hooks/use-auth'
@@ -643,8 +643,9 @@ export function SeparationMaterialsModal({
       )}
       {getPartialInfo(item) && (
         <Badge className="bg-amber-500 text-white font-bold text-[10px] px-2 py-0.5">
-          <PackageOpen className="size-3 mr-0.5" /> Parcial {getPartialInfo(item)!.found}/
-          {getPartialInfo(item)!.total}
+          <PackageOpen className="size-3 mr-0.5" /> Parcial{' '}
+          {formatQuantity(getPartialInfo(item)!.found)}/
+          {formatQuantity(getPartialInfo(item)!.total)}
         </Badge>
       )}
     </>
@@ -826,7 +827,7 @@ export function SeparationMaterialsModal({
                                   variant="secondary"
                                   className="font-bold text-xs px-2 py-0.5"
                                 >
-                                  {item.quantity} {item.unit || 'UN'}
+                                  {formatQuantity(item.quantity)} {item.unit || 'UN'}
                                 </NoTranslate>
                                 {renderStatusBadges(item)}
                               </div>
@@ -925,7 +926,7 @@ export function SeparationMaterialsModal({
                               </TableCell>
                               <TableCell className="text-center font-bold text-sm">
                                 <NoTranslate as="span">
-                                  {item.quantity} {item.unit || 'UN'}
+                                  {formatQuantity(item.quantity)} {item.unit || 'UN'}
                                 </NoTranslate>
                               </TableCell>
                               <TableCell className="text-center">
@@ -1050,7 +1051,7 @@ export function SeparationMaterialsModal({
                       Quantidade solicitada total:
                     </span>
                     <span className="font-bold text-sm text-foreground">
-                      {partialTarget.quantity} {partialTarget.unit || 'UN'}
+                      {formatQuantity(partialTarget.quantity)} {partialTarget.unit || 'UN'}
                     </span>
                   </div>
                 </div>
@@ -1077,8 +1078,8 @@ export function SeparationMaterialsModal({
                     autoFocus
                   />
                   <p className="text-[11px] text-muted-foreground">
-                    • Se mantiver <strong>{partialTarget.quantity}</strong> (sem alterar) ou colocar{' '}
-                    <strong>0</strong>: vira <strong>Falta Total</strong>.
+                    • Se mantiver <strong>{formatQuantity(partialTarget.quantity)}</strong> (sem
+                    alterar) ou colocar <strong>0</strong>: vira <strong>Falta Total</strong>.
                     <br />• Se colocar um valor menor: separa a quantidade informada e gera
                     solicitação em Suprimentos apenas pela diferença.
                   </p>
@@ -1090,15 +1091,16 @@ export function SeparationMaterialsModal({
                     if (found > total)
                       return (
                         <p className="text-xs font-semibold text-red-600">
-                          Não pode exceder a quantidade solicitada ({total}{' '}
+                          Não pode exceder a quantidade solicitada ({formatQuantity(total)}{' '}
                           {partialTarget.unit || 'UN'}).
                         </p>
                       )
                     if (found === total || found === 0)
                       return (
                         <div className="p-2 rounded bg-rose-500/10 border border-rose-500/30 text-rose-700 dark:text-rose-400 text-xs">
-                          <strong>Resultado: Falta Total.</strong> Solicitação de {total}{' '}
-                          {partialTarget.unit || 'UN'} será enviada a Suprimentos.
+                          <strong>Resultado: Falta Total.</strong> Solicitação de{' '}
+                          {formatQuantity(total)} {partialTarget.unit || 'UN'} será enviada a
+                          Suprimentos.
                         </div>
                       )
                     return (
@@ -1109,13 +1111,13 @@ export function SeparationMaterialsModal({
                         <div>
                           • Separar agora com baixa:{' '}
                           <strong>
-                            {found} {partialTarget.unit || 'UN'}
+                            {formatQuantity(found)} {partialTarget.unit || 'UN'}
                           </strong>
                         </div>
                         <div>
                           • Solicitação de compra para Suprimentos:{' '}
                           <strong>
-                            {Number((total - found).toFixed(4))} {partialTarget.unit || 'UN'}
+                            {formatQuantity(total - found)} {partialTarget.unit || 'UN'}
                           </strong>
                         </div>
                       </div>
@@ -1186,7 +1188,7 @@ export function SeparationMaterialsModal({
                   <div className="text-[11px] text-muted-foreground">
                     Solicitado:{' '}
                     <strong>
-                      {swapTarget.quantity} {swapTarget.unit || 'UN'}
+                      {formatQuantity(swapTarget.quantity)} {swapTarget.unit || 'UN'}
                     </strong>
                     {swapTarget.measurements ? ` · Medida: ${swapTarget.measurements}` : ''}
                   </div>
@@ -1258,7 +1260,7 @@ export function SeparationMaterialsModal({
                           <div className="text-right shrink-0">
                             <span className="text-[10px] text-muted-foreground block">Estoque</span>
                             <span className="font-mono font-bold text-xs text-foreground">
-                              {comp.stock_quantity ?? 0}
+                              {formatQuantity(comp.stock_quantity ?? 0)}
                             </span>
                           </div>
                         </div>
@@ -1287,7 +1289,8 @@ export function SeparationMaterialsModal({
                     <div className="text-[11px] text-muted-foreground flex items-center justify-between">
                       <span>Estoque cadastrado disponível:</span>
                       <span className="font-mono font-bold text-foreground">
-                        {selectedSubstitute.stock_quantity ?? 0} {selectedSubstitute.unit || 'UN'}
+                        {formatQuantity(selectedSubstitute.stock_quantity ?? 0)}{' '}
+                        {selectedSubstitute.unit || 'UN'}
                       </span>
                     </div>
 

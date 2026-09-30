@@ -30,7 +30,7 @@ import { Badge } from '@/components/ui/badge'
 import { NoTranslate } from '@/components/NoTranslate'
 import { MaterialShortage } from '@/types'
 import { findOtherOpDemands } from '@/services/material-consolidation'
-import { toDateFieldValue } from '@/lib/pcp-utils'
+import { toDateFieldValue, formatQuantity } from '@/lib/pcp-utils'
 
 export interface OCItemInput {
   description: string
@@ -265,8 +265,9 @@ export function OrdemCompraModal({
                                 variant="outline"
                                 className="text-[10px] bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950/60 dark:text-amber-200"
                               >
-                                <Link2 className="size-3 mr-1" />+{item.otherOpsExtraQty} un em{' '}
-                                {item.otherOpsCount} outra(s) OP(s)
+                                <Link2 className="size-3 mr-1" />+
+                                {formatQuantity(item.otherOpsExtraQty)} un em {item.otherOpsCount}{' '}
+                                outra(s) OP(s)
                               </Badge>
                               <button
                                 type="button"
@@ -274,7 +275,7 @@ export function OrdemCompraModal({
                                 className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 hover:text-amber-800 underline dark:text-amber-300"
                               >
                                 <Sparkles className="size-3" />
-                                Sugerir total: adotar {item.suggestedTotal} un
+                                Sugerir total: adotar {formatQuantity(item.suggestedTotal)} un
                               </button>
                             </div>
                           )}

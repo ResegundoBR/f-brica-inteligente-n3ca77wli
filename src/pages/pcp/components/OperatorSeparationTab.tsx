@@ -33,6 +33,7 @@ import {
   getSeparations,
   updateSeparationItems,
   finalizeSeparation,
+  isSeparationItemPending,
 } from '@/services/material-separations'
 import {
   searchUnifiedComponentsWithStock,
@@ -645,7 +646,7 @@ export function OperatorSeparationTab() {
   const countPartial = itemsDraft.filter((i) => i.status === 'parcial').length
   const countShortage = itemsDraft.filter((i) => i.status === 'falta').length
   const countSubstituted = itemsDraft.filter((i) => i.status === 'substituido').length
-  const countPending = itemsDraft.filter((i) => !i.status || i.status === 'pendente').length
+  const countPending = itemsDraft.filter((i) => isSeparationItemPending(i)).length
   const totalDraft = itemsDraft.length
 
   // Itens filtrados para busca opcional
@@ -671,9 +672,10 @@ export function OperatorSeparationTab() {
 
   // Combina o filtro de setor com o chip "Não Separado"
   // Quando "Não Separado" está ativo:
-  // - Oculta itens que já estão com status 'separado'
-  // - Blocos de setor que ficam sem itens visíveis são ocultados
-  // - Cada bloco guarda a contagem total e faltante para exibir "faltam X de Y"
+  // - Oculta itens que já sofreram qualquer ação (separado, falta, parcial, substituído)
+  // - Exibe APENAS componentes em que o operador ainda NÃO fez ação nenhuma
+  // - Blocos de setor que ficam sem itens pendentes visíveis são ocultados
+  // - Cada bloco guarda a contagem total e pendente para exibir "faltam X de Y"
   const sectorGroups = useMemo(() => {
     let list = allSectorGroups
     if (selectedSectorFilter !== 'TODOS') {
@@ -683,10 +685,10 @@ export function OperatorSeparationTab() {
     return list
       .map((group) => {
         const totalInGroup = group.cards.length
-        const pendingInGroup = group.cards.filter((c) => c.item.status !== 'separado').length
+        const pendingInGroup = group.cards.filter((c) => isSeparationItemPending(c.item)).length
 
         const visibleCards = onlyUnseparated
-          ? group.cards.filter((c) => c.item.status !== 'separado')
+          ? group.cards.filter((c) => isSeparationItemPending(c.item))
           : group.cards
 
         return {
@@ -1826,7 +1828,7 @@ export function OperatorSeparationTab() {
                 {sectorGroups.length === 0 ? (
                   <div className="p-8 text-center text-sm text-muted-foreground border-2 border-dashed rounded-xl my-4">
                     {onlyUnseparated && countPending === 0
-                      ? 'Todos os itens já foram separados! 🎉'
+                      ? 'Nenhum item pendente de separação! 🎉'
                       : filterQuery || onlyUnseparated || selectedSectorFilter !== 'TODOS'
                         ? 'Nenhum material encontrado com o filtro aplicado.'
                         : 'Nenhum material nesta rodada.'}

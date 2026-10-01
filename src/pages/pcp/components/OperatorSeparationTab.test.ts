@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { SeparationItem } from '@/services/material-separations'
+import { SeparationItem, isSeparationItemPending } from '@/services/material-separations'
 
 describe('Operator Separation Mobile 140+ items test', () => {
   it('handles 142 items simulating Programação #30 dataset without lag or mutation issues', () => {
@@ -69,10 +69,12 @@ describe('Operator Separation Mobile 140+ items test', () => {
   it('filters items by "Não Separado" keeping global counters intact and hiding fully-separated blocks', () => {
     // Simula lista de itens do modal
     const items = [
-      { id: '1', code: 'C1', description: 'Item 1', status: 'separado' },
-      { id: '2', code: 'C2', description: 'Item 2', status: 'pendente' },
-      { id: '3', code: 'C3', description: 'Item 3', status: 'falta' },
-      { id: '4', code: 'C4', description: 'Item 4', status: 'parcial' },
+      { id: '1', code: 'C1', description: 'Item 1', status: 'separado' as const },
+      { id: '2', code: 'C2', description: 'Item 2', status: 'pendente' as const },
+      { id: '3', code: 'C3', description: 'Item 3', status: 'falta' as const },
+      { id: '4', code: 'C4', description: 'Item 4', status: 'parcial' as const },
+      { id: '5', code: 'C5', description: 'Item 5', status: 'substituido' as const },
+      { id: '6', code: 'C6', description: 'Item 6', status: undefined }, // sem status = pendente
     ]
 
     // Contadores globais do topo: NÃO mudam com o filtro ativo
@@ -80,23 +82,36 @@ describe('Operator Separation Mobile 140+ items test', () => {
     const countSeparated = items.filter((i) => i.status === 'separado').length
     const countPartial = items.filter((i) => i.status === 'parcial').length
     const countShortage = items.filter((i) => i.status === 'falta').length
-    const countPending = items.filter((i) => i.status !== 'separado').length
+    const countSubstituted = items.filter((i) => i.status === 'substituido').length
+    const countPending = items.filter((i) => isSeparationItemPending(i)).length
 
-    expect(countTotal).toBe(4)
+    expect(countTotal).toBe(6)
     expect(countSeparated).toBe(1)
     expect(countPartial).toBe(1)
     expect(countShortage).toBe(1)
-    expect(countPending).toBe(3)
+    expect(countSubstituted).toBe(1)
+    // Apenas itens 2 ('pendente') e 6 (sem status) são pendentes/não separados
+    expect(countPending).toBe(2)
 
-    // Condição "Não Separado": apenas itens ainda não separados (status !== 'separado')
-    const unseparatedItems = items.filter((i) => i.status !== 'separado')
-    expect(unseparatedItems).toHaveLength(3)
-    expect(unseparatedItems.map((i) => i.id)).toEqual(['2', '3', '4'])
+    // Condição "Não Separado": APENAS itens sem nenhuma ação (isSeparationItemPending)
+    // Itens com falta, parcial ou troca/substituído NÃO devem aparecer na lista de "Não Separado"
+    const unseparatedItems = items.filter((i) => isSeparationItemPending(i))
+    expect(unseparatedItems).toHaveLength(2)
+    expect(unseparatedItems.map((i) => i.id)).toEqual(['2', '6'])
+
+    // Verificação explícita: item com Falta NÃO é pendente / não separado
+    expect(isSeparationItemPending(items[2])).toBe(false)
+    // Item com Parcial NÃO é pendente
+    expect(isSeparationItemPending(items[3])).toBe(false)
+    // Item Substituído NÃO é pendente
+    expect(isSeparationItemPending(items[4])).toBe(false)
+    // Item Separado NÃO é pendente
+    expect(isSeparationItemPending(items[0])).toBe(false)
 
     // Simulando blocos de setor com o filtro "Não Separado" ativo
     const sectorA = {
       sector: 'Fabricação',
-      cards: [{ item: items[0] }], // Apenas 1 item e está 'separado'
+      cards: [{ item: items[0] }, { item: items[2] }], // 1 'separado' e 1 'falta' -> 0 pendentes
     }
     const sectorB = {
       sector: 'Montagem',
@@ -105,9 +120,9 @@ describe('Operator Separation Mobile 140+ items test', () => {
 
     const filterSectorGroup = (group: typeof sectorA, onlyUnsep: boolean) => {
       const totalInGroup = group.cards.length
-      const pendingInGroup = group.cards.filter((c) => c.item.status !== 'separado').length
+      const pendingInGroup = group.cards.filter((c) => isSeparationItemPending(c.item)).length
       const visibleCards = onlyUnsep
-        ? group.cards.filter((c) => c.item.status !== 'separado')
+        ? group.cards.filter((c) => isSeparationItemPending(c.item))
         : group.cards
       return {
         ...group,
@@ -120,13 +135,43 @@ describe('Operator Separation Mobile 140+ items test', () => {
     const filteredA = filterSectorGroup(sectorA, true)
     const filteredB = filterSectorGroup(sectorB, true)
 
-    // Bloco A fica com 0 cards e é ocultado
+    // Bloco A tem itens apenas com 'separado' e 'falta' -> com "Não Separado" fica com 0 cards e é ocultado
     expect(filteredA.cards).toHaveLength(0)
+    expect(filteredA.pendingCount).toBe(0)
+    expect(filteredA.totalCount).toBe(2)
 
     // Bloco B permanece visível exibindo "faltam 1 de 2"
     expect(filteredB.cards).toHaveLength(1)
     expect(filteredB.cards[0].item.id).toBe('2')
     expect(filteredB.pendingCount).toBe(1)
     expect(filteredB.totalCount).toBe(2)
+  })
+
+  it('matches Reginaldo print case: 120 items, 59 separated, 0 partial, 35 shortages, 26 pending', () => {
+    // Cenário exato do print anexado:
+    // 59 separados + 0 parciais + 35 faltas + 26 pendentes = 120 itens
+    const items: Array<{ id: string; status?: any }> = [
+      ...Array.from({ length: 59 }, (_, i) => ({ id: `sep-${i}`, status: 'separado' })),
+      ...Array.from({ length: 35 }, (_, i) => ({ id: `falta-${i}`, status: 'falta' })),
+      ...Array.from({ length: 26 }, (_, i) => ({ id: `pend-${i}`, status: 'pendente' })),
+    ]
+
+    expect(items).toHaveLength(120)
+
+    const countSeparated = items.filter((i) => i.status === 'separado').length
+    const countPartial = items.filter((i) => i.status === 'parcial').length
+    const countShortage = items.filter((i) => i.status === 'falta').length
+    const countPending = items.filter((i) => isSeparationItemPending(i)).length
+
+    expect(countSeparated).toBe(59)
+    expect(countPartial).toBe(0)
+    expect(countShortage).toBe(35)
+    expect(countPending).toBe(26)
+
+    // Quando o usuário ativa o chip "Não Separado", a lista filtrada deve ter EXATAMENTE 26 itens (e NÃO 26 + 35 = 61)
+    const filteredUnseparated = items.filter((i) => isSeparationItemPending(i))
+    expect(filteredUnseparated).toHaveLength(26)
+    expect(filteredUnseparated.every((i) => i.status === 'pendente')).toBe(true)
+    expect(filteredUnseparated.some((i) => i.status === 'falta')).toBe(false)
   })
 })

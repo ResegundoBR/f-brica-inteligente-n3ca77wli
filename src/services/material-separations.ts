@@ -15,6 +15,21 @@ export type SeparationStatus = 'Pendente' | 'Em_Separacao' | 'Concluida' | 'Canc
 
 export type SeparationItemStatus = 'pendente' | 'separado' | 'falta' | 'parcial' | 'substituido'
 
+/**
+ * Determina se um item de separação está "Pendente" / "Não Separado".
+ * Definição (Reginaldo): item SEM NENHUMA ação do operador — não Separado, não Falta, não Parcial, não Troca/Substituído.
+ * Itens marcados com Falta já passaram pela separação e foram para Solicitações — portanto NÃO são pendentes.
+ */
+export function isSeparationItemPending(
+  item: Pick<SeparationItem, 'status'> | { status?: string | null } | null | undefined,
+): boolean {
+  if (!item) return false
+  const s = item.status
+  if (!s || s === 'pendente') return true
+  // Se tiver qualquer ação registrada ('separado', 'falta', 'parcial', 'substituido'), NÃO é pendente
+  return false
+}
+
 export interface SeparationItem {
   id: string // unique item id within the separation round
   code: string

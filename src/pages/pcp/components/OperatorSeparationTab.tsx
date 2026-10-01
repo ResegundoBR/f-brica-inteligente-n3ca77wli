@@ -79,6 +79,7 @@ export function OperatorSeparationTab() {
   const [selectedSectorFilter, setSelectedSectorFilter] = useState<
     'TODOS' | KnownSector | typeof NO_SECTOR_LABEL
   >('TODOS')
+  const [onlyUnseparated, setOnlyUnseparated] = useState(false)
   const [opsExpanded, setOpsExpanded] = useState(false)
   const [stockAvailabilityMap, setStockAvailabilityMap] = useState<
     Map<string, ComponentStockAvailability>
@@ -177,6 +178,7 @@ export function OperatorSeparationTab() {
     setOpsExpanded(false)
     setFilterQuery('')
     setSelectedSectorFilter('TODOS')
+    setOnlyUnseparated(false)
     const draft = (sep.items || [])
       .filter((item) => !isFabricatedCode(item.code))
       .map((item) => ({
@@ -667,11 +669,35 @@ export function OperatorSeparationTab() {
     })
   }, [filteredItemsDraft, bomMaterials, roundOrders])
 
-  // Aplica o filtro de setor no topo do modal (TODOS = ordem canônica completa; setor escolhido = só aquele bloco)
+  // Combina o filtro de setor com o chip "Não Separado"
+  // Quando "Não Separado" está ativo:
+  // - Oculta itens que já estão com status 'separado'
+  // - Blocos de setor que ficam sem itens visíveis são ocultados
+  // - Cada bloco guarda a contagem total e faltante para exibir "faltam X de Y"
   const sectorGroups = useMemo(() => {
-    if (selectedSectorFilter === 'TODOS') return allSectorGroups
-    return allSectorGroups.filter((g) => g.sector === selectedSectorFilter)
-  }, [allSectorGroups, selectedSectorFilter])
+    let list = allSectorGroups
+    if (selectedSectorFilter !== 'TODOS') {
+      list = list.filter((g) => g.sector === selectedSectorFilter)
+    }
+
+    return list
+      .map((group) => {
+        const totalInGroup = group.cards.length
+        const pendingInGroup = group.cards.filter((c) => c.item.status !== 'separado').length
+
+        const visibleCards = onlyUnseparated
+          ? group.cards.filter((c) => c.item.status !== 'separado')
+          : group.cards
+
+        return {
+          ...group,
+          totalCount: totalInGroup,
+          pendingCount: pendingInGroup,
+          cards: visibleCards,
+        }
+      })
+      .filter((group) => group.cards.length > 0)
+  }, [allSectorGroups, selectedSectorFilter, onlyUnseparated])
 
   // Abertura do diálogo de mensagem da OP para um item/card
   const handleOpenMessageModal = (card: SectorItemCard) => {
@@ -1086,6 +1112,62 @@ export function OperatorSeparationTab() {
               )}
             </div>
 
+            {/* BARRA DE CHIPS DE SETOR + CHIP "NÃO SEPARADO" NO MOBILE */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 pt-0.5 -mx-1 px-1 text-xs no-scrollbar">
+              {(
+                [
+                  'TODOS',
+                  'Fabricação',
+                  'Preparação',
+                  'Montagem',
+                  'Expedição',
+                  NO_SECTOR_LABEL,
+                ] as const
+              ).map((sec) => {
+                const isSelected = selectedSectorFilter === sec
+                const label = sec === 'TODOS' ? 'Todos' : sec
+                return (
+                  <button
+                    key={sec}
+                    type="button"
+                    onClick={() => setSelectedSectorFilter(sec)}
+                    className={`h-7 px-2.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border ${
+                      isSelected
+                        ? 'bg-primary text-primary-foreground border-primary shadow-xs'
+                        : 'bg-muted/60 text-muted-foreground border-border hover:bg-muted hover:text-foreground'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+
+              <div className="h-4 w-px bg-border shrink-0 mx-0.5" />
+
+              <button
+                type="button"
+                onClick={() => setOnlyUnseparated(!onlyUnseparated)}
+                className={`h-7 px-2.5 rounded-full text-xs font-bold whitespace-nowrap transition-all border flex items-center gap-1 shrink-0 ${
+                  onlyUnseparated
+                    ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
+                    : 'bg-amber-500/10 text-amber-800 dark:text-amber-300 border-amber-500/40 hover:bg-amber-500/20'
+                }`}
+              >
+                <span>⏳ Não Sep.</span>
+                {countPending > 0 && (
+                  <span
+                    className={`text-[10px] px-1 py-0.2 rounded-full font-mono ${
+                      onlyUnseparated
+                        ? 'bg-white/25 text-white'
+                        : 'bg-amber-500/20 text-amber-900 dark:text-amber-200'
+                    }`}
+                  >
+                    {countPending}
+                  </span>
+                )}
+              </button>
+            </div>
+
             {/* Ações em lote compactas */}
             {activeSeparation.status !== 'Concluida' && (
               <div className="flex items-center justify-between gap-1.5 pt-0.5">
@@ -1151,9 +1233,20 @@ export function OperatorSeparationTab() {
                           {group.sector}
                         </span>
                       </div>
-                      <Badge variant="secondary" className="font-mono text-[10px] h-5 px-2">
-                        {group.cards.length} {group.cards.length === 1 ? 'item' : 'itens'}
-                      </Badge>
+                      <div>
+                        {onlyUnseparated ? (
+                          <Badge
+                            variant="secondary"
+                            className="font-mono text-[10px] h-5 px-2 bg-amber-500/20 text-amber-900 dark:text-amber-200 border border-amber-500/40"
+                          >
+                            faltam {group.pendingCount} de {group.totalCount}
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary" className="font-mono text-[10px] h-5 px-2">
+                            {group.cards.length} {group.cards.length === 1 ? 'item' : 'itens'}
+                          </Badge>
+                        )}
+                      </div>
                     </div>
 
                     {/* Cards do Setor (Mobile) */}
@@ -1617,52 +1710,113 @@ export function OperatorSeparationTab() {
                 </div>
               </div>
 
-              {/* ATALHOS RÁPIDOS E BUSCA NO MODAL DESKTOP */}
-              <div className="flex items-center justify-between gap-2 pt-1 flex-wrap">
-                <div className="relative flex-1 max-w-xs">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                  <input
-                    type="text"
-                    placeholder="Filtrar por código ou descrição..."
-                    value={filterQuery}
-                    onChange={(e) => setFilterQuery(e.target.value)}
-                    className="h-8 w-full pl-8 pr-7 text-xs bg-muted/40 rounded-md border border-input focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                  />
-                  {filterQuery && (
-                    <button
-                      type="button"
-                      onClick={() => setFilterQuery('')}
-                      className="absolute right-1.5 top-1/2 -translate-y-1/2 h-5 w-5 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
+              {/* ATALHOS RÁPIDOS, BUSCA E FILTROS DE SETOR NO TOPO DO MODAL DESKTOP */}
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  {/* Busca por código / descrição */}
+                  <div className="relative flex-1 min-w-[200px] max-w-xs">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <input
+                      type="text"
+                      placeholder="Filtrar por código ou descrição..."
+                      value={filterQuery}
+                      onChange={(e) => setFilterQuery(e.target.value)}
+                      className="h-8 w-full pl-8 pr-7 text-xs bg-muted/40 rounded-md border border-input focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
+                    {filterQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setFilterQuery('')}
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2 h-5 w-5 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+
+                  {activeSeparation.status !== 'Concluida' && (
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleMarkAllSeparated}
+                        className="h-8 text-[11px] gap-1 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        Marcar todos como Separados
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleResetAll}
+                        className="h-8 text-[11px] gap-1 text-muted-foreground hover:text-foreground"
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" />
+                        Limpar marcações
+                      </Button>
+                    </div>
                   )}
                 </div>
 
-                {activeSeparation.status !== 'Concluida' && (
-                  <div className="flex items-center gap-1.5">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={handleMarkAllSeparated}
-                      className="h-8 text-[11px] gap-1 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
-                    >
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      Marcar todos como Separados
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleResetAll}
-                      className="h-8 text-[11px] gap-1 text-muted-foreground hover:text-foreground"
-                    >
-                      <RotateCcw className="h-3.5 w-3.5" />
-                      Limpar marcações
-                    </Button>
-                  </div>
-                )}
+                {/* BARRA DE CHIPS DE SETOR + CHIP "NÃO SEPARADO" (Desktop) */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 pt-0.5 text-xs">
+                  {/* Chips de Setor */}
+                  {(
+                    [
+                      'TODOS',
+                      'Fabricação',
+                      'Preparação',
+                      'Montagem',
+                      'Expedição',
+                      NO_SECTOR_LABEL,
+                    ] as const
+                  ).map((sec) => {
+                    const isSelected = selectedSectorFilter === sec
+                    const label = sec === 'TODOS' ? 'Todos' : sec
+                    return (
+                      <button
+                        key={sec}
+                        type="button"
+                        onClick={() => setSelectedSectorFilter(sec)}
+                        className={`h-7 px-2.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border ${
+                          isSelected
+                            ? 'bg-primary text-primary-foreground border-primary shadow-xs'
+                            : 'bg-muted/60 text-muted-foreground border-border hover:bg-muted hover:text-foreground'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    )
+                  })}
+
+                  <div className="h-4 w-px bg-border shrink-0 mx-0.5" />
+
+                  {/* Chip Adicional: Não Separado */}
+                  <button
+                    type="button"
+                    onClick={() => setOnlyUnseparated(!onlyUnseparated)}
+                    className={`h-7 px-3 rounded-full text-xs font-bold whitespace-nowrap transition-all border flex items-center gap-1.5 ${
+                      onlyUnseparated
+                        ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
+                        : 'bg-amber-500/10 text-amber-800 dark:text-amber-300 border-amber-500/40 hover:bg-amber-500/20'
+                    }`}
+                  >
+                    <span>⏳ Não Separado</span>
+                    {countPending > 0 && (
+                      <span
+                        className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                          onlyUnseparated
+                            ? 'bg-white/25 text-white'
+                            : 'bg-amber-500/20 text-amber-900 dark:text-amber-200'
+                        }`}
+                      >
+                        {countPending}
+                      </span>
+                    )}
+                  </button>
+                </div>
               </div>
             </DialogHeader>
 
@@ -1671,9 +1825,11 @@ export function OperatorSeparationTab() {
               <div className="space-y-5">
                 {sectorGroups.length === 0 ? (
                   <div className="p-8 text-center text-sm text-muted-foreground border-2 border-dashed rounded-xl my-4">
-                    {filterQuery
-                      ? 'Nenhum material encontrado com o filtro aplicado.'
-                      : 'Nenhum material nesta rodada.'}
+                    {onlyUnseparated && countPending === 0
+                      ? 'Todos os itens já foram separados! 🎉'
+                      : filterQuery || onlyUnseparated || selectedSectorFilter !== 'TODOS'
+                        ? 'Nenhum material encontrado com o filtro aplicado.'
+                        : 'Nenhum material nesta rodada.'}
                   </div>
                 ) : (
                   sectorGroups.map((group) => {
@@ -1698,9 +1854,23 @@ export function OperatorSeparationTab() {
                             <Layers className="h-4 w-4" />
                             <span>{group.sector}</span>
                           </div>
-                          <Badge variant="secondary" className="font-mono text-xs font-semibold">
-                            {group.cards.length} {group.cards.length === 1 ? 'item' : 'itens'}
-                          </Badge>
+                          <div className="flex items-center gap-1.5">
+                            {onlyUnseparated ? (
+                              <Badge
+                                variant="secondary"
+                                className="font-mono text-xs font-semibold bg-amber-500/20 text-amber-900 dark:text-amber-200 border border-amber-500/40"
+                              >
+                                faltam {group.pendingCount} de {group.totalCount}
+                              </Badge>
+                            ) : (
+                              <Badge
+                                variant="secondary"
+                                className="font-mono text-xs font-semibold"
+                              >
+                                {group.cards.length} {group.cards.length === 1 ? 'item' : 'itens'}
+                              </Badge>
+                            )}
+                          </div>
                         </div>
 
                         {/* Cards do Setor */}

@@ -65,4 +65,68 @@ describe('Operator Separation Mobile 140+ items test', () => {
     expect(filtered).toHaveLength(1)
     expect(filtered[0].code).toBe('14010000')
   })
+
+  it('filters items by "Não Separado" keeping global counters intact and hiding fully-separated blocks', () => {
+    // Simula lista de itens do modal
+    const items = [
+      { id: '1', code: 'C1', description: 'Item 1', status: 'separado' },
+      { id: '2', code: 'C2', description: 'Item 2', status: 'pendente' },
+      { id: '3', code: 'C3', description: 'Item 3', status: 'falta' },
+      { id: '4', code: 'C4', description: 'Item 4', status: 'parcial' },
+    ]
+
+    // Contadores globais do topo: NÃO mudam com o filtro ativo
+    const countTotal = items.length
+    const countSeparated = items.filter((i) => i.status === 'separado').length
+    const countPartial = items.filter((i) => i.status === 'parcial').length
+    const countShortage = items.filter((i) => i.status === 'falta').length
+    const countPending = items.filter((i) => i.status !== 'separado').length
+
+    expect(countTotal).toBe(4)
+    expect(countSeparated).toBe(1)
+    expect(countPartial).toBe(1)
+    expect(countShortage).toBe(1)
+    expect(countPending).toBe(3)
+
+    // Condição "Não Separado": apenas itens ainda não separados (status !== 'separado')
+    const unseparatedItems = items.filter((i) => i.status !== 'separado')
+    expect(unseparatedItems).toHaveLength(3)
+    expect(unseparatedItems.map((i) => i.id)).toEqual(['2', '3', '4'])
+
+    // Simulando blocos de setor com o filtro "Não Separado" ativo
+    const sectorA = {
+      sector: 'Fabricação',
+      cards: [{ item: items[0] }], // Apenas 1 item e está 'separado'
+    }
+    const sectorB = {
+      sector: 'Montagem',
+      cards: [{ item: items[0] }, { item: items[1] }], // 1 'separado' e 1 'pendente'
+    }
+
+    const filterSectorGroup = (group: typeof sectorA, onlyUnsep: boolean) => {
+      const totalInGroup = group.cards.length
+      const pendingInGroup = group.cards.filter((c) => c.item.status !== 'separado').length
+      const visibleCards = onlyUnsep
+        ? group.cards.filter((c) => c.item.status !== 'separado')
+        : group.cards
+      return {
+        ...group,
+        totalCount: totalInGroup,
+        pendingCount: pendingInGroup,
+        cards: visibleCards,
+      }
+    }
+
+    const filteredA = filterSectorGroup(sectorA, true)
+    const filteredB = filterSectorGroup(sectorB, true)
+
+    // Bloco A fica com 0 cards e é ocultado
+    expect(filteredA.cards).toHaveLength(0)
+
+    // Bloco B permanece visível exibindo "faltam 1 de 2"
+    expect(filteredB.cards).toHaveLength(1)
+    expect(filteredB.cards[0].item.id).toBe('2')
+    expect(filteredB.pendingCount).toBe(1)
+    expect(filteredB.totalCount).toBe(2)
+  })
 })

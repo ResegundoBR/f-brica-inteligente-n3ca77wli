@@ -186,6 +186,121 @@ export async function updateSeparationItems(
   return record
 }
 
+/**
+ * Cria ou atualiza solicitação de falta em material_shortages no ato da marcação
+ * de Falta Total ou Falta Parcial pelo operador.
+ * Utiliza upsertMaterialShortage para manter anti-duplicidade estrita.
+ */
+export async function persistItemShortage(
+  item: SeparationItem,
+  operatorName?: string,
+): Promise<void> {
+  if (isFabricatedCode(item.code)) return
+  if (item.status !== 'falta' && item.status !== 'parcial') return
+
+  const currentUserId = pb.authStore.record?.id
+  const primaryOrderId = item.order_ids?.[0] || null
+  const primaryOp =
+    item.op_numbers?.[0] || (item.op_numbers?.length ? item.op_numbers.join(', ') : 'Separação')
+  const opsLabel =
+    item.op_numbers?.length > 1
+      ? ` (OPs: ${item.op_numbers.join(', ')})`
+      : primaryOp
+        ? ` (OP: ${primaryOp})`
+        : ''
+
+  const userDisplayName =
+    operatorName || pb.authStore.record?.name || pb.authStore.record?.email || 'Separação'
+
+  if (item.status === 'falta') {
+    const observation =
+      `Falta gerada automaticamente na Separação do Operador${opsLabel}. Qtd: ${item.total_quantity} ${item.unit || 'UN'}.${item.cut_measurement ? ` Medida de corte: ${item.cut_measurement}.` : ''} ${item.notes || ''}`.trim()
+
+    const shortagePayload = {
+      code: item.code || '',
+      description: `${item.description || 'Material sem descrição'}${opsLabel}`,
+      quantity: Number(item.total_quantity) || 1,
+      sector: 'Suprimentos',
+      status: 'Pendente',
+      request_type: 'Materiais',
+      priority: 'Urgente',
+      requested_by: currentUserId || null,
+      observation: observation,
+      order_id: primaryOrderId || null,
+    }
+
+    await upsertMaterialShortage(shortagePayload, userDisplayName)
+  } else if (item.status === 'parcial') {
+    const diff = Number(item.shortage_quantity) || 0
+    if (diff <= 0) return
+
+    const sepQty = item.separated_quantity ?? item.total_quantity - diff
+    const observation =
+      `Falta Parcial gerada na Separação do Operador${opsLabel}. Separados: ${sepQty}/${item.total_quantity} ${item.unit || 'UN'}. Faltam: ${diff} ${item.unit || 'UN'}.${item.cut_measurement ? ` Medida de corte: ${item.cut_measurement}.` : ''} ${item.notes || ''}`.trim()
+
+    const shortagePayload = {
+      code: item.code || '',
+      description: `${item.description || 'Material sem descrição'}${opsLabel}`,
+      quantity: diff,
+      sector: 'Suprimentos',
+      status: 'Pendente',
+      request_type: 'Materiais',
+      priority: 'Urgente',
+      requested_by: currentUserId || null,
+      observation: observation,
+      order_id: primaryOrderId || null,
+    }
+
+    await upsertMaterialShortage(shortagePayload, userDisplayName)
+  }
+}
+
+/**
+ * Mescla de forma segura a lista local com a lista mais recente vinda do PocketBase,
+ * protegendo itens que possam ter gravação local em andamento (inFlightItemIds).
+ * Mantém todos os campos e a ordenação.
+ */
+export function mergeSeparationItems(
+  localItems: SeparationItem[],
+  remoteItems: SeparationItem[],
+  inFlightItemIds: Set<string> = new Set(),
+): SeparationItem[] {
+  if (!remoteItems || remoteItems.length === 0) return localItems
+  if (!localItems || localItems.length === 0) return remoteItems
+
+  const remoteMap = new Map<string, SeparationItem>()
+  for (const r of remoteItems) {
+    if (r.id) remoteMap.set(r.id, r)
+  }
+
+  // Atualizar itens locais com valores remotos, exceto se estiver com gravação em curso localmente
+  const updatedLocal = localItems.map((local) => {
+    if (inFlightItemIds.has(local.id)) {
+      return local
+    }
+    const remote = remoteMap.get(local.id)
+    return remote || local
+  })
+
+  // Adicionar quaisquer novos itens criados remotamente (ex: substituições criadas por outro operador)
+  const localIdSet = new Set(localItems.map((i) => i.id))
+  for (const remote of remoteItems) {
+    if (remote.id && !localIdSet.has(remote.id)) {
+      // Se for item substituto, posicionar após o original se possível
+      if (remote.original_item_id) {
+        const origIdx = updatedLocal.findIndex((i) => i.id === remote.original_item_id)
+        if (origIdx >= 0) {
+          updatedLocal.splice(origIdx + 1, 0, remote)
+          continue
+        }
+      }
+      updatedLocal.push(remote)
+    }
+  }
+
+  return updatedLocal
+}
+
 export interface FinalizeSeparationResult {
   separation: MaterialSeparation
   shortagesCreatedCount: number

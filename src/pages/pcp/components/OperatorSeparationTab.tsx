@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -25,6 +25,7 @@ import {
   ChevronDown,
   ChevronUp,
   Search,
+  Check,
 } from 'lucide-react'
 import { useIsMobile } from '@/hooks/use-mobile'
 import {
@@ -34,6 +35,8 @@ import {
   updateSeparationItems,
   finalizeSeparation,
   isSeparationItemPending,
+  persistItemShortage,
+  mergeSeparationItems,
 } from '@/services/material-separations'
 import {
   searchUnifiedComponentsWithStock,
@@ -75,6 +78,14 @@ export function OperatorSeparationTab() {
   const [itemsDraft, setItemsDraft] = useState<SeparationItem[]>([])
   const [savingProgress, setSavingProgress] = useState(false)
   const [finalizing, setFinalizing] = useState(false)
+
+  // Feedback de gravação imediata
+  // globalSaveState: 'saved' (tudo salvo) | 'saving' (gravando no banco...) | 'error' (falha na gravação)
+  const [globalSaveState, setGlobalSaveState] = useState<'saved' | 'saving' | 'error'>('saved')
+  // Conjunto de item.ids gravando no momento (para spinner por item e proteção contra conflito realtime)
+  const [inFlightItemIds, setInFlightItemIds] = useState<Set<string>>(new Set())
+  // Itens com erro de gravação para permitir retry
+  const [itemSaveErrors, setItemSaveErrors] = useState<Map<string, string>>(new Map())
   const [confirmFinalizeOpen, setConfirmFinalizeOpen] = useState(false)
   const [filterQuery, setFilterQuery] = useState('')
   const [selectedSectorFilter, setSelectedSectorFilter] = useState<
@@ -118,6 +129,14 @@ export function OperatorSeparationTab() {
   const [substituteQtyInput, setSubstituteQtyInput] = useState<string>('')
   const [swapSaving, setSwapSaving] = useState(false)
 
+  // Ref para activeSeparation, itemsDraft e inFlightItemIds para uso seguro nos callbacks realtime
+  const activeSeparationRef = useRef<MaterialSeparation | null>(activeSeparation)
+  activeSeparationRef.current = activeSeparation
+  const itemsDraftRef = useRef<SeparationItem[]>(itemsDraft)
+  itemsDraftRef.current = itemsDraft
+  const inFlightItemIdsRef = useRef<Set<string>>(inFlightItemIds)
+  inFlightItemIdsRef.current = inFlightItemIds
+
   const loadData = async () => {
     try {
       setLoading(true)
@@ -125,12 +144,21 @@ export function OperatorSeparationTab() {
       const list = await getSeparations()
       setSeparations(list)
 
-      // Se temos uma rodada ativa aberta, atualizar seus dados sem perder os clicks locais
-      if (activeSeparation) {
-        const fresh = list.find((s) => s.id === activeSeparation.id)
-        if (fresh && fresh.status === 'Concluida' && activeSeparation.status !== 'Concluida') {
-          setActiveSeparation(fresh)
-          setItemsDraft(fresh.items || [])
+      // Se temos uma rodada ativa aberta, sincronizar
+      const currentActive = activeSeparationRef.current
+      if (currentActive) {
+        const fresh = list.find((s) => s.id === currentActive.id)
+        if (fresh) {
+          if (fresh.status === 'Concluida' && currentActive.status !== 'Concluida') {
+            setActiveSeparation(fresh)
+            setItemsDraft(fresh.items || [])
+          } else {
+            // Mescla sem sobrepor alterações locais em voo
+            setActiveSeparation((prev) => (prev ? { ...prev, ...fresh } : fresh))
+            setItemsDraft((prevLocal) =>
+              mergeSeparationItems(prevLocal, fresh.items || [], inFlightItemIdsRef.current),
+            )
+          }
         }
       }
     } catch (err) {
@@ -140,32 +168,141 @@ export function OperatorSeparationTab() {
     }
   }
 
+  // Subscrição global para a lista de rodadas
   useEffect(() => {
     loadData()
 
+    let unsubSeparations: (() => void) | undefined
     pb.collection('material_separations')
-      .subscribe('*', () => {
-        loadData()
+      .subscribe('*', (e) => {
+        // Se a alteração não for da rodada ativa atual, apenas atualiza a listagem geral
+        const currentActive = activeSeparationRef.current
+        if (!currentActive || e.record.id !== currentActive.id) {
+          getSeparations()
+            .then((list) => setSeparations(list))
+            .catch(() => {})
+        }
+      })
+      .then((fn) => {
+        unsubSeparations = fn
       })
       .catch(() => {})
 
+    return () => {
+      if (unsubSeparations) {
+        try {
+          unsubSeparations()
+        } catch {
+          /* intentionally ignored */
+        }
+      } else {
+        pb.collection('material_separations')
+          .unsubscribe('*')
+          .catch(() => {})
+      }
+    }
+  }, [])
+
+  // TEMPO REAL DEDICADO À RODADA ATIVA NO MODAL (SDK pb.collection(...).subscribe(sepId))
+  // Com cleanup estrito no unmount/fechamento do modal para não vazar listeners
+  useEffect(() => {
+    if (!activeSeparation?.id) return
+
+    const activeId = activeSeparation.id
+    let unsubActive: (() => void) | undefined
+    let cancelled = false
+
+    pb.collection('material_separations')
+      .subscribe(activeId, (e) => {
+        if (cancelled) return
+        if (e.action === 'delete') {
+          toast({
+            title: 'Rodada excluída',
+            description: 'Esta rodada de separação foi removida.',
+            variant: 'destructive',
+          })
+          setActiveSeparation(null)
+          return
+        }
+
+        const updatedRecord = e.record as unknown as MaterialSeparation
+        // Atualiza os metadados da rodada ativa
+        setActiveSeparation((prev) => (prev ? { ...prev, ...updatedRecord } : updatedRecord))
+
+        // Mescla itens remotos preservando ações locais em andamento (inFlightItemIds)
+        if (Array.isArray(updatedRecord.items)) {
+          setItemsDraft((prevLocal) => {
+            const merged = mergeSeparationItems(
+              prevLocal,
+              updatedRecord.items,
+              inFlightItemIdsRef.current,
+            )
+            return merged
+          })
+        }
+      })
+      .then((fn) => {
+        if (cancelled) {
+          try {
+            fn()
+          } catch {
+            /* intentionally ignored */
+          }
+        } else {
+          unsubActive = fn
+        }
+      })
+      .catch((err) => {
+        console.warn('Erro ao subscrever realtime da separação ativa:', err)
+      })
+
+    // Subscrição de reservas para atualização de disponibilidade
+    let unsubReservations: (() => void) | undefined
     pb.collection('material_reservations')
       .subscribe('*', () => {
-        if (activeSeparation) {
-          refreshAvailability(itemsDraft)
+        if (cancelled) return
+        refreshAvailability(itemsDraftRef.current)
+      })
+      .then((fn) => {
+        if (cancelled) {
+          try {
+            fn()
+          } catch {
+            /* intentionally ignored */
+          }
+        } else {
+          unsubReservations = fn
         }
       })
       .catch(() => {})
 
     return () => {
-      pb.collection('material_separations')
-        .unsubscribe('*')
-        .catch(() => {})
-      pb.collection('material_reservations')
-        .unsubscribe('*')
-        .catch(() => {})
+      cancelled = true
+      if (unsubActive) {
+        try {
+          unsubActive()
+        } catch {
+          /* intentionally ignored */
+        }
+      } else {
+        pb.collection('material_separations')
+          .unsubscribe(activeId)
+          .catch(() => {})
+      }
+
+      if (unsubReservations) {
+        try {
+          unsubReservations()
+        } catch {
+          /* intentionally ignored */
+        }
+      } else {
+        pb.collection('material_reservations')
+          .unsubscribe('*')
+          .catch(() => {})
+      }
     }
-  }, [])
+  }, [activeSeparation?.id])
 
   const refreshAvailability = async (items: SeparationItem[]) => {
     const codes = items.map((i) => i.code).filter(Boolean)
@@ -251,9 +388,75 @@ export function OperatorSeparationTab() {
     setPartialDialogOpen(true)
   }
 
-  // Confirmação de Falta Parcial / Total
+  // GRAVAÇÃO IMEDIATA: Executa persistência no ato do clique e gerencia feedback visual e retries
+  const persistChangesImmediately = async (
+    nextList: SeparationItem[],
+    touchItemIds: string[],
+    actionLabel: string,
+    postPersistEffect?: () => Promise<void>,
+  ): Promise<boolean> => {
+    if (!activeSeparation) return false
+
+    const sepId = activeSeparation.id
+    // Marca item(s) como in-flight para spinner local e proteção realtime
+    setInFlightItemIds((prev) => {
+      const next = new Set(prev)
+      for (const id of touchItemIds) next.add(id)
+      return next
+    })
+    setGlobalSaveState('saving')
+
+    // Remove eventuais erros anteriores dos itens tocados
+    setItemSaveErrors((prev) => {
+      const next = new Map(prev)
+      for (const id of touchItemIds) next.delete(id)
+      return next
+    })
+
+    try {
+      const updatedSep = await updateSeparationItems(sepId, nextList, 'Em_Separacao')
+      setActiveSeparation((prev) => (prev ? { ...prev, ...updatedSep } : updatedSep))
+
+      // Efeito pós-persistência (ex.: registrar falta em material_shortages ou log de auditoria)
+      if (postPersistEffect) {
+        try {
+          await postPersistEffect()
+        } catch (effErr) {
+          console.warn('Aviso: falha em efeito secundário da separação:', effErr)
+        }
+      }
+
+      setGlobalSaveState('saved')
+      return true
+    } catch (err: any) {
+      console.error(`Erro ao gravar ${actionLabel}:`, err)
+      setGlobalSaveState('error')
+
+      const msg = err?.message || 'Falha de conexão ao salvar'
+      setItemSaveErrors((prev) => {
+        const next = new Map(prev)
+        for (const id of touchItemIds) next.set(id, msg)
+        return next
+      })
+
+      toast({
+        title: `Erro ao gravar: ${actionLabel}`,
+        description: 'Não foi possível persistir no banco de dados. Toque em "Tentar novamente".',
+        variant: 'destructive',
+      })
+      return false
+    } finally {
+      setInFlightItemIds((prev) => {
+        const next = new Set(prev)
+        for (const id of touchItemIds) next.delete(id)
+        return next
+      })
+    }
+  }
+
+  // Confirmação de Falta Parcial / Total com GRAVAÇÃO IMEDIATA no ato
   const handleConfirmFaltaParcial = async () => {
-    if (!partialItem) return
+    if (!partialItem || !activeSeparation) return
     const totalRequested = Number(partialItem.total_quantity) || 0
     const inStock = Number(stockNowInput.replace(',', '.'))
 
@@ -279,94 +482,85 @@ export function OperatorSeparationTab() {
     try {
       const operatorName = pb.authStore.record?.name || pb.authStore.record?.email || 'Operador'
       const unit = partialItem.unit || 'UN'
-
-      // CASO A: Tem em estoque = totalRequested -> o operador confirmou sem alterar (falta total) OU se inStock = 0
-      // "ao confirmar sem alterar vira falta total... se quantidade = 0 tratar como falta total de hoje"
       const isTotalShortage = inStock === 0 || inStock === totalRequested
 
-      if (isTotalShortage) {
-        // Falta Total
-        setItemsDraft((prev) => {
-          const nextList: SeparationItem[] = prev.map((it) => {
-            if (it.id === partialItem.id) {
-              return {
-                ...it,
-                status: 'falta',
-                separated_quantity: 0,
-                shortage_quantity: totalRequested,
-                marked_at: new Date().toISOString(),
-                marked_by: pb.authStore.record?.id,
-                notes: `Falta total registrada pelo operador (${totalRequested} ${unit}).`,
-              }
-            }
-            return it
-          })
-          if (activeSeparation) {
-            updateSeparationItems(activeSeparation.id, nextList, 'Em_Separacao').catch(() => {})
-          }
-          return nextList
-        })
+      let updatedItem: SeparationItem
+      let toastTitle = ''
+      let toastDesc = ''
 
-        toast({
-          title: 'Falta total registrada',
-          description: `Item marcado com Falta de ${totalRequested} ${unit}. Solicitação será enviada a Suprimentos.`,
-        })
+      if (isTotalShortage) {
+        updatedItem = {
+          ...partialItem,
+          status: 'falta',
+          separated_quantity: 0,
+          shortage_quantity: totalRequested,
+          marked_at: new Date().toISOString(),
+          marked_by: pb.authStore.record?.id,
+          notes: `Falta total registrada pelo operador (${totalRequested} ${unit}).`,
+        }
+        toastTitle = 'Falta total gravada no banco!'
+        toastDesc = `Item marcado com Falta de ${totalRequested} ${unit} e gravado imediatamente.`
       } else {
-        // Falta Parcial real (0 < inStock < totalRequested)
         const separatedQty = inStock
         const missingQty = Number((totalRequested - separatedQty).toFixed(4))
-
-        setItemsDraft((prev) => {
-          const nextList: SeparationItem[] = prev.map((it) => {
-            if (it.id === partialItem.id) {
-              return {
-                ...it,
-                status: 'parcial',
-                separated_quantity: separatedQty,
-                shortage_quantity: missingQty,
-                marked_at: new Date().toISOString(),
-                marked_by: pb.authStore.record?.id,
-                notes: `Parcial: ${separatedQty}/${totalRequested} ${unit} separados · ${missingQty} ${unit} em solicitação.`,
-              }
-            }
-            return it
-          })
-          if (activeSeparation) {
-            updateSeparationItems(activeSeparation.id, nextList, 'Em_Separacao').catch(() => {})
-          }
-          return nextList
-        })
-
-        // Auditoria em pcp_order_logs para cada OP envolvida
-        try {
-          await logSeparationAction({
-            orderIds: partialItem.order_ids || [],
-            opNumbers: partialItem.op_numbers || [],
-            action: 'Separação - Falta Parcial',
-            itemOriginal: {
-              code: partialItem.code,
-              description: partialItem.description,
-              quantityRequested: totalRequested,
-              unit: partialItem.unit,
-              cutMeasurement: partialItem.cut_measurement,
-            },
-            separatedQuantity: separatedQty,
-            shortageQuantity: missingQty,
-            operatorName,
-            notes: `Falta parcial na rodada de separação: ${separatedQty} ${unit} separados no estoque e ${missingQty} ${unit} em solicitação.`,
-          })
-        } catch (logErr) {
-          console.error('Erro ao auditar falta parcial:', logErr)
+        updatedItem = {
+          ...partialItem,
+          status: 'parcial',
+          separated_quantity: separatedQty,
+          shortage_quantity: missingQty,
+          marked_at: new Date().toISOString(),
+          marked_by: pb.authStore.record?.id,
+          notes: `Parcial: ${separatedQty}/${totalRequested} ${unit} separados · ${missingQty} ${unit} em solicitação.`,
         }
-
-        toast({
-          title: 'Falta Parcial registrada!',
-          description: `${separatedQty}/${totalRequested} ${unit} separados com reserva · ${missingQty} ${unit} em solicitação.`,
-        })
+        toastTitle = 'Falta Parcial gravada no banco!'
+        toastDesc = `${separatedQty}/${totalRequested} ${unit} separados com reserva gravada · ${missingQty} ${unit} em solicitação.`
       }
 
+      // Atualiza estado local otimista
+      const nextList = itemsDraft.map((it) => (it.id === partialItem.id ? updatedItem : it))
+      setItemsDraft(nextList)
+
+      // Fecha o diálogo de imediato para liberar o operador
       setPartialDialogOpen(false)
       setPartialItem(null)
+
+      // Gravação imediata no PocketBase com criação/atualização em material_shortages e auditoria
+      await persistChangesImmediately(
+        nextList,
+        [updatedItem.id],
+        isTotalShortage ? 'Falta Total' : 'Falta Parcial',
+        async () => {
+          // Gravação atômica em material_shortages com deduplicação
+          await persistItemShortage(updatedItem, operatorName)
+
+          // Auditoria se parcial
+          if (!isTotalShortage) {
+            const sepQty = updatedItem.separated_quantity || 0
+            const missingQty = updatedItem.shortage_quantity || 0
+            await logSeparationAction({
+              orderIds: updatedItem.order_ids || [],
+              opNumbers: updatedItem.op_numbers || [],
+              action: 'Separação - Falta Parcial',
+              itemOriginal: {
+                code: updatedItem.code,
+                description: updatedItem.description,
+                quantityRequested: totalRequested,
+                unit: updatedItem.unit,
+                cutMeasurement: updatedItem.cut_measurement,
+              },
+              separatedQuantity: sepQty,
+              shortageQuantity: missingQty,
+              operatorName,
+              notes: `Falta parcial gravada imediatamente: ${sepQty} ${unit} separados no estoque e ${missingQty} ${unit} em solicitação.`,
+            })
+          }
+        },
+      )
+
+      toast({
+        title: toastTitle,
+        description: toastDesc,
+      })
     } finally {
       setPartialSaving(false)
     }
@@ -405,9 +599,9 @@ export function OperatorSeparationTab() {
     }
   }
 
-  // Confirmação de Substituição
+  // Confirmação de Substituição com GRAVAÇÃO IMEDIATA no ato
   const handleConfirmSubstitution = async () => {
-    if (!swapOriginalItem || !selectedSubstitute) return
+    if (!swapOriginalItem || !selectedSubstitute || !activeSeparation) return
     const substituteQty = Number(substituteQtyInput.replace(',', '.'))
     if (isNaN(substituteQty) || substituteQty <= 0) {
       toast({
@@ -444,86 +638,82 @@ export function OperatorSeparationTab() {
         original_item_id: swapOriginalItem.id,
       }
 
-      setItemsDraft((prev) => {
-        const nextList: SeparationItem[] = prev.map((it) => {
-          if (it.id === swapOriginalItem.id) {
-            // O item ORIGINAL fica marcado como substituído e NÃO gera solicitação de compra
-            return {
-              ...it,
-              status: 'substituido' as any,
-              notes: `Substituído por [${subCode}] ${subDesc}`,
-              replaced_by_code: subCode,
-              replaced_by_description: subDesc,
-              marked_at: new Date().toISOString(),
-              marked_by: pb.authStore.record?.id,
-            }
+      const nextList: SeparationItem[] = itemsDraft.map((it) => {
+        if (it.id === swapOriginalItem.id) {
+          return {
+            ...it,
+            status: 'substituido' as any,
+            notes: `Substituído por [${subCode}] ${subDesc}`,
+            replaced_by_code: subCode,
+            replaced_by_description: subDesc,
+            marked_at: new Date().toISOString(),
+            marked_by: pb.authStore.record?.id,
           }
-          return it
-        })
-
-        // Insere o substituto logo após o item original
-        const origIdx = nextList.findIndex((i) => i.id === swapOriginalItem.id)
-        if (origIdx >= 0) {
-          nextList.splice(origIdx + 1, 0, substituteItem)
-        } else {
-          nextList.push(substituteItem)
         }
-
-        if (activeSeparation) {
-          updateSeparationItems(activeSeparation.id, nextList, 'Em_Separacao').catch(() => {})
-        }
-        return nextList
+        return it
       })
 
-      // Atualiza mapa de disponibilidade com o substituto
+      const origIdx = nextList.findIndex((i) => i.id === swapOriginalItem.id)
+      if (origIdx >= 0) {
+        nextList.splice(origIdx + 1, 0, substituteItem)
+      } else {
+        nextList.push(substituteItem)
+      }
+
+      // Atualiza estado local imediatamente
+      setItemsDraft(nextList)
       if (substituteItem.code) {
         refreshAvailability([substituteItem])
       }
 
-      // Auditoria em pcp_order_logs
-      try {
-        await logSeparationAction({
-          orderIds: swapOriginalItem.order_ids || [],
-          opNumbers: swapOriginalItem.op_numbers || [],
-          action: 'Separação - Substituição de Componente',
-          itemOriginal: {
-            code: origCode,
-            description: origDesc,
-            quantityRequested: origQty,
-            unit: swapOriginalItem.unit,
-            cutMeasurement: swapOriginalItem.cut_measurement,
-          },
-          substitute: {
-            code: subCode,
-            description: subDesc,
-            quantity: substituteQty,
-            unit: subUnit,
-          },
-          operatorName,
-          notes: `Substituição realizada na rodada de separação: ${origDesc} substituído por [${subCode}] ${subDesc}. O item substituto agora segue a conferência física normal.`,
-        })
-      } catch (logErr) {
-        console.error('Erro ao auditar substituição de componente:', logErr)
-      }
-
-      toast({
-        title: 'Componente Substituído!',
-        description: `Substituto [${subCode}] adicionado à lista para conferência física. Original marcado como substituído.`,
-      })
-
       setSwapDialogOpen(false)
       setSwapOriginalItem(null)
       setSelectedSubstitute(null)
+
+      // Gravação imediata da substituição no PocketBase
+      await persistChangesImmediately(
+        nextList,
+        [swapOriginalItem.id, substituteItem.id],
+        'Substituição de Componente',
+        async () => {
+          await logSeparationAction({
+            orderIds: swapOriginalItem.order_ids || [],
+            opNumbers: swapOriginalItem.op_numbers || [],
+            action: 'Separação - Substituição de Componente',
+            itemOriginal: {
+              code: origCode,
+              description: origDesc,
+              quantityRequested: origQty,
+              unit: swapOriginalItem.unit,
+              cutMeasurement: swapOriginalItem.cut_measurement,
+            },
+            substitute: {
+              code: subCode,
+              description: subDesc,
+              quantity: substituteQty,
+              unit: subUnit,
+            },
+            operatorName,
+            notes: `Substituição gravada imediatamente: ${origDesc} substituído por [${subCode}] ${subDesc}.`,
+          })
+        },
+      )
+
+      toast({
+        title: 'Componente Substituído e Gravado!',
+        description: `Substituto [${subCode}] gravado no banco de dados para conferência física.`,
+      })
     } finally {
       setSwapSaving(false)
     }
   }
 
-  const handleToggleItemStatus = (itemId: string, newStatus: 'separado' | 'falta') => {
+  // GRAVAÇÃO IMEDIATA NO CLIQUE DE SEPARADO OU FALTA
+  const handleToggleItemStatus = async (itemId: string, newStatus: 'separado' | 'falta') => {
     const targetItem = itemsDraft.find((i) => i.id === itemId)
-    if (!targetItem) return
+    if (!targetItem || !activeSeparation) return
 
-    // Se clicar em Falta, abre o diálogo de confirmação conforme Requisito (1)
+    // Se clicar em Falta e o item ainda não é Falta, abre o diálogo de confirmação
     if (newStatus === 'falta' && targetItem.status !== 'falta') {
       handleOpenFaltaDialog(targetItem)
       return
@@ -545,52 +735,79 @@ export function OperatorSeparationTab() {
       }
     }
 
-    setItemsDraft((prev) => {
-      const nextList: SeparationItem[] = prev.map((item) => {
-        if (item.id === itemId) {
-          // Se já está no status clicado, permite voltar atrás (desmarcar para 'pendente')
-          const currentStatus = item.status
-          const nextStatus = (
-            currentStatus === newStatus ? 'pendente' : newStatus
-          ) as SeparationItem['status']
-          return {
-            ...item,
-            status: nextStatus,
-            separated_quantity: nextStatus === 'separado' ? item.total_quantity : undefined,
-            shortage_quantity: undefined,
-            marked_at: nextStatus !== 'pendente' ? new Date().toISOString() : undefined,
-          }
-        }
-        return item
-      })
+    // Se já está no status clicado, permite voltar atrás (desmarcar para 'pendente')
+    const currentStatus = targetItem.status
+    const nextStatus = (
+      currentStatus === newStatus ? 'pendente' : newStatus
+    ) as SeparationItem['status']
 
-      // Sincronizar reservas no background se temos uma rodada ativa
-      if (activeSeparation) {
-        updateSeparationItems(activeSeparation.id, nextList, 'Em_Separacao').catch(() => {})
+    const updatedItem: SeparationItem = {
+      ...targetItem,
+      status: nextStatus,
+      separated_quantity: nextStatus === 'separado' ? targetItem.total_quantity : undefined,
+      shortage_quantity: undefined,
+      marked_at: nextStatus !== 'pendente' ? new Date().toISOString() : undefined,
+    }
+
+    const nextList = itemsDraft.map((item) => (item.id === itemId ? updatedItem : item))
+    // Atualização otimista imediata na UI
+    setItemsDraft(nextList)
+
+    // Gravação IMEDIATA no banco de dados (PocketBase)
+    await persistChangesImmediately(
+      nextList,
+      [itemId],
+      nextStatus === 'pendente' ? 'Desmarcar Item' : 'Marcar Separado',
+    )
+  }
+
+  // GRAVAÇÃO IMEDIATA EM LOTE: Marcar todos como separados
+  const handleMarkAllSeparated = async () => {
+    if (!activeSeparation) return
+    const nowIso = new Date().toISOString()
+    const nextList: SeparationItem[] = itemsDraft.map((item) => {
+      if (item.status === 'substituido') return item
+      return {
+        ...item,
+        status: 'separado',
+        separated_quantity: item.total_quantity,
+        shortage_quantity: undefined,
+        marked_at: nowIso,
       }
+    })
 
-      return nextList
+    setItemsDraft(nextList)
+    const allIds = nextList.map((i) => i.id)
+
+    await persistChangesImmediately(nextList, allIds, 'Marcar todos como Separados')
+    toast({
+      title: 'Todos marcados como separados!',
+      description: 'Alterações gravadas no banco de dados.',
     })
   }
 
-  const handleMarkAllSeparated = () => {
-    setItemsDraft((prev) =>
-      prev.map((item) => ({
-        ...item,
-        status: 'separado',
-        marked_at: new Date().toISOString(),
-      })),
-    )
-  }
-
-  const handleResetAll = () => {
-    setItemsDraft((prev) =>
-      prev.map((item) => ({
+  // GRAVAÇÃO IMEDIATA EM LOTE: Limpar marcações (desfazer)
+  const handleResetAll = async () => {
+    if (!activeSeparation) return
+    const nextList: SeparationItem[] = itemsDraft.map((item) => {
+      if (item.status === 'substituido') return item
+      return {
         ...item,
         status: 'pendente',
+        separated_quantity: undefined,
+        shortage_quantity: undefined,
         marked_at: undefined,
-      })),
-    )
+      }
+    })
+
+    setItemsDraft(nextList)
+    const allIds = nextList.map((i) => i.id)
+
+    await persistChangesImmediately(nextList, allIds, 'Limpar marcações')
+    toast({
+      title: 'Marcações limpas!',
+      description: 'Estado pendente gravado no banco de dados.',
+    })
   }
 
   const handleSaveProgress = async () => {
@@ -989,6 +1206,32 @@ export function OperatorSeparationTab() {
               </div>
 
               <div className="flex items-center gap-1.5 shrink-0">
+                {/* Indicador de status de gravação imediata */}
+                {globalSaveState === 'saving' && (
+                  <Badge
+                    variant="outline"
+                    className="bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-400 text-[10px] h-6 px-2 gap-1 animate-pulse"
+                  >
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <span>Salvando...</span>
+                  </Badge>
+                )}
+                {globalSaveState === 'saved' && (
+                  <Badge
+                    variant="outline"
+                    className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/40 text-[10px] h-6 px-2 gap-1"
+                  >
+                    <Check className="h-3 w-3 text-emerald-600" />
+                    <span>Tudo salvo</span>
+                  </Badge>
+                )}
+                {globalSaveState === 'error' && (
+                  <Badge variant="destructive" className="text-[10px] h-6 px-2 gap-1">
+                    <AlertTriangle className="h-3 w-3" />
+                    <span>Erro ao salvar</span>
+                  </Badge>
+                )}
+
                 {activeSeparation.status === 'Concluida' ? (
                   <Badge className="bg-emerald-600 text-white text-[10px] h-6 px-2">
                     Concluída
@@ -1514,6 +1757,32 @@ export function OperatorSeparationTab() {
                               )}
                             </div>
 
+                            {/* Alerta de erro de gravação com botão de retry por item (Mobile) */}
+                            {itemSaveErrors.has(item.id) && (
+                              <div className="p-2 rounded-lg bg-rose-500/15 border border-rose-500/40 text-[11px] text-rose-800 dark:text-rose-300 flex items-center justify-between gap-2">
+                                <span className="flex items-center gap-1">
+                                  <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-rose-600" />
+                                  <span>Erro ao gravar marcação no banco!</span>
+                                </span>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() =>
+                                    handleToggleItemStatus(
+                                      item.id,
+                                      item.status === 'falta' || item.status === 'parcial'
+                                        ? 'falta'
+                                        : 'separado',
+                                    )
+                                  }
+                                  className="h-6 text-[10px] px-2 border-rose-500/50 hover:bg-rose-50 text-rose-700"
+                                >
+                                  Tentar novamente
+                                </Button>
+                              </div>
+                            )}
+
                             {/* BOTÕES DE AÇÃO: Separado / Falta / Troca / Mensagem */}
                             {!isReadOnly && !isSubstituted && (
                               <div className="grid grid-cols-4 gap-1.5 pt-1">
@@ -1521,13 +1790,18 @@ export function OperatorSeparationTab() {
                                   type="button"
                                   variant={isSeparated ? 'default' : 'outline'}
                                   onClick={() => handleToggleItemStatus(item.id, 'separado')}
+                                  disabled={inFlightItemIds.has(item.id)}
                                   className={`min-h-[44px] h-11 text-[11px] font-bold gap-1 transition-all shadow-sm ${
                                     isSeparated
                                       ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-500/50'
                                       : 'border-2 border-emerald-600/50 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 active:bg-emerald-100'
                                   }`}
                                 >
-                                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                                  {inFlightItemIds.has(item.id) && isSeparated ? (
+                                    <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                                  ) : (
+                                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                                  )}
                                   <span className="truncate">Separado</span>
                                 </Button>
 
@@ -1535,6 +1809,7 @@ export function OperatorSeparationTab() {
                                   type="button"
                                   variant={isShortage || isPartial ? 'default' : 'outline'}
                                   onClick={() => handleToggleItemStatus(item.id, 'falta')}
+                                  disabled={inFlightItemIds.has(item.id)}
                                   className={`min-h-[44px] h-11 text-[11px] font-bold gap-1 transition-all shadow-sm ${
                                     isShortage || isPartial
                                       ? isPartial
@@ -1543,7 +1818,11 @@ export function OperatorSeparationTab() {
                                       : 'border-2 border-rose-600/50 text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 active:bg-rose-100'
                                   }`}
                                 >
-                                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                                  {inFlightItemIds.has(item.id) && (isShortage || isPartial) ? (
+                                    <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                                  ) : (
+                                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                                  )}
                                   <span className="truncate">
                                     {isPartial ? 'Parcial' : 'Falta'}
                                   </span>
@@ -1553,6 +1832,7 @@ export function OperatorSeparationTab() {
                                   type="button"
                                   variant="outline"
                                   onClick={() => handleOpenSwapDialog(item)}
+                                  disabled={inFlightItemIds.has(item.id)}
                                   className="min-h-[44px] h-11 text-[11px] font-bold gap-1 transition-all shadow-sm border-2 border-blue-600/50 text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 active:bg-blue-100"
                                 >
                                   <ArrowLeftRight className="h-3.5 w-3.5 shrink-0" />
@@ -1670,6 +1950,32 @@ export function OperatorSeparationTab() {
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {/* Feedback de gravação imediata (Desktop) */}
+                  {globalSaveState === 'saving' && (
+                    <Badge
+                      variant="outline"
+                      className="bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-400 text-xs px-2.5 py-1 gap-1.5 animate-pulse"
+                    >
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>Salvando no banco...</span>
+                    </Badge>
+                  )}
+                  {globalSaveState === 'saved' && (
+                    <Badge
+                      variant="outline"
+                      className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/40 text-xs px-2.5 py-1 gap-1.5"
+                    >
+                      <Check className="h-3.5 w-3.5 text-emerald-600" />
+                      <span>Tudo salvo</span>
+                    </Badge>
+                  )}
+                  {globalSaveState === 'error' && (
+                    <Badge variant="destructive" className="text-xs px-2.5 py-1 gap-1.5">
+                      <AlertTriangle className="h-3.5 w-3.5" />
+                      <span>Falha na gravação</span>
+                    </Badge>
+                  )}
+
                   {activeSeparation.status === 'Concluida' ? (
                     <Badge className="bg-emerald-600 text-white">Concluída</Badge>
                   ) : (
@@ -2094,18 +2400,44 @@ export function OperatorSeparationTab() {
                                 {/* BOTÕES DE AÇÃO DO OPERADOR: 🟢 SEPARADO / 🔴 FALTA / 🔄 TROCA / 💬 MENSAGEM */}
                                 {!isReadOnly && !isSubstituted ? (
                                   <div className="flex items-center gap-1.5 shrink-0 flex-wrap sm:flex-nowrap">
+                                    {itemSaveErrors.has(item.id) && (
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="destructive"
+                                        onClick={() =>
+                                          handleToggleItemStatus(
+                                            item.id,
+                                            item.status === 'falta' || item.status === 'parcial'
+                                              ? 'falta'
+                                              : 'separado',
+                                          )
+                                        }
+                                        className="h-9 px-2.5 gap-1 text-xs"
+                                        title="Clique para tentar gravar novamente"
+                                      >
+                                        <AlertTriangle className="h-3.5 w-3.5" />
+                                        <span>Retentar</span>
+                                      </Button>
+                                    )}
+
                                     <Button
                                       type="button"
                                       size="sm"
                                       variant={isSeparated ? 'default' : 'outline'}
                                       onClick={() => handleToggleItemStatus(item.id, 'separado')}
+                                      disabled={inFlightItemIds.has(item.id)}
                                       className={`h-9 px-3 gap-1.5 font-bold transition-all text-xs ${
                                         isSeparated
                                           ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-500/30 shadow'
                                           : 'border-emerald-600/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
                                       }`}
                                     >
-                                      <CheckCircle2 className="h-4 w-4" />
+                                      {inFlightItemIds.has(item.id) && isSeparated ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      ) : (
+                                        <CheckCircle2 className="h-4 w-4" />
+                                      )}
                                       Separado
                                     </Button>
 
@@ -2114,6 +2446,7 @@ export function OperatorSeparationTab() {
                                       size="sm"
                                       variant={isShortage || isPartial ? 'default' : 'outline'}
                                       onClick={() => handleToggleItemStatus(item.id, 'falta')}
+                                      disabled={inFlightItemIds.has(item.id)}
                                       className={`h-9 px-3 gap-1.5 font-bold transition-all text-xs ${
                                         isShortage || isPartial
                                           ? isPartial
@@ -2122,7 +2455,11 @@ export function OperatorSeparationTab() {
                                           : 'border-rose-600/40 text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40'
                                       }`}
                                     >
-                                      <AlertTriangle className="h-4 w-4" />
+                                      {inFlightItemIds.has(item.id) && (isShortage || isPartial) ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      ) : (
+                                        <AlertTriangle className="h-4 w-4" />
+                                      )}
                                       {isPartial ? 'Parcial' : 'Falta'}
                                     </Button>
 
@@ -2131,6 +2468,7 @@ export function OperatorSeparationTab() {
                                       size="sm"
                                       variant="outline"
                                       onClick={() => handleOpenSwapDialog(item)}
+                                      disabled={inFlightItemIds.has(item.id)}
                                       className="h-9 px-3 gap-1.5 font-bold transition-all text-xs border-blue-600/40 text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40"
                                     >
                                       <ArrowLeftRight className="h-4 w-4" />

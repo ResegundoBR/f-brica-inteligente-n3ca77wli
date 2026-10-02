@@ -1,5 +1,12 @@
-import { describe, it, expect } from 'vitest'
-import { SeparationItem, isSeparationItemPending } from '@/services/material-separations'
+import { describe, it, expect, vi } from 'vitest'
+import {
+  SeparationItem,
+  isSeparationItemPending,
+  mergeSeparationItems,
+  persistItemShortage,
+} from '@/services/material-separations'
+import pb from '@/lib/pocketbase/client'
+import * as shortagesService from '@/services/material-shortages'
 
 describe('Operator Separation Mobile 140+ items test', () => {
   it('handles 142 items simulating Programação #30 dataset without lag or mutation issues', () => {
@@ -173,5 +180,244 @@ describe('Operator Separation Mobile 140+ items test', () => {
     expect(filteredUnseparated).toHaveLength(26)
     expect(filteredUnseparated.every((i) => i.status === 'pendente')).toBe(true)
     expect(filteredUnseparated.some((i) => i.status === 'falta')).toBe(false)
+  })
+
+  describe('Gravação Imediata + Tempo Real Multi-Operador', () => {
+    it('dispara persistência de falta em material_shortages no ato do clique para Falta Total', async () => {
+      const upsertSpy = vi
+        .spyOn(shortagesService, 'upsertMaterialShortage')
+        .mockResolvedValueOnce({ id: 'shortage-1' } as any)
+
+      const faltaItem: SeparationItem = {
+        id: 'item-100',
+        code: '14010055',
+        description: 'CANTONEIRA AÇO 1/2',
+        total_quantity: 4,
+        unit: 'BARRA',
+        status: 'falta',
+        op_numbers: ['OP 000500/2026'],
+        order_ids: ['ord-500'],
+      }
+
+      await persistItemShortage(faltaItem, 'Operador Reginaldo')
+
+      expect(upsertSpy).toHaveBeenCalledTimes(1)
+      const [payload, author] = upsertSpy.mock.calls[0]
+      expect(payload.code).toBe('14010055')
+      expect(payload.quantity).toBe(4)
+      expect(author).toBe('Operador Reginaldo')
+      expect(payload.observation).toContain('Falta gerada automaticamente na Separação do Operador')
+
+      upsertSpy.mockRestore()
+    })
+
+    it('dispara persistência com quantidade faltante calculada para Falta Parcial', async () => {
+      const upsertSpy = vi
+        .spyOn(shortagesService, 'upsertMaterialShortage')
+        .mockResolvedValueOnce({ id: 'shortage-2' } as any)
+
+      const partialItem: SeparationItem = {
+        id: 'item-101',
+        code: '14010056',
+        description: 'CHAPA INOX 2MM',
+        total_quantity: 10,
+        separated_quantity: 3,
+        shortage_quantity: 7,
+        unit: 'PC',
+        status: 'parcial',
+        op_numbers: ['OP 000501/2026'],
+        order_ids: ['ord-501'],
+      }
+
+      await persistItemShortage(partialItem, 'Operador Reginaldo')
+
+      expect(upsertSpy).toHaveBeenCalledTimes(1)
+      const [payload] = upsertSpy.mock.calls[0]
+      expect(payload.code).toBe('14010056')
+      expect(payload.quantity).toBe(7)
+      expect(payload.observation).toContain('Falta Parcial gerada na Separação do Operador')
+      expect(payload.observation).toContain('Separados: 3/10 PC')
+
+      upsertSpy.mockRestore()
+    })
+
+    it('ignora gravação de falta para peças com prefixo FAB (fabricação interna)', async () => {
+      const upsertSpy = vi.spyOn(shortagesService, 'upsertMaterialShortage')
+
+      const fabItem: SeparationItem = {
+        id: 'item-fab',
+        code: 'FAB01075',
+        description: 'CONJUNTO SOLDADO INTERNO',
+        total_quantity: 2,
+        unit: 'PC',
+        op_numbers: ['OP 000502/2026'],
+        order_ids: ['ord-502'],
+        status: 'falta',
+      }
+
+      await persistItemShortage(fabItem, 'Operador')
+      expect(upsertSpy).not.toHaveBeenCalled()
+      upsertSpy.mockRestore()
+    })
+
+    it('mergeSeparationItems atualiza itens remotos do PocketBase preservando itens locais com gravação em curso', () => {
+      const localItems: SeparationItem[] = [
+        {
+          id: 'item-1',
+          code: 'C1',
+          description: 'Item 1',
+          total_quantity: 5,
+          unit: 'UN',
+          op_numbers: ['OP 1'],
+          order_ids: ['ord-1'],
+          status: 'pendente',
+        },
+        {
+          id: 'item-2',
+          code: 'C2',
+          description: 'Item 2',
+          total_quantity: 3,
+          unit: 'UN',
+          op_numbers: ['OP 1'],
+          order_ids: ['ord-1'],
+          status: 'separado',
+        }, // este está sendo salvo localmente
+        {
+          id: 'item-3',
+          code: 'C3',
+          description: 'Item 3',
+          total_quantity: 2,
+          unit: 'UN',
+          op_numbers: ['OP 1'],
+          order_ids: ['ord-1'],
+          status: 'pendente',
+        },
+      ]
+
+      // Operador 2 remotamente marcou item-1 como separado e item-3 como falta,
+      // e o servidor ainda tem item-2 como pendente (pois a gravação local de item-2 ainda não retornou)
+      const remoteItems: SeparationItem[] = [
+        {
+          id: 'item-1',
+          code: 'C1',
+          description: 'Item 1',
+          total_quantity: 5,
+          unit: 'UN',
+          op_numbers: ['OP 1'],
+          order_ids: ['ord-1'],
+          status: 'separado',
+        },
+        {
+          id: 'item-2',
+          code: 'C2',
+          description: 'Item 2',
+          total_quantity: 3,
+          unit: 'UN',
+          op_numbers: ['OP 1'],
+          order_ids: ['ord-1'],
+          status: 'pendente',
+        },
+        {
+          id: 'item-3',
+          code: 'C3',
+          description: 'Item 3',
+          total_quantity: 2,
+          unit: 'UN',
+          op_numbers: ['OP 1'],
+          order_ids: ['ord-1'],
+          status: 'falta',
+        },
+      ]
+
+      const inFlight = new Set<string>(['item-2'])
+
+      const merged = mergeSeparationItems(localItems, remoteItems, inFlight)
+
+      // item-1 foi atualizado do remoto para separado
+      expect(merged.find((i) => i.id === 'item-1')?.status).toBe('separado')
+      // item-2 foi protegido pelo inFlight lock e continuou com o valor local (separado)
+      expect(merged.find((i) => i.id === 'item-2')?.status).toBe('separado')
+      // item-3 foi atualizado do remoto para falta
+      expect(merged.find((i) => i.id === 'item-3')?.status).toBe('falta')
+    })
+
+    it('mergeSeparationItems integra itens de substituição adicionados por outro operador', () => {
+      const localItems: SeparationItem[] = [
+        {
+          id: 'item-1',
+          code: 'C1',
+          description: 'Item 1',
+          total_quantity: 5,
+          unit: 'UN',
+          op_numbers: ['OP 1'],
+          order_ids: ['ord-1'],
+          status: 'pendente',
+        },
+      ]
+
+      const remoteItems: SeparationItem[] = [
+        {
+          id: 'item-1',
+          code: 'C1',
+          description: 'Item 1',
+          total_quantity: 5,
+          unit: 'UN',
+          op_numbers: ['OP 1'],
+          order_ids: ['ord-1'],
+          status: 'substituido',
+        },
+        {
+          id: 'swap-999',
+          code: 'C1-SUB',
+          description: 'Substituto C1',
+          total_quantity: 5,
+          unit: 'UN',
+          op_numbers: ['OP 1'],
+          order_ids: ['ord-1'],
+          status: 'pendente',
+          is_substitution: true,
+          original_item_id: 'item-1',
+        },
+      ]
+
+      const merged = mergeSeparationItems(localItems, remoteItems)
+
+      expect(merged).toHaveLength(2)
+      expect(merged[0].status).toBe('substituido')
+      expect(merged[1].id).toBe('swap-999')
+      expect(merged[1].is_substitution).toBe(true)
+    })
+
+    it('simula subscrição e cancelamento no unmount do modal sem vazamento de listeners', async () => {
+      let unsubscribedId: string | null = null
+
+      const collectionMock = pb.collection('material_separations')
+      const subscribeSpy = vi
+        .spyOn(collectionMock, 'subscribe')
+        .mockImplementation((topic: any) => {
+          return Promise.resolve(() => {
+            unsubscribedId = topic
+          }) as any
+        })
+
+      const unsubscribeSpy = vi
+        .spyOn(collectionMock, 'unsubscribe')
+        .mockImplementation((topic: any) => {
+          unsubscribedId = topic
+          return Promise.resolve() as any
+        })
+
+      // Simula abertura do modal para a separação "sep-123"
+      const sepId = 'sep-123'
+      const unsubFn = await collectionMock.subscribe(sepId, () => {})
+      expect(subscribeSpy).toHaveBeenCalledWith(sepId, expect.any(Function))
+
+      // Simula fechamento do modal (cleanup)
+      unsubFn()
+      expect(unsubscribedId).toBe(sepId)
+
+      subscribeSpy.mockRestore()
+      unsubscribeSpy.mockRestore()
+    })
   })
 })

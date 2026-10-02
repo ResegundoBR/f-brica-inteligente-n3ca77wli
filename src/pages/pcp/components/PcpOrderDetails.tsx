@@ -181,395 +181,405 @@ export function PcpOrderDetails({
 
   return (
     <Sheet open={!!op} onOpenChange={(val) => !val && onClose()}>
-      <SheetContent className="sm:max-w-md overflow-y-auto">
-        <SheetHeader>
+      <SheetContent className="sm:max-w-md flex flex-col p-0 gap-0 overflow-hidden">
+        <SheetHeader className="p-6 pb-2 shrink-0 border-b">
           <SheetTitle>Detalhes da OP</SheetTitle>
         </SheetHeader>
-        {op && (
-          <div className="space-y-2 mt-2">
-            {onOpenMessages && (
-              <Button
-                type="button"
-                className="w-full gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-sm"
-                onClick={() => onOpenMessages(op)}
-              >
-                <MessageSquare className="size-4" />
-                Central de Comunicação da OP
-              </Button>
-            )}
-            {isAdmin && (
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" className="flex-1" onClick={onEdit}>
-                  <Pencil className="size-4 mr-2" />
-                  Editar OP
+        <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6">
+          {op && (
+            <div className="space-y-2">
+              {onOpenMessages && (
+                <Button
+                  type="button"
+                  className="w-full gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-sm"
+                  onClick={() => onOpenMessages(op)}
+                >
+                  <MessageSquare className="size-4" />
+                  Central de Comunicação da OP
                 </Button>
-                <Button variant="destructive" size="sm" className="flex-1" onClick={onDelete}>
-                  <Trash2 className="size-4 mr-2" />
-                  Excluir OP
-                </Button>
-              </div>
-            )}
-          </div>
-        )}
-        {op && (
-          <div className="mt-6 space-y-6">
-            {op.manual_priority === 2 && (
-              <div className="bg-lime-400 text-black p-4 rounded-md border border-lime-600 flex items-center gap-2 font-bold">
-                <span className="text-xl">⚡</span>
-                <span>⚠️ Prazo Especial – Atenção de Todos os Setores</span>
-              </div>
-            )}
-            {op.status === 'Parado' && (
-              <div className="bg-red-50 dark:bg-red-950/20 p-4 rounded-md border border-red-200 dark:border-red-900">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-semibold text-red-800 dark:text-red-400 flex items-center">
-                    <AlertCircle className="size-4 mr-2" /> Gargalo de Produção
-                  </h3>
-                  {op.expand?.bottleneck_by && (
-                    <span className="text-xs text-red-700 dark:text-red-300">
-                      Sinalizado por:{' '}
-                      <strong>
-                        {op.expand.bottleneck_by.name || op.expand.bottleneck_by.email}
-                      </strong>
-                    </span>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <div>
-                    <span className="text-sm font-medium text-red-700 dark:text-red-300">
-                      Motivo:{' '}
-                    </span>
-                    <span className="text-sm text-red-600 dark:text-red-200">
-                      {op.bottleneck_reason}
-                    </span>
-                  </div>
-                  {op.bottleneck_details && (
-                    <div>
-                      <span className="text-sm font-medium text-red-700 dark:text-red-300">
-                        Detalhes:{' '}
-                      </span>
-                      <span className="text-sm text-red-600 dark:text-red-200 whitespace-pre-wrap">
-                        {op.bottleneck_details}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label className="text-muted-foreground">Número do Pedido</Label>
-                <p className="font-medium text-sm mt-1">{op.order_number || '-'}</p>
-              </div>
-              <div>
-                <Label className="text-muted-foreground">Número da OP</Label>
-                <p className="font-medium text-sm mt-1">{op.op_number || '-'}</p>
-              </div>
-              <div>
-                <Label className="text-muted-foreground">Cliente</Label>
-                <p className="font-medium text-sm mt-1">
-                  {op.expand?.client_id?.name || op.client_name}
-                </p>
-              </div>
-              <div>
-                <Label className="text-muted-foreground">Produto</Label>
-                <p className="font-medium text-sm mt-1">
-                  {op.op_type === 'Assistência'
-                    ? op.manual_product_name
-                    : op.op_type === 'Especial'
-                      ? op.manual_product_name || 'Produto Especial'
-                      : op.expand?.product_id?.name || '-'}
-                </p>
-              </div>
-              <div>
-                <Label className="text-muted-foreground">Quantidade</Label>
-                <p className="font-medium text-sm mt-1">{op.quantity} un</p>
-                <p className="text-xs text-muted-foreground mt-0.5 font-medium">
-                  Expedido {op.delivered_quantity || 0}/{op.quantity} — pendente{' '}
-                  {Math.max(0, op.quantity - (op.delivered_quantity || 0))}
-                </p>
-              </div>
-              <div>
-                <Label className="text-muted-foreground">Data de Entrega</Label>
-                <p className="font-medium text-sm mt-1 flex items-center gap-2">
-                  {isValidDeliveryDate ? formatLocalDate(op.delivery_date) : '-'}
-                  {isDelayed && <span className="text-red-500 text-xs font-bold">(Atrasado)</span>}
-                </p>
-              </div>
-              <div>
-                <Label className="text-muted-foreground">Status</Label>
-                <p className="font-medium text-sm mt-1">{op.status}</p>
-              </div>
-              <div>
-                <Label className="text-muted-foreground">Etapa Atual</Label>
-                <p className="font-medium text-sm mt-1">{op.stage}</p>
-              </div>
-
-              {/* Painel de Data Prometida (exclusivo para edição pelo Admin, visível a todos) */}
-              <div className="col-span-2 p-3.5 border rounded-lg bg-slate-50 dark:bg-slate-900/60 space-y-2">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">🎯</span>
-                    <div>
-                      <Label className="font-bold text-foreground text-sm">
-                        Data Prometida (PCP)
-                      </Label>
-                      <p className="text-[11px] text-muted-foreground">
-                        Prazo renegociado. A data original de entrega permanece intacta para
-                        auditoria.
-                      </p>
-                    </div>
-                  </div>
-                  {op.promised_date && (
-                    <PromisedDateBadge
-                      promisedDate={op.promised_date}
-                      status={op.status}
-                      size="md"
-                    />
-                  )}
-                </div>
-
-                {op.promised_date ? (
-                  <div className="text-xs space-y-1.5 pt-2 border-t border-slate-200 dark:border-slate-800">
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Data prometida:</span>
-                      <span className="font-bold text-foreground">
-                        {isValidPromisedDate ? formatLocalDate(op.promised_date) : '-'}
-                      </span>
-                    </div>
-                    {op.promised_note && (
-                      <div className="bg-background/80 p-2 rounded border text-[11px] text-foreground">
-                        <span className="font-medium text-muted-foreground block mb-0.5">
-                          Nota:
-                        </span>
-                        {op.promised_note}
-                      </div>
-                    )}
-                    {(op.expand?.promised_by || op.promised_at) && (
-                      <div className="text-[10px] text-muted-foreground text-right italic pt-1">
-                        Definido por{' '}
-                        <span className="font-medium text-foreground">
-                          {op.expand?.promised_by?.name || op.expand?.promised_by?.email || 'Admin'}
-                        </span>
-                        {op.promised_at && isValid(parseISO(op.promised_at)) && (
-                          <> em {format(parseISO(op.promised_at), 'dd/MM/yyyy HH:mm')}</>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground italic pt-1">
-                    Nenhuma data prometida informada. Esta OP segue o prazo original.
-                  </p>
-                )}
-
-                {isAdmin ? (
-                  <div className="pt-2 flex justify-end">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="text-xs h-8 gap-1.5"
-                      onClick={() => {
-                        setIsEmergencyContext(false)
-                        setPromisedModalOpen(true)
-                      }}
-                    >
-                      <Calendar className="size-3.5" />
-                      {op.promised_date ? 'Alterar data prometida' : 'Definir data prometida'}
-                    </Button>
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-muted-foreground italic text-right pt-1">
-                    Edição exclusiva do perfil Admin
-                  </p>
-                )}
-              </div>
-
-              {/* Bloco de Emergência */}
-              <div className="col-span-2 mt-1 flex items-center justify-between p-3 border rounded-md bg-red-50/50 dark:bg-red-950/20">
-                <div>
-                  <Label className="text-red-600 dark:text-red-400 font-bold">Urgência</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Ao ativar emergência, é obrigatório informar a data máxima para finalização
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span
-                    className={cn(
-                      'text-xs font-bold',
-                      op.manual_priority === 1 ? 'text-red-600' : 'text-slate-400',
-                    )}
-                  >
-                    {op.manual_priority === 1 ? 'EMERGÊNCIA 🚨' : 'NORMAL'}
-                  </span>
-                  {isAdmin ? (
-                    <Switch
-                      checked={op.manual_priority === 1}
-                      onCheckedChange={handleEmergencyToggle}
-                    />
-                  ) : (
-                    <span className="text-[11px] text-muted-foreground">(somente Admin)</span>
-                  )}
-                </div>
-              </div>
-
-              <div className="col-span-2 mt-2">
-                <Label className="text-muted-foreground">Observações</Label>
-                <div className="mt-2 space-y-4">
-                  {observations.length > 0 ? (
-                    Object.entries(obsBySector).map(([sector, obsList]) => (
-                      <div key={sector}>
-                        <h4 className="font-semibold text-sm mb-2 opacity-80">{sector}</h4>
-                        <div className="space-y-2">
-                          {obsList.map((obs) => {
-                            return (
-                              <div
-                                key={obs.id}
-                                className="p-3 rounded-md text-sm border whitespace-pre-wrap bg-yellow-200 border-yellow-400 text-yellow-950 shadow-sm flex flex-col gap-1"
-                              >
-                                <span className="text-[10px] opacity-70 font-semibold uppercase tracking-wider">
-                                  {obs.created && isValid(new Date(obs.created))
-                                    ? format(new Date(obs.created), 'dd/MM/yyyy HH:mm')
-                                    : '-'}
-                                </span>
-                                <span>{obs.content}</span>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-muted-foreground">Nenhuma observação cadastrada.</p>
-                  )}
-                </div>
-
-                <div className="mt-8 space-y-4">
-                  <Label className="text-muted-foreground">Histórico de Movimentação</Label>
-                  <div className="space-y-3">
-                    {logs.map((log) => (
-                      <div
-                        key={log.id}
-                        className="text-sm p-3 border rounded-md bg-slate-50 dark:bg-slate-900/50"
-                      >
-                        <div className="flex justify-between items-start mb-1">
-                          <span className="font-semibold">{log.action}</span>
-                          <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">
-                            {log.created && isValid(new Date(log.created))
-                              ? format(new Date(log.created), 'dd/MM/yyyy HH:mm')
-                              : '-'}
-                          </span>
-                        </div>
-                        {log.stage && (
-                          <div className="text-xs text-muted-foreground">Etapa: {log.stage}</div>
-                        )}
-                        {log.details && (
-                          <div className="text-xs text-muted-foreground mt-1 bg-slate-100 dark:bg-slate-800/60 p-2 rounded whitespace-pre-wrap break-words font-mono">
-                            {log.details}
-                          </div>
-                        )}
-                        {log.expand?.user_id && (
-                          <div className="text-xs text-muted-foreground mt-1">
-                            Por: {log.expand.user_id.name || log.expand.user_id.email}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                    {logs.length === 0 && (
-                      <p className="text-sm text-muted-foreground">Nenhum histórico registrado.</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Seção de Entregas / Expedição Parcial */}
-              <div className="col-span-2 mt-2 space-y-3 p-3 border rounded-lg bg-slate-50/70 dark:bg-slate-900/40">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Truck className="size-4 text-teal-600" />
-                    <Label className="font-semibold text-foreground">Expedição e Entregas</Label>
-                  </div>
-                  <Badge
-                    variant={(op.delivered_quantity || 0) >= op.quantity ? 'default' : 'outline'}
-                    className={cn(
-                      'text-xs',
-                      (op.delivered_quantity || 0) >= op.quantity
-                        ? 'bg-green-600 text-white'
-                        : (op.delivered_quantity || 0) > 0
-                          ? 'border-blue-500 text-blue-600'
-                          : 'text-muted-foreground',
-                    )}
-                  >
-                    Expedido {op.delivered_quantity || 0}/{op.quantity} — pendente{' '}
-                    {Math.max(0, op.quantity - (op.delivered_quantity || 0))}
-                  </Badge>
-                </div>
-
-                {deliveries.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">
-                    Nenhuma entrega ou expedição registrada ainda.
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {deliveries.map((deliv) => (
-                      <div
-                        key={deliv.id}
-                        className="p-2.5 rounded border bg-background text-xs space-y-1 shadow-sm"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-semibold text-foreground">
-                            {deliv.quantity} un expedida(s)
-                          </span>
-                          <span className="text-muted-foreground text-[11px]">
-                            {deliv.data_saida
-                              ? format(new Date(deliv.data_saida), 'dd/MM/yyyy')
-                              : format(new Date(deliv.created), 'dd/MM/yyyy HH:mm')}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2 text-muted-foreground pt-1 border-t text-[11px]">
-                          <div>
-                            <span className="font-medium text-foreground">NF: </span>
-                            {deliv.nf || '-'}
-                          </div>
-                          <div>
-                            <span className="font-medium text-foreground">Transportadora: </span>
-                            {deliv.transportadora || '-'}
-                          </div>
-                          {deliv.notes && (
-                            <div className="col-span-2">
-                              <span className="font-medium text-foreground">Obs: </span>
-                              {deliv.notes}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <OutsourcingPanel op={op} />
-
-              {op.annex && (
-                <div className="col-span-2">
-                  <Label className="text-muted-foreground">Anexo</Label>
-                  <div>
-                    <a
-                      href={pb.files.getURL(op, op.annex)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-blue-500 hover:underline flex items-center mt-1 text-sm font-medium"
-                    >
-                      <Paperclip className="mr-1 size-4" /> Visualizar Documento
-                    </a>
-                  </div>
+              )}
+              {isAdmin && (
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" className="flex-1" onClick={onEdit}>
+                    <Pencil className="size-4 mr-2" />
+                    Editar OP
+                  </Button>
+                  <Button variant="destructive" size="sm" className="flex-1" onClick={onDelete}>
+                    <Trash2 className="size-4 mr-2" />
+                    Excluir OP
+                  </Button>
                 </div>
               )}
             </div>
-          </div>
-        )}
+          )}
+          {op && (
+            <div className="mt-6 space-y-6">
+              {op.manual_priority === 2 && (
+                <div className="bg-lime-400 text-black p-4 rounded-md border border-lime-600 flex items-center gap-2 font-bold">
+                  <span className="text-xl">⚡</span>
+                  <span>⚠️ Prazo Especial – Atenção de Todos os Setores</span>
+                </div>
+              )}
+              {op.status === 'Parado' && (
+                <div className="bg-red-50 dark:bg-red-950/20 p-4 rounded-md border border-red-200 dark:border-red-900">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-semibold text-red-800 dark:text-red-400 flex items-center">
+                      <AlertCircle className="size-4 mr-2" /> Gargalo de Produção
+                    </h3>
+                    {op.expand?.bottleneck_by && (
+                      <span className="text-xs text-red-700 dark:text-red-300">
+                        Sinalizado por:{' '}
+                        <strong>
+                          {op.expand.bottleneck_by.name || op.expand.bottleneck_by.email}
+                        </strong>
+                      </span>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <div>
+                      <span className="text-sm font-medium text-red-700 dark:text-red-300">
+                        Motivo:{' '}
+                      </span>
+                      <span className="text-sm text-red-600 dark:text-red-200">
+                        {op.bottleneck_reason}
+                      </span>
+                    </div>
+                    {op.bottleneck_details && (
+                      <div>
+                        <span className="text-sm font-medium text-red-700 dark:text-red-300">
+                          Detalhes:{' '}
+                        </span>
+                        <span className="text-sm text-red-600 dark:text-red-200 whitespace-pre-wrap">
+                          {op.bottleneck_details}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-muted-foreground">Número do Pedido</Label>
+                  <p className="font-medium text-sm mt-1">{op.order_number || '-'}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Número da OP</Label>
+                  <p className="font-medium text-sm mt-1">{op.op_number || '-'}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Cliente</Label>
+                  <p className="font-medium text-sm mt-1">
+                    {op.expand?.client_id?.name || op.client_name}
+                  </p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Produto</Label>
+                  <p className="font-medium text-sm mt-1">
+                    {op.op_type === 'Assistência'
+                      ? op.manual_product_name
+                      : op.op_type === 'Especial'
+                        ? op.manual_product_name || 'Produto Especial'
+                        : op.expand?.product_id?.name || '-'}
+                  </p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Quantidade</Label>
+                  <p className="font-medium text-sm mt-1">{op.quantity} un</p>
+                  <p className="text-xs text-muted-foreground mt-0.5 font-medium">
+                    Expedido {op.delivered_quantity || 0}/{op.quantity} — pendente{' '}
+                    {Math.max(0, op.quantity - (op.delivered_quantity || 0))}
+                  </p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Data de Entrega</Label>
+                  <p className="font-medium text-sm mt-1 flex items-center gap-2">
+                    {isValidDeliveryDate ? formatLocalDate(op.delivery_date) : '-'}
+                    {isDelayed && (
+                      <span className="text-red-500 text-xs font-bold">(Atrasado)</span>
+                    )}
+                  </p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Status</Label>
+                  <p className="font-medium text-sm mt-1">{op.status}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Etapa Atual</Label>
+                  <p className="font-medium text-sm mt-1">{op.stage}</p>
+                </div>
+
+                {/* Painel de Data Prometida (exclusivo para edição pelo Admin, visível a todos) */}
+                <div className="col-span-2 p-3.5 border rounded-lg bg-slate-50 dark:bg-slate-900/60 space-y-2">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">🎯</span>
+                      <div>
+                        <Label className="font-bold text-foreground text-sm">
+                          Data Prometida (PCP)
+                        </Label>
+                        <p className="text-[11px] text-muted-foreground">
+                          Prazo renegociado. A data original de entrega permanece intacta para
+                          auditoria.
+                        </p>
+                      </div>
+                    </div>
+                    {op.promised_date && (
+                      <PromisedDateBadge
+                        promisedDate={op.promised_date}
+                        status={op.status}
+                        size="md"
+                      />
+                    )}
+                  </div>
+
+                  {op.promised_date ? (
+                    <div className="text-xs space-y-1.5 pt-2 border-t border-slate-200 dark:border-slate-800">
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Data prometida:</span>
+                        <span className="font-bold text-foreground">
+                          {isValidPromisedDate ? formatLocalDate(op.promised_date) : '-'}
+                        </span>
+                      </div>
+                      {op.promised_note && (
+                        <div className="bg-background/80 p-2 rounded border text-[11px] text-foreground">
+                          <span className="font-medium text-muted-foreground block mb-0.5">
+                            Nota:
+                          </span>
+                          {op.promised_note}
+                        </div>
+                      )}
+                      {(op.expand?.promised_by || op.promised_at) && (
+                        <div className="text-[10px] text-muted-foreground text-right italic pt-1">
+                          Definido por{' '}
+                          <span className="font-medium text-foreground">
+                            {op.expand?.promised_by?.name ||
+                              op.expand?.promised_by?.email ||
+                              'Admin'}
+                          </span>
+                          {op.promised_at && isValid(parseISO(op.promised_at)) && (
+                            <> em {format(parseISO(op.promised_at), 'dd/MM/yyyy HH:mm')}</>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground italic pt-1">
+                      Nenhuma data prometida informada. Esta OP segue o prazo original.
+                    </p>
+                  )}
+
+                  {isAdmin ? (
+                    <div className="pt-2 flex justify-end">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="text-xs h-8 gap-1.5"
+                        onClick={() => {
+                          setIsEmergencyContext(false)
+                          setPromisedModalOpen(true)
+                        }}
+                      >
+                        <Calendar className="size-3.5" />
+                        {op.promised_date ? 'Alterar data prometida' : 'Definir data prometida'}
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground italic text-right pt-1">
+                      Edição exclusiva do perfil Admin
+                    </p>
+                  )}
+                </div>
+
+                {/* Bloco de Emergência */}
+                <div className="col-span-2 mt-1 flex items-center justify-between p-3 border rounded-md bg-red-50/50 dark:bg-red-950/20">
+                  <div>
+                    <Label className="text-red-600 dark:text-red-400 font-bold">Urgência</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Ao ativar emergência, é obrigatório informar a data máxima para finalização
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        'text-xs font-bold',
+                        op.manual_priority === 1 ? 'text-red-600' : 'text-slate-400',
+                      )}
+                    >
+                      {op.manual_priority === 1 ? 'EMERGÊNCIA 🚨' : 'NORMAL'}
+                    </span>
+                    {isAdmin ? (
+                      <Switch
+                        checked={op.manual_priority === 1}
+                        onCheckedChange={handleEmergencyToggle}
+                      />
+                    ) : (
+                      <span className="text-[11px] text-muted-foreground">(somente Admin)</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="col-span-2 mt-2">
+                  <Label className="text-muted-foreground">Observações</Label>
+                  <div className="mt-2 space-y-4">
+                    {observations.length > 0 ? (
+                      Object.entries(obsBySector).map(([sector, obsList]) => (
+                        <div key={sector}>
+                          <h4 className="font-semibold text-sm mb-2 opacity-80">{sector}</h4>
+                          <div className="space-y-2">
+                            {obsList.map((obs) => {
+                              return (
+                                <div
+                                  key={obs.id}
+                                  className="p-3 rounded-md text-sm border whitespace-pre-wrap bg-yellow-200 border-yellow-400 text-yellow-950 shadow-sm flex flex-col gap-1"
+                                >
+                                  <span className="text-[10px] opacity-70 font-semibold uppercase tracking-wider">
+                                    {obs.created && isValid(new Date(obs.created))
+                                      ? format(new Date(obs.created), 'dd/MM/yyyy HH:mm')
+                                      : '-'}
+                                  </span>
+                                  <span>{obs.content}</span>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        Nenhuma observação cadastrada.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="mt-8 space-y-4">
+                    <Label className="text-muted-foreground">Histórico de Movimentação</Label>
+                    <div className="space-y-3">
+                      {logs.map((log) => (
+                        <div
+                          key={log.id}
+                          className="text-sm p-3 border rounded-md bg-slate-50 dark:bg-slate-900/50"
+                        >
+                          <div className="flex justify-between items-start mb-1">
+                            <span className="font-semibold">{log.action}</span>
+                            <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">
+                              {log.created && isValid(new Date(log.created))
+                                ? format(new Date(log.created), 'dd/MM/yyyy HH:mm')
+                                : '-'}
+                            </span>
+                          </div>
+                          {log.stage && (
+                            <div className="text-xs text-muted-foreground">Etapa: {log.stage}</div>
+                          )}
+                          {log.details && (
+                            <div className="text-xs text-muted-foreground mt-1 bg-slate-100 dark:bg-slate-800/60 p-2 rounded whitespace-pre-wrap break-words font-mono">
+                              {log.details}
+                            </div>
+                          )}
+                          {log.expand?.user_id && (
+                            <div className="text-xs text-muted-foreground mt-1">
+                              Por: {log.expand.user_id.name || log.expand.user_id.email}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      {logs.length === 0 && (
+                        <p className="text-sm text-muted-foreground">
+                          Nenhum histórico registrado.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Seção de Entregas / Expedição Parcial */}
+                <div className="col-span-2 mt-2 space-y-3 p-3 border rounded-lg bg-slate-50/70 dark:bg-slate-900/40">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Truck className="size-4 text-teal-600" />
+                      <Label className="font-semibold text-foreground">Expedição e Entregas</Label>
+                    </div>
+                    <Badge
+                      variant={(op.delivered_quantity || 0) >= op.quantity ? 'default' : 'outline'}
+                      className={cn(
+                        'text-xs',
+                        (op.delivered_quantity || 0) >= op.quantity
+                          ? 'bg-green-600 text-white'
+                          : (op.delivered_quantity || 0) > 0
+                            ? 'border-blue-500 text-blue-600'
+                            : 'text-muted-foreground',
+                      )}
+                    >
+                      Expedido {op.delivered_quantity || 0}/{op.quantity} — pendente{' '}
+                      {Math.max(0, op.quantity - (op.delivered_quantity || 0))}
+                    </Badge>
+                  </div>
+
+                  {deliveries.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      Nenhuma entrega ou expedição registrada ainda.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {deliveries.map((deliv) => (
+                        <div
+                          key={deliv.id}
+                          className="p-2.5 rounded border bg-background text-xs space-y-1 shadow-sm"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-foreground">
+                              {deliv.quantity} un expedida(s)
+                            </span>
+                            <span className="text-muted-foreground text-[11px]">
+                              {deliv.data_saida
+                                ? format(new Date(deliv.data_saida), 'dd/MM/yyyy')
+                                : format(new Date(deliv.created), 'dd/MM/yyyy HH:mm')}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-muted-foreground pt-1 border-t text-[11px]">
+                            <div>
+                              <span className="font-medium text-foreground">NF: </span>
+                              {deliv.nf || '-'}
+                            </div>
+                            <div>
+                              <span className="font-medium text-foreground">Transportadora: </span>
+                              {deliv.transportadora || '-'}
+                            </div>
+                            {deliv.notes && (
+                              <div className="col-span-2">
+                                <span className="font-medium text-foreground">Obs: </span>
+                                {deliv.notes}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <OutsourcingPanel op={op} />
+
+                {op.annex && (
+                  <div className="col-span-2">
+                    <Label className="text-muted-foreground">Anexo</Label>
+                    <div>
+                      <a
+                        href={pb.files.getURL(op, op.annex)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-blue-500 hover:underline flex items-center mt-1 text-sm font-medium"
+                      >
+                        <Paperclip className="mr-1 size-4" /> Visualizar Documento
+                      </a>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       </SheetContent>
       {op && (
         <PromisedDateModal

@@ -1580,26 +1580,28 @@ export default function PcpKanban() {
       </Dialog>
 
       <Dialog open={!!selectedOrder} onOpenChange={(v) => !v && setSelectedOrder(null)}>
-        <DialogContent className="sm:max-w-[700px] h-[80vh] flex flex-col">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-[700px] h-[80vh] flex flex-col overflow-hidden">
+          <DialogHeader className="shrink-0">
             <DialogTitle>Detalhes da OP</DialogTitle>
           </DialogHeader>
           {selectedOrder?.stage === 'Expedição' && (
-            <Button
-              variant="default"
-              className="bg-teal-600 hover:bg-teal-700 text-white gap-2 w-fit"
-              onClick={() => {
-                setExpeditionOrderNumber(selectedOrder.order_number)
-                setSelectedOrder(null)
-                setExpeditionModalOpen(true)
-              }}
-            >
-              <Truck className="size-4" />
-              Registrar Expedição
-            </Button>
+            <div className="shrink-0">
+              <Button
+                variant="default"
+                className="bg-teal-600 hover:bg-teal-700 text-white gap-2 w-fit"
+                onClick={() => {
+                  setExpeditionOrderNumber(selectedOrder.order_number)
+                  setSelectedOrder(null)
+                  setExpeditionModalOpen(true)
+                }}
+              >
+                <Truck className="size-4" />
+                Registrar Expedição
+              </Button>
+            </div>
           )}
           {selectedOrder && (
-            <Tabs defaultValue="detalhes" className="flex-1 flex flex-col overflow-hidden">
+            <Tabs defaultValue="detalhes" className="flex-1 flex flex-col min-h-0 overflow-hidden">
               <TabsList className="grid w-full grid-cols-4 shrink-0">
                 <TabsTrigger value="detalhes">Detalhes</TabsTrigger>
                 <TabsTrigger value="entregas">Entregas / Expedição</TabsTrigger>
@@ -1609,7 +1611,10 @@ export default function PcpKanban() {
                 </TabsTrigger>
                 <TabsTrigger value="historico">Log / Histórico</TabsTrigger>
               </TabsList>
-              <TabsContent value="detalhes" className="flex-1 overflow-y-auto pt-4 space-y-4">
+              <TabsContent
+                value="detalhes"
+                className="flex-1 min-h-0 overflow-y-auto mt-0 pt-4 space-y-4 data-[state=active]:flex data-[state=active]:flex-col"
+              >
                 {selectedOrder.status === 'Parado' && (
                   <div className="bg-orange-50 dark:bg-orange-950/20 p-4 rounded-md border border-orange-200 dark:border-orange-900">
                     <h3 className="font-semibold text-orange-800 dark:text-orange-400 mb-2 flex items-center">
@@ -1967,15 +1972,18 @@ export default function PcpKanban() {
                     </div>
                   )}
               </TabsContent>
-              <TabsContent value="entregas" className="flex-1 overflow-y-auto pt-4">
+              <TabsContent
+                value="entregas"
+                className="flex-1 min-h-0 overflow-y-auto mt-0 pt-4 data-[state=active]:flex data-[state=active]:flex-col"
+              >
                 <OrderDeliveriesList order={selectedOrder} />
               </TabsContent>
               <TabsContent
                 value="comunicacao"
-                className="flex-1 overflow-hidden pt-2 flex flex-col"
+                className="flex-1 min-h-0 overflow-y-auto mt-0 pt-4 data-[state=active]:flex data-[state=active]:flex-col"
               >
                 <div className="flex-1 flex flex-col min-h-0 border rounded-lg bg-card overflow-hidden">
-                  <div className="p-3 border-b bg-muted/40 flex items-center justify-between">
+                  <div className="p-3 border-b bg-muted/40 flex items-center justify-between shrink-0">
                     <div className="flex items-center gap-2">
                       <MessageSquare className="size-4 text-primary" />
                       <span className="text-sm font-semibold">Central de Comunicação da OP</span>
@@ -2027,7 +2035,10 @@ export default function PcpKanban() {
                   </div>
                 </div>
               </TabsContent>
-              <TabsContent value="historico" className="flex-1 overflow-y-auto pt-4">
+              <TabsContent
+                value="historico"
+                className="flex-1 min-h-0 overflow-y-auto mt-0 pt-4 data-[state=active]:flex data-[state=active]:flex-col"
+              >
                 <OrderLogsList orderId={selectedOrder.id} />
               </TabsContent>
             </Tabs>

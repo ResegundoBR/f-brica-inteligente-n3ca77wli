@@ -613,3 +613,112 @@ export async function finalizeSeparation(
     movementsCreatedCount,
   }
 }
+
+export interface ReopenSeparationOptions {
+  reason?: string
+}
+
+/**
+ * Reabre uma rodada de separação com status 'Concluida':
+ * - Altera status de volta para 'Em_Separacao'
+ * - Preserva TODAS as marcações já gravadas (items, separated_items, shortage_items, contadores)
+ * - Limpa finished_at e finished_by
+ * - Sincroniza reservas de material para os itens marcados como separados/parciais
+ * - Registra log de auditoria em pcp_order_logs para todas as OPs envolvidas (quem reabriu e quando)
+ */
+export async function reopenSeparation(
+  separationId: string,
+  options?: ReopenSeparationOptions,
+): Promise<MaterialSeparation> {
+  const currentUserId = pb.authStore.record?.id
+  const managerName = pb.authStore.record?.name || pb.authStore.record?.email || 'Gestor do PCP'
+
+  // 1. Carregar a rodada atual
+  const existing = await pb
+    .collection('material_separations')
+    .getOne<MaterialSeparation>(separationId, {
+      expand: 'programacao_id,created_by,finished_by',
+    })
+
+  if (!existing) {
+    throw new Error('Rodada de separação não encontrada.')
+  }
+
+  const items = existing.items || []
+  const separatedCount =
+    existing.separated_count ??
+    items.filter((i) => i.status === 'separado' || i.status === 'parcial').length
+  const shortageCount =
+    existing.shortage_count ??
+    items.filter(
+      (i) => i.status === 'falta' || (i.status === 'parcial' && (i.shortage_quantity ?? 0) > 0),
+    ).length
+
+  // 2. Atualizar a rodada para 'Em_Separacao' preservando todas as marcações
+  const payload = {
+    status: 'Em_Separacao' as SeparationStatus,
+    finished_at: null,
+    finished_by: null,
+  }
+
+  const updatedSeparation = await pb
+    .collection('material_separations')
+    .update<MaterialSeparation>(separationId, payload, {
+      expand: 'programacao_id,created_by,finished_by',
+    })
+
+  // 3. Sincronizar reservas no estoque (garante que itens já separados fiquem com reserva Ativa)
+  try {
+    await syncSeparationReservations(separationId, items)
+  } catch (resErr) {
+    console.error('Erro ao sincronizar reservas na reabertura da separação:', resErr)
+  }
+
+  // 4. Registro de auditoria em pcp_order_logs (quem reabriu, quando e resumo preservado)
+  const dateFormatted = new Date().toLocaleString('pt-BR')
+  const progName =
+    existing.expand?.programacao_id?.name || existing.title || `Rodada ${separationId.slice(0, 6)}`
+
+  const targetOrderIds = Array.from(new Set((existing.order_ids || []).filter(Boolean)))
+  if (targetOrderIds.length === 0 && existing.op_numbers && existing.op_numbers.length > 0) {
+    try {
+      const cleanOps = existing.op_numbers.map((o) => o.replace(/^OP\s*/i, '').trim())
+      const filter = cleanOps.map((op) => `op_number = "${op}"`).join(' || ')
+      if (filter) {
+        const found = await pb.collection('pcp_orders').getFullList({
+          filter,
+          fields: 'id',
+        })
+        found.forEach((f: any) => targetOrderIds.push(f.id))
+      }
+    } catch (e) {
+      console.warn('Erro ao resolver order_ids para auditoria de reabertura:', e)
+    }
+  }
+
+  const auditDetails = [
+    `Rodada de Separação reaberta por ${managerName} em ${dateFormatted}.`,
+    `• Programação / Rodada: ${progName}`,
+    `• Status alterado: Concluída → Em Separação`,
+    `• Marcações preservadas: ${separatedCount} separados, ${shortageCount} faltas (total: ${items.length} itens).`,
+    options?.reason ? `• Motivo: ${options.reason}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
+
+  for (const orderId of targetOrderIds) {
+    try {
+      await pb.collection('pcp_order_logs').create({
+        order_id: orderId,
+        user_id: currentUserId || null,
+        stage: 'Separação',
+        action: 'Separação - Rodada Reaberta',
+        details: auditDetails,
+      })
+    } catch (logErr) {
+      console.error(`Erro ao gravar log de auditoria da reabertura para OP ${orderId}:`, logErr)
+    }
+  }
+
+  return updatedSeparation
+}

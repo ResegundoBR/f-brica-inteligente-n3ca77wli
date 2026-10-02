@@ -17,6 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
 } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
@@ -28,19 +29,25 @@ import {
   Eye,
   Layers,
   ArrowRight,
+  RotateCcw,
 } from 'lucide-react'
 import {
   MaterialSeparation,
   getSeparations,
   SeparationStatus,
+  reopenSeparation,
 } from '@/services/material-separations'
 import { formatLocalDate } from '@/lib/pcp-utils'
+import { useToast } from '@/hooks/use-toast'
 import pb from '@/lib/pocketbase/client'
 
 export function SeparationRoundsManager() {
+  const { toast } = useToast()
   const [separations, setSeparations] = useState<MaterialSeparation[]>([])
   const [loading, setLoading] = useState(true)
   const [detailModal, setDetailModal] = useState<MaterialSeparation | null>(null)
+  const [reopenTarget, setReopenTarget] = useState<MaterialSeparation | null>(null)
+  const [isReopening, setIsReopening] = useState(false)
 
   const loadData = async () => {
     try {
@@ -164,7 +171,7 @@ export function SeparationRoundsManager() {
                   <TableHead className="w-[130px] text-center">Status</TableHead>
                   <TableHead className="w-[180px] text-center">Itens / Resumo</TableHead>
                   <TableHead className="w-[150px] text-center">Finalizado por</TableHead>
-                  <TableHead className="w-[80px] text-right">Ação</TableHead>
+                  <TableHead className="w-[170px] text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -263,15 +270,29 @@ export function SeparationRoundsManager() {
                       </TableCell>
 
                       <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 p-0"
-                          onClick={() => setDetailModal(sep)}
-                          title="Ver detalhes da rodada"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          {sep.status === 'Concluida' && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 text-xs gap-1 border-amber-500/40 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 hover:text-amber-800 font-medium"
+                              onClick={() => setReopenTarget(sep)}
+                              title="Reabrir rodada de separação para conferência"
+                            >
+                              <RotateCcw className="h-3.5 w-3.5" />
+                              <span>Reabrir</span>
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            onClick={() => setDetailModal(sep)}
+                            title="Ver detalhes da rodada"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   )
@@ -445,6 +466,130 @@ export function SeparationRoundsManager() {
                 </div>
               )}
             </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Modal de Confirmação para Reabrir Rodada */}
+      {reopenTarget && (
+        <Dialog
+          open={!!reopenTarget}
+          onOpenChange={(open) => !open && !isReopening && setReopenTarget(null)}
+        >
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-base sm:text-lg flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                <RotateCcw className="h-5 w-5" />
+                Reabrir Rodada de Separação
+              </DialogTitle>
+              <DialogDescription className="text-xs">
+                A rodada voltará ao status <strong>Em Separação</strong> para conferência ou
+                correção de itens pelo operador e gestor.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3 py-2 text-xs">
+              <div className="p-3 bg-muted/60 rounded-lg border space-y-1.5">
+                <span className="font-bold text-foreground text-sm block">
+                  {reopenTarget.expand?.programacao_id?.name
+                    ? `Separação — ${reopenTarget.expand.programacao_id.name}`
+                    : reopenTarget.title || 'Rodada de Separação'}
+                </span>
+                <div className="flex flex-wrap gap-1 text-[11px] text-muted-foreground">
+                  <span>OPs:</span>
+                  {(reopenTarget.op_numbers || []).map((op) => (
+                    <Badge key={op} variant="outline" className="text-[10px] px-1 py-0 h-4">
+                      OP {op}
+                    </Badge>
+                  ))}
+                </div>
+                {reopenTarget.finished_at && (
+                  <span className="text-[11px] text-muted-foreground block">
+                    Finalizada anteriormente em{' '}
+                    {new Date(reopenTarget.finished_at).toLocaleString('pt-BR')}{' '}
+                    {reopenTarget.expand?.finished_by?.name
+                      ? `por ${reopenTarget.expand.finished_by.name}`
+                      : ''}
+                  </span>
+                )}
+              </div>
+
+              <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 space-y-1 text-xs">
+                <div className="font-semibold flex items-center gap-1.5 text-amber-800 dark:text-amber-300">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                  Preservação de marcações garantida (Modo Aditivo)
+                </div>
+                <ul className="list-disc list-inside space-y-0.5 text-[11px] pl-1 text-amber-900/90 dark:text-amber-200/90">
+                  <li>
+                    <strong>{reopenTarget.separated_count || 0} itens separados</strong> e{' '}
+                    <strong>{reopenTarget.shortage_count || 0} faltas</strong> continuam marcados
+                    exatamente como estavam.
+                  </li>
+                  <li>
+                    No Portal do Operador a rodada voltará para a lista de pendências com o botão{' '}
+                    <strong>"Continuar Separação"</strong>.
+                  </li>
+                  <li>
+                    A reabertura será gravada no histórico de auditoria das OPs (quem reabriu e
+                    quando).
+                  </li>
+                  <li>
+                    Uma nova finalização reconsolida faltas e reservas sem duplicar registros.
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setReopenTarget(null)}
+                disabled={isReopening}
+              >
+                Cancelar
+              </Button>
+              <Button
+                size="sm"
+                className="gap-1.5 font-bold bg-amber-600 hover:bg-amber-700 text-white"
+                disabled={isReopening}
+                onClick={async () => {
+                  if (!reopenTarget) return
+                  setIsReopening(true)
+                  try {
+                    await reopenSeparation(reopenTarget.id)
+                    toast({
+                      title: 'Rodada Reaberta com Sucesso',
+                      description:
+                        'A rodada voltou para "Em Separação". As marcações foram preservadas e o operador já pode continuar a separação.',
+                    })
+                    setReopenTarget(null)
+                    loadData()
+                  } catch (err: any) {
+                    console.error('Erro ao reabrir rodada:', err)
+                    toast({
+                      title: 'Erro ao reabrir rodada',
+                      description: err?.message || 'Não foi possível reabrir a rodada.',
+                      variant: 'destructive',
+                    })
+                  } finally {
+                    setIsReopening(false)
+                  }
+                }}
+              >
+                {isReopening ? (
+                  <>
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    <span>Reabrindo...</span>
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    <span>Confirmar Reabertura</span>
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       )}

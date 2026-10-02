@@ -275,14 +275,33 @@ export default function PcpKanban() {
     e.dataTransfer.setData('orderId', id)
   }
 
-  const handleDropStage = async (e: React.DragEvent, stage: string) => {
+  const handleDropStage = async (e: React.DragEvent, stage: string, targetOrderId?: string) => {
     e.preventDefault()
     const orderId = e.dataTransfer.getData('orderId')
     if (!orderId) return
     const order = orders.find((o) => o.id === orderId)
     if (order && order.stage !== stage) {
       try {
+        // Ao vir de outra etapa, a OP deve ir para O FINAL da fila da etapa de destino
+        // Encontra o maior manual_sequence entre as OPs gerenciadas da etapa de destino
+        const targetStageOrders = orders.filter((o) => o.stage === stage)
+        const managedInStage = targetStageOrders.filter(isManagedOrder)
+        const maxSeq = managedInStage.reduce((acc, curr) => {
+          const s = typeof curr.manual_sequence === 'number' ? curr.manual_sequence : 0
+          return s > acc ? s : acc
+        }, 0)
+        const newSeq = maxSeq > 0 ? maxSeq + 1 : undefined
+
         await updateOrderStage(orderId, stage)
+
+        if (newSeq !== undefined && isManagedOrder(order)) {
+          setOrdersOptimistic((prev) =>
+            prev.map((o) => (o.id === orderId ? { ...o, manual_sequence: newSeq } : o)),
+          )
+          persistReorderedSequences([{ id: orderId, seq: newSeq }]).catch((err) => {
+            console.error('Erro ao ajustar sequência ao mudar de etapa:', err)
+          })
+        }
       } catch (err) {
         toast({
           title: 'Erro ao alterar etapa',
@@ -293,14 +312,35 @@ export default function PcpKanban() {
     }
   }
 
-  const handleDropStatus = async (e: React.DragEvent, status: string) => {
+  const handleDropStatus = async (e: React.DragEvent, status: string, targetOrderId?: string) => {
     e.preventDefault()
     const orderId = e.dataTransfer.getData('orderId')
     if (!orderId) return
     const order = orders.find((o) => o.id === orderId)
     if (order && order.status !== status) {
       try {
+        // Ao vir de outro status (ex: para Fila), deve ir para O FINAL da fila gerenciada de destino
+        let newSeq: number | undefined
+        if (status === 'Fila' && isManagedOrder(order)) {
+          const filaOrders = orders.filter((o) => o.status === 'Fila')
+          const managedInFila = filaOrders.filter(isManagedOrder)
+          const maxSeq = managedInFila.reduce((acc, curr) => {
+            const s = typeof curr.manual_sequence === 'number' ? curr.manual_sequence : 0
+            return s > acc ? s : acc
+          }, 0)
+          newSeq = maxSeq > 0 ? maxSeq + 1 : undefined
+        }
+
         await updateOrderStatus(orderId, status)
+
+        if (newSeq !== undefined) {
+          setOrdersOptimistic((prev) =>
+            prev.map((o) => (o.id === orderId ? { ...o, manual_sequence: newSeq } : o)),
+          )
+          persistReorderedSequences([{ id: orderId, seq: newSeq }]).catch((err) => {
+            console.error('Erro ao ajustar sequência ao mudar status:', err)
+          })
+        }
       } catch (err) {
         toast({
           title: 'Erro ao alterar status',
@@ -411,6 +451,15 @@ export default function PcpKanban() {
   // Compatibilidade com reordenação da Fila
   const handleReorderFila = async (activeId: string, overId: string) => {
     const filaList = filteredOrders.filter((o) => o.status === 'Fila')
+    const activeOrder = orders.find((o) => o.id === activeId)
+    // Se o card arrastado não pertence ao status Fila, delega para mudança de status
+    if (activeOrder && activeOrder.status !== 'Fila') {
+      await handleDropStatus(
+        { preventDefault: () => {}, dataTransfer: { getData: () => activeId } } as any,
+        'Fila',
+      )
+      return
+    }
     await handleReorderSubset(activeId, overId, filaList)
   }
 
@@ -428,6 +477,15 @@ export default function PcpKanban() {
   // Reordenação na visão Por Processo (coluna de etapa)
   const handleReorderStage = async (activeId: string, overId: string, stage: string) => {
     const stageOrders = filteredOrders.filter((o) => o.stage === stage)
+    const activeOrder = orders.find((o) => o.id === activeId)
+    // Se o card arrastado não pertence a esta etapa, delega para mudança de etapa
+    if (activeOrder && activeOrder.stage !== stage) {
+      await handleDropStage(
+        { preventDefault: () => {}, dataTransfer: { getData: () => activeId } } as any,
+        stage,
+      )
+      return
+    }
     await handleReorderSubset(activeId, overId, stageOrders)
   }
 
@@ -946,7 +1004,6 @@ export default function PcpKanban() {
                             onDragOver={(e) => {
                               if (isReorderable) {
                                 e.preventDefault()
-                                e.stopPropagation()
                                 setDragOverCardId(order.id)
                               }
                             }}
@@ -954,11 +1011,21 @@ export default function PcpKanban() {
                               if (dragOverCardId === order.id) setDragOverCardId(null)
                             }}
                             onDrop={(e) => {
+                              const activeId = e.dataTransfer.getData('orderId')
+                              const draggedOrder = activeId
+                                ? orders.find((o) => o.id === activeId)
+                                : null
+                              // Se o card arrastado pertence a outro status, não trata como reordenação interna:
+                              // deixa propagar ou executa a mudança de status
+                              if (draggedOrder && draggedOrder.status !== status) {
+                                setDragOverCardId(null)
+                                handleDropStatus(e, status)
+                                return
+                              }
                               if (isReorderable) {
                                 e.preventDefault()
                                 e.stopPropagation()
                                 setDragOverCardId(null)
-                                const activeId = e.dataTransfer.getData('orderId')
                                 if (activeId && activeId !== order.id) {
                                   handleReorderFila(activeId, order.id)
                                 }
@@ -1080,7 +1147,6 @@ export default function PcpKanban() {
                                 onDragOver={(e) => {
                                   if (isReorderable) {
                                     e.preventDefault()
-                                    e.stopPropagation()
                                     setDragOverCardId(order.id)
                                   }
                                 }}
@@ -1088,11 +1154,21 @@ export default function PcpKanban() {
                                   if (dragOverCardId === order.id) setDragOverCardId(null)
                                 }}
                                 onDrop={(e) => {
+                                  const activeId = e.dataTransfer.getData('orderId')
+                                  const draggedOrder = activeId
+                                    ? orders.find((o) => o.id === activeId)
+                                    : null
+                                  // Se o card arrastado pertence a outra etapa, não trata como reordenação interna:
+                                  // deixa propagar ou executa a mudança de etapa
+                                  if (draggedOrder && draggedOrder.stage !== stage) {
+                                    setDragOverCardId(null)
+                                    handleDropStage(e, stage)
+                                    return
+                                  }
                                   if (isReorderable) {
                                     e.preventDefault()
                                     e.stopPropagation()
                                     setDragOverCardId(null)
-                                    const activeId = e.dataTransfer.getData('orderId')
                                     if (activeId && activeId !== order.id) {
                                       handleReorderStage(activeId, order.id, stage)
                                     }

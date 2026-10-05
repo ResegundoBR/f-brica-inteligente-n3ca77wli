@@ -30,6 +30,7 @@ import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
 import { useRealtime } from '@/hooks/use-realtime'
 import { DashboardKpis } from './components/DashboardKpis'
+import { ProductsBlock } from './components/ProductsBlock'
 import { DeadlineAlerts } from './components/DeadlineAlerts'
 import { CriticalStockPanel } from './components/CriticalStockPanel'
 import { EnhancedBottlenecks } from './components/EnhancedBottlenecks'
@@ -303,6 +304,9 @@ export default function PcpDashboard() {
       </div>
 
       <DashboardKpis orders={orders} />
+
+      {/* Bloco Produtos: métrica em UNIDADES das OPs não concluídas + Rastro de Produção */}
+      <ProductsBlock orders={orders} />
 
       <div className="grid gap-4 md:grid-cols-2">
         <DeadlineAlerts orders={orders} />

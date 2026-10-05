@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-05T21:59:43.552Z",
+  "generatedAt": "2026-10-05T22:23:57.707Z",
   "collections": [
     {
       "name": "users",
@@ -3177,6 +3177,109 @@
       "indexes": [
         "CREATE UNIQUE INDEX idx_material_min_levels_code ON pcp_material_min_levels (material_code)",
         "CREATE INDEX idx_material_min_levels_updated ON pcp_material_min_levels (updated DESC)"
+      ]
+    },
+    {
+      "name": "pcp_production_snapshots",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "reference_date",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "total_units",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "delayed_units",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "to_start_units",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "in_process_units",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "expedition_units",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "linha_units",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "especial_units",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "assistencia_units",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "open_orders_count",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "delayed_orders_count",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "metadata",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX idx_production_snapshots_date ON pcp_production_snapshots (reference_date)",
+        "CREATE INDEX idx_production_snapshots_date_desc ON pcp_production_snapshots (reference_date DESC)"
       ]
     }
   ]

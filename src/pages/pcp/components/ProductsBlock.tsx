@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -35,9 +35,15 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatQuantity } from '@/lib/pcp-utils'
-import { PcpOrder } from '@/types'
+import { PcpOrder, PcpProductionSnapshot } from '@/types'
 import { NoTranslate } from '@/components/NoTranslate'
 import { OpReadOnlyModal } from './OpReadOnlyModal'
+import {
+  fetchProductionSnapshots,
+  recordTodaySnapshot,
+  getSnapshotForTargetDate,
+} from '@/services/pcp-production-snapshots'
+import { ProductionEvolutionTimeline } from './ProductionEvolutionTimeline'
 import { startOfDay, subDays, parseISO, isValid, isBefore, format } from 'date-fns'
 
 interface ProductsBlockProps {
@@ -70,8 +76,26 @@ export function ProductsBlock({ orders }: ProductsBlockProps) {
   const [selectedCard, setSelectedCard] = useState<CardDefinition | null>(null)
   const [selectedOpForModal, setSelectedOpForModal] = useState<string | null>(null)
   const [isOpModalOpen, setIsOpModalOpen] = useState(false)
+  const [persistedSnapshots, setPersistedSnapshots] = useState<PcpProductionSnapshot[]>([])
 
   const today = useMemo(() => startOfDay(new Date()), [])
+
+  // Carrega snapshots persistidos e garante gravação/atualização de Hoje
+  const loadSnapshots = useCallback(async () => {
+    try {
+      // 1. Grava/atualiza o snapshot de hoje no backend de forma transparente
+      await recordTodaySnapshot()
+      // 2. Busca histórico persistido
+      const list = await fetchProductionSnapshots(60)
+      setPersistedSnapshots(list)
+    } catch (err) {
+      console.warn('Erro ao carregar snapshots no ProductsBlock:', err)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadSnapshots()
+  }, [loadSnapshots])
 
   // APENAS OPs NÃO CONCLUÍDAS (status != 'Concluído')
   const openOrders = useMemo(() => {
@@ -286,9 +310,10 @@ export function ProductsBlock({ orders }: ProductsBlockProps) {
     const d15 = subDays(today, 15)
     const d7 = subDays(today, 7)
 
-    const snap30 = calcSnapshot(d30)
-    const snap15 = calcSnapshot(d15)
-    const snap7 = calcSnapshot(d7)
+    // Lê snapshots gravados mais próximos para 30, 15 e 7 dias, usando fallback computado apenas quando necessário
+    const snap30 = getSnapshotForTargetDate(d30, persistedSnapshots, orders)
+    const snap15 = getSnapshotForTargetDate(d15, persistedSnapshots, orders)
+    const snap7 = getSnapshotForTargetDate(d7, persistedSnapshots, orders)
     const snapToday = { total: totalUnits, delayed: delayedUnits }
 
     // Tendência hoje vs 7 dias atrás
@@ -307,18 +332,21 @@ export function ProductsBlock({ orders }: ProductsBlockProps) {
           date: format(d30, 'dd/MM'),
           total: snap30.total,
           delayed: snap30.delayed,
+          isPersisted: snap30.isPersisted,
         },
         {
           label: 'Há 15 dias',
           date: format(d15, 'dd/MM'),
           total: snap15.total,
           delayed: snap15.delayed,
+          isPersisted: snap15.isPersisted,
         },
         {
           label: 'Há 7 dias',
           date: format(d7, 'dd/MM'),
           total: snap7.total,
           delayed: snap7.delayed,
+          isPersisted: snap7.isPersisted,
         },
         {
           label: 'Hoje',
@@ -326,6 +354,7 @@ export function ProductsBlock({ orders }: ProductsBlockProps) {
           total: snapToday.total,
           delayed: snapToday.delayed,
           isCurrent: true,
+          isPersisted: true,
         },
       ],
       delayedDiff,
@@ -333,7 +362,7 @@ export function ProductsBlock({ orders }: ProductsBlockProps) {
       totalDiff,
       totalTrend,
     }
-  }, [orders, today, totalUnits, delayedUnits])
+  }, [orders, persistedSnapshots, today, totalUnits, delayedUnits])
 
   // OPs filtradas para o modal de detalhamento do card clicado
   const modalOps = useMemo(() => {
@@ -501,6 +530,13 @@ export function ProductsBlock({ orders }: ProductsBlockProps) {
               ))}
             </div>
           </div>
+
+          {/* VISÃO DE EVOLUÇÃO (ÚLTIMOS 60 DIAS) */}
+          <ProductionEvolutionTimeline
+            orders={orders}
+            persistedSnapshots={persistedSnapshots}
+            todayUnits={{ total: totalUnits, delayed: delayedUnits }}
+          />
         </CardContent>
       </Card>
 

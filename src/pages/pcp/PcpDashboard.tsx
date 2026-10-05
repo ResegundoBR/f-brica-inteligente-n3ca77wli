@@ -87,6 +87,7 @@ export default function PcpDashboard() {
   useRealtime('material_shortages', () => fetchData())
   useRealtime('inventory', () => fetchData())
   useRealtime('pcp_reworks', () => fetchData())
+  useRealtime('pcp_production_snapshots', () => fetchData())
 
   const handleUpdateEstimate = async (procId: string, newEstimate: number) => {
     try {

@@ -642,3 +642,21 @@ export interface RetroactiveBomItem {
   suggestedMaxQty: number
   inventoryId?: string
 }
+
+export interface PcpProductionSnapshot {
+  id: string
+  reference_date: string // YYYY-MM-DD
+  total_units: number
+  delayed_units: number
+  to_start_units?: number
+  in_process_units?: number
+  expedition_units?: number
+  linha_units?: number
+  especial_units?: number
+  assistencia_units?: number
+  open_orders_count?: number
+  delayed_orders_count?: number
+  metadata?: Record<string, any>
+  created: string
+  updated: string
+}

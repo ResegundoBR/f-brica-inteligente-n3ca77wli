@@ -71,6 +71,36 @@ import pb from '@/lib/pocketbase/client'
 import { MessageSquare } from 'lucide-react'
 import { toast } from '@/hooks/use-toast'
 
+function formatActionDate(isoString?: string): string {
+  if (!isoString) return ''
+  try {
+    const d = new Date(isoString)
+    if (isNaN(d.getTime())) return ''
+    const day = String(d.getDate()).padStart(2, '0')
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const hours = String(d.getHours()).padStart(2, '0')
+    const minutes = String(d.getMinutes()).padStart(2, '0')
+    return `${day}/${month} ${hours}:${minutes}`
+  } catch {
+    return ''
+  }
+}
+
+function getActionLabel(status?: string): string {
+  switch (status) {
+    case 'separado':
+      return 'Separado'
+    case 'falta':
+      return 'Falta'
+    case 'parcial':
+      return 'Parcial'
+    case 'substituido':
+      return 'Substituição'
+    default:
+      return 'Ação'
+  }
+}
+
 export function OperatorSeparationTab() {
   const [separations, setSeparations] = useState<MaterialSeparation[]>([])
   const [loading, setLoading] = useState(true)
@@ -95,6 +125,9 @@ export function OperatorSeparationTab() {
   const [opsExpanded, setOpsExpanded] = useState(false)
   const [stockAvailabilityMap, setStockAvailabilityMap] = useState<
     Map<string, ComponentStockAvailability>
+  >(new Map())
+  const [usersMap, setUsersMap] = useState<
+    Map<string, { id: string; name?: string; email?: string }>
   >(new Map())
   const [opAllocationsMap, setOpAllocationsMap] = useState<Map<string, OpAllocation[]>>(new Map())
   const [allocationsLoading, setAllocationsLoading] = useState(false)
@@ -328,6 +361,22 @@ export function OperatorSeparationTab() {
 
     // Carregar disponibilidade de estoque em tempo real para os itens
     refreshAvailability(draft)
+
+    // Resolução de nomes dos usuários (evitar N+1): busca única de id, name, email
+    pb.collection('users')
+      .getFullList<{ id: string; name?: string; email?: string }>({
+        fields: 'id,name,email',
+      })
+      .then((usersList) => {
+        const map = new Map<string, { id: string; name?: string; email?: string }>()
+        for (const u of usersList) {
+          if (u.id) map.set(u.id, u)
+        }
+        setUsersMap(map)
+      })
+      .catch((err) => {
+        console.warn('Erro ao carregar lista de usuários para separação:', err)
+      })
 
     // Carregar rateio de componentes por OP da BOM (pcp_order_materials) e setores
     const orderIds = sep.order_ids || []
@@ -747,6 +796,7 @@ export function OperatorSeparationTab() {
       separated_quantity: nextStatus === 'separado' ? targetItem.total_quantity : undefined,
       shortage_quantity: undefined,
       marked_at: nextStatus !== 'pendente' ? new Date().toISOString() : undefined,
+      marked_by: nextStatus !== 'pendente' ? pb.authStore.record?.id : undefined,
     }
 
     const nextList = itemsDraft.map((item) => (item.id === itemId ? updatedItem : item))
@@ -765,6 +815,7 @@ export function OperatorSeparationTab() {
   const handleMarkAllSeparated = async () => {
     if (!activeSeparation) return
     const nowIso = new Date().toISOString()
+    const currentUserId = pb.authStore.record?.id
     const nextList: SeparationItem[] = itemsDraft.map((item) => {
       if (item.status === 'substituido') return item
       return {
@@ -773,6 +824,7 @@ export function OperatorSeparationTab() {
         separated_quantity: item.total_quantity,
         shortage_quantity: undefined,
         marked_at: nowIso,
+        marked_by: currentUserId,
       }
     })
 
@@ -797,6 +849,7 @@ export function OperatorSeparationTab() {
         separated_quantity: undefined,
         shortage_quantity: undefined,
         marked_at: undefined,
+        marked_by: undefined,
       }
     })
 
@@ -1588,6 +1641,42 @@ export function OperatorSeparationTab() {
                               )}
                             </div>
 
+                            {/* Selo discreto de registro: data/hora e quem separou/marcou (Mobile) */}
+                            {(() => {
+                              const dateStr = formatActionDate(item.marked_at)
+                              if (!dateStr && !item.marked_by) return null
+                              const userInfo = item.marked_by
+                                ? usersMap.get(item.marked_by)
+                                : undefined
+                              const userName =
+                                userInfo?.name ||
+                                userInfo?.email ||
+                                (item.marked_by ? 'Usuário' : '')
+                              const label = getActionLabel(item.status)
+                              return (
+                                <div className="text-[10px] text-muted-foreground leading-tight flex items-center gap-1 flex-wrap pt-0.5">
+                                  <span>{label}</span>
+                                  {userName && (
+                                    <>
+                                      <span>por</span>
+                                      <NoTranslate
+                                        as="strong"
+                                        className="font-semibold text-foreground"
+                                      >
+                                        {userName}
+                                      </NoTranslate>
+                                    </>
+                                  )}
+                                  {dateStr && (
+                                    <>
+                                      <span>·</span>
+                                      <span className="font-mono">{dateStr}</span>
+                                    </>
+                                  )}
+                                </div>
+                              )
+                            })()}
+
                             {/* Descrição em destaque */}
                             <NoTranslate
                               as="div"
@@ -2359,6 +2448,42 @@ export function OperatorSeparationTab() {
                                             <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400">
                                               ⚠️ Insuficiente — marcar 🔴
                                             </span>
+                                          )}
+                                        </div>
+                                      )
+                                    })()}
+
+                                    {/* Selo discreto de registro: data/hora e quem separou/marcou (Desktop) */}
+                                    {(() => {
+                                      const dateStr = formatActionDate(item.marked_at)
+                                      if (!dateStr && !item.marked_by) return null
+                                      const userInfo = item.marked_by
+                                        ? usersMap.get(item.marked_by)
+                                        : undefined
+                                      const userName =
+                                        userInfo?.name ||
+                                        userInfo?.email ||
+                                        (item.marked_by ? 'Usuário' : '')
+                                      const label = getActionLabel(item.status)
+                                      return (
+                                        <div className="inline-flex items-center gap-1 text-[10px] text-muted-foreground bg-muted/40 px-2 py-0.5 rounded border border-border/50">
+                                          <span>{label}</span>
+                                          {userName && (
+                                            <>
+                                              <span>por</span>
+                                              <NoTranslate
+                                                as="strong"
+                                                className="font-semibold text-foreground"
+                                              >
+                                                {userName}
+                                              </NoTranslate>
+                                            </>
+                                          )}
+                                          {dateStr && (
+                                            <>
+                                              <span>·</span>
+                                              <span className="font-mono">{dateStr}</span>
+                                            </>
                                           )}
                                         </div>
                                       )

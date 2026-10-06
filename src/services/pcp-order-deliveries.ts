@@ -48,7 +48,8 @@ export async function getDeliveriesForOrders(
 
 export async function createDelivery(input: CreateDeliveryInput): Promise<PcpOrderDelivery> {
   const currentUserId = pb.authStore.record?.id
-  const qty = typeof input.quantity === 'number' ? input.quantity : parseInt(String(input.quantity), 10) || 1
+  const qty =
+    typeof input.quantity === 'number' ? input.quantity : parseInt(String(input.quantity), 10) || 1
   const payload: any = {
     order_id: input.order_id,
     quantity: Math.max(1, qty),

@@ -656,6 +656,8 @@ export interface PcpProductionSnapshot {
   assistencia_units?: number
   open_orders_count?: number
   delayed_orders_count?: number
+  entered_units?: number
+  exited_units?: number
   metadata?: Record<string, any>
   created: string
   updated: string

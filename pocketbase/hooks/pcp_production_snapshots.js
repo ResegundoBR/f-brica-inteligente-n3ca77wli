@@ -5,6 +5,7 @@
 cronAdd('pcp_daily_production_snapshot', '0 3 * * *', () => {
   try {
     var refDateStr = new Date().toISOString().split('T')[0]
+    var refDayStart = refDateStr + ' 00:00:00.000Z'
     var refDayEnd = refDateStr + ' 23:59:59.999Z'
 
     var orders = $app.findRecordsByFilter('pcp_orders', '1=1', '', 0, 0)
@@ -19,20 +20,39 @@ cronAdd('pcp_daily_production_snapshot', '0 3 * * *', () => {
     var assistenciaUnits = 0
     var openOrdersCount = 0
     var delayedOrdersCount = 0
+    var enteredUnits = 0
+    var exitedUnits = 0
 
     for (var i = 0; i < orders.length; i++) {
       var op = orders[i]
+      var qty = Number(op.getFloat('quantity')) || 0
       var createdStr = op.getString('created')
+      var status = op.getString('status')
+      var finishedStr = op.getString('finished_at') || op.getString('updated')
 
+      // 1. FLUXO DO DIA:
+      // (a) Entraram no dia: OP lançada no dia (created_at entre início e fim do dia)
+      if (createdStr && createdStr >= refDayStart && createdStr <= refDayEnd) {
+        enteredUnits += qty
+      }
+
+      // (b) Saíram no dia: OP concluída no dia (finished_at entre início e fim do dia)
+      if (
+        status === 'Concluído' &&
+        finishedStr &&
+        finishedStr >= refDayStart &&
+        finishedStr <= refDayEnd
+      ) {
+        exitedUnits += qty
+      }
+
+      // 2. ESTOQUE/BOLO EM ABERTO ATÉ A DATA:
       if (createdStr && createdStr > refDayEnd) {
         continue
       }
 
-      var status = op.getString('status')
       var wasFinished = false
-
       if (status === 'Concluído') {
-        var finishedStr = op.getString('finished_at') || op.getString('updated')
         if (finishedStr && finishedStr <= refDayEnd) {
           wasFinished = true
         } else if (!finishedStr) {
@@ -44,7 +64,6 @@ cronAdd('pcp_daily_production_snapshot', '0 3 * * *', () => {
         continue
       }
 
-      var qty = Number(op.getFloat('quantity')) || 0
       totalUnits += qty
       openOrdersCount++
 
@@ -100,13 +119,24 @@ cronAdd('pcp_daily_production_snapshot', '0 3 * * *', () => {
     record.set('assistencia_units', assistenciaUnits)
     record.set('open_orders_count', openOrdersCount)
     record.set('delayed_orders_count', delayedOrdersCount)
+    record.set('entered_units', enteredUnits)
+    record.set('exited_units', exitedUnits)
     record.set('metadata', {
       calculated_at: new Date().toISOString(),
       source: 'cron_pcp_daily_production_snapshot',
     })
 
     $app.save(record)
-    console.log('[CRON] Snapshot gravado para ' + refDateStr + ': total=' + totalUnits)
+    console.log(
+      '[CRON] Snapshot gravado para ' +
+        refDateStr +
+        ': total=' +
+        totalUnits +
+        ', entraram=' +
+        enteredUnits +
+        ', saíram=' +
+        exitedUnits,
+    )
   } catch (err) {
     console.error('[CRON] Erro ao gravar snapshot diário de produção:', String(err))
   }
@@ -124,6 +154,7 @@ routerAdd(
         refDateStr = new Date().toISOString().split('T')[0]
       }
 
+      var refDayStart = refDateStr + ' 00:00:00.000Z'
       var refDayEnd = refDateStr + ' 23:59:59.999Z'
 
       var orders = $app.findRecordsByFilter('pcp_orders', '1=1', '', 0, 0)
@@ -138,20 +169,39 @@ routerAdd(
       var assistenciaUnits = 0
       var openOrdersCount = 0
       var delayedOrdersCount = 0
+      var enteredUnits = 0
+      var exitedUnits = 0
 
       for (var i = 0; i < orders.length; i++) {
         var op = orders[i]
+        var qty = Number(op.getFloat('quantity')) || 0
         var createdStr = op.getString('created')
+        var status = op.getString('status')
+        var finishedStr = op.getString('finished_at') || op.getString('updated')
 
+        // 1. FLUXO DO DIA:
+        // (a) Entraram no dia: OP lançada no dia (created_at entre início e fim do dia)
+        if (createdStr && createdStr >= refDayStart && createdStr <= refDayEnd) {
+          enteredUnits += qty
+        }
+
+        // (b) Saíram no dia: OP concluída no dia (finished_at entre início e fim do dia)
+        if (
+          status === 'Concluído' &&
+          finishedStr &&
+          finishedStr >= refDayStart &&
+          finishedStr <= refDayEnd
+        ) {
+          exitedUnits += qty
+        }
+
+        // 2. ESTOQUE/BOLO EM ABERTO ATÉ A DATA:
         if (createdStr && createdStr > refDayEnd) {
           continue
         }
 
-        var status = op.getString('status')
         var wasFinished = false
-
         if (status === 'Concluído') {
-          var finishedStr = op.getString('finished_at') || op.getString('updated')
           if (finishedStr && finishedStr <= refDayEnd) {
             wasFinished = true
           } else if (!finishedStr) {
@@ -163,7 +213,6 @@ routerAdd(
           continue
         }
 
-        var qty = Number(op.getFloat('quantity')) || 0
         totalUnits += qty
         openOrdersCount++
 
@@ -219,6 +268,8 @@ routerAdd(
       record.set('assistencia_units', assistenciaUnits)
       record.set('open_orders_count', openOrdersCount)
       record.set('delayed_orders_count', delayedOrdersCount)
+      record.set('entered_units', enteredUnits)
+      record.set('exited_units', exitedUnits)
       record.set('metadata', {
         calculated_at: new Date().toISOString(),
         source: 'manual_or_initial_trigger',
@@ -239,6 +290,8 @@ routerAdd(
         assistencia_units: record.getFloat('assistencia_units'),
         open_orders_count: record.getInt('open_orders_count'),
         delayed_orders_count: record.getInt('delayed_orders_count'),
+        entered_units: record.getFloat('entered_units'),
+        exited_units: record.getFloat('exited_units'),
       })
     } catch (err) {
       console.error('Erro na rota record-today snapshot:', String(err))

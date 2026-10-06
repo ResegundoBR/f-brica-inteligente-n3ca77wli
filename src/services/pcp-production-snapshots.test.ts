@@ -3,6 +3,7 @@ import { PcpOrder, PcpProductionSnapshot } from '@/types'
 import {
   computeHistoricalSnapshotFromOrders,
   getSnapshotForTargetDate,
+  calculateIntervalFlow,
 } from '@/services/pcp-production-snapshots'
 import { subDays, startOfDay, format } from 'date-fns'
 
@@ -127,5 +128,48 @@ describe('pcp-production-snapshots logic', () => {
 
     expect(result.isPersisted).toBe(false)
     expect(result.total).toBe(30)
+  })
+
+  it('calculates interval flow correctly: entered, exited and balance in units', () => {
+    const ordersFlow: PcpOrder[] = [
+      {
+        id: 'op-flow-1',
+        quantity: 12,
+        status: 'Fila',
+        created: '2026-10-01T10:00:00.000Z', // dentro do intervalo 2026-09-28 -> 2026-10-05
+      } as PcpOrder,
+      {
+        id: 'op-flow-2',
+        quantity: 5,
+        status: 'Concluído',
+        created: '2026-09-01T10:00:00.000Z',
+        finished_at: '2026-10-02T15:00:00.000Z', // concluída no intervalo
+      } as PcpOrder,
+      {
+        id: 'op-flow-3',
+        quantity: 8,
+        status: 'Concluído',
+        created: '2026-09-29T10:00:00.000Z', // criada E concluída no intervalo
+        finished_at: '2026-10-03T11:00:00.000Z',
+      } as PcpOrder,
+      {
+        id: 'op-flow-4',
+        quantity: 20,
+        status: 'Em Andamento',
+        created: '2026-09-20T10:00:00.000Z', // fora do intervalo (anterior)
+      } as PcpOrder,
+    ]
+
+    const startDate = new Date('2026-09-28T00:00:00.000Z')
+    const endDate = new Date('2026-10-05T00:00:00.000Z')
+
+    const flow = calculateIntervalFlow(startDate, endDate, ordersFlow, [])
+
+    // Entraram: op-flow-1 (12) + op-flow-3 (8) = 20
+    expect(flow.entered).toBe(20)
+    // Saíram: op-flow-2 (5) + op-flow-3 (8) = 13
+    expect(flow.exited).toBe(13)
+    // Saldo: 20 - 13 = +7 (bolo cresceu)
+    expect(flow.balance).toBe(7)
   })
 })

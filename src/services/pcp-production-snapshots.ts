@@ -13,8 +13,17 @@ export interface CalculatedSnapshotMetrics {
   assistencia: number
   openOrdersCount: number
   delayedOrdersCount: number
+  enteredUnits?: number
+  exitedUnits?: number
   isPersisted?: boolean
   snapshotId?: string
+}
+
+export interface IntervalFlowMetrics {
+  entered: number
+  exited: number
+  balance: number
+  isPersisted?: boolean
 }
 
 /**
@@ -40,8 +49,30 @@ export function computeHistoricalSnapshotFromOrders(
   let assistencia = 0
   let openOrdersCount = 0
   let delayedOrdersCount = 0
+  let enteredUnits = 0
+  let exitedUnits = 0
 
   orders.forEach((op) => {
+    const qty = Number(op.quantity) || 0
+
+    // Entrou no dia refDate? (created_at dentro do dia)
+    if (op.created) {
+      const cDate = parseISO(op.created)
+      if (isValid(cDate) && !isBefore(cDate, dayStart) && !isBefore(dayEnd, cDate)) {
+        enteredUnits += qty
+      }
+    }
+
+    // Saiu no dia refDate? (status == 'Concluído' com finished_at ou updated dentro do dia)
+    if (op.status === 'Concluído') {
+      const finishDateStr = op.finished_at || op.updated
+      if (finishDateStr) {
+        const fDate = parseISO(finishDateStr)
+        if (isValid(fDate) && !isBefore(fDate, dayStart) && !isBefore(dayEnd, fDate)) {
+          exitedUnits += qty
+        }
+      }
+    }
     // OP criada até a data de referência?
     const createdDate = parseISO(op.created)
     if (!isValid(createdDate) || isBefore(dayEnd, createdDate)) {
@@ -64,7 +95,6 @@ export function computeHistoricalSnapshotFromOrders(
 
     if (wasFinished) return
 
-    const qty = Number(op.quantity) || 0
     total += qty
     openOrdersCount++
 
@@ -108,6 +138,102 @@ export function computeHistoricalSnapshotFromOrders(
     assistencia,
     openOrdersCount,
     delayedOrdersCount,
+    enteredUnits,
+    exitedUnits,
+    isPersisted: false,
+  }
+}
+
+/**
+ * Calcula o fluxo de produtos (unidades que entraram e saíram) em um intervalo temporal.
+ * Usa snapshots gravados quando cobrem todos os dias do intervalo,
+ * ou computa a partir das OPs como fallback.
+ *
+ * Intervalo: (startDate, endDate]
+ * - Entraram: OPs criadas com created > startDate E created <= endDate
+ * - Saíram: OPs concluídas com finished_at > startDate E finished_at <= endDate
+ * - Saldo: entraram - saíram
+ */
+export function calculateIntervalFlow(
+  startDate: Date,
+  endDate: Date,
+  orders: PcpOrder[],
+  persistedSnapshots: PcpProductionSnapshot[] = [],
+): IntervalFlowMetrics {
+  const startEnd = new Date(startDate)
+  startEnd.setHours(23, 59, 59, 999)
+
+  const endDayEnd = new Date(endDate)
+  endDayEnd.setHours(23, 59, 59, 999)
+
+  // Verifica se temos snapshots gravados com entered_units e exited_units para cada dia do intervalo (dia seguinte ao startDate até endDate)
+  const daysDiff = differenceInCalendarDays(endDate, startDate)
+  let allDaysPersisted = daysDiff > 0
+  let persistedEntered = 0
+  let persistedExited = 0
+
+  if (persistedSnapshots.length > 0 && daysDiff > 0) {
+    const snapMap = new Map<string, PcpProductionSnapshot>()
+    persistedSnapshots.forEach((s) => {
+      if (s.reference_date) snapMap.set(s.reference_date, s)
+    })
+
+    for (let i = 1; i <= daysDiff; i++) {
+      const curDate = new Date(startDate)
+      curDate.setDate(curDate.getDate() + i)
+      const curStr = format(curDate, 'yyyy-MM-dd')
+      const snap = snapMap.get(curStr)
+      if (!snap || snap.entered_units === undefined || snap.exited_units === undefined) {
+        allDaysPersisted = false
+        break
+      }
+      persistedEntered += Number(snap.entered_units) || 0
+      persistedExited += Number(snap.exited_units) || 0
+    }
+  } else {
+    allDaysPersisted = false
+  }
+
+  if (allDaysPersisted && daysDiff > 0) {
+    return {
+      entered: persistedEntered,
+      exited: persistedExited,
+      balance: persistedEntered - persistedExited,
+      isPersisted: true,
+    }
+  }
+
+  // FALLBACK COMPUTADO a partir das OPs:
+  let entered = 0
+  let exited = 0
+
+  orders.forEach((op) => {
+    const qty = Number(op.quantity) || 0
+
+    // Entraram no intervalo: created > startEnd e <= endDayEnd
+    if (op.created) {
+      const cDate = parseISO(op.created)
+      if (isValid(cDate) && isBefore(startEnd, cDate) && !isBefore(endDayEnd, cDate)) {
+        entered += qty
+      }
+    }
+
+    // Saíram no intervalo: concluída e finished_at > startEnd e <= endDayEnd
+    if (op.status === 'Concluído') {
+      const finishDateStr = op.finished_at || op.updated
+      if (finishDateStr) {
+        const fDate = parseISO(finishDateStr)
+        if (isValid(fDate) && isBefore(startEnd, fDate) && !isBefore(endDayEnd, fDate)) {
+          exited += qty
+        }
+      }
+    }
+  })
+
+  return {
+    entered,
+    exited,
+    balance: entered - exited,
     isPersisted: false,
   }
 }
@@ -176,6 +302,8 @@ export function getSnapshotForTargetDate(
         assistencia: Number(exact.assistencia_units) || 0,
         openOrdersCount: Number(exact.open_orders_count) || 0,
         delayedOrdersCount: Number(exact.delayed_orders_count) || 0,
+        enteredUnits: exact.entered_units !== undefined ? Number(exact.entered_units) : undefined,
+        exitedUnits: exact.exited_units !== undefined ? Number(exact.exited_units) : undefined,
         isPersisted: true,
         snapshotId: exact.id,
       }
@@ -208,6 +336,9 @@ export function getSnapshotForTargetDate(
         assistencia: Number(closest.assistencia_units) || 0,
         openOrdersCount: Number(closest.open_orders_count) || 0,
         delayedOrdersCount: Number(closest.delayed_orders_count) || 0,
+        enteredUnits:
+          closest.entered_units !== undefined ? Number(closest.entered_units) : undefined,
+        exitedUnits: closest.exited_units !== undefined ? Number(closest.exited_units) : undefined,
         isPersisted: true,
         snapshotId: closest.id,
       }

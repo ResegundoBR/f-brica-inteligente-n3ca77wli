@@ -53,6 +53,9 @@ interface DayEvolutionPoint {
   linha: number
   especial: number
   assistencia: number
+  entered: number
+  exited: number
+  balance: number
   isPersisted: boolean
   isToday: boolean
 }
@@ -88,7 +91,21 @@ export function ProductionEvolutionTimeline({
       const dStr = format(d, 'yyyy-MM-dd')
       const isToday = i === 0
 
+      const persisted = persistedMap.get(dStr)
+
       if (isToday) {
+        // Se o snapshot de hoje já estiver persistido com entered/exited, usa; se não, calcula das OPs
+        let enteredToday =
+          persisted?.entered_units !== undefined ? Number(persisted.entered_units) : undefined
+        let exitedToday =
+          persisted?.exited_units !== undefined ? Number(persisted.exited_units) : undefined
+
+        if (enteredToday === undefined || exitedToday === undefined) {
+          const compToday = computeHistoricalSnapshotFromOrders(orders, d)
+          enteredToday = compToday.enteredUnits ?? 0
+          exitedToday = compToday.exitedUnits ?? 0
+        }
+
         points.push({
           dateStr: dStr,
           displayDate: format(d, 'dd/MM'),
@@ -101,12 +118,25 @@ export function ProductionEvolutionTimeline({
           linha: 0,
           especial: 0,
           assistencia: 0,
-          isPersisted: persistedMap.has(dStr),
+          entered: enteredToday,
+          exited: exitedToday,
+          balance: enteredToday - exitedToday,
+          isPersisted: Boolean(persisted),
           isToday: true,
         })
       } else {
-        const persisted = persistedMap.get(dStr)
         if (persisted) {
+          let ent =
+            persisted.entered_units !== undefined ? Number(persisted.entered_units) : undefined
+          let ext =
+            persisted.exited_units !== undefined ? Number(persisted.exited_units) : undefined
+
+          if (ent === undefined || ext === undefined) {
+            const comp = computeHistoricalSnapshotFromOrders(orders, d)
+            ent = comp.enteredUnits ?? 0
+            ext = comp.exitedUnits ?? 0
+          }
+
           points.push({
             dateStr: dStr,
             displayDate: format(d, 'dd/MM'),
@@ -119,12 +149,17 @@ export function ProductionEvolutionTimeline({
             linha: Number(persisted.linha_units) || 0,
             especial: Number(persisted.especial_units) || 0,
             assistencia: Number(persisted.assistencia_units) || 0,
+            entered: ent,
+            exited: ext,
+            balance: ent - ext,
             isPersisted: true,
             isToday: false,
           })
         } else {
           // Fallback computado a partir das OPs atuais
           const comp = computeHistoricalSnapshotFromOrders(orders, d)
+          const ent = comp.enteredUnits ?? 0
+          const ext = comp.exitedUnits ?? 0
           points.push({
             dateStr: dStr,
             displayDate: format(d, 'dd/MM'),
@@ -137,6 +172,9 @@ export function ProductionEvolutionTimeline({
             linha: comp.linha,
             especial: comp.especial,
             assistencia: comp.assistencia,
+            entered: ent,
+            exited: ext,
+            balance: ent - ext,
             isPersisted: false,
             isToday: false,
           })
@@ -150,17 +188,31 @@ export function ProductionEvolutionTimeline({
   // Estatísticas rápidas da janela selecionada
   const stats = useMemo(() => {
     if (evolutionData.length === 0)
-      return { avgTotal: 0, avgDelayed: 0, maxDelayed: 0, persistedCount: 0 }
+      return {
+        avgTotal: 0,
+        avgDelayed: 0,
+        maxDelayed: 0,
+        persistedCount: 0,
+        totalEntered: 0,
+        totalExited: 0,
+        totalBalance: 0,
+      }
     const totalSum = evolutionData.reduce((acc, p) => acc + p.total, 0)
     const delayedSum = evolutionData.reduce((acc, p) => acc + p.delayed, 0)
     const maxDelayed = Math.max(...evolutionData.map((p) => p.delayed), 0)
     const persistedCount = evolutionData.filter((p) => p.isPersisted).length
+    const totalEntered = evolutionData.reduce((acc, p) => acc + p.entered, 0)
+    const totalExited = evolutionData.reduce((acc, p) => acc + p.exited, 0)
+    const totalBalance = totalEntered - totalExited
 
     return {
       avgTotal: Math.round(totalSum / evolutionData.length),
       avgDelayed: Math.round(delayedSum / evolutionData.length),
       maxDelayed,
       persistedCount,
+      totalEntered,
+      totalExited,
+      totalBalance,
     }
   }, [evolutionData])
 
@@ -244,7 +296,7 @@ export function ProductionEvolutionTimeline({
       {isOpen && (
         <div className="mt-3 space-y-3 animate-in fade-in-50 duration-200">
           {/* Mini resumo de métricas do período */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
             <div className="p-2 rounded border bg-background/80 dark:bg-slate-900/60">
               <span className="text-[10px] text-muted-foreground font-medium block">
                 Média Total em Aberto
@@ -263,11 +315,37 @@ export function ProductionEvolutionTimeline({
             </div>
             <div className="p-2 rounded border bg-background/80 dark:bg-slate-900/60">
               <span className="text-[10px] text-muted-foreground font-medium block">
-                Pico de Atrasos no Período
+                Pico de Atrasos
               </span>
               <span className="text-sm font-bold font-mono text-red-600 dark:text-red-400">
                 {formatQuantity(stats.maxDelayed)} unid.
               </span>
+            </div>
+            <div className="p-2 rounded border bg-background/80 dark:bg-slate-900/60">
+              <span className="text-[10px] text-muted-foreground font-medium block">
+                Fluxo Total ({daysWindow}d)
+              </span>
+              <div className="text-[11px] font-mono leading-tight mt-0.5">
+                <span className="text-foreground">+{formatQuantity(stats.totalEntered)}</span> /{' '}
+                <span className="text-muted-foreground">-{formatQuantity(stats.totalExited)}</span>
+                <div
+                  className={cn(
+                    'font-bold text-xs inline-flex items-center gap-0.5 ml-1.5',
+                    stats.totalBalance < 0 && 'text-emerald-600 dark:text-emerald-400',
+                    stats.totalBalance > 0 && 'text-red-600 dark:text-red-400',
+                    stats.totalBalance === 0 && 'text-muted-foreground',
+                  )}
+                >
+                  {stats.totalBalance < 0 && <TrendingDown className="size-3 inline" />}
+                  {stats.totalBalance > 0 && <TrendingUp className="size-3 inline" />}
+                  {stats.totalBalance === 0 && <Minus className="size-3 inline" />}
+                  <span>
+                    {stats.totalBalance > 0
+                      ? `+${formatQuantity(stats.totalBalance)}`
+                      : formatQuantity(stats.totalBalance)}
+                  </span>
+                </div>
+              </div>
             </div>
             <div className="p-2 rounded border bg-background/80 dark:bg-slate-900/60">
               <span className="text-[10px] text-muted-foreground font-medium block">
@@ -289,9 +367,9 @@ export function ProductionEvolutionTimeline({
           {/* Gráfico de evolução diária */}
           {viewMode === 'chart' && (
             <div className="p-3 rounded-lg border bg-background/90 dark:bg-slate-900/50">
-              <div className="flex items-center justify-between pb-2 mb-2 border-b text-[11px] text-muted-foreground">
+              <div className="flex items-center justify-between pb-2 mb-2 border-b text-[11px] text-muted-foreground flex-wrap gap-2">
                 <span>Trajetória diária: Volume Total vs. Unidades Atrasadas</span>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 text-[10px]">
                   <div className="flex items-center gap-1">
                     <span className="size-2 rounded-full bg-blue-500 inline-block" />
                     <span>Total em aberto</span>
@@ -299,6 +377,14 @@ export function ProductionEvolutionTimeline({
                   <div className="flex items-center gap-1">
                     <span className="size-2 rounded-full bg-red-500 inline-block" />
                     <span>Atrasadas</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="size-2 rounded-sm bg-violet-400 inline-block" />
+                    <span>Entradas</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="size-2 rounded-sm bg-emerald-400 inline-block" />
+                    <span>Saídas</span>
                   </div>
                 </div>
               </div>
@@ -354,6 +440,21 @@ export function ProductionEvolutionTimeline({
                                   {formatQuantity(data.delayed)} unid.
                                 </span>
                               </div>
+                              <div className="border-t pt-1 mt-1 flex justify-between gap-4 text-[11px] text-muted-foreground">
+                                <span>Fluxo diário:</span>
+                                <span className="font-mono">
+                                  +{formatQuantity(data.entered)} / -{formatQuantity(data.exited)} (
+                                  <strong
+                                    className={cn(
+                                      data.balance < 0 && 'text-emerald-600',
+                                      data.balance > 0 && 'text-red-600',
+                                    )}
+                                  >
+                                    saldo {data.balance > 0 ? `+${data.balance}` : data.balance}
+                                  </strong>
+                                  )
+                                </span>
+                              </div>
                             </div>
                           )
                         }
@@ -365,7 +466,23 @@ export function ProductionEvolutionTimeline({
                       name="Atrasadas"
                       fill="#ef4444"
                       radius={[2, 2, 0, 0]}
-                      maxBarSize={16}
+                      maxBarSize={14}
+                    />
+                    <Bar
+                      dataKey="entered"
+                      name="Entradas"
+                      fill="#a78bfa"
+                      radius={[2, 2, 0, 0]}
+                      maxBarSize={10}
+                      opacity={0.7}
+                    />
+                    <Bar
+                      dataKey="exited"
+                      name="Saídas"
+                      fill="#34d399"
+                      radius={[2, 2, 0, 0]}
+                      maxBarSize={10}
+                      opacity={0.7}
                     />
                     <Line
                       type="monotone"
@@ -390,9 +507,9 @@ export function ProductionEvolutionTimeline({
                     <th className="p-2 font-medium">Data</th>
                     <th className="p-2 font-medium text-right">Total em Aberto</th>
                     <th className="p-2 font-medium text-right">Atrasadas</th>
-                    <th className="p-2 font-medium text-right hidden sm:table-cell">A Iniciar</th>
-                    <th className="p-2 font-medium text-right hidden sm:table-cell">Em Processo</th>
-                    <th className="p-2 font-medium text-right hidden md:table-cell">Expedição</th>
+                    <th className="p-2 font-medium text-right">Entraram</th>
+                    <th className="p-2 font-medium text-right">Saíram</th>
+                    <th className="p-2 font-medium text-right">Saldo do Dia</th>
                     <th className="p-2 font-medium text-center">Status Histórico</th>
                   </tr>
                 </thead>
@@ -434,14 +551,36 @@ export function ProductionEvolutionTimeline({
                           <span className="text-emerald-600 dark:text-emerald-400">0</span>
                         )}
                       </td>
-                      <td className="p-2 text-right font-mono text-muted-foreground hidden sm:table-cell">
-                        {pt.toStart ? formatQuantity(pt.toStart) : '—'}
+                      <td className="p-2 text-right font-mono font-medium text-foreground">
+                        {pt.entered > 0 ? (
+                          <span className="text-violet-600 dark:text-violet-400">
+                            +{formatQuantity(pt.entered)}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">0</span>
+                        )}
                       </td>
-                      <td className="p-2 text-right font-mono text-muted-foreground hidden sm:table-cell">
-                        {pt.inProcess ? formatQuantity(pt.inProcess) : '—'}
+                      <td className="p-2 text-right font-mono font-medium text-foreground">
+                        {pt.exited > 0 ? (
+                          <span className="text-emerald-600 dark:text-emerald-400">
+                            {formatQuantity(pt.exited)}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">0</span>
+                        )}
                       </td>
-                      <td className="p-2 text-right font-mono text-muted-foreground hidden md:table-cell">
-                        {pt.expedition ? formatQuantity(pt.expedition) : '—'}
+                      <td className="p-2 text-right font-mono font-bold">
+                        <span
+                          className={cn(
+                            pt.balance < 0 && 'text-emerald-600 dark:text-emerald-400',
+                            pt.balance > 0 && 'text-red-600 dark:text-red-400',
+                            pt.balance === 0 && 'text-muted-foreground',
+                          )}
+                        >
+                          {pt.balance > 0
+                            ? `+${formatQuantity(pt.balance)}`
+                            : formatQuantity(pt.balance)}
+                        </span>
                       </td>
                       <td className="p-2 text-center">
                         {pt.isPersisted ? (

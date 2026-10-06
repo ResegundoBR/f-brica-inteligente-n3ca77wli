@@ -42,6 +42,8 @@ import {
   fetchProductionSnapshots,
   recordTodaySnapshot,
   getSnapshotForTargetDate,
+  calculateIntervalFlow,
+  IntervalFlowMetrics,
 } from '@/services/pcp-production-snapshots'
 import { ProductionEvolutionTimeline } from './ProductionEvolutionTimeline'
 import { startOfDay, subDays, parseISO, isValid, isBefore, format } from 'date-fns'
@@ -316,6 +318,15 @@ export function ProductsBlock({ orders }: ProductsBlockProps) {
     const snap7 = getSnapshotForTargetDate(d7, persistedSnapshots, orders)
     const snapToday = { total: totalUnits, delayed: delayedUnits }
 
+    // Fluxos dos intervalos:
+    // Há 30 dias: sem intervalo anterior (sem fluxo)
+    // Há 15 dias: intervalo de 30d -> 15d
+    // Há 7 dias: intervalo de 15d -> 7d
+    // Hoje: intervalo de 7d -> Hoje
+    const flow15 = calculateIntervalFlow(d30, d15, orders, persistedSnapshots)
+    const flow7 = calculateIntervalFlow(d15, d7, orders, persistedSnapshots)
+    const flowToday = calculateIntervalFlow(d7, today, orders, persistedSnapshots)
+
     // Tendência hoje vs 7 dias atrás
     // Atrasos caindo: verde (positivo para a fábrica)
     // Atrasos subindo: vermelho (negativo)
@@ -333,6 +344,8 @@ export function ProductsBlock({ orders }: ProductsBlockProps) {
           total: snap30.total,
           delayed: snap30.delayed,
           isPersisted: snap30.isPersisted,
+          flow: null as IntervalFlowMetrics | null,
+          intervalLabel: undefined as string | undefined,
         },
         {
           label: 'Há 15 dias',
@@ -340,6 +353,8 @@ export function ProductsBlock({ orders }: ProductsBlockProps) {
           total: snap15.total,
           delayed: snap15.delayed,
           isPersisted: snap15.isPersisted,
+          flow: flow15,
+          intervalLabel: 'Intervalo 30d → 15d',
         },
         {
           label: 'Há 7 dias',
@@ -347,6 +362,8 @@ export function ProductsBlock({ orders }: ProductsBlockProps) {
           total: snap7.total,
           delayed: snap7.delayed,
           isPersisted: snap7.isPersisted,
+          flow: flow7,
+          intervalLabel: 'Intervalo 15d → 7d',
         },
         {
           label: 'Hoje',
@@ -355,6 +372,8 @@ export function ProductsBlock({ orders }: ProductsBlockProps) {
           delayed: snapToday.delayed,
           isCurrent: true,
           isPersisted: true,
+          flow: flowToday,
+          intervalLabel: 'Intervalo 7d → Hoje',
         },
       ],
       delayedDiff,
@@ -495,35 +514,86 @@ export function ProductsBlock({ orders }: ProductsBlockProps) {
                 <div
                   key={idx}
                   className={cn(
-                    'p-2 rounded-md border text-center transition-colors',
+                    'p-2 rounded-md border text-center transition-colors flex flex-col justify-between',
                     pt.isCurrent
                       ? 'border-blue-300 bg-blue-50/60 dark:bg-blue-950/40 dark:border-blue-800'
                       : 'border-slate-200 dark:border-slate-800 bg-background',
                   )}
                 >
-                  <div className="flex items-center justify-center gap-1 text-[10px] text-muted-foreground font-medium">
-                    <Calendar className="size-3" />
-                    <span>{pt.label}</span>
-                    <span className="font-mono text-[9px]">({pt.date})</span>
-                  </div>
-                  <div className="mt-1 flex items-baseline justify-center gap-2">
-                    <span
-                      className="text-sm font-bold font-mono text-foreground"
-                      title="Total em aberto na data"
-                    >
-                      {formatQuantity(pt.total)}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground">unid.</span>
-                  </div>
-                  <div className="text-[10px] mt-0.5">
-                    {pt.delayed > 0 ? (
-                      <span className="text-red-600 dark:text-red-400 font-semibold font-mono">
-                        {formatQuantity(pt.delayed)} atrasadas
+                  <div>
+                    <div className="flex items-center justify-center gap-1 text-[10px] text-muted-foreground font-medium">
+                      <Calendar className="size-3" />
+                      <span>{pt.label}</span>
+                      <span className="font-mono text-[9px]">({pt.date})</span>
+                    </div>
+                    <div className="mt-1 flex items-baseline justify-center gap-2">
+                      <span
+                        className="text-sm font-bold font-mono text-foreground"
+                        title="Total em aberto na data"
+                      >
+                        {formatQuantity(pt.total)}
                       </span>
+                      <span className="text-[10px] text-muted-foreground">unid.</span>
+                    </div>
+                    <div className="text-[10px] mt-0.5">
+                      {pt.delayed > 0 ? (
+                        <span className="text-red-600 dark:text-red-400 font-semibold font-mono">
+                          {formatQuantity(pt.delayed)} atrasadas
+                        </span>
+                      ) : (
+                        <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                          0 atrasos
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Linha secundária: Fluxo do intervalo (Entraram / Saíram / Saldo) */}
+                  <div className="mt-2 pt-1.5 border-t border-slate-200/70 dark:border-slate-800/70 text-[9px]">
+                    {pt.flow ? (
+                      <div className="space-y-0.5" title={pt.intervalLabel}>
+                        <div className="flex items-center justify-between text-muted-foreground px-0.5">
+                          <span>Entraram:</span>
+                          <span className="font-mono font-semibold text-foreground">
+                            {formatQuantity(pt.flow.entered)}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-muted-foreground px-0.5">
+                          <span>Saíram:</span>
+                          <span className="font-mono font-semibold text-foreground">
+                            {formatQuantity(pt.flow.exited)}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between pt-0.5 border-t border-slate-100 dark:border-slate-800 px-0.5">
+                          <span className="font-medium text-muted-foreground">Saldo:</span>
+                          <span
+                            className={cn(
+                              'font-mono font-bold inline-flex items-center gap-0.5',
+                              pt.flow.balance < 0 && 'text-emerald-600 dark:text-emerald-400',
+                              pt.flow.balance > 0 && 'text-red-600 dark:text-red-400',
+                              pt.flow.balance === 0 && 'text-muted-foreground',
+                            )}
+                            title={
+                              pt.flow.balance < 0
+                                ? 'Saldo negativo: saiu mais que entrou, bolo de produção encolheu'
+                                : pt.flow.balance > 0
+                                  ? 'Saldo positivo: entrou mais que saiu, bolo de produção cresceu'
+                                  : 'Saldo neutro: entradas iguais às saídas'
+                            }
+                          >
+                            {pt.flow.balance < 0 && <TrendingDown className="size-2.5 inline" />}
+                            {pt.flow.balance > 0 && <TrendingUp className="size-2.5 inline" />}
+                            {pt.flow.balance === 0 && <Minus className="size-2.5 inline" />}
+                            <span>
+                              {pt.flow.balance > 0
+                                ? `+${formatQuantity(pt.flow.balance)}`
+                                : formatQuantity(pt.flow.balance)}
+                            </span>
+                          </span>
+                        </div>
+                      </div>
                     ) : (
-                      <span className="text-emerald-600 dark:text-emerald-400 font-medium">
-                        0 atrasos
-                      </span>
+                      <div className="text-muted-foreground/70 py-1 italic">Início do rastro</div>
                     )}
                   </div>
                 </div>

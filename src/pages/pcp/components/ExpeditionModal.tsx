@@ -348,7 +348,9 @@ export function ExpeditionModal({
             if (!isNaN(parsed.getTime())) {
               updatePayload.data_saida = parsed.toISOString()
             }
-          } catch { /* intentionally ignored */ }
+          } catch {
+            /* intentionally ignored */
+          }
         }
 
         if (isComplete) {

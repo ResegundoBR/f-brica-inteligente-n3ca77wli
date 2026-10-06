@@ -314,6 +314,19 @@ export interface PcpOrderObservation {
   }
 }
 
+export interface PcpOrderNote {
+  id: string
+  order_id: string
+  content: string
+  created_by?: string
+  created: string
+  updated: string
+  expand?: {
+    order_id?: PcpOrder
+    created_by?: User
+  }
+}
+
 export interface MaterialShortage {
   id: string
   order_id?: string

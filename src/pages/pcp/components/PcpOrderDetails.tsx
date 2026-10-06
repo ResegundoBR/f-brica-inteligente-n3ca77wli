@@ -29,6 +29,7 @@ import { useState, useEffect } from 'react'
 import { PcpOrderDelivery } from '@/types'
 import { PromisedDateBadge } from '@/components/PromisedDateBadge'
 import { PromisedDateModal } from '@/components/PromisedDateModal'
+import { PcpOrderNotesSection } from './PcpOrderNotesSection'
 import { setPromisedDateOnOrder } from '@/services/pcp-promised-date'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
@@ -419,6 +420,8 @@ export function PcpOrderDetails({
                     )}
                   </div>
                 </div>
+
+                <PcpOrderNotesSection orderId={op.id} />
 
                 <div className="col-span-2 mt-2">
                   <Label className="text-muted-foreground">Observações</Label>

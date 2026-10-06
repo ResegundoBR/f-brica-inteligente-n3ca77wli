@@ -65,6 +65,7 @@ import { useToast } from '@/hooks/use-toast'
 import { Target, Calendar as CalendarIcon, Pin } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { NoTranslate } from '@/components/NoTranslate'
+import { PcpOrderNotesSection } from './components/PcpOrderNotesSection'
 
 const MACRO_GROUPS = [
   {
@@ -1899,6 +1900,8 @@ export default function PcpKanban() {
                     </div>
                   </div>
                 </div>
+
+                <PcpOrderNotesSection orderId={selectedOrder.id} />
 
                 <div className="mt-4">
                   <span className="text-muted-foreground block text-xs mb-2">Observações</span>

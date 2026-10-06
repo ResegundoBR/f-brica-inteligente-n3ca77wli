@@ -341,12 +341,24 @@ export function ExpeditionModal({
           delivered_quantity: newDelivered,
           nf: nf.trim(),
           transportadora: transportadora.trim(),
-          data_saida: new Date(dataSaida).toISOString(),
+        }
+        if (dataSaida) {
+          try {
+            const parsed = new Date(dataSaida)
+            if (!isNaN(parsed.getTime())) {
+              updatePayload.data_saida = parsed.toISOString()
+            }
+          } catch { /* intentionally ignored */ }
         }
 
         if (isComplete) {
           updatePayload.status = 'Concluído'
           updatePayload.finished_at = new Date().toISOString()
+        } else {
+          // Se não concluiu e a OP tem finished_at residual inconsistente, limpa
+          if (op.finished_at) {
+            updatePayload.finished_at = null
+          }
         }
 
         await pb.collection('pcp_orders').update(op.id, updatePayload)
@@ -372,11 +384,42 @@ export function ExpeditionModal({
       })
       onOpenChange(false)
     } catch (err: any) {
+      console.error('Erro ao registrar expedição:', err)
       const errs = extractFieldErrors(err)
       setFieldErrors(errs)
+
+      // Monta mensagem de erro detalhada campo a campo se houver
+      let errorMsg = ''
+      const fieldEntries = Object.entries(errs)
+      if (fieldEntries.length > 0) {
+        errorMsg = fieldEntries
+          .map(([k, v]) => {
+            const fieldLabel =
+              k === 'nf'
+                ? 'Nota Fiscal'
+                : k === 'transportadora'
+                  ? 'Transportadora'
+                  : k === 'data_saida'
+                    ? 'Data de Saída'
+                    : k === 'quantity'
+                      ? 'Quantidade'
+                      : k === 'order_id'
+                        ? 'Ordem de Produção'
+                        : k
+            return `${fieldLabel}: ${v}`
+          })
+          .join(' | ')
+      } else if (err?.data?.message) {
+        errorMsg = err.data.message
+      } else if (err?.message) {
+        errorMsg = err.message
+      } else {
+        errorMsg = 'Falha inesperada ao comunicar com o servidor.'
+      }
+
       toast({
         title: 'Erro ao registrar expedição',
-        description: err.message || 'Falha inesperada.',
+        description: errorMsg,
         variant: 'destructive',
       })
     } finally {

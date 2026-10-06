@@ -48,15 +48,24 @@ export async function getDeliveriesForOrders(
 
 export async function createDelivery(input: CreateDeliveryInput): Promise<PcpOrderDelivery> {
   const currentUserId = pb.authStore.record?.id
+  const qty = typeof input.quantity === 'number' ? input.quantity : parseInt(String(input.quantity), 10) || 1
   const payload: any = {
     order_id: input.order_id,
-    quantity: input.quantity,
+    quantity: Math.max(1, qty),
     nf: input.nf?.trim() || '',
     transportadora: input.transportadora?.trim() || '',
     notes: input.notes?.trim() || '',
   }
   if (input.data_saida) {
-    payload.data_saida = new Date(input.data_saida).toISOString()
+    // Garantir formato de data aceito pelo PocketBase
+    try {
+      const parsed = new Date(input.data_saida)
+      if (!isNaN(parsed.getTime())) {
+        payload.data_saida = parsed.toISOString()
+      }
+    } catch (_) {
+      // Ignora erro de parsing
+    }
   }
   if (currentUserId) {
     payload.created_by = currentUserId

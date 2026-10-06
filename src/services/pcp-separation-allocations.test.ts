@@ -4,6 +4,7 @@ import {
   getItemAllocationKey,
   loadRoundOpAllocations,
   OpAllocation,
+  resolveOrderProductName,
 } from '@/services/pcp-separation-allocations'
 import type { SeparationItem } from '@/services/material-separations'
 
@@ -73,6 +74,37 @@ describe('pcp-separation-allocations', () => {
     it('trata nulos e vazios', () => {
       expect(formatOpDisplay(null)).toBe('OP -')
       expect(formatOpDisplay('')).toBe('OP -')
+    })
+  })
+
+  describe('resolveOrderProductName', () => {
+    it('retorna o nome do expand.product_id quando disponível', () => {
+      const order = {
+        id: 'ord_1',
+        product_id: 'prod_1',
+        manual_product_name: 'Manual Fallback',
+        expand: {
+          product_id: {
+            id: 'prod_1',
+            name: 'Pendente Upper',
+          } as any,
+        },
+      }
+      expect(resolveOrderProductName(order)).toBe('Pendente Upper')
+    })
+
+    it('retorna manual_product_name se expand.product_id não estiver presente', () => {
+      const order = {
+        id: 'ord_2',
+        product_id: 'prod_2',
+        manual_product_name: 'Pendente Lower Especial',
+      }
+      expect(resolveOrderProductName(order)).toBe('Pendente Lower Especial')
+    })
+
+    it('retorna string vazia se order for nulo ou sem nome', () => {
+      expect(resolveOrderProductName(null)).toBe('')
+      expect(resolveOrderProductName({})).toBe('')
     })
   })
 

@@ -9,6 +9,16 @@ export interface OpAllocation {
   opNumber: string
   quantity: number | null // null se não encontrado na BOM ('—')
   unit?: string
+  productName?: string
+}
+
+/**
+ * Utilitário de resolução do nome do produto da OP.
+ * Respeita expand.product_id.name -> manual_product_name -> ''
+ */
+export function resolveOrderProductName(order?: Partial<PcpOrder> | null): string {
+  if (!order) return ''
+  return order.expand?.product_id?.name || order.manual_product_name || ''
 }
 
 export interface AllocationMapResult {
@@ -73,7 +83,9 @@ export async function loadRoundOpAllocations(
           const filter = uniqueOrderIds.map((id) => `id = "${id}"`).join(' || ')
           return await pb.collection('pcp_orders').getFullList<PcpOrder>({
             filter,
-            fields: 'id,op_number,order_number',
+            expand: 'product_id',
+            fields:
+              'id,op_number,order_number,product_id,manual_product_name,expand.product_id.name',
           })
         } catch (err) {
           console.error('Erro ao carregar pcp_orders para rateio:', err)
@@ -82,11 +94,16 @@ export async function loadRoundOpAllocations(
       })(),
     ])
 
-    // Mapa de orderId -> opNumber legível
+    // Mapa de orderId -> opNumber legível e nome do produto
     const opNumberByOrderId = new Map<string, string>()
+    const productNameByOrderId = new Map<string, string>()
     for (const ord of orders) {
       const display = ord.op_number || ord.order_number || ord.id
       opNumberByOrderId.set(ord.id, formatOpDisplay(display))
+      const prodName = resolveOrderProductName(ord)
+      if (prodName) {
+        productNameByOrderId.set(ord.id, prodName)
+      }
     }
 
     // Mapa auxiliar: orderId -> lista de PcpOrderMaterial daquela OP
@@ -120,6 +137,8 @@ export async function loadRoundOpAllocations(
         const opMaterials = materialsByOrder.get(oId) || []
         const matchedMaterials = opMaterials.filter((m) => isSameItem(item, m))
 
+        const prodName = productNameByOrderId.get(oId) || ''
+
         if (matchedMaterials.length > 0) {
           // Somar as quantidades caso haja mais de um registro do mesmo componente na mesma OP
           const totalQty = matchedMaterials.reduce((sum, m) => sum + (Number(m.quantity) || 0), 0)
@@ -129,6 +148,7 @@ export async function loadRoundOpAllocations(
             opNumber: resolvedOp,
             quantity: totalQty,
             unit,
+            productName: prodName || undefined,
           })
         } else {
           // Se não encontrado na BOM da OP, quantidade é null ('—') em vez de 0 enganoso
@@ -137,6 +157,7 @@ export async function loadRoundOpAllocations(
             opNumber: resolvedOp,
             quantity: null,
             unit: item.unit || 'un',
+            productName: prodName || undefined,
           })
         }
       }

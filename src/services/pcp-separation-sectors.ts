@@ -1,7 +1,11 @@
 import type { SeparationItem } from '@/services/material-separations'
 import type { PcpOrderMaterial, PcpOrder } from '@/types'
 import { isSameItem } from '@/services/material-consolidation'
-import { formatOpDisplay, getItemAllocationKey } from '@/services/pcp-separation-allocations'
+import {
+  formatOpDisplay,
+  getItemAllocationKey,
+  resolveOrderProductName,
+} from '@/services/pcp-separation-allocations'
 
 export const SECTOR_ORDER = ['Fabricação', 'Preparação', 'Montagem', 'Expedição'] as const
 export type KnownSector = (typeof SECTOR_ORDER)[number]
@@ -59,6 +63,7 @@ export interface SectorItemCard {
     opNumber: string
     quantity: number | null
     unit?: string
+    productName?: string
   }>
 }
 
@@ -85,11 +90,16 @@ export interface BuildSectorGroupsInput {
 export function buildSectorGroups(input: BuildSectorGroupsInput): SectorGroup[] {
   const { items, bomMaterials, orders } = input
 
-  // Mapa rápido de orderId -> opNumber formatado
+  // Mapa rápido de orderId -> opNumber formatado e nome do produto
   const opDisplayByOrderId = new Map<string, string>()
+  const productNameByOrderId = new Map<string, string>()
   for (const ord of orders) {
     const display = ord.op_number || ord.order_number || ord.id
     opDisplayByOrderId.set(ord.id, formatOpDisplay(display))
+    const prodName = resolveOrderProductName(ord)
+    if (prodName) {
+      productNameByOrderId.set(ord.id, prodName)
+    }
   }
 
   // Mapa: orderId -> lista de materiais BOM dessa OP
@@ -130,13 +140,14 @@ export function buildSectorGroups(input: BuildSectorGroupsInput): SectorGroup[] 
           opNumber: opDisplayByOrderId.get(oId) || item.op_numbers?.[idx] || formatOpDisplay(oId),
           quantity: null,
           unit: item.unit,
+          productName: productNameByOrderId.get(oId) || undefined,
         })),
       })
       continue
     }
 
     // Classificar as OPs do item por setor onde este componente aparece na BOM
-    // setor -> lista de { orderId, opNumber, quantity, unit }
+    // setor -> lista de { orderId, opNumber, quantity, unit, productName }
     const sectorOpsMap = new Map<
       KnownSector | typeof NO_SECTOR_LABEL,
       Array<{
@@ -144,6 +155,7 @@ export function buildSectorGroups(input: BuildSectorGroupsInput): SectorGroup[] 
         opNumber: string
         quantity: number | null
         unit?: string
+        productName?: string
       }>
     >()
 
@@ -186,6 +198,15 @@ export function buildSectorGroups(input: BuildSectorGroupsInput): SectorGroup[] 
       }
     }
 
+    // Associar productName a cada alocação em sectorOpsMap
+    sectorOpsMap.forEach((allocList) => {
+      for (const alloc of allocList) {
+        if (!alloc.productName) {
+          alloc.productName = productNameByOrderId.get(alloc.orderId) || undefined
+        }
+      }
+    })
+
     // Se o componente não foi localizado na BOM de nenhuma OP (ex: substituto ou divergência de código)
     if (!foundInAnySector) {
       groupsMap.get(NO_SECTOR_LABEL)!.push({
@@ -200,6 +221,7 @@ export function buildSectorGroups(input: BuildSectorGroupsInput): SectorGroup[] 
           opNumber: opDisplayByOrderId.get(oId) || item.op_numbers?.[idx] || formatOpDisplay(oId),
           quantity: null,
           unit: item.unit,
+          productName: productNameByOrderId.get(oId) || undefined,
         })),
       })
       continue

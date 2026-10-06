@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -55,7 +55,9 @@ import {
   loadRoundOpAllocations,
   getItemAllocationKey,
   OpAllocation,
+  resolveOrderProductName,
 } from '@/services/pcp-separation-allocations'
+import type { Product } from '@/types'
 import {
   buildSectorGroups,
   SectorGroup,
@@ -392,9 +394,60 @@ export function OperatorSeparationTab() {
               pb.collection('pcp_order_materials').getFullList<PcpOrderMaterial>({
                 filter: idFilter,
               }),
-              pb.collection('pcp_orders').getFullList<PcpOrder>({
-                filter: orderIds.map((id) => `id='${id}'`).join(' || '),
-              }),
+              (async () => {
+                const ordersList = await pb.collection('pcp_orders').getFullList<PcpOrder>({
+                  filter: orderIds.map((id) => `id='${id}'`).join(' || '),
+                  expand: 'product_id',
+                  fields:
+                    'id,op_number,order_number,product_id,manual_product_name,expand.product_id.name',
+                })
+
+                // Fallback: se alguma OP tem product_id mas veio sem expand.product_id?.name, busca única em products
+                const missingProductIds = Array.from(
+                  new Set(
+                    ordersList
+                      .filter(
+                        (o) =>
+                          o.product_id && !o.expand?.product_id?.name && !o.manual_product_name,
+                      )
+                      .map((o) => o.product_id as string),
+                  ),
+                )
+
+                if (missingProductIds.length > 0) {
+                  try {
+                    const prodFilter = missingProductIds.map((pid) => `id='${pid}'`).join(' || ')
+                    const prods = await pb.collection('products').getFullList<Product>({
+                      filter: prodFilter,
+                      fields: 'id,name',
+                    })
+                    const prodMap = new Map<string, string>()
+                    for (const p of prods) {
+                      if (p.id && p.name) prodMap.set(p.id, p.name)
+                    }
+
+                    for (const ord of ordersList) {
+                      if (
+                        ord.product_id &&
+                        !ord.expand?.product_id?.name &&
+                        prodMap.has(ord.product_id)
+                      ) {
+                        ord.expand = {
+                          ...ord.expand,
+                          product_id: {
+                            id: ord.product_id,
+                            name: prodMap.get(ord.product_id)!,
+                          } as Product,
+                        }
+                      }
+                    }
+                  } catch (pErr) {
+                    console.warn('Aviso: falha no fallback de products para pcp_orders:', pErr)
+                  }
+                }
+
+                return ordersList
+              })(),
             ])
             return { boms: bomsRes, orders: ordersRes }
           } catch (e) {
@@ -930,6 +983,46 @@ export function OperatorSeparationTab() {
       return codeMatch || descMatch || opMatch
     })
   }, [itemsDraft, filterQuery])
+
+  // Mapa de opNumber/orderId formatado -> nome do produto (para exibição rápida)
+  const orderProductNameByOpMap = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const ord of roundOrders) {
+      const prodName = resolveOrderProductName(ord)
+      if (prodName) {
+        if (ord.id) map.set(ord.id, prodName)
+        if (ord.op_number) {
+          map.set(ord.op_number, prodName)
+          map.set(ord.op_number.trim(), prodName)
+        }
+        if (ord.order_number) {
+          map.set(ord.order_number, prodName)
+          map.set(ord.order_number.trim(), prodName)
+        }
+      }
+    }
+    return map
+  }, [roundOrders])
+
+  // Helper para formatar a string de OP com o nome do produto: "OP 000456/2026 · Pendente Upper"
+  const formatOpWithProductName = useCallback(
+    (rawOp: string): string => {
+      if (!rawOp) return 'N/A'
+      // O rawOp pode vir como "OP 000456/2026", "000456/2026", etc.
+      // Procurar no orderProductNameByOpMap removendo "OP " se houver
+      const cleanOp = rawOp.replace(/^OP\s+/i, '').trim()
+      const prodName =
+        orderProductNameByOpMap.get(cleanOp) ||
+        orderProductNameByOpMap.get(rawOp) ||
+        orderProductNameByOpMap.get(rawOp.trim())
+
+      if (prodName) {
+        return `${rawOp} · ${prodName}`
+      }
+      return rawOp
+    },
+    [orderProductNameByOpMap],
+  )
 
   // Agrupamento por setor estrito: Fabricação -> Preparação -> Montagem -> Expedição -> Sem setor
   const allSectorGroups = useMemo(() => {
@@ -1740,47 +1833,67 @@ export function OperatorSeparationTab() {
                                   </span>
                                   {card.sectorAllocations && card.sectorAllocations.length > 0 ? (
                                     <div className="flex flex-wrap gap-1">
-                                      {card.sectorAllocations.map((alloc, aIdx) => (
-                                        <span
-                                          key={alloc.orderId || aIdx}
-                                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/80 border text-[10px] font-medium leading-none text-foreground"
-                                        >
+                                      {card.sectorAllocations.map((alloc, aIdx) => {
+                                        const prodName =
+                                          alloc.productName ||
+                                          orderProductNameByOpMap.get(alloc.orderId) ||
+                                          orderProductNameByOpMap.get(
+                                            alloc.opNumber.replace(/^OP\s+/i, '').trim(),
+                                          )
+
+                                        return (
                                           <NoTranslate
                                             as="span"
-                                            className="font-mono font-semibold text-blue-700 dark:text-blue-400"
+                                            key={alloc.orderId || aIdx}
+                                            className="inline-flex flex-wrap items-center gap-1 px-1.5 py-0.5 rounded bg-muted/80 border text-[10px] font-medium leading-tight text-foreground max-w-full"
                                           >
-                                            {alloc.opNumber}
-                                          </NoTranslate>
-                                          <span className="text-muted-foreground">→</span>
-                                          {alloc.quantity !== null &&
-                                          alloc.quantity !== undefined ? (
-                                            <NoTranslate as="span" className="font-bold">
-                                              {Number(alloc.quantity).toLocaleString('pt-BR', {
-                                                maximumFractionDigits: 2,
-                                              })}{' '}
-                                              {alloc.unit || item.unit || 'un'}
-                                            </NoTranslate>
-                                          ) : (
-                                            <span
-                                              className="text-muted-foreground font-bold notranslate"
-                                              translate="no"
-                                            >
-                                              —
+                                            <span className="font-mono font-semibold text-blue-700 dark:text-blue-400 shrink-0">
+                                              {alloc.opNumber}
                                             </span>
-                                          )}
-                                        </span>
-                                      ))}
+                                            <span className="text-muted-foreground shrink-0">
+                                              ·
+                                            </span>
+                                            {alloc.quantity !== null &&
+                                            alloc.quantity !== undefined ? (
+                                              <span className="font-bold shrink-0">
+                                                {Number(alloc.quantity).toLocaleString('pt-BR', {
+                                                  maximumFractionDigits: 2,
+                                                })}{' '}
+                                                {alloc.unit || item.unit || 'un'}
+                                              </span>
+                                            ) : (
+                                              <span className="text-muted-foreground font-bold shrink-0">
+                                                —
+                                              </span>
+                                            )}
+                                            {prodName && (
+                                              <>
+                                                <span className="text-muted-foreground shrink-0">
+                                                  ·
+                                                </span>
+                                                <span className="text-foreground font-normal break-words">
+                                                  {prodName}
+                                                </span>
+                                              </>
+                                            )}
+                                          </NoTranslate>
+                                        )
+                                      })}
                                     </div>
                                   ) : (
                                     <div className="flex flex-wrap gap-1">
-                                      {opNumbersToDisplay.map((op, oIdx) => (
-                                        <span
-                                          key={op || oIdx}
-                                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/60 border text-[10px] text-muted-foreground font-mono"
-                                        >
-                                          {op}
-                                        </span>
-                                      ))}
+                                      {opNumbersToDisplay.map((op, oIdx) => {
+                                        const formattedWithProd = formatOpWithProductName(op)
+                                        return (
+                                          <NoTranslate
+                                            as="span"
+                                            key={op || oIdx}
+                                            className="inline-flex flex-wrap items-center gap-1 px-1.5 py-0.5 rounded bg-muted/60 border text-[10px] text-muted-foreground font-mono leading-tight max-w-full"
+                                          >
+                                            {formattedWithProd}
+                                          </NoTranslate>
+                                        )
+                                      })}
                                     </div>
                                   )}
                                 </div>
@@ -1820,13 +1933,17 @@ export function OperatorSeparationTab() {
                                 )
                               })()}
 
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="text-muted-foreground text-[11px]">OPs:</span>
+                              <div className="flex items-start justify-between gap-2">
+                                <span className="text-muted-foreground text-[11px] shrink-0">
+                                  OPs:
+                                </span>
                                 <NoTranslate
                                   as="span"
-                                  className="font-mono font-medium text-foreground text-[11px] truncate max-w-[200px] text-right"
+                                  className="font-mono font-medium text-foreground text-[11px] text-right break-words leading-tight"
                                 >
-                                  {opNumbersToDisplay.join(', ') || 'N/A'}
+                                  {opNumbersToDisplay
+                                    .map((op) => formatOpWithProductName(op))
+                                    .join(', ') || 'N/A'}
                                 </NoTranslate>
                               </div>
 
@@ -2338,9 +2455,12 @@ export function OperatorSeparationTab() {
                                   <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
                                     <NoTranslate
                                       as="span"
-                                      className="flex items-center gap-1 font-mono font-semibold text-foreground"
+                                      className="flex items-center gap-1 font-mono font-semibold text-foreground flex-wrap"
                                     >
-                                      OPs: {opNumbersToDisplay.join(', ') || 'N/A'}
+                                      OPs:{' '}
+                                      {opNumbersToDisplay
+                                        .map((op) => formatOpWithProductName(op))
+                                        .join(', ') || 'N/A'}
                                     </NoTranslate>
 
                                     {item.cut_measurement && (
@@ -2373,50 +2493,70 @@ export function OperatorSeparationTab() {
                                         {card.sectorAllocations &&
                                         card.sectorAllocations.length > 0 ? (
                                           <div className="flex flex-wrap items-center gap-1">
-                                            {card.sectorAllocations.map((alloc, aIdx) => (
-                                              <span
-                                                key={alloc.orderId || aIdx}
-                                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/80 border text-[11px] font-medium leading-none text-foreground"
-                                              >
+                                            {card.sectorAllocations.map((alloc, aIdx) => {
+                                              const prodName =
+                                                alloc.productName ||
+                                                orderProductNameByOpMap.get(alloc.orderId) ||
+                                                orderProductNameByOpMap.get(
+                                                  alloc.opNumber.replace(/^OP\s+/i, '').trim(),
+                                                )
+
+                                              return (
                                                 <NoTranslate
                                                   as="span"
-                                                  className="font-mono font-semibold text-blue-700 dark:text-blue-400"
+                                                  key={alloc.orderId || aIdx}
+                                                  className="inline-flex flex-wrap items-center gap-1 px-1.5 py-0.5 rounded bg-muted/80 border text-[11px] font-medium leading-tight text-foreground max-w-full"
                                                 >
-                                                  {alloc.opNumber}
-                                                </NoTranslate>
-                                                <span className="text-muted-foreground">→</span>
-                                                {alloc.quantity !== null &&
-                                                alloc.quantity !== undefined ? (
-                                                  <NoTranslate as="span" className="font-bold">
-                                                    {Number(alloc.quantity).toLocaleString(
-                                                      'pt-BR',
-                                                      {
-                                                        maximumFractionDigits: 2,
-                                                      },
-                                                    )}{' '}
-                                                    {alloc.unit || item.unit || 'un'}
-                                                  </NoTranslate>
-                                                ) : (
-                                                  <span
-                                                    className="text-muted-foreground font-bold notranslate"
-                                                    translate="no"
-                                                  >
-                                                    —
+                                                  <span className="font-mono font-semibold text-blue-700 dark:text-blue-400 shrink-0">
+                                                    {alloc.opNumber}
                                                   </span>
-                                                )}
-                                              </span>
-                                            ))}
+                                                  <span className="text-muted-foreground shrink-0">
+                                                    ·
+                                                  </span>
+                                                  {alloc.quantity !== null &&
+                                                  alloc.quantity !== undefined ? (
+                                                    <span className="font-bold shrink-0">
+                                                      {Number(alloc.quantity).toLocaleString(
+                                                        'pt-BR',
+                                                        {
+                                                          maximumFractionDigits: 2,
+                                                        },
+                                                      )}{' '}
+                                                      {alloc.unit || item.unit || 'un'}
+                                                    </span>
+                                                  ) : (
+                                                    <span className="text-muted-foreground font-bold shrink-0">
+                                                      —
+                                                    </span>
+                                                  )}
+                                                  {prodName && (
+                                                    <>
+                                                      <span className="text-muted-foreground shrink-0">
+                                                        ·
+                                                      </span>
+                                                      <span className="text-foreground font-normal break-words">
+                                                        {prodName}
+                                                      </span>
+                                                    </>
+                                                  )}
+                                                </NoTranslate>
+                                              )
+                                            })}
                                           </div>
                                         ) : (
                                           <div className="flex flex-wrap items-center gap-1">
-                                            {opNumbersToDisplay.map((op, oIdx) => (
-                                              <span
-                                                key={op || oIdx}
-                                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/60 border text-[11px] text-muted-foreground font-mono"
-                                              >
-                                                {op}
-                                              </span>
-                                            ))}
+                                            {opNumbersToDisplay.map((op, oIdx) => {
+                                              const formattedWithProd = formatOpWithProductName(op)
+                                              return (
+                                                <NoTranslate
+                                                  as="span"
+                                                  key={op || oIdx}
+                                                  className="inline-flex flex-wrap items-center gap-1 px-1.5 py-0.5 rounded bg-muted/60 border text-[11px] text-muted-foreground font-mono leading-tight max-w-full"
+                                                >
+                                                  {formattedWithProd}
+                                                </NoTranslate>
+                                              )
+                                            })}
                                           </div>
                                         )}
                                       </div>

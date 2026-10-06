@@ -28,8 +28,18 @@ describe('pcp-separation-sectors', () => {
 
   describe('buildSectorGroups', () => {
     const orders: PcpOrder[] = [
-      { id: 'ord-1', op_number: '000501/2026', order_number: '501' } as any,
-      { id: 'ord-2', op_number: '000502/2026', order_number: '502' } as any,
+      {
+        id: 'ord-1',
+        op_number: '000501/2026',
+        order_number: '501',
+        expand: { product_id: { id: 'p-1', name: 'Pendente Upper' } },
+      } as any,
+      {
+        id: 'ord-2',
+        op_number: '000502/2026',
+        order_number: '502',
+        manual_product_name: 'Pendente Lower',
+      } as any,
       { id: 'ord-3', op_number: '000490/2026', order_number: '490' } as any,
     ]
 
@@ -111,6 +121,9 @@ describe('pcp-separation-sectors', () => {
       expect(montGroup.cards[0].item.code).toBe('06080018')
       expect(montGroup.cards[0].sectorQuantity).toBe(0.26)
       expect(montGroup.cards[0].sectorAllocations).toHaveLength(2)
+      // Confere que o nome do produto foi propagado nas alocações do setor
+      expect(montGroup.cards[0].sectorAllocations[0].productName).toBe('Pendente Upper')
+      expect(montGroup.cards[0].sectorAllocations[1].productName).toBe('Pendente Lower')
 
       const noSecGroup = groups.find((g) => g.sector === 'Sem setor')!
       expect(noSecGroup.cards).toHaveLength(1)

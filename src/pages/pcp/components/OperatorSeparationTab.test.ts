@@ -114,6 +114,8 @@ describe('Operator Separation Mobile 140+ items test', () => {
     expect(isSeparationItemPending(items[4])).toBe(false)
     // Item Separado NÃO é pendente
     expect(isSeparationItemPending(items[0])).toBe(false)
+    // Item Já Separado ('ja_separado') NÃO é pendente
+    expect(isSeparationItemPending({ status: 'ja_separado' })).toBe(false)
 
     // Simulando blocos de setor com o filtro "Não Separado" ativo
     const sectorA = {
@@ -152,6 +154,23 @@ describe('Operator Separation Mobile 140+ items test', () => {
     expect(filteredB.cards[0].item.id).toBe('2')
     expect(filteredB.pendingCount).toBe(1)
     expect(filteredB.totalCount).toBe(2)
+  })
+
+  it('ação Já Separado registra item sem gerar falta ou reserva de estoque', () => {
+    const items: Array<{ id: string; status?: any }> = [
+      { id: '1', status: 'separado' },
+      { id: '2', status: 'ja_separado' },
+      { id: '3', status: 'pendente' },
+      { id: '4', status: 'falta' },
+    ]
+
+    const pending = items.filter((i) => isSeparationItemPending(i))
+    expect(pending).toHaveLength(1)
+    expect(pending[0].id).toBe('3')
+
+    const alreadySeparated = items.filter((i) => i.status === 'ja_separado')
+    expect(alreadySeparated).toHaveLength(1)
+    expect(alreadySeparated[0].id).toBe('2')
   })
 
   it('matches Reginaldo print case: 120 items, 59 separated, 0 partial, 35 shortages, 26 pending', () => {

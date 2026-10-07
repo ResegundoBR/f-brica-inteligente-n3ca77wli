@@ -13,12 +13,19 @@ export { isFabricatedCode } from './pcp-separation-sectors'
 
 export type SeparationStatus = 'Pendente' | 'Em_Separacao' | 'Concluida' | 'Cancelada'
 
-export type SeparationItemStatus = 'pendente' | 'separado' | 'falta' | 'parcial' | 'substituido'
+export type SeparationItemStatus =
+  | 'pendente'
+  | 'separado'
+  | 'falta'
+  | 'parcial'
+  | 'substituido'
+  | 'ja_separado'
 
 /**
  * Determina se um item de separação está "Pendente" / "Não Separado".
- * Definição (Reginaldo): item SEM NENHUMA ação do operador — não Separado, não Falta, não Parcial, não Troca/Substituído.
+ * Definição (Reginaldo): item SEM NENHUMA ação do operador — não Separado, não Falta, não Parcial, não Troca/Substituído, não Já Separado.
  * Itens marcados com Falta já passaram pela separação e foram para Solicitações — portanto NÃO são pendentes.
+ * Itens marcados como 'ja_separado' já foram resolvidos anteriormente — portanto NÃO são pendentes.
  */
 export function isSeparationItemPending(
   item: Pick<SeparationItem, 'status'> | { status?: string | null } | null | undefined,
@@ -26,7 +33,7 @@ export function isSeparationItemPending(
   if (!item) return false
   const s = item.status
   if (!s || s === 'pendente') return true
-  // Se tiver qualquer ação registrada ('separado', 'falta', 'parcial', 'substituido'), NÃO é pendente
+  // Se tiver qualquer ação registrada ('separado', 'falta', 'parcial', 'substituido', 'ja_separado'), NÃO é pendente
   return false
 }
 

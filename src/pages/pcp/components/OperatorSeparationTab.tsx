@@ -14,6 +14,7 @@ import {
 import {
   Package,
   CheckCircle2,
+  CheckCheck,
   AlertTriangle,
   Clock,
   RefreshCw,
@@ -98,6 +99,8 @@ function getActionLabel(status?: string): string {
       return 'Parcial'
     case 'substituido':
       return 'Substituição'
+    case 'ja_separado':
+      return 'Já Separado'
     default:
       return 'Ação'
   }
@@ -808,6 +811,33 @@ export function OperatorSeparationTab() {
     } finally {
       setSwapSaving(false)
     }
+  }
+
+  // GRAVAÇÃO IMEDIATA NO CLIQUE DE "JÁ SEPARADO" (componente já separado/utilizado anteriormente)
+  const handleToggleAlreadySeparated = async (itemId: string) => {
+    const targetItem = itemsDraft.find((i) => i.id === itemId)
+    if (!targetItem || !activeSeparation) return
+
+    const isAlready = targetItem.status === 'ja_separado'
+    const nextStatus = (isAlready ? 'pendente' : 'ja_separado') as SeparationItem['status']
+
+    const updatedItem: SeparationItem = {
+      ...targetItem,
+      status: nextStatus,
+      separated_quantity: undefined,
+      shortage_quantity: undefined,
+      marked_at: nextStatus === 'ja_separado' ? new Date().toISOString() : undefined,
+      marked_by: nextStatus === 'ja_separado' ? pb.authStore.record?.id : undefined,
+    }
+
+    const nextList = itemsDraft.map((item) => (item.id === itemId ? updatedItem : item))
+    setItemsDraft(nextList)
+
+    await persistChangesImmediately(
+      nextList,
+      [itemId],
+      nextStatus === 'ja_separado' ? 'Marcar Já Separado' : 'Desmarcar Já Separado',
+    )
   }
 
   // GRAVAÇÃO IMEDIATA NO CLIQUE DE SEPARADO OU FALTA
@@ -1648,6 +1678,7 @@ export function OperatorSeparationTab() {
                         const isPartial = item.status === 'parcial'
                         const isShortage = item.status === 'falta'
                         const isSubstituted = item.status === 'substituido'
+                        const isAlreadySeparated = item.status === 'ja_separado'
                         const isReadOnly = activeSeparation.status === 'Concluida'
 
                         const opNumbersToDisplay =
@@ -1664,13 +1695,15 @@ export function OperatorSeparationTab() {
                             className={`p-3 rounded-xl border transition-colors shadow-sm flex flex-col gap-2.5 ${
                               isSeparated
                                 ? 'bg-emerald-500/10 border-emerald-500/50'
-                                : isPartial
-                                  ? 'bg-amber-500/10 border-amber-500/50'
-                                  : isShortage
-                                    ? 'bg-rose-500/10 border-rose-500/50'
-                                    : isSubstituted
-                                      ? 'bg-slate-500/10 border-slate-400/50 opacity-80'
-                                      : 'bg-card border-border'
+                                : isAlreadySeparated
+                                  ? 'bg-cyan-500/10 border-cyan-500/50'
+                                  : isPartial
+                                    ? 'bg-amber-500/10 border-amber-500/50'
+                                    : isShortage
+                                      ? 'bg-rose-500/10 border-rose-500/50'
+                                      : isSubstituted
+                                        ? 'bg-slate-500/10 border-slate-400/50 opacity-80'
+                                        : 'bg-card border-border'
                             }`}
                           >
                             {/* Código do material + status atual */}
@@ -1706,6 +1739,11 @@ export function OperatorSeparationTab() {
                                   <CheckCircle2 className="h-3 w-3" /> Separado
                                 </Badge>
                               )}
+                              {isAlreadySeparated && (
+                                <Badge className="bg-cyan-600 hover:bg-cyan-600 text-white text-[10px] h-5 px-2 gap-1">
+                                  <CheckCheck className="h-3 w-3" /> Já Separado
+                                </Badge>
+                              )}
                               {isPartial && (
                                 <Badge className="bg-amber-500 text-white text-[10px] h-5 px-2 gap-1">
                                   <Package className="h-3 w-3" /> Parcial
@@ -1724,14 +1762,18 @@ export function OperatorSeparationTab() {
                                   Substituído
                                 </Badge>
                               )}
-                              {!isSeparated && !isPartial && !isShortage && !isSubstituted && (
-                                <Badge
-                                  variant="outline"
-                                  className="text-[10px] h-5 text-muted-foreground"
-                                >
-                                  Pendente
-                                </Badge>
-                              )}
+                              {!isSeparated &&
+                                !isAlreadySeparated &&
+                                !isPartial &&
+                                !isShortage &&
+                                !isSubstituted && (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] h-5 text-muted-foreground"
+                                  >
+                                    Pendente
+                                  </Badge>
+                                )}
                             </div>
 
                             {/* Selo discreto de registro: data/hora e quem separou/marcou (Mobile) */}
@@ -1779,6 +1821,13 @@ export function OperatorSeparationTab() {
                             >
                               {item.description}
                             </NoTranslate>
+
+                            {/* Observação discreta do item quando já separado ou com nota */}
+                            {isAlreadySeparated && item.notes && (
+                              <div className="text-[11px] text-cyan-800 dark:text-cyan-300 bg-cyan-500/10 border border-cyan-500/20 rounded px-2 py-0.5">
+                                <span className="font-semibold">Obs:</span> {item.notes}
+                              </div>
+                            )}
 
                             {/* Banner informativo de Falta Parcial ou Substituição */}
                             {isPartial && (
@@ -1989,15 +2038,15 @@ export function OperatorSeparationTab() {
                               </div>
                             )}
 
-                            {/* BOTÕES DE AÇÃO: Separado / Falta / Troca / Mensagem */}
+                            {/* BOTÕES DE AÇÃO: Separado / Já Separado / Falta / Troca / Mensagem */}
                             {!isReadOnly && !isSubstituted && (
-                              <div className="grid grid-cols-4 gap-1.5 pt-1">
+                              <div className="grid grid-cols-5 gap-1 pt-1">
                                 <Button
                                   type="button"
                                   variant={isSeparated ? 'default' : 'outline'}
                                   onClick={() => handleToggleItemStatus(item.id, 'separado')}
                                   disabled={inFlightItemIds.has(item.id)}
-                                  className={`min-h-[44px] h-11 text-[11px] font-bold gap-1 transition-all shadow-sm ${
+                                  className={`min-h-[44px] h-11 text-[11px] font-bold gap-0.5 px-1 transition-all shadow-sm ${
                                     isSeparated
                                       ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-500/50'
                                       : 'border-2 border-emerald-600/50 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 active:bg-emerald-100'
@@ -2013,10 +2062,30 @@ export function OperatorSeparationTab() {
 
                                 <Button
                                   type="button"
+                                  variant={isAlreadySeparated ? 'default' : 'outline'}
+                                  onClick={() => handleToggleAlreadySeparated(item.id)}
+                                  disabled={inFlightItemIds.has(item.id)}
+                                  title="Componente já separado e utilizado anteriormente (registro histórico, sem reserva/movimentação de estoque)"
+                                  className={`min-h-[44px] h-11 text-[10px] font-bold gap-0.5 px-1 transition-all shadow-sm ${
+                                    isAlreadySeparated
+                                      ? 'bg-cyan-600 hover:bg-cyan-700 text-white ring-2 ring-cyan-500/50'
+                                      : 'border-2 border-cyan-600/50 text-cyan-700 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-950/40 active:bg-cyan-100'
+                                  }`}
+                                >
+                                  {inFlightItemIds.has(item.id) && isAlreadySeparated ? (
+                                    <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                                  ) : (
+                                    <CheckCheck className="h-3.5 w-3.5 shrink-0" />
+                                  )}
+                                  <span className="truncate">Já Separado</span>
+                                </Button>
+
+                                <Button
+                                  type="button"
                                   variant={isShortage || isPartial ? 'default' : 'outline'}
                                   onClick={() => handleToggleItemStatus(item.id, 'falta')}
                                   disabled={inFlightItemIds.has(item.id)}
-                                  className={`min-h-[44px] h-11 text-[11px] font-bold gap-1 transition-all shadow-sm ${
+                                  className={`min-h-[44px] h-11 text-[11px] font-bold gap-0.5 px-1 transition-all shadow-sm ${
                                     isShortage || isPartial
                                       ? isPartial
                                         ? 'bg-amber-600 hover:bg-amber-700 text-white ring-2 ring-amber-500/50'
@@ -2039,7 +2108,7 @@ export function OperatorSeparationTab() {
                                   variant="outline"
                                   onClick={() => handleOpenSwapDialog(item)}
                                   disabled={inFlightItemIds.has(item.id)}
-                                  className="min-h-[44px] h-11 text-[11px] font-bold gap-1 transition-all shadow-sm border-2 border-blue-600/50 text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 active:bg-blue-100"
+                                  className="min-h-[44px] h-11 text-[11px] font-bold gap-0.5 px-1 transition-all shadow-sm border-2 border-blue-600/50 text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 active:bg-blue-100"
                                 >
                                   <ArrowLeftRight className="h-3.5 w-3.5 shrink-0" />
                                   <span className="truncate">Troca</span>
@@ -2049,7 +2118,7 @@ export function OperatorSeparationTab() {
                                   type="button"
                                   variant="outline"
                                   onClick={() => handleOpenMessageModal(card)}
-                                  className="min-h-[44px] h-11 text-[11px] font-bold gap-1 transition-all shadow-sm border-2 border-slate-300 dark:border-slate-700 text-foreground hover:bg-muted active:bg-muted/80"
+                                  className="min-h-[44px] h-11 text-[11px] font-bold gap-0.5 px-1 transition-all shadow-sm border-2 border-slate-300 dark:border-slate-700 text-foreground hover:bg-muted active:bg-muted/80"
                                   title="Enviar mensagem sobre o componente para o PCP"
                                 >
                                   <MessageSquare className="h-3.5 w-3.5 shrink-0 text-blue-600" />
@@ -2395,6 +2464,7 @@ export function OperatorSeparationTab() {
                             const isPartial = item.status === 'parcial'
                             const isShortage = item.status === 'falta'
                             const isSubstituted = item.status === 'substituido'
+                            const isAlreadySeparated = item.status === 'ja_separado'
                             const isReadOnly = activeSeparation.status === 'Concluida'
 
                             const opNumbersToDisplay =
@@ -2411,13 +2481,15 @@ export function OperatorSeparationTab() {
                                 className={`p-3 rounded-xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
                                   isSeparated
                                     ? 'bg-emerald-500/10 border-emerald-500/40 shadow-sm'
-                                    : isPartial
-                                      ? 'bg-amber-500/10 border-amber-500/40 shadow-sm'
-                                      : isShortage
-                                        ? 'bg-rose-500/10 border-rose-500/40 shadow-sm'
-                                        : isSubstituted
-                                          ? 'bg-slate-500/10 border-slate-400/50 opacity-80'
-                                          : 'bg-card border-border hover:border-slate-400/50'
+                                    : isAlreadySeparated
+                                      ? 'bg-cyan-500/10 border-cyan-500/40 shadow-sm'
+                                      : isPartial
+                                        ? 'bg-amber-500/10 border-amber-500/40 shadow-sm'
+                                        : isShortage
+                                          ? 'bg-rose-500/10 border-rose-500/40 shadow-sm'
+                                          : isSubstituted
+                                            ? 'bg-slate-500/10 border-slate-400/50 opacity-80'
+                                            : 'bg-card border-border hover:border-slate-400/50'
                                 }`}
                               >
                                 <div className="space-y-1 flex-1 min-w-0">
@@ -2450,6 +2522,11 @@ export function OperatorSeparationTab() {
                                     >
                                       {item.description}
                                     </NoTranslate>
+                                    {isAlreadySeparated && item.notes && (
+                                      <span className="text-[11px] text-cyan-800 dark:text-cyan-300 bg-cyan-500/10 border border-cyan-500/20 rounded px-1.5 py-0.5">
+                                        <span className="font-semibold">Obs:</span> {item.notes}
+                                      </span>
+                                    )}
                                   </div>
 
                                   <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
@@ -2692,18 +2769,39 @@ export function OperatorSeparationTab() {
                                       variant={isSeparated ? 'default' : 'outline'}
                                       onClick={() => handleToggleItemStatus(item.id, 'separado')}
                                       disabled={inFlightItemIds.has(item.id)}
-                                      className={`h-9 px-3 gap-1.5 font-bold transition-all text-xs ${
+                                      className={`h-9 px-2.5 gap-1 font-bold transition-all text-xs ${
                                         isSeparated
                                           ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-500/30 shadow'
                                           : 'border-emerald-600/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
                                       }`}
                                     >
                                       {inFlightItemIds.has(item.id) && isSeparated ? (
-                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
                                       ) : (
-                                        <CheckCircle2 className="h-4 w-4" />
+                                        <CheckCircle2 className="h-3.5 w-3.5" />
                                       )}
                                       Separado
+                                    </Button>
+
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant={isAlreadySeparated ? 'default' : 'outline'}
+                                      onClick={() => handleToggleAlreadySeparated(item.id)}
+                                      disabled={inFlightItemIds.has(item.id)}
+                                      title="Componente já separado e utilizado anteriormente (registro histórico, sem reserva/movimentação de estoque)"
+                                      className={`h-9 px-2.5 gap-1 font-bold transition-all text-xs ${
+                                        isAlreadySeparated
+                                          ? 'bg-cyan-600 hover:bg-cyan-700 text-white ring-2 ring-cyan-500/30 shadow'
+                                          : 'border-cyan-600/40 text-cyan-700 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-950/40'
+                                      }`}
+                                    >
+                                      {inFlightItemIds.has(item.id) && isAlreadySeparated ? (
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                      ) : (
+                                        <CheckCheck className="h-3.5 w-3.5" />
+                                      )}
+                                      Já Separado
                                     </Button>
 
                                     <Button
@@ -2712,7 +2810,7 @@ export function OperatorSeparationTab() {
                                       variant={isShortage || isPartial ? 'default' : 'outline'}
                                       onClick={() => handleToggleItemStatus(item.id, 'falta')}
                                       disabled={inFlightItemIds.has(item.id)}
-                                      className={`h-9 px-3 gap-1.5 font-bold transition-all text-xs ${
+                                      className={`h-9 px-2.5 gap-1 font-bold transition-all text-xs ${
                                         isShortage || isPartial
                                           ? isPartial
                                             ? 'bg-amber-600 hover:bg-amber-700 text-white ring-2 ring-amber-500/30 shadow'
@@ -2721,9 +2819,9 @@ export function OperatorSeparationTab() {
                                       }`}
                                     >
                                       {inFlightItemIds.has(item.id) && (isShortage || isPartial) ? (
-                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
                                       ) : (
-                                        <AlertTriangle className="h-4 w-4" />
+                                        <AlertTriangle className="h-3.5 w-3.5" />
                                       )}
                                       {isPartial ? 'Parcial' : 'Falta'}
                                     </Button>
@@ -2734,9 +2832,9 @@ export function OperatorSeparationTab() {
                                       variant="outline"
                                       onClick={() => handleOpenSwapDialog(item)}
                                       disabled={inFlightItemIds.has(item.id)}
-                                      className="h-9 px-3 gap-1.5 font-bold transition-all text-xs border-blue-600/40 text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40"
+                                      className="h-9 px-2.5 gap-1 font-bold transition-all text-xs border-blue-600/40 text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40"
                                     >
-                                      <ArrowLeftRight className="h-4 w-4" />
+                                      <ArrowLeftRight className="h-3.5 w-3.5" />
                                       Troca
                                     </Button>
 
@@ -2745,10 +2843,10 @@ export function OperatorSeparationTab() {
                                       size="sm"
                                       variant="outline"
                                       onClick={() => handleOpenMessageModal(card)}
-                                      className="h-9 px-3 gap-1.5 font-bold transition-all text-xs border-slate-300 dark:border-slate-700 text-foreground hover:bg-muted"
+                                      className="h-9 px-2.5 gap-1 font-bold transition-all text-xs border-slate-300 dark:border-slate-700 text-foreground hover:bg-muted"
                                       title="Enviar mensagem sobre o componente para o PCP"
                                     >
-                                      <MessageSquare className="h-4 w-4 text-blue-600" />
+                                      <MessageSquare className="h-3.5 w-3.5 text-blue-600" />
                                       Mensagem
                                     </Button>
                                   </div>
@@ -2758,6 +2856,11 @@ export function OperatorSeparationTab() {
                                       <Badge className="bg-emerald-600 text-white text-xs gap-1 py-1 px-2.5">
                                         <CheckCircle2 className="h-3.5 w-3.5" />
                                         Separado
+                                      </Badge>
+                                    ) : isAlreadySeparated ? (
+                                      <Badge className="bg-cyan-600 text-white text-xs gap-1 py-1 px-2.5">
+                                        <CheckCheck className="h-3.5 w-3.5" />
+                                        Já Separado
                                       </Badge>
                                     ) : isPartial ? (
                                       <Badge className="bg-amber-600 text-white text-xs gap-1 py-1 px-2.5">

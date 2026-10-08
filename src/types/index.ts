@@ -356,6 +356,7 @@ export interface MaterialShortage {
   distributed_by?: string
   batch_id?: string
   batch_info?: {
+    batch_id?: string
     is_batch_parent?: boolean
     actual_quantity?: number
     requested_total?: number

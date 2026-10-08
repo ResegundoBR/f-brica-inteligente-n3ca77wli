@@ -38,6 +38,21 @@ async function generateOcNumber(): Promise<string> {
   return String(maxNum + 1)
 }
 
+export function sanitizeOcPayload<T extends Record<string, any>>(obj: T): Partial<T> {
+  const cleaned: Record<string, any> = {}
+  for (const [k, v] of Object.entries(obj)) {
+    if (v === undefined || v === null) continue
+    if (typeof v === 'string') {
+      const trimmed = v.trim()
+      if (trimmed === '') continue
+      cleaned[k] = trimmed
+    } else {
+      cleaned[k] = v
+    }
+  }
+  return cleaned as Partial<T>
+}
+
 export const createOrdemCompra = async (data: {
   supplier: string
   supplier_id?: string
@@ -60,31 +75,36 @@ export const createOrdemCompra = async (data: {
 }) => {
   const oc_number = await generateOcNumber()
   const currentUserId = pb.authStore.record?.id
-  const oc = await pb.collection('ordens_de_compra').create<OrdemCompra>({
+  const userId = data.user_id || currentUserId || undefined
+
+  const ocPayload = sanitizeOcPayload({
     oc_number,
     supplier: data.supplier,
-    ...(data.supplier_id && { supplier_id: data.supplier_id }),
+    supplier_id: data.supplier_id,
     status: 'Pendente',
-    ...(data.expected_date && { expected_date: data.expected_date }),
-    ...(data.delivery_terms && { delivery_terms: data.delivery_terms }),
-    ...(data.payment_terms && { payment_terms: data.payment_terms }),
-    ...(data.delivery_type && { delivery_type: data.delivery_type }),
+    expected_date: data.expected_date,
+    delivery_terms: data.delivery_terms,
+    payment_terms: data.payment_terms,
+    delivery_type: data.delivery_type || 'Entrega',
     total: data.total,
-    user_id: data.user_id || currentUserId || undefined,
+    user_id: userId,
   })
 
+  const oc = await pb.collection('ordens_de_compra').create<OrdemCompra>(ocPayload)
+
   for (const item of data.itens) {
-    await pb.collection('ordem_compra_itens').create({
+    const itemPayload = sanitizeOcPayload({
       oc_id: oc.id,
       description: item.description,
-      ...(item.code && { code: item.code }),
+      code: item.code,
       quantity: item.quantity,
-      ...(item.unit_price !== undefined && { unit_price: item.unit_price }),
-      ...(item.st_value !== undefined && { st_value: item.st_value }),
-      ...(item.ipi_value !== undefined && { ipi_value: item.ipi_value }),
-      ...(item.total !== undefined && { total: item.total }),
-      ...(item.material_shortage_id && { material_shortage_id: item.material_shortage_id }),
+      unit_price: item.unit_price,
+      st_value: item.st_value,
+      ipi_value: item.ipi_value,
+      total: item.total,
+      material_shortage_id: item.material_shortage_id,
     })
+    await pb.collection('ordem_compra_itens').create(itemPayload)
   }
 
   return oc

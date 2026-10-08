@@ -29,6 +29,7 @@ import { getComponentCategories } from '@/services/component-categories'
 import { useCategoryGroups } from '@/hooks/use-category-groups'
 import { ComponentCategory, MasterComponent } from '@/types'
 import { useShortageStore } from '@/stores/useShortageStore'
+import { formatDetailedErrorMessage } from '@/lib/pocketbase/errors'
 import { toast } from 'sonner'
 
 export default function ComprasPage() {
@@ -163,7 +164,88 @@ export default function ComprasPage() {
   const handleGerarOC = async () => {
     const selected = comprasItems.filter((i) => selectedIds.has(i.id))
     if (selected.length === 0) return
-    const suppliers = new Set(selected.map((s) => s.supplier || '').filter(Boolean))
+
+    // Agrupa itens selecionados por lote (batch_id) para emitir apenas UMA linha representativa por lote
+    const batchGroups = new Map<string, MaterialShortage[]>()
+    const individualItems: MaterialShortage[] = []
+
+    for (const item of selected) {
+      const bId = item.batch_id || item.batch_info?.batch_id
+      if (bId) {
+        const group = batchGroups.get(bId) || []
+        group.push(item)
+        batchGroups.set(bId, group)
+      } else {
+        individualItems.push(item)
+      }
+    }
+
+    // Identificar representante para cada lote
+    interface ConsolidatedOCLine {
+      representative: MaterialShortage
+      allMemberIds: string[]
+      isBatch: boolean
+      quantity: number
+      unitPrice: number
+      expectedDate?: string
+    }
+
+    const consolidatedLines: ConsolidatedOCLine[] = []
+
+    for (const [batchId, bItems] of batchGroups.entries()) {
+      // Tentar encontrar o registro-pai do lote na lista geral de shortages ou entre os selecionados
+      const allBatchMembersInSystem = shortages.filter(
+        (s) => s.batch_id === batchId || s.batch_info?.batch_id === batchId,
+      )
+      const parent =
+        allBatchMembersInSystem.find((it) => it.batch_info?.is_batch_parent) ||
+        bItems.find((it) => it.batch_info?.is_batch_parent) ||
+        bItems[0]
+
+      const actualQty =
+        parent.batch_info?.actual_quantity != null
+          ? Number(parent.batch_info.actual_quantity)
+          : Number(parent.quantity) || 0
+
+      const unitPrice =
+        Number(parent.unit_price) ||
+        Number(parent.batch_info?.unit_price) ||
+        Number(bItems.find((it) => Number(it.unit_price) > 0)?.unit_price) ||
+        0
+
+      const expectedDate =
+        parent.expected_date ||
+        parent.batch_info?.expected_date ||
+        bItems.find((it) => it.expected_date)?.expected_date
+
+      consolidatedLines.push({
+        representative: parent,
+        allMemberIds: bItems.map((it) => it.id),
+        isBatch: true,
+        quantity: actualQty,
+        unitPrice,
+        expectedDate,
+      })
+    }
+
+    for (const item of individualItems) {
+      consolidatedLines.push({
+        representative: item,
+        allMemberIds: [item.id],
+        isBatch: false,
+        quantity: Number(item.quantity) || 0,
+        unitPrice: Number(item.unit_price) || 0,
+        expectedDate: item.expected_date,
+      })
+    }
+
+    const suppliers = new Set(
+      consolidatedLines
+        .map(
+          (line) => line.representative.supplier || line.representative.batch_info?.supplier || '',
+        )
+        .filter(Boolean),
+    )
     if (suppliers.size === 0) {
       toast.error('Selecione itens com fornecedor definido')
       return
@@ -172,15 +254,13 @@ export default function ComprasPage() {
       toast.error('Selecione itens do mesmo fornecedor para gerar uma OC')
       return
     }
-    const supplierName = selected[0].supplier || ''
+    const supplierName = Array.from(suppliers)[0]
 
     // Busca cotações selecionadas para pré-carregar ST e IPI se existirem
-    const selectedShortageIds = selected.map((s) => s.id)
+    const repShortageIds = consolidatedLines.map((line) => line.representative.id)
     let quotationsMap: Record<string, { st_value?: number; ipi_value?: number }> = {}
     try {
-      const filterStr = selectedShortageIds
-        .map((id) => `material_shortage_id = "${id}"`)
-        .join(' || ')
+      const filterStr = repShortageIds.map((id) => `material_shortage_id = "${id}"`).join(' || ')
       if (filterStr) {
         const quots = await pb.collection('quotations').getFullList<Quotation>({
           filter: `(${filterStr}) && selected = true`,
@@ -196,15 +276,19 @@ export default function ComprasPage() {
       /* ignore */
     }
 
-    const items: OCItemInput[] = selected.map((s) => ({
-      description: s.description,
-      code: s.code,
-      quantity: Number(s.quantity) || 0,
-      unit_price: Number(s.unit_price) || 0,
-      st_value: quotationsMap[s.id]?.st_value || 0,
-      ipi_value: quotationsMap[s.id]?.ipi_value || 0,
-      material_shortage_id: s.id,
-    }))
+    const items: OCItemInput[] = consolidatedLines.map((line) => {
+      const rep = line.representative
+      return {
+        description: rep.description,
+        code: rep.code,
+        quantity: line.quantity,
+        unit_price: line.unitPrice,
+        st_value: quotationsMap[rep.id]?.st_value || 0,
+        ipi_value: quotationsMap[rep.id]?.ipi_value || 0,
+        material_shortage_id: rep.id,
+      }
+    })
+
     setOcSupplier(supplierName)
     setOcItems(items)
     setOcModalOpen(true)
@@ -228,22 +312,24 @@ export default function ComprasPage() {
     try {
       const oc = await createOrdemCompra({
         supplier: ocSupplier,
-        expected_date: expectedDate || undefined,
-        delivery_terms: deliveryTerms || undefined,
-        payment_terms: paymentTerms || undefined,
+        expected_date: expectedDate?.trim() ? expectedDate.trim() : undefined,
+        delivery_terms: deliveryTerms?.trim() ? deliveryTerms.trim() : undefined,
+        payment_terms: paymentTerms?.trim() ? paymentTerms.trim() : undefined,
         delivery_type: deliveryType || undefined,
         total,
         ...(user?.id && { user_id: user.id }),
         itens: items.map((it) => ({
           description: it.description,
-          code: it.code,
+          code: it.code?.trim() ? it.code.trim() : undefined,
           quantity: it.quantity,
           unit_price: it.unit_price,
           st_value: Number(it.st_value) || 0,
           ipi_value: Number(it.ipi_value) || 0,
           total:
             it.quantity * it.unit_price + (Number(it.st_value) || 0) + (Number(it.ipi_value) || 0),
-          material_shortage_id: it.material_shortage_id,
+          material_shortage_id: it.material_shortage_id?.trim()
+            ? it.material_shortage_id.trim()
+            : undefined,
         })),
       })
       const ocItens = await getOrdemCompraItens(oc.id)
@@ -252,9 +338,11 @@ export default function ComprasPage() {
       setOcDocOpen(true)
       setSelectedIds(new Set())
       toast.success('Ordem de Compra gerada com sucesso!')
-    } catch {
-      toast.error('Erro ao gerar Ordem de Compra')
-      throw new Error('OC creation failed')
+    } catch (err) {
+      console.error('Erro ao gerar Ordem de Compra:', err)
+      const detail = formatDetailedErrorMessage(err, 'Erro ao gerar Ordem de Compra')
+      toast.error(`Erro ao gerar Ordem de Compra: ${detail}`)
+      throw err
     }
   }
 

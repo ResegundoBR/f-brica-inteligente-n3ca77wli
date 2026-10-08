@@ -31,6 +31,8 @@ import { NoTranslate } from '@/components/NoTranslate'
 import { MaterialShortage } from '@/types'
 import { findOtherOpDemands } from '@/services/material-consolidation'
 import { toDateFieldValue, formatQuantity } from '@/lib/pcp-utils'
+import { formatDetailedErrorMessage } from '@/lib/pocketbase/errors'
+import { toast } from 'sonner'
 
 export interface OCItemInput {
   description: string
@@ -160,13 +162,15 @@ export function OrdemCompraModal({
   const handleConfirm = async () => {
     setSaving(true)
     try {
-      const cleanExpectedDate = expectedDate
-        ? `${toDateFieldValue(expectedDate)} 12:00:00.000Z`
-        : ''
+      const cleanExpectedDate =
+        expectedDate && expectedDate.trim()
+          ? `${toDateFieldValue(expectedDate.trim())} 12:00:00.000Z`
+          : ''
       await onConfirm(items, deliveryTerms, cleanExpectedDate, paymentTerms, deliveryType)
       onOpenChange(false)
-    } catch {
-      /* handled by parent */
+    } catch (err) {
+      const detail = formatDetailedErrorMessage(err, 'Verifique os dados informados.')
+      toast.error(`Não foi possível salvar a Ordem de Compra: ${detail}`)
     } finally {
       setSaving(false)
     }

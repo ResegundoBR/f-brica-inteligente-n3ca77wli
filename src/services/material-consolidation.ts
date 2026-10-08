@@ -133,12 +133,40 @@ export function findOtherOpDemands(
   const excludedIdsSet = new Set<string>(excludedShortageIds || [currentItem.id])
   excludedIdsSet.add(currentItem.id)
 
-  const currentBalance = calculateShortageBalance(currentItem)
+  // Extrair batch_id do item atual (seja campo direto ou em batch_info)
+  const currentBatchId = currentItem.batch_id || currentItem.batch_info?.batch_id
+  const surplusShortageId = currentItem.batch_info?.surplus_shortage_id
+  if (surplusShortageId) {
+    excludedIdsSet.add(surplusShortageId)
+  }
+  if (Array.isArray(currentItem.batch_info?.sub_shortage_ids)) {
+    for (const subId of currentItem.batch_info.sub_shortage_ids) {
+      if (subId) excludedIdsSet.add(subId)
+    }
+  }
+
+  // Quantidade corrente: usa actual_quantity se existir no lote, senão calculateShortageBalance
+  const currentBalance =
+    currentItem.batch_info?.actual_quantity != null
+      ? Number(currentItem.batch_info.actual_quantity) || 0
+      : calculateShortageBalance(currentItem)
+
   const otherDemands: OtherOpDemandItem[] = []
 
   for (const s of allShortages) {
-    // Não comparar com o próprio registro ou itens do mesmo grupo
+    // Não comparar com o próprio registro ou itens explicitamente excluídos
     if (excludedIdsSet.has(s.id)) continue
+
+    // Ignora qualquer shortage que compartilhe o mesmo batch_id do item atual (direto ou via batch_info)
+    const sBatchId = s.batch_id || s.batch_info?.batch_id
+    if (currentBatchId && sBatchId && currentBatchId === sBatchId) {
+      continue
+    }
+
+    // Ignora se for o registro de excedente do item atual
+    if (surplusShortageId && s.id === surplusShortageId) {
+      continue
+    }
 
     // Apenas em aberto: não pode ser Recebido nem Cancelado
     if (s.status === 'Recebido' || s.status === 'Cancelado') continue

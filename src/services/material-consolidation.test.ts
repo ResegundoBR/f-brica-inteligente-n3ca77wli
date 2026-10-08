@@ -120,6 +120,96 @@ describe('material-consolidation service', () => {
     expect(result.totalFutureDemandsQuantity).toBe(0)
   })
 
+  it('findOtherOpDemands ignora sub-registros do mesmo lote e excedente, usando actual_quantity', () => {
+    // Caso real: ANEL ORING lote_1791488504803_db59ye
+    const parentShortage: MaterialShortage = {
+      id: 'm24w3mtsk49jqud',
+      code: '06080040',
+      description: 'ANEL ORING Ø 7,59X2,62MM - REF OR1-109',
+      quantity: 30,
+      received_quantity: 0,
+      status: 'Compra',
+      sector: 'Suprimentos',
+      created: '2026-10-08T18:27:33.555Z',
+      updated: '2026-10-08T20:03:05.228Z',
+      batch_id: 'lote_1791488504803_db59ye',
+      batch_info: {
+        batch_id: 'lote_1791488504803_db59ye',
+        is_batch_parent: true,
+        actual_quantity: 30,
+        requested_total: 16,
+        surplus_quantity: 14,
+        surplus_shortage_id: '1611j34iky0mrvy',
+        sub_shortage_ids: ['m24w3mtsk49jqud', 'nim4osi907xdr5p', 'ej15uur8ejynxh1'],
+      },
+    } as MaterialShortage
+
+    const sub1: MaterialShortage = {
+      id: 'ej15uur8ejynxh1',
+      code: '06080040',
+      description: 'ANEL ORING Ø 7,59X2,62MM - REF OR1-109',
+      quantity: 4,
+      received_quantity: 0,
+      status: 'Compra',
+      sector: 'Suprimentos',
+      created: '2026-09-29T12:33:26.364Z',
+      updated: '2026-10-08T19:42:56.969Z',
+      batch_id: 'lote_1791488504803_db59ye',
+    } as MaterialShortage
+
+    const sub2: MaterialShortage = {
+      id: 'nim4osi907xdr5p',
+      code: '06080040',
+      description: 'ANEL ORING Ø 7,59X2,62MM - REF OR1-109',
+      quantity: 4,
+      received_quantity: 0,
+      status: 'Compra',
+      sector: 'Suprimentos',
+      created: '2026-10-06T19:15:18.180Z',
+      updated: '2026-10-08T19:42:56.146Z',
+      batch_id: 'lote_1791488504803_db59ye',
+    } as MaterialShortage
+
+    const surplus: MaterialShortage = {
+      id: '1611j34iky0mrvy',
+      code: '06080040',
+      description: 'ANEL ORING Ø 7,59X2,62MM - REF OR1-109',
+      quantity: 14,
+      received_quantity: 0,
+      status: 'Compra',
+      sector: 'Suprimentos',
+      created: '2026-10-08T19:41:49.802Z',
+      updated: '2026-10-08T19:41:49.802Z',
+      batch_id: 'lote_1791488504803_db59ye',
+    } as MaterialShortage
+
+    // Se houver uma OUTRA solicitação de outra OP não ligada a este lote:
+    const unrelatedShortage: MaterialShortage = {
+      id: 'other-unrelated',
+      code: '06080040',
+      description: 'ANEL ORING Ø 7,59X2,62MM - REF OR1-109',
+      quantity: 5,
+      received_quantity: 0,
+      status: 'Compra',
+      sector: 'Suprimentos',
+      created: '2026-10-08T10:00:00.000Z',
+      updated: '2026-10-08T10:00:00.000Z',
+      batch_id: undefined,
+    } as MaterialShortage
+
+    const allShortages = [parentShortage, sub1, sub2, surplus, unrelatedShortage]
+
+    const result = findOtherOpDemands(parentShortage, allShortages)
+
+    // currentBalance deve ser 30 (actual_quantity do lote)
+    expect(result.currentBalance).toBe(30)
+    // Demanda de outras OPs deve encontrar APENAS unrelatedShortage (5 un), NÃO sub1, sub2 ou surplus
+    expect(result.otherDemands.length).toBe(1)
+    expect(result.otherDemands[0].shortageId).toBe('other-unrelated')
+    expect(result.totalOtherQuantity).toBe(5)
+    expect(result.totalConsolidatedQuantity).toBe(35) // 30 + 5
+  })
+
   describe('findFutureEngineeringDemands & findConsolidatedDemandAsync', () => {
     beforeEach(() => {
       vi.restoreAllMocks()

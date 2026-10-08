@@ -103,6 +103,13 @@ export function buildComprasDisplayItems(items: MaterialShortage[]): ComprasDisp
 
     const totalQuantity = parent.batch_info?.actual_quantity || opQuantity + surplusQuantity
 
+    // Apenas sub-registros reais de OPs para soma de requisições de produção (exclui pai duplicado se já contar a soma total ou excedente)
+    // Se o pai tem batch_info.requested_total, opQuantity pode ser o requested_total
+    const requestedOpQuantity =
+      parent.batch_info?.requested_total != null
+        ? Number(parent.batch_info.requested_total)
+        : opQuantity
+
     const receivedQuantity = batchItems.reduce(
       (acc, it) => acc + (Number(it.received_quantity) || 0),
       0,
@@ -137,7 +144,7 @@ export function buildComprasDisplayItems(items: MaterialShortage[]): ComprasDisp
       opItems,
       surplusItem,
       totalQuantity,
-      opQuantity,
+      opQuantity: requestedOpQuantity,
       surplusQuantity,
       receivedQuantity,
       supplier,

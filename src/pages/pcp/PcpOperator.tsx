@@ -1412,6 +1412,51 @@ export default function PcpOperator() {
         return
       }
 
+      // Regra de Expedição: quando o operador conclui a última etapa (Expedição),
+      // a OP NÃO é marcada como 'Concluído' direto. Permanece na etapa Expedição
+      // com status 'Fila' (aguardando embarque / registro de entrega com NF/transp/data).
+      const isExpedicaoStage = normalizeStage(op.stage) === 'Expedição'
+
+      if (!nextStage && isExpedicaoStage) {
+        // Operador concluiu a etapa Expedição -> mantém na etapa Expedição com status 'Fila'
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.id === op.id
+              ? ({
+                  ...o,
+                  status: 'Fila',
+                  stage: 'Expedição' as any,
+                  started_at: '',
+                  bottleneck_reason: 'Nenhum',
+                  bottleneck_details: '',
+                } as PcpOrder)
+              : o,
+          ),
+        )
+
+        await pb.collection('pcp_orders').update(op.id, {
+          status: 'Fila',
+          stage: 'Expedição',
+          started_at: '',
+          bottleneck_reason: 'Nenhum',
+          bottleneck_details: '',
+        })
+
+        await pb.collection('pcp_order_logs').create({
+          order_id: op.id,
+          user_id: user?.id,
+          stage: 'Expedição',
+          action: 'Etapa Concluída — Aguardando registro de Expedição',
+          details: `Etapa concluída pelo operador ${user?.name || 'Operador'}. Aguardando registro de embarque (NF, transportadora e data de saída).`,
+        })
+
+        toast({
+          title: 'Etapa de Expedição Concluída',
+          description: 'OP na fila de Expedição aguardando registro de embarque.',
+        })
+        return
+      }
+
       if (!nextStage) {
         setOrders((prev) =>
           prev.map((o) =>

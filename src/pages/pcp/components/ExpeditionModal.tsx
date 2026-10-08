@@ -62,23 +62,59 @@ export function ExpeditionModal({
   const [showTotalAlert, setShowTotalAlert] = useState(false)
   const { toast } = useToast()
 
-  const initializeOpsData = async (fetchedOps: any[]) => {
-    const defaultQtys: Record<string, number> = {}
-    fetchedOps.forEach((op) => {
-      const balance = calculateOrderDeliveryBalance(op)
-      // No modo parcial ou total, o padrão para expedir é o saldo pendente (ou total se não houver entregas)
-      defaultQtys[op.id] = balance.pending
-    })
-    setQuantitiesToShip(defaultQtys)
-    setQuantityErrors({})
+  const buildSearchFilter = (term: string) => {
+    const raw = term.trim()
+    const cleanDigits = raw.replace(/\D/g, '')
 
+    let orderNumCondition = `order_number="${raw}"`
+    if (cleanDigits && cleanDigits !== raw) {
+      orderNumCondition = `(order_number="${raw}" || order_number="${cleanDigits}")`
+    }
+
+    // Busca OPs não concluídas OU OPs concluídas com delivered_quantity=0 (sem expedição gravada)
+    return `${orderNumCondition} && (status != "Concluído" || delivered_quantity = 0)`
+  }
+
+  const initializeOpsData = async (
+    fetchedOps: any[],
+  ): Promise<{
+    validOps: any[]
+    deliveriesMap: Record<string, PcpOrderDelivery[]>
+  }> => {
+    const opIds = fetchedOps.map((o) => o.id)
+    let deliveriesMap: Record<string, PcpOrderDelivery[]> = {}
     try {
-      const opIds = fetchedOps.map((o) => o.id)
-      const deliveriesMap = await getDeliveriesForOrders(opIds)
+      deliveriesMap = await getDeliveriesForOrders(opIds)
       setOpDeliveries(deliveriesMap)
     } catch (e) {
       console.error('Erro ao buscar histórico de entregas', e)
     }
+
+    // Regra (2) DESTRAVAR: OPs com status='Concluído' só entram se NÃO têm nenhuma entrega registrada
+    // (delivered_quantity = 0 E sem registros em pcp_order_deliveries).
+    // OPs com status != 'Concluído' entram normalmente.
+    const validOps = fetchedOps.filter((op) => {
+      if (op.status !== 'Concluído') return true
+      const hasDelivs = (deliveriesMap[op.id] || []).length > 0
+      const delivQty = Number(op.delivered_quantity) || 0
+      return delivQty === 0 && !hasDelivs
+    })
+
+    const defaultQtys: Record<string, number> = {}
+    validOps.forEach((op) => {
+      // Se a OP está concluída mas sem expedição, seu saldo real pendente para expedir é a quantidade total
+      const rawBalance = calculateOrderDeliveryBalance(op)
+      const pendingQty =
+        op.status === 'Concluído' && (Number(op.delivered_quantity) || 0) === 0
+          ? op.quantity
+          : rawBalance.pending
+
+      defaultQtys[op.id] = pendingQty
+    })
+    setQuantitiesToShip(defaultQtys)
+    setQuantityErrors({})
+
+    return { validOps, deliveriesMap }
   }
 
   useEffect(() => {
@@ -100,15 +136,24 @@ export function ExpeditionModal({
       setSearching(true)
       pb.collection('pcp_orders')
         .getFullList({
-          filter: `order_number="${initialOrderNumber}" && status != "Concluído"`,
+          filter: buildSearchFilter(initialOrderNumber),
           expand: 'product_id,client_id',
           sort: 'op_number',
         })
         .then(async (res) => {
-          setOps(res)
-          await initializeOpsData(res)
+          const { validOps } = await initializeOpsData(res)
+          setOps(validOps)
+          // Seleciona as OPs que estão em Expedição (ou OPs concluídas sem expedição resgatadas)
           setSelectedIds(
-            new Set(res.filter((o: any) => o.stage === EXPEDICAO_STAGE).map((o: any) => o.id)),
+            new Set(
+              validOps
+                .filter(
+                  (o: any) =>
+                    o.stage === EXPEDICAO_STAGE ||
+                    (o.status === 'Concluído' && (Number(o.delivered_quantity) || 0) === 0),
+                )
+                .map((o: any) => o.id),
+            ),
           )
           setStep(2)
         })
@@ -128,21 +173,29 @@ export function ExpeditionModal({
     setFieldErrors({})
     pb.collection('pcp_orders')
       .getFullList({
-        filter: `order_number="${search}" && status != "Concluído"`,
+        filter: buildSearchFilter(search),
         expand: 'product_id,client_id',
         sort: 'op_number',
       })
       .then(async (res) => {
-        setOps(res)
-        await initializeOpsData(res)
+        const { validOps } = await initializeOpsData(res)
+        setOps(validOps)
         setSelectedIds(
-          new Set(res.filter((o: any) => o.stage === EXPEDICAO_STAGE).map((o: any) => o.id)),
+          new Set(
+            validOps
+              .filter(
+                (o: any) =>
+                  o.stage === EXPEDICAO_STAGE ||
+                  (o.status === 'Concluído' && (Number(o.delivered_quantity) || 0) === 0),
+              )
+              .map((o: any) => o.id),
+          ),
         )
         setMode('partial')
-        if (res.length === 0) {
+        if (validOps.length === 0) {
           toast({
             title: 'Nenhuma OP encontrada',
-            description: 'Não há OPs em aberto para este pedido.',
+            description: 'Não há OPs em aberto ou aguardando embarque para este pedido.',
           })
         } else {
           setStep(2)
@@ -160,8 +213,12 @@ export function ExpeditionModal({
     // No modo total, cada OP expedirá todo o saldo pendente restante
     const nextQtys = { ...quantitiesToShip }
     ops.forEach((op) => {
+      const isConcluidoSemExpedicao =
+        op.status === 'Concluído' &&
+        (Number(op.delivered_quantity) || 0) === 0 &&
+        (opDeliveries[op.id] || []).length === 0
       const balance = calculateOrderDeliveryBalance(op)
-      nextQtys[op.id] = balance.pending
+      nextQtys[op.id] = isConcluidoSemExpedicao ? op.quantity : balance.pending
     })
     setQuantitiesToShip(nextQtys)
     setQuantityErrors({})
@@ -169,7 +226,19 @@ export function ExpeditionModal({
 
   const handleModePartial = () => {
     setMode('partial')
-    setSelectedIds(new Set(ops.filter((o) => o.stage === EXPEDICAO_STAGE).map((o) => o.id)))
+    setSelectedIds(
+      new Set(
+        ops
+          .filter(
+            (o) =>
+              o.stage === EXPEDICAO_STAGE ||
+              (o.status === 'Concluído' &&
+                (Number(o.delivered_quantity) || 0) === 0 &&
+                (opDeliveries[o.id] || []).length === 0),
+          )
+          .map((o) => o.id),
+      ),
+    )
   }
 
   const toggleOp = (id: string) => {
@@ -187,10 +256,15 @@ export function ExpeditionModal({
         // se não tiver quantidade definida ou for 0, preenche com pendente
         const op = ops.find((o) => o.id === id)
         if (op) {
+          const isConcluidoSemExpedicao =
+            op.status === 'Concluído' &&
+            (Number(op.delivered_quantity) || 0) === 0 &&
+            (opDeliveries[op.id] || []).length === 0
           const balance = calculateOrderDeliveryBalance(op)
+          const effPending = isConcluidoSemExpedicao ? op.quantity : balance.pending
           setQuantitiesToShip((q) => ({
             ...q,
-            [id]: q[id] > 0 ? q[id] : balance.pending,
+            [id]: q[id] > 0 ? q[id] : effPending,
           }))
         }
       }
@@ -216,11 +290,17 @@ export function ExpeditionModal({
       return
     }
 
-    if (val > balance.pending) {
+    const isConcluidoSemExpedicao =
+      op.status === 'Concluído' &&
+      (Number(op.delivered_quantity) || 0) === 0 &&
+      (opDeliveries[op.id] || []).length === 0
+    const maxPending = isConcluidoSemExpedicao ? op.quantity : balance.pending
+
+    if (val > maxPending) {
       setQuantitiesToShip((prev) => ({ ...prev, [opId]: val }))
       setQuantityErrors((prev) => ({
         ...prev,
-        [opId]: `Não é possível expedir mais que o pendente (${balance.pending} un).`,
+        [opId]: `Não é possível expedir mais que o pendente (${maxPending} un).`,
       }))
       return
     }
@@ -250,14 +330,19 @@ export function ExpeditionModal({
     selectedIds.forEach((id) => {
       const op = ops.find((o) => o.id === id)
       if (!op) return
+      const isConcluidoSemExpedicao =
+        op.status === 'Concluído' &&
+        (Number(op.delivered_quantity) || 0) === 0 &&
+        (opDeliveries[op.id] || []).length === 0
       const balance = calculateOrderDeliveryBalance(op)
+      const maxPending = isConcluidoSemExpedicao ? op.quantity : balance.pending
       const qty = quantitiesToShip[id]
 
       if (!qty || qty <= 0) {
         errors[id] = 'Informe uma quantidade maior que 0'
         hasError = true
-      } else if (qty > balance.pending) {
-        errors[id] = `Máximo permitido: ${balance.pending} un.`
+      } else if (qty > maxPending) {
+        errors[id] = `Máximo permitido: ${maxPending} un.`
         hasError = true
       }
     })
@@ -314,10 +399,15 @@ export function ExpeditionModal({
       const opSummaryList: string[] = []
 
       for (const op of selectedOps) {
+        const isConcluidoSemExpedicao =
+          op.status === 'Concluído' &&
+          (Number(op.delivered_quantity) || 0) === 0 &&
+          (opDeliveries[op.id] || []).length === 0
         const balance = calculateOrderDeliveryBalance(op)
-        const qtyToShip =
-          mode === 'total' ? balance.pending : quantitiesToShip[op.id] || balance.pending
-        const newDelivered = balance.delivered + qtyToShip
+        const basePending = isConcluidoSemExpedicao ? op.quantity : balance.pending
+        const baseDelivered = isConcluidoSemExpedicao ? 0 : balance.delivered
+        const qtyToShip = mode === 'total' ? basePending : quantitiesToShip[op.id] || basePending
+        const newDelivered = baseDelivered + qtyToShip
         const isComplete = newDelivered >= op.quantity
 
         opSummaryList.push(
@@ -458,7 +548,7 @@ export function ExpeditionModal({
                 </div>
               </div>
               <p className="text-sm text-muted-foreground">
-                Digite o número do pedido para buscar todas as OPs em aberto (não concluídas).
+                Digite o número do pedido para buscar todas as OPs em aberto ou aguardando embarque.
               </p>
             </div>
           )}
@@ -493,12 +583,19 @@ export function ExpeditionModal({
               <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1">
                 {ops.length === 0 && (
                   <p className="text-sm text-center text-muted-foreground py-4">
-                    Nenhuma OP em aberto encontrada para este pedido.
+                    Nenhuma OP em aberto ou aguardando embarque encontrada para este pedido.
                   </p>
                 )}
                 {ops.map((op) => {
-                  const isInExpedicao = op.stage === EXPEDICAO_STAGE
+                  const isConcluidoSemExpedicao =
+                    op.status === 'Concluído' &&
+                    (Number(op.delivered_quantity) || 0) === 0 &&
+                    (opDeliveries[op.id] || []).length === 0
+                  const isInExpedicao = op.stage === EXPEDICAO_STAGE || isConcluidoSemExpedicao
                   const balance = calculateOrderDeliveryBalance(op)
+                  // Para OP concluída sem expedição resgatada, o saldo pendente a expedir é a quantidade total
+                  const effectivePending = isConcluidoSemExpedicao ? op.quantity : balance.pending
+                  const effectiveDelivered = isConcluidoSemExpedicao ? 0 : balance.delivered
                   const isSelected = selectedIds.has(op.id)
                   const hasDeliveries = (opDeliveries[op.id] || []).length > 0
                   const errMessage = quantityErrors[op.id]
@@ -508,9 +605,11 @@ export function ExpeditionModal({
                       key={op.id}
                       className={cn(
                         'flex flex-col gap-2 p-3 border rounded-lg transition-colors',
-                        isInExpedicao
-                          ? 'border-green-400 bg-green-50/40 dark:bg-green-950/20'
-                          : 'border-red-400 bg-red-50/40 dark:bg-red-950/20',
+                        isConcluidoSemExpedicao
+                          ? 'border-amber-400 bg-amber-50/40 dark:bg-amber-950/20'
+                          : isInExpedicao
+                            ? 'border-green-400 bg-green-50/40 dark:bg-green-950/20'
+                            : 'border-red-400 bg-red-50/40 dark:bg-red-950/20',
                         isSelected && 'ring-2 ring-blue-500/30',
                       )}
                     >
@@ -526,14 +625,18 @@ export function ExpeditionModal({
                           onCheckedChange={() => toggleOp(op.id)}
                           disabled={mode === 'total'}
                           className={
-                            isInExpedicao
-                              ? 'border-green-500 data-[state=checked]:bg-green-500'
-                              : 'border-red-500'
+                            isConcluidoSemExpedicao
+                              ? 'border-amber-500 data-[state=checked]:bg-amber-500'
+                              : isInExpedicao
+                                ? 'border-green-500 data-[state=checked]:bg-green-500'
+                                : 'border-red-500'
                           }
                         />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            {isInExpedicao ? (
+                            {isConcluidoSemExpedicao ? (
+                              <Clock className="size-3.5 text-amber-600 shrink-0" />
+                            ) : isInExpedicao ? (
                               <CheckCircle2 className="size-3.5 text-green-500 shrink-0" />
                             ) : (
                               <AlertTriangle className="size-3.5 text-red-500 shrink-0" />
@@ -550,24 +653,34 @@ export function ExpeditionModal({
                               variant="outline"
                               className={cn(
                                 'text-[10px] h-4',
-                                isInExpedicao
-                                  ? 'border-green-300 text-green-700 dark:text-green-300'
-                                  : 'border-red-300 text-red-700 dark:text-red-300',
+                                isConcluidoSemExpedicao
+                                  ? 'border-amber-300 text-amber-800 dark:text-amber-300'
+                                  : isInExpedicao
+                                    ? 'border-green-300 text-green-700 dark:text-green-300'
+                                    : 'border-red-300 text-red-700 dark:text-red-300',
                               )}
                             >
                               {op.stage}
                             </Badge>
+                            {isConcluidoSemExpedicao && (
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] h-4 border-amber-400 bg-amber-100/80 text-amber-900 font-semibold dark:bg-amber-950/40 dark:text-amber-300"
+                              >
+                                Aguarda embarque — concluída sem expedição
+                              </Badge>
+                            )}
                             <Badge
                               variant="secondary"
                               className={cn(
                                 'text-[10px] h-4 font-semibold',
-                                balance.delivered > 0
+                                effectiveDelivered > 0
                                   ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'
                                   : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
                               )}
                             >
-                              Expedido {balance.delivered}/{balance.total} — pendente{' '}
-                              {balance.pending}
+                              Expedido {effectiveDelivered}/{op.quantity} — pendente{' '}
+                              {effectivePending}
                             </Badge>
                           </div>
                           {!isInExpedicao && (
@@ -598,8 +711,8 @@ export function ExpeditionModal({
                                   id={`qty-${op.id}`}
                                   type="number"
                                   min={1}
-                                  max={balance.pending}
-                                  value={quantitiesToShip[op.id] ?? balance.pending}
+                                  max={effectivePending}
+                                  value={quantitiesToShip[op.id] ?? effectivePending}
                                   onChange={(e) => handleQuantityChange(op.id, e.target.value)}
                                   className={cn(
                                     'h-7 w-20 text-xs px-2',
@@ -607,20 +720,20 @@ export function ExpeditionModal({
                                   )}
                                 />
                                 <span className="text-xs text-muted-foreground">
-                                  / {balance.pending} un pendente(s)
+                                  / {effectivePending} un pendente(s)
                                 </span>
                               </div>
                             ) : (
                               <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-                                {balance.pending} un (todo o saldo pendente)
+                                {effectivePending} un (todo o saldo pendente)
                               </span>
                             )}
                           </div>
                           <div className="text-right">
                             {(() => {
                               const shipQty =
-                                mode === 'total' ? balance.pending : quantitiesToShip[op.id] || 0
-                              const remaining = Math.max(0, balance.pending - shipQty)
+                                mode === 'total' ? effectivePending : quantitiesToShip[op.id] || 0
+                              const remaining = Math.max(0, effectivePending - shipQty)
                               return (
                                 <span className="text-[11px] text-muted-foreground">
                                   {remaining === 0 ? (
@@ -702,12 +815,16 @@ export function ExpeditionModal({
                   {ops
                     .filter((o) => selectedIds.has(o.id))
                     .map((op) => {
+                      const isConcluidoSemExpedicao =
+                        op.status === 'Concluído' &&
+                        (Number(op.delivered_quantity) || 0) === 0 &&
+                        (opDeliveries[op.id] || []).length === 0
                       const balance = calculateOrderDeliveryBalance(op)
+                      const effPending = isConcluidoSemExpedicao ? op.quantity : balance.pending
+                      const effDelivered = isConcluidoSemExpedicao ? 0 : balance.delivered
                       const shipQty =
-                        mode === 'total'
-                          ? balance.pending
-                          : quantitiesToShip[op.id] || balance.pending
-                      const isComplete = balance.delivered + shipQty >= op.quantity
+                        mode === 'total' ? effPending : quantitiesToShip[op.id] || effPending
+                      const isComplete = effDelivered + shipQty >= op.quantity
 
                       return (
                         <div

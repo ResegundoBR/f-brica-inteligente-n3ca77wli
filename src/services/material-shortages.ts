@@ -38,10 +38,10 @@ export interface UpsertMaterialShortageResult {
 
 /**
  * Status considerados "EM ABERTO" para efeito de verificação de duplicidade:
- * Pendente, Cotação, Compra
+ * Pendente, Cotação, Compra, Recebido_Parcial
  */
 export const OPEN_SHORTAGE_STATUS_FILTER =
-  "status = 'Pendente' || status = 'Cotação' || status = 'Compra'"
+  "status = 'Pendente' || status = 'Cotação' || status = 'Compra' || status = 'Recebido_Parcial'"
 
 /**
  * Salva ou atualiza uma solicitação em `material_shortages` prevenindo duplicações.
@@ -55,9 +55,20 @@ export const OPEN_SHORTAGE_STATUS_FILTER =
  * - Quantidade nova SUBSTITUI a anterior.
  * - Observação acumula 'Re-sinalizado em [data] por [usuário]: Q anterior → Q nova'.
  */
+/**
+ * Salva ou atualiza uma solicitação em `material_shortages` prevenindo duplicações.
+ *
+ * @param options.accumulateQty Se true, SOMA a quantidade ao registro existente em vez de substituir.
+ * @param options.bypassCheck Se true, força a criação de um registro novo avulso (com justificativa).
+ */
 export async function upsertMaterialShortage(
   input: UpsertMaterialShortageInput,
   userNameOrEmail?: string,
+  options?: {
+    accumulateQty?: boolean
+    bypassCheck?: boolean
+    bypassReason?: string
+  },
 ): Promise<UpsertMaterialShortageResult> {
   const cleanCode = (input.code || '').trim()
   const cleanDesc = (input.description || '').trim()
@@ -113,18 +124,21 @@ export async function upsertMaterialShortage(
     }
   }
 
-  // 2. Se encontrou registro existente em aberto: ATUALIZAR
-  if (existingRecord) {
+  // 2. Se encontrou registro existente em aberto: ATUALIZAR (a menos que bypassCheck seja true)
+  if (existingRecord && !options?.bypassCheck) {
     const prevQty = existingRecord.quantity ?? 0
+    const finalQty = options?.accumulateQty ? prevQty + newQty : newQty
     const nowStr = new Date().toLocaleDateString('pt-BR')
     const userLabel = userNameOrEmail || 'Usuário'
-    const note = `Re-sinalizado em ${nowStr} por ${userLabel}: ${prevQty} → ${newQty}`
+    const note = options?.accumulateQty
+      ? `Vinculado/Somado em ${nowStr} por ${userLabel}: ${prevQty} + ${newQty} = ${finalQty}`
+      : `Re-sinalizado em ${nowStr} por ${userLabel}: ${prevQty} → ${newQty}`
 
     const currentObs = existingRecord.observation || ''
     const newObs = currentObs ? `${currentObs} | ${note}` : note
 
     const updatePayload: Record<string, unknown> = {
-      quantity: newQty,
+      quantity: finalQty,
       observation: newObs,
       sector: cleanSector || existingRecord.sector,
     }
@@ -148,6 +162,12 @@ export async function upsertMaterialShortage(
   }
 
   // 3. Caso contrário: CRIAR novo registro
+  let initialObs = input.observation || ''
+  if (options?.bypassCheck && options?.bypassReason) {
+    const bypassNote = `Criado avulso com justificativa: ${options.bypassReason}`
+    initialObs = initialObs ? `${initialObs} | ${bypassNote}` : bypassNote
+  }
+
   const createPayload: Record<string, unknown> = {
     code: cleanCode,
     description: cleanDesc,
@@ -157,7 +177,7 @@ export async function upsertMaterialShortage(
     request_type: input.request_type || 'Materiais',
     priority: input.priority || 'Sem pressa',
     requested_by: input.requested_by || null,
-    observation: input.observation || '',
+    observation: initialObs,
   }
 
   if (orderId) {

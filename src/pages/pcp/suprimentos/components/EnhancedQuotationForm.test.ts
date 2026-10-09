@@ -416,5 +416,95 @@ describe('EnhancedQuotationForm - Proteção contra corrupção de quantidade no
       // NENHUM create chamado para registro de excedente
       expect(pbCreateSpy).not.toHaveBeenCalled()
     })
+
+    it('REGRA (1) - compra com quantidade MENOR que a solicitada (8 un vs 10 un): realiza split, avança itens comprados e mantém saldo residual em Cotações', async () => {
+      const itemIds = ['owbbm9ibmq0pntn', 'rwszhhy714twx1e', 'pvja5jo8r1l36bv'] // 1 un, 4 un, 5 un (total: 10 un)
+      const actualPurchaseQty = 8
+      const requestedBatchQty = 10
+
+      // Mock getOne para retornar os itens com suas quantidades
+      vi.spyOn(pb, 'collection').mockImplementation((collName: string) => {
+        if (collName === 'material_shortages') {
+          return {
+            getOne: vi.fn().mockImplementation((id: string) => {
+              const map: Record<string, any> = {
+                owbbm9ibmq0pntn: {
+                  id: 'owbbm9ibmq0pntn',
+                  quantity: 1,
+                  code: '05090003',
+                  description: 'Soquete e27',
+                  status: 'Cotação',
+                  sector: 'Acabamento',
+                },
+                rwszhhy714twx1e: {
+                  id: 'rwszhhy714twx1e',
+                  quantity: 4,
+                  code: '05090003',
+                  description: 'Soquete e27',
+                  status: 'Cotação',
+                  sector: 'Acabamento',
+                },
+                pvja5jo8r1l36bv: {
+                  id: 'pvja5jo8r1l36bv',
+                  quantity: 5,
+                  code: '05090003',
+                  description: 'Soquete e27',
+                  status: 'Cotação',
+                  sector: 'Acabamento',
+                },
+              }
+              return Promise.resolve(map[id] || { id, quantity: 1 })
+            }),
+            getFullList: vi.fn().mockResolvedValue([]),
+            getList: vi.fn().mockResolvedValue({ items: [] }),
+            update: pbUpdateSpy,
+            create: pbCreateSpy,
+          } as any
+        }
+        if (collName === 'quotations') {
+          return {
+            getFirstListItem: pbGetFirstSpy,
+            create: vi.fn().mockResolvedValue({ id: 'new_q' }),
+          } as any
+        }
+        return {} as any
+      })
+
+      const result = await advanceGroupToCompraWithSurplus({
+        itemIds,
+        actualPurchaseQty,
+        requestedBatchQty,
+        componentCode: '05090003',
+        componentDescription: 'Soquete e27',
+        selectedQuotation: mockQuotation,
+      })
+
+      expect(result.surplusQty).toBe(0)
+      expect(result.residualQty).toBe(2) // 10 - 8 = 2 un
+      expect(result.advancedCount).toBe(3)
+
+      // O item 1 (1 un) foi avançado integralmente para Compra
+      // O item 2 (4 un) foi avançado integralmente para Compra (1 + 4 = 5 un alocadas)
+      // O item 3 (5 un) precisava de 3 un para inteirar 8 un: foi desmembrado em 3 un Compra + 2 un residual em Cotação
+      expect(pbCreateSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          quantity: 3,
+          status: 'Compra',
+          code: '05090003',
+          observation: expect.stringContaining('Compra parcial de 3 un'),
+        }),
+      )
+      // O item original 3 foi atualizado com saldo residual = 2 un e status 'Cotação'
+      expect(pbUpdateSpy).toHaveBeenCalledWith(
+        'pvja5jo8r1l36bv',
+        expect.objectContaining({
+          status: 'Cotação',
+          quantity: 2,
+          observation: expect.stringContaining(
+            'Saldo residual de compra: 3 compradas de 5 solicitadas',
+          ),
+        }),
+      )
+    })
   })
 })

@@ -21,8 +21,16 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Check, ChevronsUpDown, Plus, History, AlertCircle } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import {
+  Check,
+  ChevronsUpDown,
+  Plus,
+  History,
+  AlertCircle,
+  AlertTriangle,
+  Link2,
+} from 'lucide-react'
+import { cn, formatQuantity } from '@/lib/utils'
 import { PcpOrder, Product, MaterialShortage } from '@/types'
 import { getMasterComponents } from '@/services/components'
 import { useAuth } from '@/hooks/use-auth'
@@ -35,7 +43,7 @@ import {
   VALID_PRIORITIES,
   VALID_REQUEST_TYPES,
 } from '@/lib/shortage-utils'
-import { upsertMaterialShortage } from '@/services/material-shortages'
+import { upsertMaterialShortage, OPEN_SHORTAGE_STATUS_FILTER } from '@/services/material-shortages'
 
 export function NewShortageModal({
   open,
@@ -62,6 +70,12 @@ export function NewShortageModal({
   const [unitPrice, setUnitPrice] = useState<string>('')
   const [history, setHistory] = useState<MaterialShortage[]>([])
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
+
+  // Trava anti-duplicidade em solicitação manual
+  const [duplicateShortages, setDuplicateShortages] = useState<MaterialShortage[]>([])
+  const [checkingDuplicates, setCheckingDuplicates] = useState(false)
+  const [showBypassForm, setShowBypassForm] = useState(false)
+  const [bypassReason, setBypassReason] = useState('')
 
   const [comboboxOpen, setComboboxOpen] = useState(false)
   const [suggestions, setSuggestions] = useState<
@@ -323,6 +337,7 @@ export function NewShortageModal({
   useEffect(() => {
     if (!itemDesc) {
       setHistory([])
+      setDuplicateShortages([])
       return
     }
 
@@ -350,6 +365,37 @@ export function NewShortageModal({
     return () => clearTimeout(timer)
   }, [itemDesc, itemCode])
 
+  // Busca de registros em aberto para o código digitado/selecionado (trava anti-duplicidade)
+  useEffect(() => {
+    const cleanCode = itemCode.trim()
+    if (!cleanCode) {
+      setDuplicateShortages([])
+      setShowBypassForm(false)
+      return
+    }
+
+    setCheckingDuplicates(true)
+    const safeCode = cleanCode.replace(/'/g, "\\'")
+    const dupFilter = `(${OPEN_SHORTAGE_STATUS_FILTER}) && code = '${safeCode}'`
+
+    pb.collection('material_shortages')
+      .getFullList<MaterialShortage>({
+        filter: dupFilter,
+        sort: '-created',
+        expand: 'order_id',
+      })
+      .then((records) => {
+        setDuplicateShortages(records)
+      })
+      .catch((err) => {
+        console.warn('Erro ao verificar duplicidade por código:', err)
+        setDuplicateShortages([])
+      })
+      .finally(() => {
+        setCheckingDuplicates(false)
+      })
+  }, [itemCode])
+
   const averagePrice = useMemo(() => {
     if (history.length === 0) return 0
     const sum = history.reduce((acc, curr) => acc + (curr.unit_price || 0), 0)
@@ -358,7 +404,7 @@ export function NewShortageModal({
 
   const isPriceHigh = averagePrice > 0 && Number(unitPrice) > averagePrice
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (options?: { accumulateQty?: boolean; bypassCheck?: boolean }) => {
     setFieldErrors({})
     try {
       if (!itemDesc) throw new Error('A descrição do item é obrigatória')
@@ -366,6 +412,10 @@ export function NewShortageModal({
       if (!Number.isFinite(numQty) || numQty <= 0)
         throw new Error('A quantidade deve ser maior que zero')
       if (!sector) throw new Error('O setor é obrigatório')
+
+      if (options?.bypassCheck && !bypassReason.trim()) {
+        throw new Error('Informe uma justificativa para prosseguir avulso')
+      }
 
       const safeUnitPrice = sanitizeNumber(unitPrice, 0, 0)
 
@@ -384,9 +434,20 @@ export function NewShortageModal({
           unit_price: safeUnitPrice,
         },
         user?.name || user?.email || 'Usuário',
+        {
+          accumulateQty: options?.accumulateQty,
+          bypassCheck: options?.bypassCheck,
+          bypassReason: bypassReason.trim() || undefined,
+        },
       )
 
-      toast({ title: 'Solicitação registrada com sucesso' })
+      toast({
+        title: options?.accumulateQty
+          ? 'Quantidade vinculada e somada à solicitação existente!'
+          : options?.bypassCheck
+            ? 'Solicitação avulsa registrada com justificativa!'
+            : 'Solicitação registrada com sucesso',
+      })
       onOpenChange(false)
     } catch (err: any) {
       const errors = extractFieldErrors(err)
@@ -626,6 +687,103 @@ export function NewShortageModal({
             </div>
           </div>
 
+          {/* TRAVA ANTI-DUPLICIDADE: Alerta em destaque quando já existir solicitação em aberto com este código */}
+          {duplicateShortages.length > 0 && (
+            <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-lg space-y-2.5">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-1 text-xs">
+                  <p className="font-bold text-amber-900 dark:text-amber-200">
+                    Atenção: já existe solicitação em aberto para este código ({itemCode})!
+                  </p>
+                  <div className="space-y-1">
+                    {duplicateShortages.map((dup) => {
+                      const opDisplay =
+                        dup.expand?.order_id?.op_number ||
+                        dup.expand?.order_id?.order_number ||
+                        'Geral (sem OP)'
+                      return (
+                        <div
+                          key={dup.id}
+                          className="p-1.5 bg-white/80 dark:bg-slate-900/80 rounded border border-amber-200 dark:border-amber-800 flex items-center justify-between gap-2"
+                        >
+                          <span className="text-slate-800 dark:text-slate-200 font-medium">
+                            OP {opDisplay} &bull; {formatQuantity(dup.quantity)} un &bull;{' '}
+                            <span className="font-semibold text-amber-700 dark:text-amber-300">
+                              {dup.status}
+                            </span>
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Botões de Ação para a Duplicidade */}
+              <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-amber-200 dark:border-amber-800/60">
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8 text-xs bg-amber-600 hover:bg-amber-700 text-white font-semibold gap-1.5"
+                  onClick={() => handleSubmit({ accumulateQty: true })}
+                >
+                  <Link2 className="w-3.5 h-3.5" />
+                  Vincular / Somar à solicitação existente (+{quantity} un)
+                </Button>
+                {!showBypassForm ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs border-amber-400 text-amber-800 dark:text-amber-200"
+                    onClick={() => setShowBypassForm(true)}
+                  >
+                    Prosseguir avulso com justificativa...
+                  </Button>
+                ) : null}
+              </div>
+
+              {/* Formulário de Justificativa para criação avulsa */}
+              {showBypassForm && (
+                <div className="p-2 bg-white/90 dark:bg-slate-900/90 rounded border border-amber-300 dark:border-amber-700 space-y-2 mt-2">
+                  <Label className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                    Justificativa para solicitação avulsa duplicada:
+                  </Label>
+                  <Input
+                    value={bypassReason}
+                    onChange={(e) => setBypassReason(e.target.value)}
+                    placeholder="Ex.: Solicitação para setor diferente / pedido emergencial separado..."
+                    className="h-8 text-xs"
+                  />
+                  <div className="flex items-center gap-2 justify-end">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => {
+                        setShowBypassForm(false)
+                        setBypassReason('')
+                      }}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-7 text-xs bg-slate-800 hover:bg-slate-900 text-white dark:bg-slate-200 dark:text-slate-900"
+                      onClick={() => handleSubmit({ bypassCheck: true })}
+                      disabled={!bypassReason.trim()}
+                    >
+                      Confirmar Avulso
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {history.length > 0 && (
             <div className="space-y-2 mt-2">
               <Label className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
@@ -699,7 +857,10 @@ export function NewShortageModal({
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
-            <Button className="bg-blue-600 hover:bg-blue-700 text-white" onClick={handleSubmit}>
+            <Button
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+              onClick={() => handleSubmit()}
+            >
               Salvar Solicitação
             </Button>
           </div>

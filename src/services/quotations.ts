@@ -187,8 +187,155 @@ export interface GroupPurchaseWithSurplusParams {
 export interface GroupPurchaseWithSurplusResult {
   advancedCount: number
   surplusQty: number
+  residualQty?: number
   surplusShortageId?: string
   batchId?: string
+}
+
+/**
+ * Realiza split de uma solicitação de material_shortage quando a quantidade comprada for MENOR
+ * que a solicitada:
+ * - O registro DESMEMBRADO para compra avança com status 'Compra', quantidade comprada e dados da cotação.
+ * - O registro ORIGINAL permanece em aberto com status 'Cotação', mantendo a quantidade original (ou saldo restante),
+ *   saldo = solicitado − comprado, preservando exatamente order_id (OPs de origem), code, description,
+ *   sector, priority, request_type, adicionando no histórico/observação:
+ *   "Saldo residual de compra: X compradas de Y solicitadas em [data]".
+ */
+export const splitShortageForPartialPurchase = async (
+  shortageId: string,
+  purchasedQty: number,
+  quotationToUse?: Quotation | null,
+  batchId?: string,
+): Promise<{ purchasedShortage: MaterialShortage; residualShortage: MaterialShortage }> => {
+  const original = await pb.collection('material_shortages').getOne<MaterialShortage>(shortageId)
+  const originalQty = Number(original.quantity) || 0
+  const cleanPurchasedQty = Math.max(0, Number(purchasedQty) || 0)
+  const residualQty = Math.max(0, originalQty - cleanPurchasedQty)
+  const todayPt = new Date().toLocaleDateString('pt-BR')
+  const todayIso = new Date().toISOString().split('T')[0]
+
+  const expectedDate =
+    quotationToUse?.delivery_days && quotationToUse.delivery_days > 0
+      ? new Date(Date.now() + quotationToUse.delivery_days * 24 * 60 * 60 * 1000)
+          .toISOString()
+          .split('T')[0]
+      : original.expected_date
+
+  // 1. Criar novo registro desmembrado para a COMPRA (avança para Compra)
+  const purchasedPayload: Record<string, unknown> = {
+    order_id: original.order_id || null,
+    code: original.code,
+    description: original.description,
+    quantity: cleanPurchasedQty,
+    sector: original.sector,
+    status: 'Compra',
+    request_type: original.request_type,
+    priority: original.priority,
+    requested_by: original.requested_by || null,
+    supplier: quotationToUse?.supplier || original.supplier,
+    unit_price: quotationToUse?.price ?? original.unit_price,
+    purchase_date: todayIso,
+    expected_date: expectedDate,
+    observation: [
+      original.observation,
+      `Compra parcial de ${cleanPurchasedQty} un (de ${originalQty} un solicitadas) em ${todayPt}`,
+    ]
+      .filter(Boolean)
+      .join(' | '),
+  }
+
+  if (batchId) {
+    purchasedPayload.batch_id = batchId
+  }
+
+  const purchasedShortage = await pb
+    .collection('material_shortages')
+    .create<MaterialShortage>(purchasedPayload)
+
+  // Se havia cotação selecionada no original, replicar cotação para o novo item comprado
+  if (quotationToUse) {
+    try {
+      await pb.collection('quotations').create({
+        material_shortage_id: purchasedShortage.id,
+        supplier: quotationToUse.supplier,
+        price: quotationToUse.price,
+        delivery_days: quotationToUse.delivery_days,
+        st_value: quotationToUse.st_value,
+        ipi_value: quotationToUse.ipi_value,
+        quoted_by: quotationToUse.quoted_by,
+        selected: true,
+      })
+    } catch {
+      // Ignora erro ao clonar cotação
+    }
+  }
+
+  // 2. Atualizar registro ORIGINAL mantendo status 'Cotação' e saldo residual
+  const residualNote = `Saldo residual de compra: ${cleanPurchasedQty} compradas de ${originalQty} solicitadas em ${todayPt}`
+  const updatedObs = original.observation
+    ? `${original.observation} | ${residualNote}`
+    : residualNote
+
+  const residualPayload: Record<string, unknown> = {
+    status: 'Cotação',
+    quantity: residualQty,
+    observation: updatedObs,
+  }
+
+  const updatedOriginal = await pb
+    .collection('material_shortages')
+    .update<MaterialShortage>(shortageId, residualPayload)
+
+  return {
+    purchasedShortage,
+    residualShortage: updatedOriginal,
+  }
+}
+
+/**
+ * Distribui uma compra parcial (purchasedTotal < requestedTotal) entre os itens do lote,
+ * aplicando split proporcional ou sequencial:
+ * - Registros com alocação > 0 são desmembrados (split) e avançados para 'Compra'.
+ * - O saldo residual de cada registro permanece em aberto com status 'Cotação'.
+ */
+export const advanceGroupWithDeficitSplit = async (
+  itemIds: string[],
+  actualPurchaseQty: number,
+  quotationToUse?: Quotation | null,
+  batchId?: string,
+): Promise<{ advancedCount: number; residualCount: number }> => {
+  const shortages = await Promise.all(
+    itemIds.map((id) => pb.collection('material_shortages').getOne<MaterialShortage>(id)),
+  )
+
+  let remainingToAllocate = actualPurchaseQty
+  let advancedCount = 0
+  let residualCount = 0
+
+  for (const item of shortages) {
+    const itemQty = Number(item.quantity) || 0
+    if (remainingToAllocate <= 0) {
+      // Todo o registro permanece em Cotação
+      residualCount++
+      continue
+    }
+
+    if (remainingToAllocate >= itemQty) {
+      // Atende este item integralmente
+      await advanceGroupToCompra([item.id], quotationToUse, batchId)
+      remainingToAllocate -= itemQty
+      advancedCount++
+    } else {
+      // Atende parcialmente: split do item
+      const purchasedPortion = remainingToAllocate
+      await splitShortageForPartialPurchase(item.id, purchasedPortion, quotationToUse, batchId)
+      remainingToAllocate = 0
+      advancedCount++
+      residualCount++
+    }
+  }
+
+  return { advancedCount, residualCount }
 }
 
 /**
@@ -197,6 +344,8 @@ export interface GroupPurchaseWithSurplusResult {
  * Se a quantidade real informada for maior que a solicitada (ex.: 19 vs 10 un), registra o excedente (ex.: 9 un)
  * como "Compra para estoque" do componente — registro próprio sem vínculo a OP (order_id: null/undefined),
  * com fornecedor, data, quem comprou e preço proporcional da cotação selecionada.
+ * Se a quantidade for MENOR que a solicitada, realiza SPLIT das solicitações mantendo o saldo residual
+ * em aberto em 'Cotação'.
  * A cotação selecionada é replicada para TODAS as OPs do lote e para o excedente, sem restrições.
  */
 export const advanceGroupToCompraWithSurplus = async ({
@@ -253,11 +402,30 @@ export const advanceGroupToCompraWithSurplus = async ({
     }
   }
 
-  // 2. Avançar todas as solicitações selecionadas mantendo quantidades originais intactas e atribuindo batch_id
+  // 2. SE COMPRA MENOR QUE O SOLICITADO: SPLIT mantendo saldo residual em Cotações
+  const cleanActualQty = Number(actualPurchaseQty || 0)
+  const cleanRequestedQty = Number(requestedBatchQty || 0)
+
+  if (cleanActualQty < cleanRequestedQty && cleanActualQty > 0) {
+    const splitRes = await advanceGroupWithDeficitSplit(
+      itemIds,
+      cleanActualQty,
+      quotationToUse,
+      batchId,
+    )
+    return {
+      advancedCount: splitRes.advancedCount,
+      surplusQty: 0,
+      residualQty: cleanRequestedQty - cleanActualQty,
+      batchId,
+    }
+  }
+
+  // 3. Avançar todas as solicitações selecionadas mantendo quantidades originais intactas e atribuindo batch_id
   await advanceGroupToCompra(itemIds, quotationToUse, batchId)
 
-  // 3. Calcular excedente de compra
-  const surplus = Math.max(0, Number(actualPurchaseQty || 0) - Number(requestedBatchQty || 0))
+  // 4. Calcular excedente de compra
+  const surplus = Math.max(0, cleanActualQty - cleanRequestedQty)
 
   let surplusShortageId: string | undefined = undefined
 

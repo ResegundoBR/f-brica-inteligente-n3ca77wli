@@ -38,6 +38,7 @@ export interface OCItemInput {
   description: string
   code?: string
   quantity: number
+  original_quantity?: number
   unit_price: number
   st_value?: number
   ipi_value?: number
@@ -117,7 +118,17 @@ export function OrdemCompraModal({
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, code } : it)))
 
   const updateQty = (idx: number, qty: number) =>
-    setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, quantity: qty } : it)))
+    setItems((prev) =>
+      prev.map((it, i) => {
+        if (i !== idx) return it
+        const origQty = it.original_quantity ?? it.quantity
+        return {
+          ...it,
+          quantity: qty,
+          original_quantity: origQty,
+        }
+      }),
+    )
 
   const updatePrice = (idx: number, price: number) =>
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, unit_price: price } : it)))
@@ -283,6 +294,19 @@ export function OrdemCompraModal({
                               </button>
                             </div>
                           )}
+                          {item.original_quantity != null &&
+                            item.quantity < item.original_quantity &&
+                            item.quantity > 0 && (
+                              <div className="mt-1">
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300"
+                                >
+                                  Saldo residual ({item.original_quantity - item.quantity} un)
+                                  voltará para Cotações
+                                </Badge>
+                              </div>
+                            )}
                         </div>
                       </TableCell>
                       <TableCell>

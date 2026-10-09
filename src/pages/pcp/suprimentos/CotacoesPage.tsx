@@ -203,11 +203,29 @@ export default function CotacoesPage() {
       const isBatch =
         itemsToAdvance.length > 1 || (extraCompraInfo && extraCompraInfo.actualPurchaseQty > 0)
 
-      if (extraCompraInfo && extraCompraInfo.actualPurchaseQty > totalUnits) {
+      const actualQty = extraCompraInfo?.actualPurchaseQty ?? totalUnits
+
+      if (extraCompraInfo && actualQty < totalUnits && actualQty > 0) {
+        // REGRA (1): Compra MENOR que o solicitado -> Split
+        // Registro desmembrado avança para Compra; saldo residual permanece em Cotações
+        const res = await advanceGroupToCompraWithSurplus({
+          itemIds: idsToAdvance,
+          actualPurchaseQty: actualQty,
+          requestedBatchQty: totalUnits,
+          componentCode: extraCompraInfo.componentCode ?? item.code,
+          componentDescription: extraCompraInfo.componentDescription || item.description,
+          selectedQuotation: extraCompraInfo.selectedQuotation,
+          sector: extraCompraInfo.sector || item.sector,
+        })
+        const residual = totalUnits - actualQty
+        toast.success(
+          `Compra parcial de ${actualQty} un enviada para Compras. Saldo residual de ${residual} un permanece em Cotações para a próxima rodada.`,
+        )
+      } else if (extraCompraInfo && actualQty > totalUnits) {
         // Compra com excedente adicional para estoque
         const res = await advanceGroupToCompraWithSurplus({
           itemIds: idsToAdvance,
-          actualPurchaseQty: extraCompraInfo.actualPurchaseQty,
+          actualPurchaseQty: actualQty,
           requestedBatchQty: totalUnits,
           componentCode: extraCompraInfo.componentCode ?? item.code,
           componentDescription: extraCompraInfo.componentDescription || item.description,
@@ -215,7 +233,7 @@ export default function CotacoesPage() {
           sector: extraCompraInfo.sector || item.sector,
         })
         toast.success(
-          `Lote com ${itemsToAdvance.length} OPs (${totalUnits} un) + ${res.surplusQty} un para Estoque Geral enviados para Compras como lote único! (Total: ${extraCompraInfo.actualPurchaseQty} un)`,
+          `Lote com ${itemsToAdvance.length} OPs (${totalUnits} un) + ${res.surplusQty} un para Estoque Geral enviados para Compras como lote único! (Total: ${actualQty} un)`,
         )
       } else if (isBatch) {
         const batchId = `lote_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`

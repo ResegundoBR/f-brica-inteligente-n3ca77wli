@@ -282,6 +282,7 @@ export default function ComprasPage() {
         description: rep.description,
         code: rep.code,
         quantity: line.quantity,
+        original_quantity: line.quantity,
         unit_price: line.unitPrice,
         st_value: quotationsMap[rep.id]?.st_value || 0,
         ipi_value: quotationsMap[rep.id]?.ipi_value || 0,
@@ -310,6 +311,77 @@ export default function ComprasPage() {
       0,
     )
     try {
+      // Se a quantidade de algum item foi editada para MENOR que a do registro original de material_shortages,
+      // aplicar split: o item da OC mantém o material_shortage_id comprado, e o registro original
+      // permanece em aberto (status 'Cotação') com o saldo residual, OPs de origem e observação.
+      const processedItems: OCItemInput[] = []
+      for (const it of items) {
+        if (
+          it.material_shortage_id &&
+          it.original_quantity &&
+          it.quantity < it.original_quantity &&
+          it.quantity > 0
+        ) {
+          try {
+            const originalShortage = await pb
+              .collection('material_shortages')
+              .getOne<MaterialShortage>(it.material_shortage_id)
+            const origQty = Number(originalShortage.quantity) || it.original_quantity
+            const boughtQty = it.quantity
+            const residualQty = Math.max(0, origQty - boughtQty)
+            const todayPt = new Date().toLocaleDateString('pt-BR')
+
+            // 1. Criar novo registro para a compra desmembrada com a quantidade comprada na OC
+            const purchasedRecord = await pb
+              .collection('material_shortages')
+              .create<MaterialShortage>({
+                order_id: originalShortage.order_id || null,
+                code: originalShortage.code,
+                description: originalShortage.description,
+                quantity: boughtQty,
+                sector: originalShortage.sector,
+                status: 'Compra',
+                request_type: originalShortage.request_type,
+                priority: originalShortage.priority,
+                requested_by: originalShortage.requested_by || null,
+                supplier: originalShortage.supplier || ocSupplier,
+                unit_price: it.unit_price || originalShortage.unit_price,
+                purchase_date: new Date().toISOString().split('T')[0],
+                expected_date: expectedDate?.trim() || originalShortage.expected_date,
+                observation: [
+                  originalShortage.observation,
+                  `Desmembrado por edição na OC: ${boughtQty} un de ${origQty} un em ${todayPt}`,
+                ]
+                  .filter(Boolean)
+                  .join(' | '),
+              })
+
+            // 2. Registro ORIGINAL permanece em aberto com status 'Cotação' e saldo residual
+            const residualNote = `Saldo residual de compra: ${boughtQty} compradas de ${origQty} solicitadas em ${todayPt}`
+            const newObs = originalShortage.observation
+              ? `${originalShortage.observation} | ${residualNote}`
+              : residualNote
+
+            await pb.collection('material_shortages').update(originalShortage.id, {
+              status: 'Cotação',
+              quantity: residualQty,
+              observation: newObs,
+            })
+
+            // Associar o item da OC ao novo registro comprado
+            processedItems.push({
+              ...it,
+              material_shortage_id: purchasedRecord.id,
+            })
+          } catch (splitErr) {
+            console.error('Erro ao realizar split na edição da OC:', splitErr)
+            processedItems.push(it)
+          }
+        } else {
+          processedItems.push(it)
+        }
+      }
+
       const oc = await createOrdemCompra({
         supplier: ocSupplier,
         expected_date: expectedDate?.trim() ? expectedDate.trim() : undefined,
@@ -318,7 +390,7 @@ export default function ComprasPage() {
         delivery_type: deliveryType || undefined,
         total,
         ...(user?.id && { user_id: user.id }),
-        itens: items.map((it) => ({
+        itens: processedItems.map((it) => ({
           description: it.description,
           code: it.code?.trim() ? it.code.trim() : undefined,
           quantity: it.quantity,
@@ -337,6 +409,7 @@ export default function ComprasPage() {
       setOcDocumentItems(ocItens)
       setOcDocOpen(true)
       setSelectedIds(new Set())
+      fetchShortages()
       toast.success('Ordem de Compra gerada com sucesso!')
     } catch (err) {
       console.error('Erro ao gerar Ordem de Compra:', err)

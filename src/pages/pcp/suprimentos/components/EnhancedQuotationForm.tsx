@@ -319,21 +319,22 @@ export function EnhancedQuotationForm({
     return quotations.find((q) => q.selected) || null
   }, [quotations])
 
-  // Cálculo do excedente do lote
+  // Cálculo do excedente ou saldo residual do lote
   const parsedActualPurchaseQty = Number(purchaseQty) || 0
   const isFullBatch = selectedModalSubIds.size === groupList.length
   const requestedBaseQty = isFullBatch ? totalGroupQty : modalSelectedUnits
   const surplusQty = Math.max(0, parsedActualPurchaseQty - requestedBaseQty)
   const hasSurplus = surplusQty > 0
-  const isPurchaseQtyInvalid = parsedActualPurchaseQty < requestedBaseQty
+  const isPartialPurchase =
+    parsedActualPurchaseQty > 0 && parsedActualPurchaseQty < requestedBaseQty
+  const partialDeficitQty = isPartialPurchase ? requestedBaseQty - parsedActualPurchaseQty : 0
+  const isPurchaseQtyInvalid = parsedActualPurchaseQty <= 0
 
   const handleConfirmGroupPurchase = () => {
     if (!onDirectCompra || selectedModalSubIds.size === 0) return
 
     if (isPurchaseQtyInvalid) {
-      toast.error(
-        `A quantidade real de compra (${parsedActualPurchaseQty} un) não pode ser menor que a soma solicitada das OPs selecionadas (${requestedBaseQty} un).`,
-      )
+      toast.error('Informe uma quantidade de compra válida maior que zero.')
       return
     }
 
@@ -444,7 +445,6 @@ export function EnhancedQuotationForm({
                 />
                 <span>Selecionar todas as sublinhas ({groupList.length} OPs)</span>
               </label>
-
               {onDirectCompra && (
                 <Button
                   type="button"
@@ -457,11 +457,13 @@ export function EnhancedQuotationForm({
                   <ShoppingCart className="size-3.5 mr-1" />
                   {hasSurplus
                     ? `Comprar ${parsedActualPurchaseQty} un (${requestedBaseQty} OPs + ${surplusQty} Estoque)`
-                    : selectedModalSubIds.size === groupList.length
-                      ? `Comprar Lote Completo (${totalGroupQty} un)`
-                      : `Comprar selecionadas (${modalSelectedUnits} un)`}
+                    : isPartialPurchase
+                      ? `Comprar Parcial (${parsedActualPurchaseQty} de ${requestedBaseQty} un)`
+                      : selectedModalSubIds.size === groupList.length
+                        ? `Comprar Lote Completo (${totalGroupQty} un)`
+                        : `Comprar selecionadas (${modalSelectedUnits} un)`}
                 </Button>
-              )}
+              )}{' '}
             </div>
 
             {/* Linha de Quantidade Real de Compra (Permite compras adicionais para estoque) */}
@@ -493,7 +495,7 @@ export function EnhancedQuotationForm({
                 <div className="flex items-center gap-2 shrink-0">
                   <Input
                     type="number"
-                    min={requestedBaseQty}
+                    min="1"
                     step="1"
                     value={purchaseQty}
                     onChange={(e) => setPurchaseQty(e.target.value)}
@@ -501,6 +503,8 @@ export function EnhancedQuotationForm({
                       'h-8 w-28 text-center text-sm font-bold notranslate',
                       hasSurplus &&
                         'border-emerald-500 bg-emerald-50/50 text-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200',
+                      isPartialPurchase &&
+                        'border-amber-500 bg-amber-50/70 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200',
                       isPurchaseQtyInvalid &&
                         'border-red-500 bg-red-50 text-red-900 dark:bg-red-950/30 dark:text-red-200',
                     )}
@@ -524,7 +528,7 @@ export function EnhancedQuotationForm({
                 </div>
               </div>
 
-              {/* Feedback visual do excedente ou validação */}
+              {/* Feedback visual do excedente ou compra parcial */}
               {hasSurplus && (
                 <div className="flex items-center justify-between text-[11px] font-medium text-emerald-700 dark:text-emerald-300 pt-1 border-t border-emerald-100 dark:border-emerald-900/50">
                   <span className="flex items-center gap-1">
@@ -547,10 +551,28 @@ export function EnhancedQuotationForm({
                 </div>
               )}
 
+              {isPartialPurchase && (
+                <div className="flex items-center justify-between text-[11px] font-medium text-amber-700 dark:text-amber-300 pt-1 border-t border-amber-200 dark:border-amber-900/50">
+                  <span className="flex items-center gap-1">
+                    <span>
+                      Compra menor que o solicitado:{' '}
+                      <strong className="notranslate" translate="no">
+                        {formatQuantity(parsedActualPurchaseQty)} un
+                      </strong>{' '}
+                      de {formatQuantity(requestedBaseQty)} un
+                    </span>
+                    <span>&bull;</span>
+                    <span>
+                      Saldo residual ({formatQuantity(partialDeficitQty)} un) permanecerá pendente
+                      em Cotações
+                    </span>
+                  </span>
+                </div>
+              )}
+
               {isPurchaseQtyInvalid && (
                 <div className="text-[11px] font-medium text-red-600 dark:text-red-400 pt-1">
-                  A quantidade informada não pode ser inferior ao total solicitado do lote (
-                  {formatQuantity(requestedBaseQty)} un).
+                  A quantidade de compra deve ser maior que zero.
                 </div>
               )}
             </div>

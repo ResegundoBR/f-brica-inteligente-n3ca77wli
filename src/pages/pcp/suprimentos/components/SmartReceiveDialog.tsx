@@ -127,19 +127,11 @@ export function SmartReceiveDialog({
           }
         }
 
-        // Caso item avulso ou sem lote explícito: busca solicitações correlatas do mesmo código/descrição
-        const code = (item.code || '').trim()
-        const filter = code
-          ? `code = "${code}" && (status = "Compra" || status = "Recebido_Parcial")`
-          : `description = "${item.description}" && (status = "Compra" || status = "Recebido_Parcial")`
-        const res = await pb.collection('material_shortages').getFullList<MaterialShortage>({
-          filter,
-          expand: 'order_id,order_id.product_id,order_id.client_id',
-          sort: 'created',
-        })
-        setRelated(res.length > 0 ? res : [item])
-      } catch {
+        // Caso item avulso ou sem lote explícito: JAMAIS busca em cascata outros registros do mesmo código.
+        // Apenas o registro selecionado pode ser distribuído/recebido.
         setRelated([item])
+      } catch {
+        setRelated(item ? [item] : [])
       } finally {
         setLoading(false)
       }

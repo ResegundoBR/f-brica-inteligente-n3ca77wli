@@ -228,6 +228,33 @@ routerAdd(
         )
 
         var shortage = $app.findRecordById('material_shortages', dist.shortage_id)
+
+        // Trava estrutural contra contaminação cruzada:
+        // Se shortageIdInput foi especificado, apenas o próprio registro ou registros que compartilhem
+        // exatamente o mesmo batch_id (lote explícito) podem ser atualizados.
+        if (shortageIdInput && dist.shortage_id !== shortageIdInput) {
+          var inputRec = null
+          try {
+            inputRec = $app.findRecordById('material_shortages', shortageIdInput)
+          } catch (_) {}
+          var inputBatchId = inputRec ? inputRec.getString('batch_id') : ''
+          var targetBatchId = shortage.getString('batch_id')
+          if (!inputBatchId || !targetBatchId || inputBatchId !== targetBatchId) {
+            console.log(
+              'BLOCKED: attempt to distribute to unrelated shortage ' +
+                dist.shortage_id +
+                ' outside batch of ' +
+                shortageIdInput,
+            )
+            results.push({
+              shortage_id: dist.shortage_id,
+              success: false,
+              error: 'Registro não pertence ao lote do item distribuído',
+            })
+            continue
+          }
+        }
+
         var sTotalQty = Number(shortage.getInt('quantity')) || 0
         var sCurrentReceived = Number(shortage.getInt('received_quantity')) || 0
         var sNewReceived = sCurrentReceived + distQty

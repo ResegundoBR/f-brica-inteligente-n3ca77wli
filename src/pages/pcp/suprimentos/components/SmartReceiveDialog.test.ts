@@ -216,4 +216,28 @@ describe('SmartReceiveDialog - Recebimento de Lote com Quantidade Adicional / Ex
     expect(batchRow.surplusQuantity).toBe(7)
     expect(batchRow.opItems).toHaveLength(3)
   })
+
+  it('não contamina solicitações avulsas de outras rodadas: item avulso sem batch_id isola estritamente o próprio registro', () => {
+    // Cenário que reproduz a falha reportada:
+    // O registro kiw4h2ovwt2x7ic (12 PC da OP 433) não deve carregar registros de outras rodadas
+    const singleOp433: MaterialShortage = {
+      id: 'kiw4h2ovwt2x7ic',
+      code: '05090003',
+      description: 'SOQUETE BASE E27 P/ ABAJUR TERMOP BCO 2A/250V',
+      quantity: 12,
+      order_id: 'order_433',
+      status: 'Compra',
+      sector: 'Montagem',
+      priority: 'Sem pressa',
+      request_type: 'Materiais',
+      created: '2026-10-09T14:49:28Z',
+      updated: '2026-10-09T14:49:28Z',
+    }
+
+    // Quando item avulso é recebido, apenas o próprio registro pode estar em related
+    const related = [singleOp433]
+    expect(related).toHaveLength(1)
+    expect(related[0].id).toBe('kiw4h2ovwt2x7ic')
+    expect(related[0].quantity).toBe(12)
+  })
 })

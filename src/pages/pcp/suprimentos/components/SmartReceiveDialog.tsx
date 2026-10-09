@@ -62,14 +62,30 @@ export function SmartReceiveDialog({
     setFreight('')
     const fetchRelated = async () => {
       try {
-        // Se fizer parte de um lote explícito (batch_id), busca primariamente TODOS os membros do lote
+        // Se fizer parte de um lote explícito (batch_id), busca primariamente os membros do lote
+        // BLINDAGEM: nunca carregar membros de lote de código/descrição diferente
         if (item.batch_id) {
           const batchFilter = `batch_id = "${item.batch_id}" && (status = "Compra" || status = "Recebido_Parcial" || status = "Recebido")`
-          let batchRes = await pb.collection('material_shortages').getFullList<MaterialShortage>({
-            filter: batchFilter,
-            expand: 'order_id,order_id.product_id,order_id.client_id',
-            sort: 'created',
+          let rawBatchRes = await pb
+            .collection('material_shortages')
+            .getFullList<MaterialShortage>({
+              filter: batchFilter,
+              expand: 'order_id,order_id.product_id,order_id.client_id',
+              sort: 'created',
+            })
+
+          // Filtra estritamente pelo mesmo código/descrição do item acionado
+          const targetCodeKey = (item.code || '').trim().toLowerCase()
+          const targetDescKey = (item.description || '').trim().toLowerCase()
+          let batchRes = rawBatchRes.filter((x) => {
+            const xCodeKey = (x.code || '').trim().toLowerCase()
+            const xDescKey = (x.description || '').trim().toLowerCase()
+            if (targetCodeKey && xCodeKey) {
+              return targetCodeKey === xCodeKey
+            }
+            return targetDescKey === xDescKey || (targetCodeKey && targetCodeKey === xCodeKey)
           })
+
           if (batchRes.length > 0) {
             // Identifica o representante do lote (com batch_info ou primeiro)
             const parent = batchRes.find((x) => x.batch_info?.is_batch_parent) || item

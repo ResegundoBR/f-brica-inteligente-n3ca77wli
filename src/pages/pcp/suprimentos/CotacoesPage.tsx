@@ -154,10 +154,50 @@ export default function CotacoesPage() {
     if (selectedIds.size === 0) return
     setAdvancingBatch(true)
     try {
-      const ids = Array.from(selectedIds)
-      const batchId = `lote_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`
-      await advanceGroupToCompra(ids, undefined, batchId)
-      toast.success(`${ids.length} itens avançados para Compras em lote único`)
+      const selectedItems = shortages.filter((s) => selectedIds.has(s.id))
+      const codeMap = new Map<string, MaterialShortage[]>()
+
+      for (const item of selectedItems) {
+        const codeKey = (item.code || '').trim().toLowerCase()
+        const descKey = (item.description || '').trim().toLowerCase()
+        const key = codeKey ? `code:${codeKey}` : `desc:${descKey}`
+
+        const existing = codeMap.get(key)
+        if (existing) {
+          existing.push(item)
+        } else {
+          codeMap.set(key, [item])
+        }
+      }
+
+      let batchesCreated = 0
+      let singleItemsCount = 0
+
+      for (const group of codeMap.values()) {
+        const groupIds = group.map((it) => it.id)
+        if (group.length >= 2) {
+          // Grupo com 2 ou mais registros do mesmo código: recebe batch_id compartilhado próprio
+          const batchId = `lote_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`
+          await advanceGroupToCompra(groupIds, undefined, batchId)
+          batchesCreated++
+        } else {
+          // Item único de um código avança sem batch_id (linha individual)
+          await advanceGroupToCompra(groupIds, undefined, undefined)
+          singleItemsCount++
+        }
+      }
+
+      const summaryParts: string[] = []
+      if (batchesCreated > 0) {
+        summaryParts.push(`${batchesCreated} lote(s) criado(s)`)
+      }
+      if (singleItemsCount > 0) {
+        summaryParts.push(`${singleItemsCount} item(ns) individual(is)`)
+      }
+
+      toast.success(
+        `${selectedItems.length} item(ns) avançado(s) para Compras (${summaryParts.join(', ') || 'concluído'})`,
+      )
       setSelectedIds(new Set())
       fetchData()
     } catch {

@@ -240,4 +240,40 @@ describe('SmartReceiveDialog - Recebimento de Lote com Quantidade Adicional / Ex
     expect(related[0].id).toBe('kiw4h2ovwt2x7ic')
     expect(related[0].quantity).toBe(12)
   })
+
+  it('buildRecebimentoDisplayItems não consolida itens de códigos diferentes mesmo que compartilhem o mesmo batch_id acidentalmente', () => {
+    const item1: MaterialShortage = {
+      id: 'rec_1',
+      code: '05100004',
+      description: 'PARAFUSO ALLEN M4X10',
+      quantity: 50,
+      sector: 'Suprimentos',
+      priority: 'Urgente',
+      request_type: 'Materiais',
+      batch_id: 'lote_acidental',
+      status: 'Compra',
+      created: '2026-10-09T10:00:00Z',
+      updated: '2026-10-09T10:00:00Z',
+    }
+    const item2: MaterialShortage = {
+      id: 'rec_2',
+      code: '05100105',
+      description: 'PARAFUSO ALLEN M4X4',
+      quantity: 50,
+      sector: 'Suprimentos',
+      priority: 'Urgente',
+      request_type: 'Materiais',
+      batch_id: 'lote_acidental',
+      status: 'Compra',
+      created: '2026-10-09T10:00:00Z',
+      updated: '2026-10-09T10:00:00Z',
+    }
+
+    const displayItems = buildRecebimentoDisplayItems([item1, item2])
+    // Blindagem: deve gerar 2 linhas separadas, uma para cada código, e não 1 linha com códigos misturados
+    expect(displayItems).toHaveLength(2)
+    const codes = displayItems.map((d) => d.code)
+    expect(codes).toContain('05100004')
+    expect(codes).toContain('05100105')
+  })
 })

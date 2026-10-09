@@ -64,16 +64,20 @@ const formatCurrency = (v: number) =>
  * permitindo expandir os detalhes do rateio interno (quantidades das OPs + excedente estoque).
  */
 export function buildComprasDisplayItems(items: MaterialShortage[]): ComprasDisplayItem[] {
+  // Blindagem: agrupa por batch_id + code (nunca consolida códigos diferentes na mesma linha)
   const batchMap = new Map<string, MaterialShortage[]>()
   const nonBatch: MaterialShortage[] = []
 
   for (const item of items) {
     if (item.batch_id) {
-      const existing = batchMap.get(item.batch_id)
+      const codeKey = (item.code || '').trim().toLowerCase()
+      const descKey = (item.description || '').trim().toLowerCase()
+      const groupKey = `${item.batch_id}___${codeKey || descKey}`
+      const existing = batchMap.get(groupKey)
       if (existing) {
         existing.push(item)
       } else {
-        batchMap.set(item.batch_id, [item])
+        batchMap.set(groupKey, [item])
       }
     } else {
       nonBatch.push(item)
@@ -82,8 +86,9 @@ export function buildComprasDisplayItems(items: MaterialShortage[]): ComprasDisp
 
   const result: ComprasDisplayItem[] = []
 
-  // Processa os lotes
-  for (const [batchId, batchItems] of batchMap.entries()) {
+  // Processa os lotes agrupados por batch_id + code
+  for (const [, batchItems] of batchMap.entries()) {
+    const batchId = batchItems[0].batch_id || ''
     // Identifica o representante (aquele com batch_info.is_batch_parent ou primeiro)
     const parent = batchItems.find((it) => it.batch_info?.is_batch_parent) || batchItems[0]
 

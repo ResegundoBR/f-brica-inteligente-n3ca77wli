@@ -32,54 +32,68 @@ const FIELD_LABELS_PT: Record<string, string> = {
   expected_date: 'Previsão de Entrega',
   supplier: 'Fornecedor',
   supplier_id: 'Fornecedor',
-  oc_number: 'Número da OC',
-  total: 'Valor Total',
+  delivery_terms: 'Condições de Entrega',
   payment_terms: 'Condições de Pagamento',
   delivery_type: 'Tipo de Entrega',
+  total: 'Total',
   quantity: 'Quantidade',
   unit_price: 'Preço Unitário',
-  code: 'Código',
   description: 'Descrição',
-  order_id: 'Ordem de Produção',
+  code: 'Código',
 }
 
-const ERROR_CODE_LABELS_PT: Record<string, string> = {
+const ERROR_TRANSLATIONS: Record<string, string> = {
   validation_required: 'Obrigatório',
   validation_invalid_date: 'Data inválida',
-  validation_min_value: 'Valor abaixo do mínimo permitido',
-  validation_not_unique: 'Já cadastrado',
+  validation_not_unique: 'Já existe um registro com este valor',
+  validation_min_value: 'Valor abaixo do permitido',
+  validation_max_value: 'Valor acima do permitido',
 }
 
-export function formatDetailedErrorMessage(error: unknown, fallbackMessage?: string): string {
+export function formatDetailedErrorMessage(
+  error: unknown,
+  fallbackMessage = 'Verifique os dados informados.',
+): string {
   if (!error || typeof error !== 'object') {
-    return fallbackMessage || 'Ocorreu um erro inesperado.'
+    return fallbackMessage
   }
 
-  const errObj = error as {
-    response?: { message?: string; data?: Record<string, { code?: string; message?: string }> }
-    message?: string
-  }
-  const data = errObj.response?.data
+  const errObj = error as Record<string, any>
+  const responseData = errObj.response?.data
 
-  if (data && typeof data === 'object') {
-    const fieldDetails: string[] = []
-    for (const [field, detail] of Object.entries(data)) {
+  if (responseData && typeof responseData === 'object' && Object.keys(responseData).length > 0) {
+    const errorParts: string[] = []
+    for (const [field, detail] of Object.entries(responseData)) {
+      const fieldLabel = FIELD_LABELS_PT[field] || field
+      let translatedError = ''
+
       if (detail && typeof detail === 'object') {
-        const label = FIELD_LABELS_PT[field] || field
-        const translatedMsg =
-          (detail.code && ERROR_CODE_LABELS_PT[detail.code]) || detail.message || 'Inválido'
-        fieldDetails.push(`${label}: ${translatedMsg}`)
+        const code = (detail as any).code
+        const msg = (detail as any).message
+        if (code && ERROR_TRANSLATIONS[code]) {
+          translatedError = ERROR_TRANSLATIONS[code]
+        } else if (msg) {
+          translatedError = String(msg)
+        }
+      } else if (typeof detail === 'string') {
+        translatedError = detail
+      }
+
+      if (translatedError) {
+        errorParts.push(`${fieldLabel}: ${translatedError}`)
+      } else {
+        errorParts.push(fieldLabel)
       }
     }
-    if (fieldDetails.length > 0) {
-      return fieldDetails.join(' | ')
+
+    if (errorParts.length > 0) {
+      return errorParts.join(', ')
     }
   }
 
-  return (
-    errObj.response?.message ||
-    errObj.message ||
-    fallbackMessage ||
-    'Ocorreu um erro ao processar a requisição.'
-  )
+  if (errObj.message && typeof errObj.message === 'string') {
+    return errObj.message
+  }
+
+  return fallbackMessage
 }

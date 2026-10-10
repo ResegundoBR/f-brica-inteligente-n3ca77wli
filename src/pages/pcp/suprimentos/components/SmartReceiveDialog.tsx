@@ -19,12 +19,14 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { MaterialShortage } from '@/types'
-import { Loader2, Package, ArrowRight, Warehouse } from 'lucide-react'
+import { Loader2, Package, ArrowRight, Warehouse, AlertCircle } from 'lucide-react'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import pb from '@/lib/pocketbase/client'
 import { distributeMaterials, type TraceabilityInfo } from '@/services/material-distribution'
 import { useToast } from '@/hooks/use-toast'
 import { getErrorMessage } from '@/lib/pocketbase/errors'
 import { toDateFieldValue, formatQuantity } from '@/lib/pcp-utils'
+import { cn } from '@/lib/utils'
 import { checkAndUpdateAffectedOcs } from '@/services/oc-receiving-automation'
 
 interface SmartReceiveDialogProps {
@@ -117,25 +119,59 @@ export function SmartReceiveDialog({
             }
             setRelated(batchRes)
 
-            // 1. Pré-preenche a quantidade total recebida com a quantidade real do lote (ex.: 17 un da OC)
-            if (actualQty && actualQty > 0) {
-              setTotalReceived(String(actualQty))
-            } else if (surplusMember && Number(surplusMember.quantity) > 0) {
-              const opSum = opMembers.reduce((s, x) => s + (Number(x.quantity) || 0), 0)
-              setTotalReceived(String(opSum + Number(surplusMember.quantity)))
-            } else {
-              const sumTotal = batchRes.reduce((s, x) => s + (Number(x.quantity) || 0), 0)
-              setTotalReceived(String(sumTotal))
+            // 1. Pré-preenche a quantidade total recebida com a quantidade COMPRADA (Regra 1)
+            // Busca se há itens de Ordem de Compra vinculados a estes registros
+            let purchasedQty = 0
+            try {
+              const batchIds = batchRes.map((x) => x.id)
+              const ocFilter = batchIds.map((id) => `material_shortage_id = "${id}"`).join(' || ')
+              const ocItens = await pb.collection('ordem_compra_itens').getFullList({
+                filter: `(${ocFilter})`,
+                fields: 'id,quantity,material_shortage_id',
+              })
+              purchasedQty = ocItens.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0)
+            } catch (ocErr) {
+              console.warn('Não foi possível carregar ordem_compra_itens do lote:', ocErr)
             }
 
-            // 2. Pré-distribui as quantidades exatas para baixa das OPs vinculadas (ex.: 1/5/4)
+            let initialTotalReceived = 0
+            if (purchasedQty > 0) {
+              initialTotalReceived = purchasedQty
+            } else if (actualQty && actualQty > 0) {
+              initialTotalReceived = actualQty
+            } else {
+              // received_quantity da compra nos registros do lote
+              const sumReceivedQty = batchRes.reduce(
+                (s, x) => s + (Number(x.received_quantity) || 0),
+                0,
+              )
+              if (sumReceivedQty > 0) {
+                initialTotalReceived = sumReceivedQty
+              } else if (surplusMember && Number(surplusMember.quantity) > 0) {
+                const opSum = opMembers.reduce((s, x) => s + (Number(x.quantity) || 0), 0)
+                initialTotalReceived = opSum + Number(surplusMember.quantity)
+              } else {
+                // Fallback do lote: representante ou soma
+                initialTotalReceived = Number(parent.quantity) || 0
+              }
+            }
+
+            setTotalReceived(String(initialTotalReceived))
+
+            // 2. Pré-distribui as quantidades exatas para baixa das OPs vinculadas (Regra 2)
+            // Apenas DENTRO do total recebido: prioridade pela necessidade de cada OP
+            let remainingQuota = initialTotalReceived
             const initialDist: Record<string, string> = {}
             for (const bItem of opMembers) {
               const needed = Number(bItem.quantity) || 0
               const already = Number(bItem.received_quantity) || 0
-              const rem = Math.max(0, needed - already)
-              if (rem > 0) {
-                initialDist[bItem.id] = String(rem)
+              const remNeeded = Math.max(0, needed - already)
+              if (remNeeded > 0 && remainingQuota > 0) {
+                const allocated = Math.min(remNeeded, remainingQuota)
+                if (allocated > 0) {
+                  initialDist[bItem.id] = String(allocated)
+                  remainingQuota -= allocated
+                }
               }
             }
             setDistributions(initialDist)
@@ -146,6 +182,45 @@ export function SmartReceiveDialog({
         // Caso item avulso ou sem lote explícito: JAMAIS busca em cascata outros registros do mesmo código.
         // Apenas o registro selecionado pode ser distribuído/recebido.
         setRelated([item])
+
+        // Busca se há item de Ordem de Compra vinculado a este registro avulso
+        let singlePurchasedQty = 0
+        try {
+          const singleOcItens = await pb.collection('ordem_compra_itens').getFullList({
+            filter: `material_shortage_id = "${item.id}"`,
+            fields: 'id,quantity',
+          })
+          singlePurchasedQty = singleOcItens.reduce((s, it) => s + (Number(it.quantity) || 0), 0)
+        } catch (singleOcErr) {
+          console.warn('Não foi possível carregar ordem_compra_itens do item:', singleOcErr)
+        }
+
+        const singleRcvdQty = Number(item.received_quantity) || 0
+        const itemActualQty = item.batch_info?.actual_quantity || 0
+
+        let singleTotal = 0
+        if (singlePurchasedQty > 0) {
+          singleTotal = singlePurchasedQty
+        } else if (itemActualQty > 0) {
+          singleTotal = itemActualQty
+        } else if (singleRcvdQty > 0) {
+          singleTotal = singleRcvdQty
+        } else {
+          singleTotal = Number(item.quantity) || 0
+        }
+
+        setTotalReceived(String(singleTotal))
+
+        // Se for registro de OP, distribui respeitando o teto de singleTotal
+        if (item.order_id) {
+          const needed = Number(item.quantity) || 0
+          const already = Number(item.received_quantity) || 0
+          const remNeeded = Math.max(0, needed - already)
+          const allocated = Math.min(remNeeded, singleTotal)
+          if (allocated > 0) {
+            setDistributions({ [item.id]: String(allocated) })
+          }
+        }
       } catch {
         setRelated(item ? [item] : [])
       } finally {
@@ -158,11 +233,12 @@ export function SmartReceiveDialog({
   const totalNeeded = related.reduce((s, x) => s + (Number(x.quantity) || 0), 0)
   const totalAlreadyReceived = related.reduce((s, x) => s + (Number(x.received_quantity) || 0), 0)
   const totalDistributed = Object.values(distributions).reduce((s, q) => s + (Number(q) || 0), 0)
-  const surplus = Math.max(0, (Number(totalReceived) || 0) - totalDistributed)
+  const numTotalReceived = Number(totalReceived) || 0
+  const isOverDistributed = totalDistributed > numTotalReceived
+  const surplus = Math.max(0, numTotalReceived - totalDistributed)
 
   const numUnitPrice = Number(unitPrice) || 0
   const numFreight = Number(freight) || 0
-  const numTotalReceived = Number(totalReceived) || 0
   const computedTotalValue =
     numUnitPrice > 0 ? numUnitPrice * numTotalReceived + numFreight : numFreight
 
@@ -176,9 +252,20 @@ export function SmartReceiveDialog({
       })
       return
     }
+
     const distArray = Object.entries(distributions)
       .filter(([, q]) => q && Number(q) > 0)
       .map(([sid, q]) => ({ shortage_id: sid, quantity: Number(q) }))
+
+    // REGRA 2: Se a soma distribuída pelas OPs exceder o total recebido, BLOQUEAR o salvamento com aviso claro explicando o limite.
+    if (totalDistributed > received) {
+      toast({
+        title: 'Limite de distribuição excedido',
+        description: `A soma distribuída pelas OPs (${formatQuantity(totalDistributed)} un) excede o total recebido (${formatQuantity(received)} un). Ajuste as quantidades antes de confirmar.`,
+        variant: 'destructive',
+      })
+      return
+    }
 
     if (distArray.length === 0 && surplus === 0) {
       toast({
@@ -468,7 +555,25 @@ export function SmartReceiveDialog({
               </Table>
             </div>
 
-            {surplus > 0 && (
+            {isOverDistributed && (
+              <Alert
+                variant="destructive"
+                className="bg-red-50 text-red-900 border-red-300 dark:bg-red-950/50 dark:text-red-200 dark:border-red-900"
+              >
+                <AlertCircle className="size-4 text-red-600 dark:text-red-400" />
+                <AlertTitle className="font-semibold text-sm">
+                  Limite de distribuição excedido
+                </AlertTitle>
+                <AlertDescription className="text-xs mt-1">
+                  A soma distribuída pelas OPs ({formatQuantity(totalDistributed)} un) excede o
+                  total recebido ({formatQuantity(numTotalReceived)} un) em{' '}
+                  <strong>{formatQuantity(totalDistributed - numTotalReceived)} un</strong>. Reduza
+                  as quantidades distribuídas antes de confirmar.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {!isOverDistributed && surplus > 0 && (
               <div className="flex flex-col gap-1 p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-lg text-emerald-900 dark:text-emerald-200">
                 <div className="flex items-center gap-2 text-sm font-semibold">
                   <Warehouse className="size-4 text-emerald-600" />
@@ -495,14 +600,25 @@ export function SmartReceiveDialog({
             <div className="flex justify-between items-center pt-2 border-t">
               <span className="text-sm text-muted-foreground">
                 Distribuído:{' '}
-                <strong className="text-foreground notranslate" translate="no">
+                <strong
+                  className={cn(
+                    'notranslate',
+                    isOverDistributed ? 'text-red-600 font-bold' : 'text-foreground',
+                  )}
+                  translate="no"
+                >
                   {formatQuantity(totalDistributed)}
                 </strong>{' '}
                 /{' '}
                 <span className="notranslate" translate="no">
-                  {formatQuantity(Number(totalReceived) || 0)}
+                  {formatQuantity(numTotalReceived)}
                 </span>
               </span>
+              {isOverDistributed && (
+                <span className="text-xs font-semibold text-red-600 dark:text-red-400">
+                  Bloqueado: excesso de {formatQuantity(totalDistributed - numTotalReceived)} un
+                </span>
+              )}
             </div>
           </div>
         )}
@@ -510,7 +626,11 @@ export function SmartReceiveDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button onClick={handleConfirm} disabled={saving || loading}>
+          <Button
+            onClick={handleConfirm}
+            disabled={saving || loading || isOverDistributed}
+            className={cn(isOverDistributed && 'opacity-50 cursor-not-allowed')}
+          >
             {saving && <Loader2 className="size-4 animate-spin" />}
             Confirmar Distribuição
           </Button>

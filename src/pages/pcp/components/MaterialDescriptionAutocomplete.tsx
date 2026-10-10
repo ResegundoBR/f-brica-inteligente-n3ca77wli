@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import pb from '@/lib/pocketbase/client'
 import { Input } from '@/components/ui/input'
+import { cn } from '@/lib/utils'
 import type { Product, MaterialShortage } from '@/types'
 import { getMasterComponents } from '@/services/components'
 
@@ -266,7 +267,7 @@ export function MaterialDescriptionAutocomplete({
         onFocus={() => setFocused(true)}
         onBlur={() => setTimeout(() => setFocused(false), 150)}
         placeholder={placeholder}
-        className={inputClassName}
+        className={cn('notranslate', inputClassName)}
       />
       {showDropdown && (
         <div className="absolute z-50 left-0 right-0 top-full mt-1 min-w-[340px] sm:min-w-[480px] max-w-[95vw] max-h-64 overflow-y-auto overflow-x-hidden rounded-md border bg-popover text-popover-foreground shadow-xl divide-y divide-border/60">
@@ -281,7 +282,7 @@ export function MaterialDescriptionAutocomplete({
                 key={i}
                 type="button"
                 title={s.desc}
-                className="w-full text-left px-3 py-2 text-xs sm:text-sm hover:bg-accent/80 transition-colors flex items-center justify-between gap-3"
+                className="w-full text-left px-3 py-2 text-xs sm:text-sm hover:bg-accent/80 transition-colors flex items-center justify-between gap-3 notranslate"
                 onMouseDown={(e) => {
                   e.preventDefault()
                   onCodeChange(s.code)
@@ -291,13 +292,13 @@ export function MaterialDescriptionAutocomplete({
               >
                 <div className="flex flex-col min-w-0 flex-1">
                   <span
-                    className="font-medium text-foreground line-clamp-2 leading-snug break-words"
+                    className="font-medium text-foreground line-clamp-2 leading-snug break-words notranslate"
                     title={s.desc}
                   >
                     {s.desc}
                   </span>
                   {s.code && (
-                    <span className="text-[11px] text-muted-foreground font-mono mt-0.5">
+                    <span className="text-[11px] text-muted-foreground font-mono mt-0.5 notranslate">
                       Cód: {s.code}
                     </span>
                   )}

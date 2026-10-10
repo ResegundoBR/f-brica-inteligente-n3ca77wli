@@ -32,7 +32,7 @@ import {
 } from 'lucide-react'
 import { cn, formatQuantity } from '@/lib/utils'
 import { PcpOrder, Product, MaterialShortage } from '@/types'
-import { getMasterComponents } from '@/services/components'
+import { getMasterComponents, validateUnifiedCodeExists } from '@/services/components'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
 import { extractFieldErrors, type FieldErrors } from '@/lib/pocketbase/errors'
@@ -44,6 +44,7 @@ import {
   VALID_REQUEST_TYPES,
 } from '@/lib/shortage-utils'
 import { upsertMaterialShortage, OPEN_SHORTAGE_STATUS_FILTER } from '@/services/material-shortages'
+import { NoTranslate } from '@/components/NoTranslate'
 
 export function NewShortageModal({
   open,
@@ -407,11 +408,22 @@ export function NewShortageModal({
   const handleSubmit = async (options?: { accumulateQty?: boolean; bypassCheck?: boolean }) => {
     setFieldErrors({})
     try {
-      if (!itemDesc) throw new Error('A descrição do item é obrigatória')
+      if (!itemDesc.trim()) throw new Error('A descrição do item é obrigatória')
       const numQty = Number(quantity)
       if (!Number.isFinite(numQty) || numQty <= 0)
         throw new Error('A quantidade deve ser maior que zero')
       if (!sector) throw new Error('O setor é obrigatório')
+
+      const cleanCode = itemCode.trim()
+      if (cleanCode) {
+        // Validação client-side contra o cadastro unificado espelhando o servidor
+        const codeValidation = await validateUnifiedCodeExists(cleanCode)
+        if (!codeValidation.exists) {
+          throw new Error(
+            `O código "${cleanCode}" não foi encontrado no Cadastro Unificado de Componentes nem no Inventário. Verifique se o código foi digitado corretamente ou cadastre o componente em Suprimentos > Componentes antes de prosseguir.`,
+          )
+        }
+      }
 
       if (options?.bypassCheck && !bypassReason.trim()) {
         throw new Error('Informe uma justificativa para prosseguir avulso')
@@ -499,29 +511,35 @@ export function NewShortageModal({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="item-code">Código Interno</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="item-code">Código do Componente / Insumo</Label>
+              <span className="text-[11px] text-muted-foreground">
+                Obrigatório validar contra o cadastro
+              </span>
+            </div>
             <Input
               id="item-code"
+              className="notranslate font-mono"
               value={itemCode}
               onChange={(e) => setItemCode(e.target.value)}
-              placeholder="Ex.: 5725, MAT-001..."
+              placeholder="Ex.: 05090003, 05100004..."
             />
           </div>
 
           <div className="space-y-1.5 flex flex-col relative">
-            <Label>Item / Material</Label>
+            <Label>Item / Material (Busca no Cadastro Unificado)</Label>
             <Popover open={comboboxOpen} onOpenChange={setComboboxOpen}>
               <PopoverTrigger asChild>
                 <Button
                   variant="outline"
                   role="combobox"
                   aria-expanded={comboboxOpen}
-                  className="justify-between w-full font-normal"
+                  className="justify-between w-full font-normal notranslate"
                 >
                   <span className="truncate">
                     {itemDesc
                       ? `${itemCode ? itemCode + ' - ' : ''}${itemDesc}`
-                      : 'Buscar ou digitar novo item...'}
+                      : 'Buscar componente no cadastro unificado...'}
                   </span>
                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
@@ -529,31 +547,22 @@ export function NewShortageModal({
               <PopoverContent className="w-[550px] max-w-[95vw] p-0" align="start">
                 <Command>
                   <CommandInput
-                    placeholder="Buscar item..."
+                    placeholder="Buscar por código ou descrição no cadastro..."
                     value={itemDesc}
                     onValueChange={(val) => {
                       setItemDesc(val)
                     }}
                   />
                   <CommandList className="max-h-64 overflow-y-auto overflow-x-hidden">
-                    <CommandEmpty className="p-2">
-                      <Button
-                        variant="ghost"
-                        className="w-full justify-start text-sm h-auto py-2 whitespace-normal text-left"
-                        onClick={() => {
-                          setComboboxOpen(false)
-                        }}
-                      >
-                        <Plus className="mr-2 h-4 w-4 shrink-0" />
-                        <span>Usar texto livre: "{itemDesc}"</span>
-                      </Button>
+                    <CommandEmpty className="p-3 text-center text-xs text-muted-foreground">
+                      Nenhum item encontrado no cadastro com esse termo.
                     </CommandEmpty>
                     {suggestions.length > 0 && (
                       <CommandGroup
                         heading={
                           selectedOrderId !== 'none'
-                            ? 'Componentes da OP / Catálogo'
-                            : 'Componentes'
+                            ? 'Componentes da OP / Cadastro Unificado'
+                            : 'Cadastro Unificado (Componentes + Inventário)'
                         }
                       >
                         {suggestions.map((s, i) => {
@@ -569,7 +578,7 @@ export function NewShortageModal({
                               key={i}
                               value={`${s.code} ${s.desc}`}
                               title={s.desc}
-                              className="flex items-center justify-between gap-3 py-2 px-3 cursor-pointer"
+                              className="flex items-center justify-between gap-3 py-2 px-3 cursor-pointer notranslate"
                               onSelect={() => {
                                 setItemCode(s.code || '')
                                 setItemDesc(s.desc)
@@ -585,13 +594,13 @@ export function NewShortageModal({
                                 />
                                 <div className="flex flex-col min-w-0 flex-1">
                                   <span
-                                    className="font-medium text-foreground line-clamp-2 leading-snug break-words text-xs sm:text-sm"
+                                    className="font-medium text-foreground line-clamp-2 leading-snug break-words text-xs sm:text-sm notranslate"
                                     title={s.desc}
                                   >
                                     {s.desc}
                                   </span>
                                   {s.code && (
-                                    <span className="text-[11px] text-muted-foreground font-mono mt-0.5">
+                                    <span className="text-[11px] text-muted-foreground font-mono mt-0.5 notranslate">
                                       Cód: {s.code}
                                     </span>
                                   )}

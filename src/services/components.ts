@@ -225,6 +225,41 @@ export const checkDuplicateComponentCode = async (
 }
 
 /**
+ * Validação de código contra o cadastro unificado (componentes mestre OU inventário).
+ * Utilizado em UIs antes de submeter requisições ou criar vínculos.
+ */
+export const validateUnifiedCodeExists = async (
+  code: string,
+): Promise<{
+  exists: boolean
+  matchedComponent?: MasterComponent
+  matchedInventory?: Inventory
+}> => {
+  const cleanCode = code.trim().replace(/["'\\]/g, '')
+  if (!cleanCode) return { exists: false }
+
+  try {
+    const compMatches = await pb.collection('components').getList<MasterComponent>(1, 1, {
+      filter: `code = "${cleanCode}"`,
+    })
+    if (compMatches.items.length > 0) {
+      return { exists: true, matchedComponent: compMatches.items[0] }
+    }
+
+    const invMatches = await pb.collection('inventory').getList<Inventory>(1, 1, {
+      filter: `code = "${cleanCode}"`,
+    })
+    if (invMatches.items.length > 0) {
+      return { exists: true, matchedInventory: invMatches.items[0] }
+    }
+  } catch (err) {
+    console.warn('Erro ao validar código unificado:', err)
+  }
+
+  return { exists: false }
+}
+
+/**
  * Marca um componente do mestre como inativo com rastreabilidade de quem inativou.
  */
 export const deactivateMasterComponent = async (

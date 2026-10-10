@@ -7,6 +7,7 @@ import {
   type IntegrityCheckResult,
 } from '@/services/suprimentos-integrity'
 import { CloseResidualDialog } from './components/CloseResidualDialog'
+import { UnificacaoCadastralPanel } from './components/UnificacaoCadastralPanel'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -178,6 +179,9 @@ export default function DivergenciasPage() {
         </div>
       )}
 
+      {/* ETAPA 4: PAINEL DE UNIFICAÇÃO CADASTRAL */}
+      <UnificacaoCadastralPanel onDataChanged={loadIntegrityData} />
+
       {/* Cards de Resumo */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card className="border-l-4 border-l-blue-500">
@@ -251,6 +255,18 @@ export default function DivergenciasPage() {
             <div className="flex items-center gap-2">
               <CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" />
               <span>Descrições de materiais livres de poluição ou tags temporárias</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" />
+              <span>
+                Unificação cadastral: vínculos entre inventário físico e componentes mestre
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" />
+              <span>
+                Bloqueio de texto livre: novas solicitações validadas contra cadastro unificado
+              </span>
             </div>
           </div>
         </CardContent>

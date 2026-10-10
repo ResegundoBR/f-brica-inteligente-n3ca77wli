@@ -2,9 +2,15 @@ import pb from '@/lib/pocketbase/client'
 import { Inventory, InventoryMovement } from '@/types'
 
 export const getInventory = () =>
-  pb.collection('inventory').getFullList<Inventory>({ sort: 'description' })
+  pb.collection('inventory').getFullList<Inventory>({
+    sort: 'description',
+    expand: 'component_id',
+  })
 
-export const getInventoryItem = (id: string) => pb.collection('inventory').getOne<Inventory>(id)
+export const getInventoryItem = (id: string) =>
+  pb.collection('inventory').getOne<Inventory>(id, {
+    expand: 'component_id',
+  })
 
 export const createInventoryItem = (data: {
   code: string
@@ -12,6 +18,7 @@ export const createInventoryItem = (data: {
   quantity: number
   min_quantity?: number
   unit?: string
+  component_id?: string
 }) => pb.collection('inventory').create(data)
 
 export const updateInventoryItem = (
@@ -22,6 +29,7 @@ export const updateInventoryItem = (
     quantity: number
     min_quantity: number
     unit: string
+    component_id: string
   }>,
 ) => pb.collection('inventory').update(id, data)
 

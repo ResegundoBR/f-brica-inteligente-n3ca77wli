@@ -25,6 +25,39 @@ onRecordCreate((e) => {
       }
       throw new BadRequestError('Falha na validação do material.', errs)
     }
+
+    // --- ETAPA 4: Validação do código contra o cadastro unificado (components OU inventory) ---
+    // Registros novos de material_shortages devem ter código existente no cadastro mestre ou no inventário.
+    // Registros legados não são impactados (esta validação roda exclusivamente em onRecordCreate).
+    var codeExists = false
+    try {
+      var safeCodeFilter = "code = '" + trimmedCode.replace(/'/g, "''") + "'"
+      var compMatches = $app.findRecordsByFilter('components', safeCodeFilter, '', 1, 0)
+      if (compMatches && compMatches.length > 0) {
+        codeExists = true
+      } else {
+        var invMatches = $app.findRecordsByFilter('inventory', safeCodeFilter, '', 1, 0)
+        if (invMatches && invMatches.length > 0) {
+          codeExists = true
+        }
+      }
+    } catch (checkErr) {
+      console.log('[HOOK_CREATE_SHORTAGE] Erro ao verificar código unificado:', checkErr.message)
+      // Em caso de falha de query do banco, não bloqueia a criação legítima por indisponibilidade técnica
+      codeExists = true
+    }
+
+    if (!codeExists) {
+      const errs = {
+        code: new ValidationError(
+          'validation_unknown_code',
+          'O código "' +
+            trimmedCode +
+            '" não foi encontrado no Cadastro Unificado de Componentes nem no Inventário. Verifique se o código foi digitado corretamente ou cadastre o componente em Suprimentos > Componentes antes de prosseguir.',
+        ),
+      }
+      throw new BadRequestError('Código de material inexistente no cadastro.', errs)
+    }
   }
 
   // --- TRAVA DE DESCRIÇÃO OBRIGATÓRIA ---

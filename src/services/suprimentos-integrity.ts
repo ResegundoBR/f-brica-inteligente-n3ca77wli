@@ -50,3 +50,21 @@ export async function fetchSuprimentosIntegrityCheck(): Promise<IntegrityCheckRe
     }
   )
 }
+
+/**
+ * Executa o cancelamento automático de solicitações pendentes vinculadas a OPs encerradas
+ */
+export async function triggerAutoCancelClosedOps(): Promise<{
+  success: boolean
+  cancelledCount: number
+  message: string
+}> {
+  const res = await pb.send<{ success: boolean; cancelledCount: number; message: string }>(
+    '/backend/v1/suprimentos/auto-cancel-closed-ops',
+    {
+      method: 'POST',
+    },
+  )
+
+  return res || { success: false, cancelledCount: 0, message: '' }
+}

@@ -144,10 +144,148 @@ cronAdd('suprimentos_integrity_verifier', '0 4 * * *', () => {
         divergences.length +
         ' divergência(s) detectada(s).',
     )
+
+    // ETAPA 5 — Cancelamento automático de solicitações de OPs encerradas
+    try {
+      var autoCleanCount = runAutoCancelClosedOpShortages()
+      if (autoCleanCount > 0) {
+        console.log(
+          '[CRON] Cancelamento automático: ' +
+            autoCleanCount +
+            ' solicitação(ões) de OP encerrada cancelada(s).',
+        )
+      }
+    } catch (cleanErr) {
+      console.error(
+        '[CRON] Erro no cancelamento automático de solicitações de OPs encerradas:',
+        String(cleanErr),
+      )
+    }
   } catch (err) {
     console.error('[CRON] Erro no verificador:', String(err))
   }
 })
+
+/**
+ * Função utilitária compartilhada entre o cron e o endpoint de limpeza
+ * Cancela automaticamente solicitações (Pendente/Cotação/Compra) cuja OP de origem está Concluída ou Cancelada.
+ * Cuidado: NÃO cancela registros de lote cujos demais membros ainda pertençam a OPs vivas — nesses casos,
+ * apenas remove o membro da OP encerrada do lote/rateio com observação.
+ * NÃO toca em registros Recebido/Recebido_Parcial.
+ */
+function runAutoCancelClosedOpShortages() {
+  var openShortages = $app.findRecordsByFilter(
+    'material_shortages',
+    '(status = "Pendente" || status = "Cotação" || status = "Compra") && order_id != ""',
+    'created',
+    1000,
+    0,
+  )
+
+  var countCancelled = 0
+  var todayDate = new Date()
+  var day = String(todayDate.getDate()).padStart(2, '0')
+  var month = String(todayDate.getMonth() + 1).padStart(2, '0')
+  var dateFormatted = day + '/' + month
+
+  for (var i = 0; i < openShortages.length; i++) {
+    var shortage = openShortages[i]
+    var orderId = shortage.getString('order_id')
+    if (!orderId) continue
+
+    var order = null
+    try {
+      order = $app.findRecordById('pcp_orders', orderId)
+    } catch (_) {
+      continue
+    }
+
+    if (!order) continue
+    var opStatus = order.getString('status')
+    var isOpClosed =
+      opStatus === 'Concluído' || opStatus === 'Cancelada' || opStatus === 'Cancelado'
+    if (!isOpClosed) continue
+
+    var opNum = order.getString('op_number') || order.getString('order_number') || orderId
+    var batchId = (shortage.getString('batch_id') || '').trim()
+    var itemQty = Number(shortage.getFloat('quantity')) || 0
+    var itemCode = shortage.getString('code') || 'S/ Código'
+
+    // Verificar se faz parte de lote com outros membros vivos
+    var hasLivingBatchMates = false
+    if (batchId) {
+      try {
+        var batchMates = $app.findRecordsByFilter(
+          'material_shortages',
+          'batch_id = "' +
+            batchId.replace(/"/g, '""') +
+            '" && id != "' +
+            shortage.id +
+            '" && (status = "Pendente" || status = "Cotação" || status = "Compra")',
+          '',
+          100,
+          0,
+        )
+        for (var b = 0; b < batchMates.length; b++) {
+          var mateOrderId = batchMates[b].getString('order_id')
+          if (mateOrderId) {
+            try {
+              var mateOrder = $app.findRecordById('pcp_orders', mateOrderId)
+              var mateStatus = mateOrder.getString('status')
+              if (
+                mateStatus !== 'Concluído' &&
+                mateStatus !== 'Cancelada' &&
+                mateStatus !== 'Cancelado'
+              ) {
+                hasLivingBatchMates = true
+                break
+              }
+            } catch (_) {}
+          } else {
+            // Membro de estoque no mesmo lote
+            hasLivingBatchMates = true
+            break
+          }
+        }
+      } catch (_) {}
+    }
+
+    var auditNote =
+      'Cancelada automaticamente: OP ' +
+      opNum +
+      ' encerrada em ' +
+      dateFormatted +
+      ' (item: ' +
+      itemCode +
+      ', qtde: ' +
+      itemQty +
+      ' un)'
+    var currentObs = shortage.getString('observation') || ''
+    var finalObs = currentObs ? currentObs + ' | ' + auditNote : auditNote
+
+    if (hasLivingBatchMates) {
+      // Se há membros de OPs vivas no mesmo lote: desvincula este registro do lote e cancela individualmente
+      shortage.set('batch_id', '')
+      shortage.set('status', 'Cancelado')
+      shortage.set(
+        'observation',
+        finalObs + ' [Removido do lote ' + batchId + ' - demais membros de OPs ativas mantidos]',
+      )
+    } else {
+      shortage.set('status', 'Cancelado')
+      shortage.set('observation', finalObs)
+    }
+
+    try {
+      $app.save(shortage)
+      countCancelled++
+    } catch (saveErr) {
+      console.error('[AUTO_CANCEL] Erro ao cancelar shortage ' + shortage.id + ':', String(saveErr))
+    }
+  }
+
+  return countCancelled
+}
 
 // 2. ENDPOINT REST PARA O FRONTEND (/backend/v1/suprimentos/integrity-check)
 routerAdd(
@@ -347,11 +485,15 @@ routerAdd(
             try {
               var orderRec = $app.findRecordById('pcp_orders', openOrderId)
               var opStatus = orderRec.getString('status')
-              if (opStatus === 'Concluído') {
+              if (
+                opStatus === 'Concluído' ||
+                opStatus === 'Cancelada' ||
+                opStatus === 'Cancelado'
+              ) {
                 divergences.push({
                   id: 'div_ghost_op_concluida_' + openItem.id,
                   category: 'solicitacao_fantasma_op_encerrada',
-                  severity: 'media',
+                  severity: 'alta',
                   item_type: 'material_shortage',
                   record_id: openItem.id,
                   code: openCode,
@@ -362,10 +504,12 @@ routerAdd(
                     ', ' +
                     openQty +
                     ' un) vinculado à OP ' +
-                    orderRec.getString('op_number') +
-                    ' que já está Concluída.',
+                    (orderRec.getString('op_number') || orderRec.getString('order_number')) +
+                    ' que já está ' +
+                    opStatus +
+                    '.',
                   suggestion:
-                    'Verificar se o material ainda é necessário ou cancelar/fechar o registro de falta.',
+                    'A rotina de limpeza automática ou o botão de limpeza cancelará esta solicitação desnecessária.',
                   detected_at: nowIso,
                   details: {
                     order_id: openOrderId,
@@ -527,6 +671,32 @@ routerAdd(
       })
     } catch (err) {
       console.error('[API] Erro ao executar integrity check:', String(err))
+      return e.json(500, {
+        success: false,
+        error: String(err),
+      })
+    }
+  },
+  $apis.requireAuth(),
+)
+
+// 3. ENDPOINT REST PARA EXECUTAR O CANCELAMENTO AUTOMÁTICO DE OPs ENCERRADAS SOB DEMANDA
+routerAdd(
+  'POST',
+  '/backend/v1/suprimentos/auto-cancel-closed-ops',
+  (e) => {
+    try {
+      var cancelledCount = runAutoCancelClosedOpShortages()
+      return e.json(200, {
+        success: true,
+        cancelledCount: cancelledCount,
+        message:
+          cancelledCount > 0
+            ? cancelledCount + ' solicitação(ões) de OP encerrada cancelada(s) automaticamente.'
+            : 'Nenhuma solicitação pendente de OP encerrada encontrada.',
+      })
+    } catch (err) {
+      console.error('[API] Erro ao executar auto-cancel:', String(err))
       return e.json(500, {
         success: false,
         error: String(err),

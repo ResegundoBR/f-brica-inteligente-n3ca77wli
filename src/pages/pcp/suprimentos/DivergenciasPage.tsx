@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
 import {
   fetchSuprimentosIntegrityCheck,
+  triggerAutoCancelClosedOps,
   type DivergenceItem,
   type IntegrityCheckResult,
 } from '@/services/suprimentos-integrity'
@@ -29,10 +30,27 @@ import { ptBR } from 'date-fns/locale'
 export default function DivergenciasPage() {
   const [data, setData] = useState<IntegrityCheckResult | null>(null)
   const [loading, setLoading] = useState<boolean>(true)
+  const [cleaning, setCleaning] = useState<boolean>(false)
+  const [cleanFeedback, setCleanFeedback] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState<string>('')
   const [severityFilter, setSeverityFilter] = useState<string>('todos')
   const [categoryFilter, setCategoryFilter] = useState<string>('todos')
+
+  const handleCleanClosedOps = async () => {
+    setCleaning(true)
+    setCleanFeedback(null)
+    try {
+      const res = await triggerAutoCancelClosedOps()
+      setCleanFeedback(res.message || 'Limpeza executada com sucesso.')
+      await loadIntegrityData()
+    } catch (err) {
+      console.error('Erro ao executar limpeza de OPs encerradas:', err)
+      setCleanFeedback('Erro ao executar cancelamento automático.')
+    } finally {
+      setCleaning(false)
+    }
+  }
 
   const loadIntegrityData = async () => {
     setLoading(true)
@@ -111,18 +129,42 @@ export default function DivergenciasPage() {
         description="Verificador permanente de coerência dos dados de suprimentos, ordens de compra e estoque."
         icon={ShieldAlert}
         action={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={loadIntegrityData}
-            disabled={loading}
-            className="gap-2"
-          >
-            <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
-            Verificar Agora
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="default"
+              size="sm"
+              onClick={handleCleanClosedOps}
+              disabled={cleaning || loading}
+              className="gap-2 bg-slate-800 hover:bg-slate-900 text-white dark:bg-slate-700 dark:hover:bg-slate-600 shadow-xs"
+            >
+              <RefreshCw className={`size-3.5 ${cleaning ? 'animate-spin' : ''}`} />
+              Limpar OPs Encerradas
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={loadIntegrityData}
+              disabled={loading}
+              className="gap-2"
+            >
+              <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
+              Verificar Agora
+            </Button>
+          </div>
         }
       />
+
+      {cleanFeedback && (
+        <div className="p-3 rounded-lg bg-blue-50 text-blue-800 border border-blue-200 text-xs flex items-center justify-between">
+          <span>{cleanFeedback}</span>
+          <button
+            onClick={() => setCleanFeedback(null)}
+            className="text-xs font-semibold text-blue-600 hover:underline"
+          >
+            Fechar
+          </button>
+        </div>
+      )}
 
       {/* Cards de Resumo */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

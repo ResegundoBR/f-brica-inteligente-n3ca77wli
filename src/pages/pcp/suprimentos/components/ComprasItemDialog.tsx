@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -6,6 +6,15 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+  Command,
+  CommandInput,
+  CommandList,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+} from '@/components/ui/command'
 import {
   Table,
   TableBody,
@@ -17,10 +26,11 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { MaterialShortage, Quotation } from '@/types'
+import { MaterialShortage, Quotation, Supplier } from '@/types'
 import { getQuotationsByShortage, selectQuotation } from '@/services/quotations'
+import { getSuppliers } from '@/services/suppliers'
 import { toast } from 'sonner'
-import { Loader2, Save, Check, Trash2, Info } from 'lucide-react'
+import { Loader2, Save, Check, Trash2, Info, ChevronsUpDown, AlertTriangle } from 'lucide-react'
 import { cn, formatQuantity } from '@/lib/utils'
 import pb from '@/lib/pocketbase/client'
 import { findOtherOpDemands } from '@/services/material-consolidation'
@@ -59,6 +69,11 @@ export function ComprasItemDialog({
   const [quantityInput, setQuantityInput] = useState<string>('')
   const [itemQuantity, setItemQuantity] = useState<number>(0)
 
+  // Lista de fornecedores cadastrados para o combobox
+  const [registeredSuppliers, setRegisteredSuppliers] = useState<Supplier[]>([])
+  const [supplierComboboxOpen, setSupplierComboboxOpen] = useState(false)
+  const [supplierSearchQuery, setSupplierSearchQuery] = useState('')
+
   const consolidation = useMemo(() => {
     if (!item) return null
     return findOtherOpDemands(item, allShortages)
@@ -87,6 +102,17 @@ export function ComprasItemDialog({
     }
   }, [item])
 
+  // Carrega fornecedores cadastrados na coleção 'suppliers' ordenados por nome
+  useEffect(() => {
+    if (open) {
+      getSuppliers()
+        .then((data) => setRegisteredSuppliers(data || []))
+        .catch((err) => {
+          console.warn('Erro ao carregar fornecedores cadastrados:', err)
+        })
+    }
+  }, [open])
+
   useEffect(() => {
     if (open && item) {
       fetchQuotations()
@@ -96,6 +122,8 @@ export function ComprasItemDialog({
       const initialQty = Number(item.quantity) || 0
       setQuantityInput(String(initialQty))
       setItemQuantity(initialQty)
+      setSupplierSearchQuery('')
+      setSupplierComboboxOpen(false)
     }
   }, [open, item, fetchQuotations])
 
@@ -143,6 +171,49 @@ export function ComprasItemDialog({
       onUpdate()
     } catch {
       toast.error('Erro ao selecionar cotação')
+    }
+  }
+
+  // Identifica se o fornecedor atual está cadastrado na coleção suppliers
+  const isSupplierRegistered = useMemo(() => {
+    const trimmed = supplier.trim()
+    if (!trimmed) return true // Não exibe aviso se o campo estiver vazio
+    const lower = trimmed.toLowerCase()
+    return registeredSuppliers.some((s) => s.name.trim().toLowerCase() === lower)
+  }, [supplier, registeredSuppliers])
+
+  /**
+   * Trata a seleção ou alteração de fornecedor (modo aditivo):
+   * Se o novo fornecedor tiver uma cotação registrada para este item, mantém a cotação coerente
+   * (seleciona a cotação dele, ou preenche preço/prazo se o usuário não tiver sobrescrito).
+   */
+  const handleSupplierChange = (newSupplier: string) => {
+    setSupplier(newSupplier)
+
+    const trimmedNew = newSupplier.trim().toLowerCase()
+    if (!trimmedNew) return
+
+    // Verifica se há alguma cotação registrada deste fornecedor
+    const matchingQuotation = quotations.find(
+      (q) => q.supplier?.trim().toLowerCase() === trimmedNew,
+    )
+
+    if (matchingQuotation) {
+      setSelectedQuotationId(matchingQuotation.id)
+      setUnitPrice(String(matchingQuotation.price))
+      if (matchingQuotation.delivery_days && matchingQuotation.delivery_days > 0) {
+        const date = new Date(Date.now() + matchingQuotation.delivery_days * 86400000)
+        setExpectedDate(toDateFieldValue(date))
+      }
+    } else {
+      // Se não há cotação do fornecedor selecionado, desmarca a cotação selecionada anteriormente
+      // (pois a cotação anterior pertencia a outro fornecedor)
+      if (selectedQuotationId) {
+        const currentSelected = quotations.find((q) => q.id === selectedQuotationId)
+        if (currentSelected && currentSelected.supplier?.trim().toLowerCase() !== trimmedNew) {
+          setSelectedQuotationId('')
+        }
+      }
     }
   }
 
@@ -394,14 +465,98 @@ export function ComprasItemDialog({
               )}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-2 border-t">
-              <div className="space-y-1">
+              <div className="space-y-1 sm:col-span-1">
                 <Label className="text-xs">Fornecedor</Label>
-                <Input
-                  value={supplier}
-                  onChange={(e) => setSupplier(e.target.value)}
-                  className="notranslate"
-                  translate="no"
-                />
+                <Popover open={supplierComboboxOpen} onOpenChange={setSupplierComboboxOpen}>
+                  <PopoverTrigger asChild>
+                    <div className="relative">
+                      <Input
+                        value={supplier}
+                        onChange={(e) => {
+                          handleSupplierChange(e.target.value)
+                          setSupplierSearchQuery(e.target.value)
+                          if (!supplierComboboxOpen) setSupplierComboboxOpen(true)
+                        }}
+                        onFocus={() => {
+                          setSupplierSearchQuery('')
+                          setSupplierComboboxOpen(true)
+                        }}
+                        placeholder="Selecione ou digite..."
+                        className="notranslate pr-7"
+                        translate="no"
+                      />
+                      <button
+                        type="button"
+                        aria-label="Abrir lista de fornecedores"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setSupplierComboboxOpen((v) => !v)
+                        }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground opacity-60 hover:opacity-100"
+                      >
+                        <ChevronsUpDown className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    className="p-0 w-[--radix-popover-trigger-width] min-w-[260px]"
+                    align="start"
+                  >
+                    <Command
+                      filter={(value, search) => {
+                        if (!search) return 1
+                        return value.toLowerCase().includes(search.toLowerCase()) ? 1 : 0
+                      }}
+                    >
+                      <CommandInput
+                        placeholder="Buscar fornecedor cadastrado..."
+                        value={supplierSearchQuery}
+                        onValueChange={setSupplierSearchQuery}
+                      />
+                      <CommandList className="max-h-56">
+                        <CommandEmpty className="py-2.5 px-3 text-xs text-muted-foreground">
+                          Nenhum fornecedor encontrado.
+                        </CommandEmpty>
+                        <CommandGroup heading="Fornecedores Cadastrados">
+                          {registeredSuppliers.map((s) => {
+                            const isSelected =
+                              supplier.trim().toLowerCase() === s.name.trim().toLowerCase()
+                            return (
+                              <CommandItem
+                                key={s.id}
+                                value={s.name}
+                                onSelect={() => {
+                                  handleSupplierChange(s.name)
+                                  setSupplierComboboxOpen(false)
+                                }}
+                                className="cursor-pointer notranslate"
+                              >
+                                <Check
+                                  className={cn(
+                                    'mr-2 h-4 w-4 text-primary shrink-0',
+                                    isSelected ? 'opacity-100' : 'opacity-0',
+                                  )}
+                                />
+                                <span className="truncate">{s.name}</span>
+                              </CommandItem>
+                            )
+                          })}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+
+                {/* Aviso discreto quando fornecedor digitado não está cadastrado */}
+                {!isSupplierRegistered && (
+                  <div className="flex items-start gap-1.5 pt-1 text-[11px] text-amber-700 dark:text-amber-400 leading-tight">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                    <span>
+                      Fornecedor não cadastrado — considere cadastrá-lo em{' '}
+                      <strong>Suprimentos &gt; Fornecedores</strong>.
+                    </span>
+                  </div>
+                )}
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Quantidade</Label>

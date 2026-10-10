@@ -705,3 +705,216 @@ routerAdd(
   },
   $apis.requireAuth(),
 )
+
+// 4. ENDPOINT REST: LISTAR ITENS RESIDUAIS E PARADOS PARA ENCERRAMENTO (ETAPA 5 PARTE 2)
+routerAdd(
+  'GET',
+  '/backend/v1/suprimentos/residual-items',
+  (e) => {
+    try {
+      var thresholdDays = 30
+      try {
+        var qDays = Number(e.request.url.query().get('days'))
+        if (qDays > 0) thresholdDays = qDays
+      } catch (_) {}
+
+      var now = new Date()
+      var cutoffDate = new Date(now.getTime() - thresholdDays * 24 * 60 * 60 * 1000)
+      var cutoffIso = cutoffDate.toISOString().replace('T', ' ').substring(0, 19)
+
+      // (a) Registros em Recebido_Parcial cujo saldo remanescente não foi entregue
+      var partials = $app.findRecordsByFilter(
+        'material_shortages',
+        'status = "Recebido_Parcial"',
+        '-created',
+        200,
+        0,
+      )
+
+      var partialList = []
+      for (var p = 0; p < partials.length; p++) {
+        var pr = partials[p]
+        var q = Number(pr.getFloat('quantity')) || 0
+        var rq = Number(pr.getFloat('received_quantity')) || 0
+        var rem = Math.max(0, q - rq)
+
+        var pOp = ''
+        var pOrderId = pr.getString('order_id')
+        if (pOrderId) {
+          try {
+            var pOrd = $app.findRecordById('pcp_orders', pOrderId)
+            pOp = pOrd.getString('op_number') || pOrd.getString('order_number')
+          } catch (_) {}
+        }
+
+        partialList.push({
+          id: pr.id,
+          code: pr.getString('code'),
+          description: pr.getString('description'),
+          quantity: q,
+          received_quantity: rq,
+          remaining_quantity: rem,
+          status: 'Recebido_Parcial',
+          order_id: pOrderId,
+          op_number: pOp,
+          created: pr.getString('created'),
+          updated: pr.getString('updated'),
+          type: 'recebido_parcial',
+        })
+      }
+
+      // (b) Solicitações paradas em Cotação ou Compra sem movimentação há mais de thresholdDays
+      var staleItems = $app.findRecordsByFilter(
+        'material_shortages',
+        '(status = "Cotação" || status = "Compra") && updated <= "' + cutoffIso + '"',
+        'updated',
+        200,
+        0,
+      )
+
+      var staleList = []
+      for (var s = 0; s < staleItems.length; s++) {
+        var sr = staleItems[s]
+        var sq = Number(sr.getFloat('quantity')) || 0
+        var sOrderId = sr.getString('order_id')
+        var sOp = ''
+        if (sOrderId) {
+          try {
+            var sOrd = $app.findRecordById('pcp_orders', sOrderId)
+            sOp = sOrd.getString('op_number') || sOrd.getString('order_number')
+          } catch (_) {}
+        }
+
+        // Calcular dias sem alteração
+        var updatedDate = new Date(sr.getString('updated').replace(' ', 'T') + 'Z')
+        var diffDays = Math.max(
+          0,
+          Math.floor((now.getTime() - updatedDate.getTime()) / (1000 * 60 * 60 * 24)),
+        )
+
+        staleList.push({
+          id: sr.id,
+          code: sr.getString('code'),
+          description: sr.getString('description'),
+          quantity: sq,
+          received_quantity: Number(sr.getFloat('received_quantity')) || 0,
+          remaining_quantity: sq,
+          status: sr.getString('status'),
+          order_id: sOrderId,
+          op_number: sOp,
+          created: sr.getString('created'),
+          updated: sr.getString('updated'),
+          days_inactive: diffDays,
+          type: 'stale_cotacao_compra',
+        })
+      }
+
+      return e.json(200, {
+        success: true,
+        threshold_days: thresholdDays,
+        partials_count: partialList.length,
+        stale_count: staleList.length,
+        total_residual: partialList.length + staleList.length,
+        partials: partialList,
+        stale: staleList,
+      })
+    } catch (err) {
+      console.error('[API] Erro ao listar residual-items:', String(err))
+      return e.json(500, { success: false, error: String(err) })
+    }
+  },
+  $apis.requireAuth(),
+)
+
+// 5. ENDPOINT REST: EXECUTAR ENCERRAMENTO DE SALDO RESIDUAL INDIVIDUAL (ETAPA 5 PARTE 2)
+routerAdd(
+  'POST',
+  '/backend/v1/suprimentos/close-residual-shortage',
+  (e) => {
+    try {
+      var info = e.requestInfo()
+      var body = info && info.body ? info.body : {}
+      var shortageId = (body.shortage_id || '').trim()
+      var reasonNote = (body.reason || '').trim()
+
+      if (!shortageId) {
+        return e.json(400, { success: false, error: 'O ID da solicitação é obrigatório.' })
+      }
+
+      var record = null
+      try {
+        record = $app.findRecordById('material_shortages', shortageId)
+      } catch (_) {
+        return e.json(404, { success: false, error: 'Solicitação não encontrada.' })
+      }
+
+      var authUser = e.auth ? e.auth.getString('name') || e.auth.getString('email') : 'Usuário'
+      var today = new Date()
+      var day = String(today.getDate()).padStart(2, '0')
+      var month = String(today.getMonth() + 1).padStart(2, '0')
+      var year = today.getFullYear()
+      var dateFormatted = day + '/' + month + '/' + year
+
+      var currentStatus = record.getString('status')
+      var qty = Number(record.getFloat('quantity')) || 0
+      var recQty = Number(record.getFloat('received_quantity')) || 0
+      var currentObs = record.getString('observation') || ''
+
+      var auditNote = ''
+      if (currentStatus === 'Recebido_Parcial') {
+        // Encerra o saldo residual remanescente: mantém recebido como está,
+        // marca como Recebido com nota de saldo residual encerrado (recebido X de Y)
+        auditNote =
+          'Saldo residual encerrado manualmente por ' +
+          authUser +
+          ' em ' +
+          dateFormatted +
+          ' (recebido ' +
+          recQty +
+          ' de ' +
+          qty +
+          ')'
+        if (reasonNote) {
+          auditNote += ' - Motivo: ' + reasonNote
+        }
+        record.set('status', 'Recebido')
+      } else if (currentStatus === 'Cotação' || currentStatus === 'Compra') {
+        // Encerramento de solicitação parada/sem entrega
+        auditNote =
+          'Solicitação parada em ' +
+          currentStatus +
+          ' encerrada manualmente por ' +
+          authUser +
+          ' em ' +
+          dateFormatted
+        if (reasonNote) {
+          auditNote += ' - Motivo: ' + reasonNote
+        }
+        record.set('status', 'Cancelado')
+      } else {
+        return e.json(400, {
+          success: false,
+          error:
+            'Apenas solicitações em Recebido_Parcial, Cotação ou Compra podem ter seu saldo encerrado por esta rotina.',
+        })
+      }
+
+      var finalObs = currentObs ? currentObs + ' | ' + auditNote : auditNote
+      record.set('observation', finalObs)
+
+      $app.save(record)
+
+      return e.json(200, {
+        success: true,
+        shortage_id: shortageId,
+        new_status: record.getString('status'),
+        audit_note: auditNote,
+        message: 'Saldo residual encerrado com sucesso.',
+      })
+    } catch (err) {
+      console.error('[API] Erro ao encerrar residual shortage:', String(err))
+      return e.json(500, { success: false, error: String(err) })
+    }
+  },
+  $apis.requireAuth(),
+)

@@ -120,6 +120,7 @@ describe('Blindagem Server-Side - Regras de Validação', () => {
       expect(validateStatusTransition('Compra', 'Cancelado').valid).toBe(true)
       expect(validateStatusTransition('Compra', 'Cotação').valid).toBe(true) // Split / reversão
       expect(validateStatusTransition('Recebido_Parcial', 'Recebido').valid).toBe(true)
+      expect(validateStatusTransition('Recebido_Parcial', 'Cancelado').valid).toBe(true)
     })
 
     it('bloqueia saltos ilegais que geram corrupção ou contornam o processo', () => {

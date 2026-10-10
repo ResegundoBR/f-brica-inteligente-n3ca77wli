@@ -7,18 +7,24 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { ShoppingCart, FileText, XCircle, ShoppingBag, Loader2 } from 'lucide-react'
+import { ShoppingCart, FileText, XCircle, ShoppingBag, Loader2, PackageCheck } from 'lucide-react'
 import { MaterialShortage } from '@/types'
 import { formatQuantity } from '@/lib/utils'
 import { format, parseISO } from 'date-fns'
 import pb from '@/lib/pocketbase/client'
 import { useToast } from '@/hooks/use-toast'
 import { sendDirectToCompra } from '@/services/quotations'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 import { useMemo } from 'react'
 import { findOtherOpDemands } from '@/services/material-consolidation'
 import { ConsolidatedDemandBlock } from './ConsolidatedDemandBlock'
+import {
+  getStockAvailabilityForCodes,
+  ComponentStockAvailability,
+  normalizeCode,
+} from '@/services/material-reservations'
+import { releaseShortageFromStock } from '@/services/stock-release'
 
 interface TriageDetailDialogProps {
   item: MaterialShortage | null
@@ -38,12 +44,55 @@ export function TriageDetailDialog({
 }: TriageDetailDialogProps) {
   const { toast } = useToast()
   const [submitting, setSubmitting] = useState(false)
+  const [stockInfo, setStockInfo] = useState<ComponentStockAvailability | null>(null)
+  const [checkingStock, setCheckingStock] = useState(false)
+
   const consolidation = useMemo(() => {
     if (!item) return null
     return findOtherOpDemands(item, allShortages)
   }, [item, allShortages])
 
+  useEffect(() => {
+    if (!item || !open) {
+      setStockInfo(null)
+      return
+    }
+    const norm = normalizeCode(item.code)
+    if (!norm) {
+      setStockInfo(null)
+      return
+    }
+    setCheckingStock(true)
+    getStockAvailabilityForCodes([norm])
+      .then((map) => {
+        setStockInfo(map.get(norm) || null)
+      })
+      .catch(() => setStockInfo(null))
+      .finally(() => setCheckingStock(false))
+  }, [item, open])
+
   if (!item) return null
+
+  const handleReleaseStock = async () => {
+    setSubmitting(true)
+    try {
+      await releaseShortageFromStock(item)
+      toast({
+        title: 'Material liberado do estoque',
+        description: `${formatQuantity(item.quantity)} un baixada(s) do almoxarifado para esta OP com sucesso.`,
+      })
+      onOpenChange(false)
+      onAction()
+    } catch (err: any) {
+      toast({
+        title: 'Erro ao liberar do estoque',
+        description: err.message || 'Falha ao processar movimentação de saída.',
+        variant: 'destructive',
+      })
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   const handleTriage = async (status: 'Cotação' | 'Cancelado') => {
     setSubmitting(true)
@@ -139,6 +188,45 @@ export function TriageDetailDialog({
             </div>
           )}
 
+          {/* Card de disponibilidade de estoque */}
+          <div className="p-3 rounded-lg border bg-slate-50 dark:bg-slate-800/60 text-xs space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-slate-700 dark:text-slate-300">
+                Disponibilidade no Almoxarifado:
+              </span>
+              {checkingStock ? (
+                <span className="text-muted-foreground flex items-center gap-1">
+                  <Loader2 className="size-3 animate-spin" /> Verificando...
+                </span>
+              ) : stockInfo ? (
+                stockInfo.availableStock >= (Number(item.quantity) || 0) - 0.0001 ? (
+                  <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-900/40 dark:text-emerald-300 font-bold">
+                    Tem em estoque ({stockInfo.availableStock} un livres)
+                  </Badge>
+                ) : stockInfo.availableStock > 0 ? (
+                  <Badge className="bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/40 dark:text-amber-300 font-semibold">
+                    Parcial ({stockInfo.availableStock} un livres)
+                  </Badge>
+                ) : (
+                  <Badge className="bg-red-100 text-red-800 border-red-300 dark:bg-red-900/40 dark:text-red-300 font-semibold">
+                    Não tem saldo livre
+                  </Badge>
+                )
+              ) : (
+                <span className="text-muted-foreground">Sem registro de estoque cadastrado</span>
+              )}
+            </div>
+            {stockInfo && (
+              <p className="text-[11px] text-muted-foreground">
+                Saldo total físico: {stockInfo.totalStock} {stockInfo.unit} &bull; Reservas ativas:{' '}
+                {stockInfo.reservedStock} {stockInfo.unit} &bull;{' '}
+                <strong>
+                  Livre: {stockInfo.availableStock} {stockInfo.unit}
+                </strong>
+              </p>
+            )}
+          </div>
+
           {/* Bloco de consolidação de demanda com outras OPs */}
           {consolidation && consolidation.otherDemands.length > 0 && (
             <ConsolidatedDemandBlock
@@ -150,8 +238,24 @@ export function TriageDetailDialog({
           )}
         </div>
         <DialogFooter className="flex flex-col sm:flex-row gap-2">
+          {stockInfo && stockInfo.availableStock >= (Number(item.quantity) || 0) - 0.0001 && (
+            <Button
+              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+              onClick={handleReleaseStock}
+              disabled={submitting}
+              title="Baixa automática no saldo físico e liberação da solicitação"
+            >
+              {submitting ? (
+                <Loader2 className="size-4 mr-2 animate-spin" />
+              ) : (
+                <PackageCheck className="size-4 mr-2" />
+              )}
+              Liberar do Estoque
+            </Button>
+          )}
+
           <Button
-            className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+            className="flex-1 bg-slate-800 hover:bg-slate-900 text-white dark:bg-slate-700 dark:hover:bg-slate-600"
             onClick={handleSendDirectToCompra}
             disabled={submitting}
           >

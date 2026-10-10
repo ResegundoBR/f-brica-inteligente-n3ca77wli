@@ -16,7 +16,15 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { ShoppingCart, FileText, XCircle, Loader2, Layers, ShoppingBag } from 'lucide-react'
+import {
+  ShoppingCart,
+  FileText,
+  XCircle,
+  Loader2,
+  Layers,
+  ShoppingBag,
+  PackageCheck,
+} from 'lucide-react'
 import { ShortageGroup } from '@/lib/shortage-grouping'
 import { MaterialShortage } from '@/types'
 import { formatQuantity } from '@/lib/utils'
@@ -26,6 +34,13 @@ import { useToast } from '@/hooks/use-toast'
 import { NoTranslate } from '@/components/NoTranslate'
 import { UserActionBadge } from '@/components/UserActionBadge'
 import { advanceGroupToCompra } from '@/services/quotations'
+import { useEffect } from 'react'
+import {
+  getStockAvailabilityForCodes,
+  ComponentStockAvailability,
+  normalizeCode,
+} from '@/services/material-reservations'
+import { releaseGroupFromStock } from '@/services/stock-release'
 
 interface TriageGroupDetailDialogProps {
   group: ShortageGroup | null
@@ -43,8 +58,58 @@ export function TriageGroupDetailDialog({
 }: TriageGroupDetailDialogProps) {
   const { toast } = useToast()
   const [loadingAction, setLoadingAction] = useState<string | null>(null)
+  const [stockInfo, setStockInfo] = useState<ComponentStockAvailability | null>(null)
+  const [checkingStock, setCheckingStock] = useState(false)
+
+  useEffect(() => {
+    if (!group || !open) {
+      setStockInfo(null)
+      return
+    }
+    const norm = normalizeCode(group.code)
+    if (!norm) {
+      setStockInfo(null)
+      return
+    }
+    setCheckingStock(true)
+    getStockAvailabilityForCodes([norm])
+      .then((map) => {
+        setStockInfo(map.get(norm) || null)
+      })
+      .catch(() => setStockInfo(null))
+      .finally(() => setCheckingStock(false))
+  }, [group, open])
 
   if (!group) return null
+
+  const handleReleaseGroupFromStock = async () => {
+    setLoadingAction('LiberarEstoque')
+    try {
+      const res = await releaseGroupFromStock(group.items)
+      if (res.successCount > 0) {
+        toast({
+          title: 'Lote liberado do estoque',
+          description: `${res.successCount} de ${group.items.length} solicitação(ões) liberada(s) (${res.totalReleased} un baixadas do almoxarifado).${res.failCount > 0 ? ` Restante (${res.failCount} itens) mantido na fila.` : ''}`,
+        })
+      } else {
+        toast({
+          title: 'Não foi possível liberar do estoque',
+          description: res.results[0]?.error || 'Saldo insuficiente.',
+          variant: 'destructive',
+        })
+      }
+      onOpenChange(false)
+      onAction()
+    } catch (err: any) {
+      toast({
+        title: 'Erro ao liberar lote do estoque',
+        description: err.message || 'Falha ao processar movimentações.',
+        variant: 'destructive',
+      })
+    } finally {
+      setLoadingAction(null)
+    }
+  }
 
   const handleGroupAction = async (status: 'Cotação' | 'Cancelado') => {
     setLoadingAction(status)
@@ -154,6 +219,45 @@ export function TriageGroupDetailDialog({
             </div>
           </div>
 
+          {/* Card de disponibilidade do lote */}
+          <div className="p-3 rounded-lg border bg-slate-50 dark:bg-slate-800/60 text-xs space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-slate-700 dark:text-slate-300">
+                Disponibilidade consolidada no Almoxarifado:
+              </span>
+              {checkingStock ? (
+                <span className="text-muted-foreground flex items-center gap-1">
+                  <Loader2 className="size-3 animate-spin" /> Verificando...
+                </span>
+              ) : stockInfo ? (
+                stockInfo.availableStock >= group.totalQuantity - 0.0001 ? (
+                  <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-900/40 dark:text-emerald-300 font-bold">
+                    Cobre todo o lote ({stockInfo.availableStock} un livres)
+                  </Badge>
+                ) : stockInfo.availableStock > 0 ? (
+                  <Badge className="bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/40 dark:text-amber-300 font-semibold">
+                    Cobre parcial ({stockInfo.availableStock} de {group.totalQuantity} un)
+                  </Badge>
+                ) : (
+                  <Badge className="bg-red-100 text-red-800 border-red-300 dark:bg-red-900/40 dark:text-red-300 font-semibold">
+                    Sem saldo livre (0 un)
+                  </Badge>
+                )
+              ) : (
+                <span className="text-muted-foreground">Sem registro de estoque cadastrado</span>
+              )}
+            </div>
+            {stockInfo && (
+              <p className="text-[11px] text-muted-foreground">
+                Saldo total físico: {stockInfo.totalStock} {stockInfo.unit} &bull; Reservas ativas:{' '}
+                {stockInfo.reservedStock} {stockInfo.unit} &bull;{' '}
+                <strong>
+                  Livre: {stockInfo.availableStock} {stockInfo.unit}
+                </strong>
+              </p>
+            )}
+          </div>
+
           <div>
             <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
               Registros individuais deste código ({group.items.length} OPs/solicitações)
@@ -216,6 +320,28 @@ export function TriageGroupDetailDialog({
         </div>
 
         <DialogFooter className="flex flex-col sm:flex-row gap-2">
+          {stockInfo && stockInfo.availableStock > 0 && (
+            <Button
+              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+              onClick={handleReleaseGroupFromStock}
+              disabled={!!loadingAction}
+              title={
+                stockInfo.availableStock >= group.totalQuantity - 0.0001
+                  ? 'Liberar todas as solicitações deste código com baixa no estoque'
+                  : `Liberar até ${stockInfo.availableStock} un das OPs prioritárias`
+              }
+            >
+              {loadingAction === 'LiberarEstoque' ? (
+                <Loader2 className="size-4 mr-2 animate-spin" />
+              ) : (
+                <PackageCheck className="size-4 mr-2" />
+              )}
+              {stockInfo.availableStock >= group.totalQuantity - 0.0001
+                ? 'Liberar Lote do Estoque'
+                : `Liberar Parcial (${stockInfo.availableStock} un)`}
+            </Button>
+          )}
+
           <Button
             className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
             onClick={() => {

@@ -49,7 +49,14 @@ import {
 import { MaterialShortage, PcpOrder, ComponentCategory, MasterComponent } from '@/types'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
 import { TriageTable } from './components/TriageTable'
+import { CloseResidualDialog } from './components/CloseResidualDialog'
 import { CotacoesTable } from './components/CotacoesTable'
+import {
+  getStockAvailabilityForCodes,
+  ComponentStockAvailability,
+  normalizeCode,
+} from '@/services/material-reservations'
+import { releaseShortageFromStock, releaseGroupFromStock } from '@/services/stock-release'
 import { ProductDossierModal } from './components/ProductDossierModal'
 import { ProductSearchBar } from './components/ProductSearchBar'
 import { TriageDetailDialog } from './components/TriageDetailDialog'
@@ -84,6 +91,9 @@ export default function HubSuprimentosPage() {
   const [categories, setCategories] = useState<ComponentCategory[]>([])
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
   const [groupedByCategory, setGroupedByCategory] = useState(true)
+  const [availabilityMap, setAvailabilityMap] = useState<Map<string, ComponentStockAvailability>>(
+    new Map(),
+  )
 
   // Diálogos de Fila / Triagem
   const [selectedItem, setSelectedItem] = useState<MaterialShortage | null>(null)
@@ -111,6 +121,16 @@ export default function HubSuprimentosPage() {
   // Confirmação de envio direto para Compras da Fila
   const [confirmComprasOpen, setConfirmComprasOpen] = useState(false)
   const [sendingCompras, setSendingCompras] = useState(false)
+
+  // Confirmação rápida de Liberação do Estoque (1 clique)
+  const [releasingItem, setReleasingItem] = useState<MaterialShortage | null>(null)
+  const [releasingGroup, setReleasingGroup] = useState<ShortageGroup | null>(null)
+  const [releasingBatchSelection, setReleasingBatchSelection] = useState(false)
+  const [confirmReleaseOpen, setConfirmReleaseOpen] = useState(false)
+  const [releasingLoading, setReleasingLoading] = useState(false)
+
+  // Diálogo de encerramento de saldo residual
+  const [closeResidualOpen, setCloseResidualOpen] = useState(false)
 
   // Estado da aba Cotações
   const [cotacoesSelectedIds, setCotacoesSelectedIds] = useState<Set<string>>(new Set())
@@ -140,6 +160,21 @@ export default function HubSuprimentosPage() {
       setShortages(shortRes)
       setComponents(compRes)
       setCategories(catRes)
+
+      // Atualizar disponibilidades de estoque para os códigos em aberto
+      const codes = Array.from(
+        new Set(
+          shortRes
+            .filter((s) => s.status === 'Pendente' || s.status === 'Cotação')
+            .map((s) => normalizeCode(s.code))
+            .filter(Boolean),
+        ),
+      )
+      if (codes.length > 0) {
+        getStockAvailabilityForCodes(codes)
+          .then(setAvailabilityMap)
+          .catch(() => {})
+      }
     } catch {
       /* intentionally ignored */
     }
@@ -234,6 +269,87 @@ export default function HubSuprimentosPage() {
   const handleFilaGroupClick = (group: ShortageGroup) => {
     group.items.forEach((it) => markAsViewed(it.id))
     setSelectedGroup(group)
+  }
+
+  // ----------------------------------------------------
+  // ETAPA 3: AÇÕES DE 1 CLIQUE: LIBERAR DO ESTOQUE
+  // ----------------------------------------------------
+  const handlePromptReleaseItem = (item: MaterialShortage) => {
+    setReleasingItem(item)
+    setReleasingGroup(null)
+    setReleasingBatchSelection(false)
+    setConfirmReleaseOpen(true)
+  }
+
+  const handlePromptReleaseGroup = (group: ShortageGroup) => {
+    setReleasingItem(null)
+    setReleasingGroup(group)
+    setReleasingBatchSelection(false)
+    setConfirmReleaseOpen(true)
+  }
+
+  const handlePromptReleaseSelected = () => {
+    if (filaSelectedShortages.length === 0) return
+    setReleasingItem(null)
+    setReleasingGroup(null)
+    setReleasingBatchSelection(true)
+    setConfirmReleaseOpen(true)
+  }
+
+  const handleExecuteReleaseConfirm = async () => {
+    setReleasingLoading(true)
+    try {
+      if (releasingItem) {
+        await releaseShortageFromStock(releasingItem)
+        toast({
+          title: 'Material liberado do estoque',
+          description: `Solicitação baixada do almoxarifado (${formatQuantity(releasingItem.quantity)} un) e movida para o Histórico.`,
+        })
+      } else if (releasingGroup) {
+        const res = await releaseGroupFromStock(releasingGroup.items)
+        if (res.successCount > 0) {
+          toast({
+            title: 'Lote liberado do estoque',
+            description: `${res.successCount} de ${releasingGroup.items.length} solicitações liberadas (${res.totalReleased} un baixadas do almoxarifado).${res.failCount > 0 ? ` ${res.failCount} itens sem saldo permaneceram na fila.` : ''}`,
+          })
+        } else {
+          toast({
+            title: 'Não foi possível liberar',
+            description: res.results[0]?.error || 'Saldo insuficiente.',
+            variant: 'destructive',
+          })
+        }
+      } else if (releasingBatchSelection) {
+        const res = await releaseGroupFromStock(filaSelectedShortages)
+        if (res.successCount > 0) {
+          toast({
+            title: 'Itens selecionados liberados do estoque',
+            description: `${res.successCount} solicitações liberadas com saída no almoxarifado (${res.totalReleased} un baixadas).${res.failCount > 0 ? ` ${res.failCount} itens sem saldo suficiente mantidos na fila.` : ''}`,
+          })
+          clearFilaSelection()
+        } else {
+          toast({
+            title: 'Nenhum item liberado',
+            description: res.results[0]?.error || 'Saldo insuficiente no almoxarifado.',
+            variant: 'destructive',
+          })
+        }
+      }
+
+      setConfirmReleaseOpen(false)
+      setReleasingItem(null)
+      setReleasingGroup(null)
+      setReleasingBatchSelection(false)
+      fetchData()
+    } catch (err: any) {
+      toast({
+        title: 'Erro ao liberar do estoque',
+        description: err.message || 'Falha ao processar movimentação de saída.',
+        variant: 'destructive',
+      })
+    } finally {
+      setReleasingLoading(false)
+    }
   }
 
   const handleOpenDirectQuotation = (item: MaterialShortage, groupItems?: MaterialShortage[]) => {
@@ -831,6 +947,17 @@ export default function HubSuprimentosPage() {
               <Button
                 variant="outline"
                 size="sm"
+                onClick={() => setCloseResidualOpen(true)}
+                className="h-8 text-xs gap-1.5 text-amber-700 border-amber-300 hover:bg-amber-50 dark:border-amber-800 dark:hover:bg-amber-950/40 font-semibold"
+                title="Encerrar saldos parciais e solicitações inativas"
+              >
+                <TrendingUp className="w-3.5 h-3.5 text-amber-600" />
+                Encerrar Saldo Residual
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setGroupedByCategory((g) => !g)}
                 className="h-8 text-xs gap-1.5"
               >
@@ -897,8 +1024,11 @@ export default function HubSuprimentosPage() {
                     <TriageTable
                       items={group.items}
                       allShortages={shortages}
+                      availabilityMap={availabilityMap}
                       onRowClick={handleFilaRowClick}
                       onGroupClick={handleFilaGroupClick}
+                      onReleaseItem={handlePromptReleaseItem}
+                      onReleaseGroup={handlePromptReleaseGroup}
                       searchQuery={searchQuery}
                       onToggleBlockSelect={handleSelectFilaCategoryItems}
                     />
@@ -910,8 +1040,11 @@ export default function HubSuprimentosPage() {
             <TriageTable
               items={triagemItems}
               allShortages={shortages}
+              availabilityMap={availabilityMap}
               onRowClick={handleFilaRowClick}
               onGroupClick={handleFilaGroupClick}
+              onReleaseItem={handlePromptReleaseItem}
+              onReleaseGroup={handlePromptReleaseGroup}
               searchQuery={searchQuery}
               onToggleBlockSelect={handleSelectFilaCategoryItems}
             />
@@ -927,8 +1060,16 @@ export default function HubSuprimentosPage() {
                 <Button
                   size="sm"
                   variant="secondary"
-                  onClick={() => setConfirmComprasOpen(true)}
+                  onClick={handlePromptReleaseSelected}
                   className="rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium border-0 text-xs"
+                >
+                  <TrendingUp className="w-3.5 h-3.5 mr-1.5" /> Liberar do Estoque
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setConfirmComprasOpen(true)}
+                  className="rounded-full bg-slate-800 hover:bg-slate-900 text-white font-medium border-0 text-xs"
                 >
                   <ShoppingBag className="w-3.5 h-3.5 mr-1.5" /> Enviar Compras
                 </Button>
@@ -982,6 +1123,17 @@ export default function HubSuprimentosPage() {
             </div>
 
             <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCloseResidualOpen(true)}
+                className="h-8 text-xs gap-1.5 text-amber-700 border-amber-300 hover:bg-amber-50 dark:border-amber-800 dark:hover:bg-amber-950/40 font-semibold"
+                title="Encerrar saldos parciais e solicitações inativas"
+              >
+                <TrendingUp className="w-3.5 h-3.5 text-amber-600" />
+                Encerrar Saldo Residual
+              </Button>
+
               <Button
                 variant="outline"
                 size="sm"
@@ -1345,6 +1497,104 @@ export default function HubSuprimentosPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* DIÁLOGO DE CONFIRMAÇÃO: LIBERAÇÃO DIRETA DO ESTOQUE */}
+      <Dialog open={confirmReleaseOpen} onOpenChange={setConfirmReleaseOpen}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <TrendingUp className="size-5 text-emerald-600" />
+              <span>Confirmar Liberação do Estoque</span>
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 text-sm">
+            <p className="text-muted-foreground text-xs">
+              Esta ação criará imediatamente uma movimentação de <strong>Saída</strong> no estoque e
+              marcará a solicitação com o status <strong>'Liberado_Estoque'</strong>, retirando-a da
+              Fila de Entrada e movendo para o Histórico.
+            </p>
+
+            {releasingItem && (
+              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg border text-xs space-y-1">
+                <div>
+                  <strong>Item:</strong> [{releasingItem.code}] {releasingItem.description}
+                </div>
+                <div>
+                  <strong>Quantidade a baixar:</strong> {formatQuantity(releasingItem.quantity)} un
+                </div>
+                <div>
+                  <strong>Destino:</strong>{' '}
+                  {releasingItem.expand?.order_id?.op_number
+                    ? `OP ${releasingItem.expand.order_id.op_number}`
+                    : 'Geral'}
+                </div>
+              </div>
+            )}
+
+            {releasingGroup && (
+              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg border text-xs space-y-1">
+                <div>
+                  <strong>Lote:</strong> [{releasingGroup.code}] {releasingGroup.description}
+                </div>
+                <div>
+                  <strong>Total a baixar:</strong> {formatQuantity(releasingGroup.totalQuantity)} un
+                </div>
+                <div>
+                  <strong>Solicitações abrangidas:</strong> {releasingGroup.items.length}{' '}
+                  registro(s) ({releasingGroup.opCount} OP(s))
+                </div>
+              </div>
+            )}
+
+            {releasingBatchSelection && (
+              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg border text-xs space-y-1">
+                <div>
+                  <strong>Solicitações selecionadas:</strong> {filaSelectedShortages.length}{' '}
+                  registro(s)
+                </div>
+                <div>
+                  <strong>Quantidade total demandada:</strong>{' '}
+                  {formatQuantity(totalFilaSelectedUnits)} un
+                </div>
+                <div className="text-[11px] text-muted-foreground italic">
+                  * Registros com saldo livre suficiente serão liberados; se houver algum sem saldo,
+                  permanecerá na fila.
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setConfirmReleaseOpen(false)}
+              disabled={releasingLoading}
+            >
+              Cancelar
+            </Button>
+            <Button
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+              onClick={handleExecuteReleaseConfirm}
+              disabled={releasingLoading}
+            >
+              {releasingLoading ? (
+                <Loader2 className="size-4 mr-2 animate-spin" />
+              ) : (
+                <Check className="size-4 mr-2" />
+              )}
+              Confirmar Liberação
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* DIÁLOGO: ENCERRAR SALDO RESIDUAL (ETAPA 5 PARTE 2) */}
+      <CloseResidualDialog
+        open={closeResidualOpen}
+        onOpenChange={setCloseResidualOpen}
+        onSuccess={fetchData}
+      />
 
       {/* DOSSIÊ MODAL */}
       <ProductDossierModal

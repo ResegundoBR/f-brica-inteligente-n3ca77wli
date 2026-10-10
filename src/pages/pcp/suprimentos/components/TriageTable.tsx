@@ -17,14 +17,25 @@ import { useNewRequests } from '@/hooks/use-new-requests'
 import { format, parseISO } from 'date-fns'
 import { cn } from '@/lib/utils'
 import { UserActionBadge } from '@/components/UserActionBadge'
-import { ChevronDown, ChevronRight, Layers, ExternalLink } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronRight,
+  Layers,
+  ExternalLink,
+  PackageCheck,
+  AlertCircle,
+} from 'lucide-react'
 import { groupShortagesByCode, ShortageGroup } from '@/lib/shortage-grouping'
+import { ComponentStockAvailability } from '@/services/material-reservations'
 
 interface TriageTableProps {
   items: MaterialShortage[]
   allShortages?: MaterialShortage[]
+  availabilityMap?: Map<string, ComponentStockAvailability>
   onRowClick: (item: MaterialShortage) => void
   onGroupClick?: (group: ShortageGroup) => void
+  onReleaseItem?: (item: MaterialShortage) => void
+  onReleaseGroup?: (group: ShortageGroup) => void
   searchQuery?: string
   /**
    * Se fornecido, o checkbox do cabeçalho controla apenas as linhas desta tabela/bloco,
@@ -35,8 +46,12 @@ interface TriageTableProps {
 
 export function TriageTable({
   items,
+  allShortages,
+  availabilityMap,
   onRowClick,
   onGroupClick,
+  onReleaseItem,
+  onReleaseGroup,
   searchQuery = '',
   onToggleBlockSelect,
 }: TriageTableProps) {
@@ -132,7 +147,8 @@ export function TriageTable({
             <TableHead className="w-[90px]">Nº do Pedido</TableHead>
             <TableHead className="w-[90px]">Nº da OP</TableHead>
             <TableHead className="w-[100px]">Data Necessidade</TableHead>
-            <TableHead className="w-[80px] text-center">Ações</TableHead>
+            <TableHead className="w-[140px] text-center">Disponibilidade</TableHead>
+            <TableHead className="w-[160px] text-center">Ações</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -223,14 +239,76 @@ export function TriageTable({
                       : ''}
                   </TableCell>
                   <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 px-2 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                      onClick={() => onRowClick(singleItem)}
-                    >
-                      Triagem
-                    </Button>
+                    {(() => {
+                      const norm = (singleItem.code || '').trim().toLowerCase()
+                      const stock = norm ? availabilityMap?.get(norm) : null
+                      const avail = stock?.availableStock || 0
+                      const needed = Number(singleItem.quantity) || 0
+
+                      if (!stock || avail <= 0) {
+                        return (
+                          <Badge
+                            variant="outline"
+                            className="bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-900 text-[10px] font-semibold"
+                          >
+                            Não tem
+                          </Badge>
+                        )
+                      }
+                      if (avail >= needed - 0.0001) {
+                        return (
+                          <Badge
+                            variant="outline"
+                            className="bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 text-[10px] font-bold"
+                          >
+                            Tem em estoque · {avail} un
+                          </Badge>
+                        )
+                      }
+                      return (
+                        <Badge
+                          variant="outline"
+                          className="bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800 text-[10px] font-semibold"
+                        >
+                          Parcial · {avail} un
+                        </Badge>
+                      )
+                    })()}
+                  </TableCell>
+                  <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-center gap-1.5">
+                      {(() => {
+                        const norm = (singleItem.code || '').trim().toLowerCase()
+                        const stock = norm ? availabilityMap?.get(norm) : null
+                        const avail = stock?.availableStock || 0
+                        const needed = Number(singleItem.quantity) || 0
+                        const canRelease = avail >= needed - 0.0001 && needed > 0
+
+                        return (
+                          <>
+                            {canRelease && onReleaseItem && (
+                              <Button
+                                size="sm"
+                                className="h-7 px-2 text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-xs"
+                                onClick={() => onReleaseItem(singleItem)}
+                                title="Liberar diretamente do estoque (cria Saída)"
+                              >
+                                <PackageCheck className="size-3 mr-1" />
+                                Liberar
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                              onClick={() => onRowClick(singleItem)}
+                            >
+                              Triagem
+                            </Button>
+                          </>
+                        )
+                      })()}
+                    </div>
                   </TableCell>
                 </TableRow>
               )
@@ -354,13 +432,75 @@ export function TriageTable({
                     </button>
                   </TableCell>
                   <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
-                    <Button
-                      size="sm"
-                      className="h-7 px-2.5 text-xs bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-xs"
-                      onClick={() => onGroupClick?.(group)}
-                    >
-                      Lote <ExternalLink className="size-3 ml-1" />
-                    </Button>
+                    {(() => {
+                      const norm = (group.code || '').trim().toLowerCase()
+                      const stock = norm ? availabilityMap?.get(norm) : null
+                      const avail = stock?.availableStock || 0
+                      const totalNeeded = Number(group.totalQuantity) || 0
+
+                      if (!stock || avail <= 0) {
+                        return (
+                          <Badge
+                            variant="outline"
+                            className="bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-900 text-[10px] font-semibold"
+                          >
+                            Não tem
+                          </Badge>
+                        )
+                      }
+                      if (avail >= totalNeeded - 0.0001) {
+                        return (
+                          <Badge
+                            variant="outline"
+                            className="bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 text-[10px] font-bold"
+                          >
+                            Tem em estoque · {avail} un
+                          </Badge>
+                        )
+                      }
+                      return (
+                        <Badge
+                          variant="outline"
+                          className="bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800 text-[10px] font-semibold"
+                        >
+                          Parcial · {avail} de {totalNeeded} un
+                        </Badge>
+                      )
+                    })()}
+                  </TableCell>
+                  <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-center gap-1.5">
+                      {(() => {
+                        const norm = (group.code || '').trim().toLowerCase()
+                        const stock = norm ? availabilityMap?.get(norm) : null
+                        const avail = stock?.availableStock || 0
+                        const totalNeeded = Number(group.totalQuantity) || 0
+                        const canReleaseAll = avail >= totalNeeded - 0.0001 && totalNeeded > 0
+
+                        return (
+                          <>
+                            {canReleaseAll && onReleaseGroup && (
+                              <Button
+                                size="sm"
+                                className="h-7 px-2 text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-xs"
+                                onClick={() => onReleaseGroup(group)}
+                                title="Liberar todos os membros do lote direto do estoque"
+                              >
+                                <PackageCheck className="size-3 mr-1" />
+                                Liberar Lote
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              className="h-7 px-2.5 text-xs bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-xs"
+                              onClick={() => onGroupClick?.(group)}
+                            >
+                              Lote <ExternalLink className="size-3 ml-1" />
+                            </Button>
+                          </>
+                        )
+                      })()}
+                    </div>
                   </TableCell>
                 </TableRow>
 
@@ -462,14 +602,67 @@ export function TriageTable({
                             : '-'}
                         </TableCell>
                         <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-6 px-1.5 text-[11px] text-blue-600 hover:text-blue-700"
-                            onClick={() => onRowClick(subItem)}
-                          >
-                            Individual
-                          </Button>
+                          {(() => {
+                            const norm = (subItem.code || '').trim().toLowerCase()
+                            const stock = norm ? availabilityMap?.get(norm) : null
+                            const avail = stock?.availableStock || 0
+                            const needed = Number(subItem.quantity) || 0
+
+                            if (!stock || avail <= 0) {
+                              return (
+                                <span className="text-[10px] text-red-600 dark:text-red-400 font-medium">
+                                  Sem saldo
+                                </span>
+                              )
+                            }
+                            if (avail >= needed - 0.0001) {
+                              return (
+                                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
+                                  Cobre OP ({avail} un)
+                                </span>
+                              )
+                            }
+                            return (
+                              <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                                Parcial ({avail} un)
+                              </span>
+                            )
+                          })()}
+                        </TableCell>
+                        <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-center gap-1">
+                            {(() => {
+                              const norm = (subItem.code || '').trim().toLowerCase()
+                              const stock = norm ? availabilityMap?.get(norm) : null
+                              const avail = stock?.availableStock || 0
+                              const needed = Number(subItem.quantity) || 0
+                              const canRelease = avail >= needed - 0.0001 && needed > 0
+
+                              return (
+                                <>
+                                  {canRelease && onReleaseItem && (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-6 px-1.5 text-[10px] text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50 dark:text-emerald-400 font-semibold"
+                                      onClick={() => onReleaseItem(subItem)}
+                                      title="Liberar este membro específico do estoque"
+                                    >
+                                      Liberar
+                                    </Button>
+                                  )}
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 px-1.5 text-[11px] text-blue-600 hover:text-blue-700"
+                                    onClick={() => onRowClick(subItem)}
+                                  >
+                                    Individual
+                                  </Button>
+                                </>
+                              )
+                            })()}
+                          </div>
                         </TableCell>
                       </TableRow>
                     )

@@ -146,7 +146,15 @@ onRecordUpdate((e) => {
     } else if (oldStatus === 'Compra') {
       // De Compra pode ir para Recebido, Recebido_Parcial, Cancelado, ou voltar para Cotação (reversão/split)
     } else if (oldStatus === 'Recebido_Parcial') {
-      // De Recebido_Parcial pode ir para Recebido, Cancelado, ou manter em Compra
+      // De Recebido_Parcial pode ir para:
+      // - Recebido (entrega final ou encerramento de saldo residual)
+      // - Cancelado (cancelamento do saldo remanescente)
+      // - Compra (caso retorne para aguardo de entrega ou reabertura)
+      if (newStatus !== 'Recebido' && newStatus !== 'Cancelado' && newStatus !== 'Compra') {
+        isTransitionAllowed = false
+        invalidTransitionMsg =
+          'Transição inválida: um registro em Recebido Parcial só pode avançar para Recebido, Cancelado ou Compra.'
+      }
     } else if (oldStatus === 'Recebido') {
       // De Recebido para outros status: se reaberto, logar aviso e verificar se quantidade recebida foi zerada
       if (newStatus !== 'Recebido') {
@@ -194,9 +202,21 @@ onRecordUpdate((e) => {
   // Sincronização automática do status com base nas quantidades recebidas
   var currentStatus = record.getString('status') || ''
   if (currentStatus !== 'Cancelado' && currentStatus !== 'Liberado_Estoque') {
+    // Se o usuário/sistema marcou explicitamente 'Recebido' com observação de encerramento de saldo residual,
+    // não forçar 'Recebido_Parcial' mesmo que receivedQty < totalQty.
+    var isResidualClosure =
+      newStatus === 'Recebido' &&
+      (record.getString('observation') || '').toLowerCase().indexOf('saldo residual encerrado') !==
+        -1
+
     if (totalQty > 0 && receivedQty > 0 && receivedQty >= totalQty - 0.0001) {
       record.set('status', 'Recebido')
-    } else if (totalQty > 0 && receivedQty > 0 && receivedQty < totalQty - 0.0001) {
+    } else if (
+      totalQty > 0 &&
+      receivedQty > 0 &&
+      receivedQty < totalQty - 0.0001 &&
+      !isResidualClosure
+    ) {
       record.set('status', 'Recebido_Parcial')
     }
   }

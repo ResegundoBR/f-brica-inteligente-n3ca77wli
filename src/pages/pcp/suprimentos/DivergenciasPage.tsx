@@ -6,6 +6,7 @@ import {
   type DivergenceItem,
   type IntegrityCheckResult,
 } from '@/services/suprimentos-integrity'
+import { CloseResidualDialog } from './components/CloseResidualDialog'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -33,6 +34,7 @@ export default function DivergenciasPage() {
   const [cleaning, setCleaning] = useState<boolean>(false)
   const [cleanFeedback, setCleanFeedback] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [closeResidualOpen, setCloseResidualOpen] = useState<boolean>(false)
   const [searchTerm, setSearchTerm] = useState<string>('')
   const [severityFilter, setSeverityFilter] = useState<string>('todos')
   const [categoryFilter, setCategoryFilter] = useState<string>('todos')
@@ -130,6 +132,16 @@ export default function DivergenciasPage() {
         icon={ShieldAlert}
         action={
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCloseResidualOpen(true)}
+              className="gap-2 text-amber-700 border-amber-300 hover:bg-amber-50 dark:text-amber-400 dark:border-amber-800 dark:hover:bg-amber-950/40 font-semibold"
+              title="Encerrar saldos parciais e solicitações inativas"
+            >
+              <AlertTriangle className="size-3.5" />
+              Encerrar Saldo Residual
+            </Button>
             <Button
               variant="default"
               size="sm"
@@ -365,6 +377,13 @@ export default function DivergenciasPage() {
           </div>
         </div>
       )}
+
+      {/* DIÁLOGO: ENCERRAR SALDO RESIDUAL (ETAPA 5 PARTE 2) */}
+      <CloseResidualDialog
+        open={closeResidualOpen}
+        onOpenChange={setCloseResidualOpen}
+        onSuccess={loadIntegrityData}
+      />
     </div>
   )
 }

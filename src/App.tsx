@@ -18,6 +18,7 @@ import PcpOrders from './pages/pcp/PcpOrders'
 import PcpProgramacao from './pages/pcp/PcpProgramacao'
 import PcpVinculosPdf from './pages/pcp/PcpVinculosPdf'
 import { PcpInbox } from './pages/pcp/PcpInbox'
+import HubSuprimentosPage from './pages/pcp/suprimentos/HubSuprimentosPage'
 import SolicitacoesPage from './pages/pcp/suprimentos/SolicitacoesPage'
 import CotacoesPage from './pages/pcp/suprimentos/CotacoesPage'
 import ComprasPage from './pages/pcp/suprimentos/ComprasPage'
@@ -223,6 +224,14 @@ const App = () => (
                 element={
                   <RoleGuard module="operator">
                     <PcpOperator />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/pcp/suprimentos/hub"
+                element={
+                  <RoleGuard module="suprimentos">
+                    <HubSuprimentosPage />
                   </RoleGuard>
                 }
               />

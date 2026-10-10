@@ -15,6 +15,7 @@ interface SuprimentosHeaderProps {
 }
 
 const suprimentosTabs = [
+  { label: 'Hub de Suprimentos', href: '/pcp/suprimentos/hub' },
   { label: 'Solicitações', href: '/pcp/suprimentos/solicitacoes' },
   { label: 'Cotações', href: '/pcp/suprimentos/cotacoes' },
   { label: 'Reservas por Programação', href: '/pcp/suprimentos/reservas-programacao' },

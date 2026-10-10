@@ -61,6 +61,12 @@ const navItems = [
     group: 'Produto/Processos',
   },
   {
+    title: 'Hub de Suprimentos',
+    url: '/pcp/suprimentos/hub',
+    icon: ClipboardList,
+    group: 'Suprimentos',
+  },
+  {
     title: 'Solicitações',
     url: '/pcp/suprimentos/solicitacoes',
     icon: ClipboardList,
@@ -203,6 +209,7 @@ export function AppSidebar() {
       case 'Programação':
       case 'Vínculos de PDF':
         return !!role.access_ordens_producao || !!role.access_pcp
+      case 'Hub de Suprimentos':
       case 'Solicitações':
       case 'Cotações':
       case 'Reservas por Programação':

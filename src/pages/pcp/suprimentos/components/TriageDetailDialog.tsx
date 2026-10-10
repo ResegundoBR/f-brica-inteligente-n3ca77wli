@@ -24,16 +24,17 @@ interface TriageDetailDialogProps {
   item: MaterialShortage | null
   allShortages?: MaterialShortage[]
   open: boolean
-  onOpenChange: (o: boolean) => void
+  onOpenChange: (open: boolean) => void
   onAction: () => void
+  onOpenQuotation?: (item: MaterialShortage) => void
 }
-
 export function TriageDetailDialog({
   item,
   allShortages = [],
   open,
   onOpenChange,
   onAction,
+  onOpenQuotation,
 }: TriageDetailDialogProps) {
   const { toast } = useToast()
   const [submitting, setSubmitting] = useState(false)
@@ -163,10 +164,18 @@ export function TriageDetailDialog({
           </Button>
           <Button
             className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
-            onClick={() => handleTriage('Cotação')}
+            onClick={() => {
+              if (onOpenQuotation) {
+                onOpenChange(false)
+                onOpenQuotation(item)
+              } else {
+                handleTriage('Cotação')
+              }
+            }}
             disabled={submitting}
           >
-            <ShoppingCart className="size-4 mr-2" /> Para Cotação
+            <ShoppingCart className="size-4 mr-2" />{' '}
+            {onOpenQuotation ? 'Cotar Agora' : 'Para Cotação'}
           </Button>
           <Button
             className="flex-1 bg-red-600 hover:bg-red-700 text-white"

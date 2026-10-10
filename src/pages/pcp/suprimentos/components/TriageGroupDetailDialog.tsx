@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/table'
 import { ShoppingCart, FileText, XCircle, Loader2, Layers, ShoppingBag } from 'lucide-react'
 import { ShortageGroup } from '@/lib/shortage-grouping'
+import { MaterialShortage } from '@/types'
 import { formatQuantity } from '@/lib/utils'
 import { format, parseISO } from 'date-fns'
 import pb from '@/lib/pocketbase/client'
@@ -29,15 +30,16 @@ import { advanceGroupToCompra } from '@/services/quotations'
 interface TriageGroupDetailDialogProps {
   group: ShortageGroup | null
   open: boolean
-  onOpenChange: (o: boolean) => void
+  onOpenChange: (open: boolean) => void
   onAction: () => void
+  onOpenQuotation?: (item: MaterialShortage, groupItems: MaterialShortage[]) => void
 }
-
 export function TriageGroupDetailDialog({
   group,
   open,
   onOpenChange,
   onAction,
+  onOpenQuotation,
 }: TriageGroupDetailDialogProps) {
   const { toast } = useToast()
   const [loadingAction, setLoadingAction] = useState<string | null>(null)
@@ -215,20 +217,15 @@ export function TriageGroupDetailDialog({
 
         <DialogFooter className="flex flex-col sm:flex-row gap-2">
           <Button
-            className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
-            onClick={handleSendGroupToCompra}
-            disabled={!!loadingAction}
-          >
-            {loadingAction === 'Compra' ? (
-              <Loader2 className="size-4 mr-2 animate-spin" />
-            ) : (
-              <ShoppingBag className="size-4 mr-2" />
-            )}
-            Enviar Compras
-          </Button>
-          <Button
             className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
-            onClick={() => handleGroupAction('Cotação')}
+            onClick={() => {
+              if (onOpenQuotation && group.items[0]) {
+                onOpenChange(false)
+                onOpenQuotation(group.items[0], group.items)
+              } else {
+                handleGroupAction('Cotação')
+              }
+            }}
             disabled={!!loadingAction}
           >
             {loadingAction === 'Cotação' ? (
@@ -236,7 +233,7 @@ export function TriageGroupDetailDialog({
             ) : (
               <ShoppingCart className="size-4 mr-2" />
             )}
-            Para Cotação
+            {onOpenQuotation ? 'Cotar Lote Agora' : 'Todas p/ Cotação'}
           </Button>
           <Button
             className="flex-1 bg-red-600 hover:bg-red-700 text-white"

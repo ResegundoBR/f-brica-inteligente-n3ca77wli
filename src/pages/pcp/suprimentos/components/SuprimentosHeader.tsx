@@ -5,6 +5,7 @@ import { countPendingRetroactiveWithdrawals } from '@/services/retroactive-withd
 import { getMaterialMinLevels, calculateMinLevelAlerts } from '@/services/material-min-levels'
 import { getStockAvailabilityForCodes } from '@/services/material-reservations'
 import { useRealtime } from '@/hooks/use-realtime'
+import pb from '@/lib/pocketbase/client'
 
 interface SuprimentosHeaderProps {
   title: string
@@ -27,6 +28,7 @@ const suprimentosTabs = [
   { label: 'Terceirização', href: '/pcp/suprimentos/terceirizacao' },
   { label: 'Fornecedores', href: '/pcp/suprimentos/fornecedores' },
   { label: 'Baixas Retroativas', href: '/pcp/suprimentos/baixas-retroativas' },
+  { label: 'Divergências', href: '/pcp/suprimentos/divergencias' },
 ]
 
 export function SuprimentosHeader({
@@ -38,6 +40,7 @@ export function SuprimentosHeader({
   const location = useLocation()
   const [pendingRetroCount, setPendingRetroCount] = useState<number>(0)
   const [minLevelAlertCount, setMinLevelAlertCount] = useState<number>(0)
+  const [divergencesCount, setDivergencesCount] = useState<number>(0)
 
   const fetchAlerts = async () => {
     try {
@@ -60,6 +63,16 @@ export function SuprimentosHeader({
       .then(setPendingRetroCount)
       .catch(() => setPendingRetroCount(0))
     fetchAlerts()
+    // Checagem assíncrona leve de divergências
+    pb.send<{ data?: { total_divergences?: number } }>('/backend/v1/suprimentos/integrity-check', {
+      method: 'GET',
+    })
+      .then((payload) => {
+        if (payload?.data?.total_divergences !== undefined) {
+          setDivergencesCount(payload.data.total_divergences)
+        }
+      })
+      .catch(() => setDivergencesCount(0))
   }, [])
 
   useRealtime('pcp_retroactive_withdrawals', () => {
@@ -109,6 +122,14 @@ export function SuprimentosHeader({
                   className="ml-1.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-600 text-white shadow-xs"
                 >
                   {minLevelAlertCount}
+                </span>
+              )}
+              {tab.href === '/pcp/suprimentos/divergencias' && divergencesCount > 0 && (
+                <span
+                  title={`${divergencesCount} divergência(s) de integridade detectada(s)`}
+                  className="ml-1.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-red-600 text-white shadow-xs"
+                >
+                  {divergencesCount}
                 </span>
               )}
             </Link>

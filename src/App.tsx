@@ -31,6 +31,7 @@ import ComponentesPage from './pages/pcp/suprimentos/ComponentesPage'
 import BaixasRetroativasPage from './pages/pcp/suprimentos/BaixasRetroativasPage'
 import DuplicatasPage from './pages/pcp/suprimentos/DuplicatasPage'
 import ReservasPorProgramacaoPage from './pages/pcp/suprimentos/ReservasPorProgramacaoPage'
+import DivergenciasPage from './pages/pcp/suprimentos/DivergenciasPage'
 import PcpClients from './pages/pcp/PcpClients'
 import PcpOperator from './pages/pcp/PcpOperator'
 import PcpCommercial from './pages/pcp/PcpCommercial'
@@ -326,6 +327,14 @@ const App = () => (
                 element={
                   <RoleGuard module="suprimentos">
                     <ReservasPorProgramacaoPage />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/pcp/suprimentos/divergencias"
+                element={
+                  <RoleGuard module="suprimentos">
+                    <DivergenciasPage />
                   </RoleGuard>
                 }
               />

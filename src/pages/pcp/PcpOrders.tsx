@@ -53,8 +53,11 @@ import { useOrderMessages } from '@/hooks/use-order-messages'
 import { OrderMessageBell } from '@/components/OrderMessageBell'
 import { OrderMessagesPanel } from '@/components/OrderMessagesPanel'
 import { StatusLegend } from '@/components/StatusLegend'
+import { useSearchParams } from 'react-router-dom'
+import { OpReadOnlyModal } from './components/OpReadOnlyModal'
 
 export default function PcpOrders() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [orders, setOrders] = useState<PcpOrder[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [clients, setClients] = useState<Client[]>([])
@@ -79,9 +82,28 @@ export default function PcpOrders() {
   const [promisedOnly, setPromisedOnly] = useState(false)
   const [editingOp, setEditingOp] = useState<PcpOrder | null>(null)
   const [deleteOp, setDeleteOp] = useState<PcpOrder | null>(null)
+  const [readOnlyOpIdentifier, setReadOnlyOpIdentifier] = useState<string | null>(null)
+  const [readOnlyHighlightCode, setReadOnlyHighlightCode] = useState<string | null>(null)
+  const [readOnlyModalOpen, setReadOnlyModalOpen] = useState(false)
   const { toast } = useToast()
   const { getOrderMessageInfo, markOrderAsRead } = useOrderMessages()
   const { user } = useAuth()
+
+  // Deep-link via query params: ?op=...&highlightCode=... ou ?order=...
+  useEffect(() => {
+    const opParam = searchParams.get('op')
+    const highlightParam = searchParams.get('highlightCode')
+    const orderParam = searchParams.get('order')
+
+    if (opParam) {
+      setReadOnlyOpIdentifier(opParam)
+      setReadOnlyHighlightCode(highlightParam || null)
+      setReadOnlyModalOpen(true)
+    } else if (orderParam) {
+      // Se vier só order=..., abre a busca filtrada pelo pedido
+      setSearch(orderParam)
+    }
+  }, [searchParams])
 
   const isAdmin = useMemo(() => {
     if (!user) return false
@@ -783,6 +805,25 @@ export default function PcpOrders() {
             open={!!messageOrder}
             onOpenChange={(open) => !open && setMessageOrder(null)}
             onMessagesRead={markOrderAsRead}
+          />
+
+          <OpReadOnlyModal
+            open={readOnlyModalOpen}
+            onOpenChange={(open) => {
+              setReadOnlyModalOpen(open)
+              if (!open) {
+                // Limpar query params da URL ao fechar modal mantendo outros filtros
+                const newParams = new URLSearchParams(searchParams)
+                newParams.delete('op')
+                newParams.delete('highlightCode')
+                setSearchParams(newParams, { replace: true })
+                setReadOnlyOpIdentifier(null)
+                setReadOnlyHighlightCode(null)
+              }
+            }}
+            opIdentifier={readOnlyOpIdentifier}
+            existingOrders={orders}
+            highlightCode={readOnlyHighlightCode}
           />
         </TabsContent>
       </Tabs>

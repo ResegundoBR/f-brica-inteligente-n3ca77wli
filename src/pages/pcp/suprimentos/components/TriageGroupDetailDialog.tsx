@@ -24,6 +24,7 @@ import {
   Layers,
   ShoppingBag,
   PackageCheck,
+  ExternalLink,
 } from 'lucide-react'
 import { ShortageGroup } from '@/lib/shortage-grouping'
 import { MaterialShortage } from '@/types'
@@ -294,14 +295,51 @@ export function TriageGroupDetailDialog({
                           fallbackText="-"
                         />
                       </TableCell>
-                      <TableCell className="text-muted-foreground notranslate" translate="no">
-                        {it.expand?.order_id?.order_number || '-'}
+                      <TableCell className="notranslate" translate="no">
+                        {it.expand?.order_id?.order_number ? (
+                          <a
+                            href={
+                              it.expand.order_id.product_id
+                                ? `/consulta/${it.expand.order_id.product_id}`
+                                : `/pcp/ordens?order=${encodeURIComponent(
+                                    it.expand.order_id.order_number,
+                                  )}`
+                            }
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            title={
+                              it.expand.order_id.product_id
+                                ? `Abrir ficha do produto #${it.expand.order_id.order_number} em nova aba`
+                                : `Consultar pedido #${it.expand.order_id.order_number} em nova aba`
+                            }
+                            className="inline-flex items-center gap-1 font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline"
+                          >
+                            <span>{it.expand.order_id.order_number}</span>
+                            <ExternalLink className="size-3 opacity-60" />
+                          </a>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
                       </TableCell>
-                      <TableCell
-                        className="text-muted-foreground font-medium notranslate"
-                        translate="no"
-                      >
-                        {it.expand?.order_id?.op_number || '-'}
+                      <TableCell className="font-medium notranslate" translate="no">
+                        {it.expand?.order_id?.op_number ? (
+                          <a
+                            href={`/pcp/ordens?op=${encodeURIComponent(
+                              it.expand.order_id.op_number,
+                            )}&highlightCode=${encodeURIComponent(group.code || it.code || '')}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            title={`Abrir OP ${it.expand.order_id.op_number} posicionada neste componente em nova aba`}
+                            className="inline-flex items-center gap-1 font-semibold text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline"
+                          >
+                            <span>{it.expand.order_id.op_number}</span>
+                            <ExternalLink className="size-3 opacity-60" />
+                          </a>
+                        ) : (
+                          <span className="text-muted-foreground font-normal">-</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {it.expected_date ? format(parseISO(it.expected_date), 'dd/MM/yy') : '-'}

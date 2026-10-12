@@ -67,6 +67,7 @@ interface OpReadOnlyModalProps {
   onOpenChange: (open: boolean) => void
   opIdentifier: string | null
   existingOrders?: PcpOrder[]
+  highlightCode?: string | null
 }
 
 export function OpReadOnlyModal({
@@ -74,6 +75,7 @@ export function OpReadOnlyModal({
   onOpenChange,
   opIdentifier,
   existingOrders = [],
+  highlightCode,
 }: OpReadOnlyModalProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -212,6 +214,28 @@ export function OpReadOnlyModal({
     })
     return counts
   }, [materials])
+
+  // Se houver highlightCode, garante que a tab mostre o setor onde o código está (ou ALL)
+  useEffect(() => {
+    if (!highlightCode || materials.length === 0) return
+    const normHighlight = highlightCode.trim().toLowerCase()
+    const match = materials.find((m) => (m.code || '').trim().toLowerCase() === normHighlight)
+    if (match && activeSectorTab !== 'ALL' && activeSectorTab !== match.sector) {
+      setActiveSectorTab(match.sector)
+    }
+  }, [highlightCode, materials, activeSectorTab])
+
+  // Efeito para rolar suavemente até a linha destacada quando os materiais carregarem
+  useEffect(() => {
+    if (!open || !highlightCode || materials.length === 0 || loading) return
+    const timer = setTimeout(() => {
+      const el = document.querySelector('[data-highlight-match="true"]')
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    }, 150)
+    return () => clearTimeout(timer)
+  }, [open, highlightCode, materials, loading, activeSectorTab])
 
   const filteredMaterials = useMemo(() => {
     if (activeSectorTab === 'ALL') return materials
@@ -464,17 +488,43 @@ export function OpReadOnlyModal({
                             {sectorItems.map((mat) => {
                               const cut = mat.measurements?.trim() || '—'
                               const hasCut = cut !== '—' && cut !== ''
+                              const isHighlighted = Boolean(
+                                highlightCode &&
+                                mat.code &&
+                                mat.code.trim().toLowerCase() ===
+                                  highlightCode.trim().toLowerCase(),
+                              )
 
                               return (
                                 <TableRow
                                   key={mat.id}
-                                  className="text-xs hover:bg-muted/40 transition-colors"
+                                  data-highlight-match={isHighlighted ? 'true' : undefined}
+                                  className={cn(
+                                    'text-xs transition-colors',
+                                    isHighlighted
+                                      ? 'bg-amber-100/90 dark:bg-amber-950/60 ring-2 ring-inset ring-amber-500 font-semibold'
+                                      : 'hover:bg-muted/40',
+                                  )}
                                 >
                                   {/* Código */}
-                                  <TableCell className="font-mono font-semibold">
+                                  <TableCell
+                                    className="font-mono font-semibold notranslate"
+                                    translate="no"
+                                  >
                                     {mat.code ? (
-                                      <span className="text-blue-600 dark:text-blue-400">
+                                      <span
+                                        className={cn(
+                                          isHighlighted
+                                            ? 'text-amber-900 dark:text-amber-200 font-bold flex items-center gap-1.5'
+                                            : 'text-blue-600 dark:text-blue-400',
+                                        )}
+                                      >
                                         {mat.code}
+                                        {isHighlighted && (
+                                          <Badge className="bg-amber-500 text-white text-[10px] px-1.5 py-0 h-4 uppercase font-bold tracking-wide">
+                                            Item da Triagem
+                                          </Badge>
+                                        )}
                                       </span>
                                     ) : (
                                       <span className="text-muted-foreground italic text-[11px]">

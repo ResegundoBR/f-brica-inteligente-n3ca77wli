@@ -8,6 +8,8 @@ import {
 } from '@/services/suprimentos-integrity'
 import { CloseResidualDialog } from './components/CloseResidualDialog'
 import { UnificacaoCadastralPanel } from './components/UnificacaoCadastralPanel'
+import { FixDivergenceDialog } from './components/FixDivergenceDialog'
+import { DivergenceDetailModal } from './components/DivergenceDetailModal'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -23,7 +25,10 @@ import {
   Info,
   Clock,
   Layers,
-  FileSpreadsheet,
+  PackagePlus,
+  Sliders,
+  XCircle,
+  Eye,
 } from 'lucide-react'
 import { NoTranslate } from '@/components/NoTranslate'
 import { format } from 'date-fns'
@@ -39,6 +44,14 @@ export default function DivergenciasPage() {
   const [searchTerm, setSearchTerm] = useState<string>('')
   const [severityFilter, setSeverityFilter] = useState<string>('todos')
   const [categoryFilter, setCategoryFilter] = useState<string>('todos')
+
+  // Modais de ação direta e detalhes
+  const [selectedDivergenceForAction, setSelectedDivergenceForAction] =
+    useState<DivergenceItem | null>(null)
+  const [fixModalOpen, setFixModalOpen] = useState<boolean>(false)
+  const [selectedDivergenceForDetail, setSelectedDivergenceForDetail] =
+    useState<DivergenceItem | null>(null)
+  const [detailModalOpen, setDetailModalOpen] = useState<boolean>(false)
 
   const handleCleanClosedOps = async () => {
     setCleaning(true)
@@ -358,36 +371,129 @@ export default function DivergenciasPage() {
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 text-xs font-semibold border-b">
                 <tr>
-                  <th className="py-3 px-4">Gravidade</th>
-                  <th className="py-3 px-4">Código / Item</th>
-                  <th className="py-3 px-4">Descrição</th>
-                  <th className="py-3 px-4">Problema Identificado</th>
-                  <th className="py-3 px-4">Sugestão de Correção</th>
+                  <th className="py-3 px-4 w-[110px]">Gravidade</th>
+                  <th className="py-3 px-4 w-[130px]">Código / Item</th>
+                  <th className="py-3 px-4 min-w-[180px] max-w-[240px]">Descrição</th>
+                  <th className="py-3 px-4 w-[130px]">OP / Pedido</th>
+                  <th className="py-3 px-4 min-w-[220px]">Problema Identificado</th>
+                  <th className="py-3 px-4 min-w-[200px]">Sugestão de Correção</th>
+                  <th className="py-3 px-4 w-[130px] text-right">Ação</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {filteredDivergences.map((div) => (
-                  <tr
-                    key={div.id}
-                    className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
-                  >
-                    <td className="py-3.5 px-4 whitespace-nowrap">
-                      {getSeverityBadge(div.severity)}
-                    </td>
-                    <td className="py-3.5 px-4 whitespace-nowrap font-mono text-xs font-medium text-slate-800 dark:text-slate-200">
-                      <NoTranslate text={div.code || 'S/ Código'} />
-                    </td>
-                    <td className="py-3.5 px-4 max-w-xs text-xs text-slate-700 dark:text-slate-300">
-                      <NoTranslate text={div.description || '—'} />
-                    </td>
-                    <td className="py-3.5 px-4 text-xs font-medium text-red-700 dark:text-red-400 max-w-sm">
-                      {div.problem}
-                    </td>
-                    <td className="py-3.5 px-4 text-xs text-slate-600 dark:text-slate-400 max-w-sm bg-slate-50/50 dark:bg-slate-800/30">
-                      {div.suggestion}
-                    </td>
-                  </tr>
-                ))}
+                {filteredDivergences.map((div) => {
+                  const canAct =
+                    div.category === 'recebimento_acima_demanda' ||
+                    div.category === 'solicitacao_fantasma_op_encerrada' ||
+                    div.category === 'saldo_estoque_incoerente'
+
+                  return (
+                    <tr
+                      key={div.id}
+                      onClick={() => {
+                        setSelectedDivergenceForDetail(div)
+                        setDetailModalOpen(true)
+                      }}
+                      className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 cursor-pointer transition-colors"
+                      title="Clique para ver os detalhes completos desta divergência"
+                    >
+                      <td
+                        className="py-3.5 px-4 whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {getSeverityBadge(div.severity)}
+                      </td>
+                      <td className="py-3.5 px-4 whitespace-nowrap font-mono text-xs font-bold text-slate-900 dark:text-slate-100 notranslate">
+                        <NoTranslate text={div.code || 'S/ Código'} />
+                        {div.batch_id && (
+                          <div className="flex items-center gap-1 text-[10px] text-indigo-600 dark:text-indigo-400 font-sans font-semibold mt-0.5">
+                            <Layers className="size-2.5" /> Lote
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 max-w-[240px] text-xs text-slate-700 dark:text-slate-300 notranslate">
+                        <div className="line-clamp-2 font-medium">
+                          <NoTranslate text={div.description || '—'} />
+                        </div>
+                        {div.record_status && (
+                          <span className="text-[10px] text-slate-500 font-normal mt-0.5 block">
+                            Status: {div.record_status}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 whitespace-nowrap text-xs">
+                        {div.op_number ? (
+                          <div>
+                            <Badge variant="outline" className="font-semibold text-xs py-0">
+                              OP {div.op_number}
+                            </Badge>
+                            {div.order_number && (
+                              <span className="text-[10px] text-slate-500 block mt-0.5">
+                                Ped. {div.order_number}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 text-xs font-medium text-red-700 dark:text-red-400 max-w-sm">
+                        {div.problem}
+                      </td>
+                      <td className="py-3.5 px-4 text-xs text-slate-600 dark:text-slate-400 max-w-sm bg-slate-50/50 dark:bg-slate-800/30">
+                        {div.suggestion}
+                      </td>
+                      <td
+                        className="py-3.5 px-4 whitespace-nowrap text-right text-xs"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {canAct ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedDivergenceForAction(div)
+                              setFixModalOpen(true)
+                            }}
+                            className="h-7 text-xs gap-1 font-semibold border-blue-200 text-blue-700 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-300 dark:hover:bg-blue-950/40"
+                          >
+                            {div.category === 'recebimento_acima_demanda' && (
+                              <>
+                                <PackagePlus className="size-3" />
+                                Corrigir
+                              </>
+                            )}
+                            {div.category === 'solicitacao_fantasma_op_encerrada' && (
+                              <>
+                                <XCircle className="size-3 text-red-600" />
+                                Cancelar
+                              </>
+                            )}
+                            {div.category === 'saldo_estoque_incoerente' && (
+                              <>
+                                <Sliders className="size-3" />
+                                Alinhar
+                              </>
+                            )}
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedDivergenceForDetail(div)
+                              setDetailModalOpen(true)
+                            }}
+                            className="h-7 text-xs gap-1 text-slate-500 hover:text-slate-800"
+                            title="Ver Detalhes"
+                          >
+                            <Eye className="size-3" /> Detalhes
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -399,6 +505,25 @@ export default function DivergenciasPage() {
         open={closeResidualOpen}
         onOpenChange={setCloseResidualOpen}
         onSuccess={loadIntegrityData}
+      />
+
+      {/* DIÁLOGO: CORREÇÃO AUDITADA DIRETA */}
+      <FixDivergenceDialog
+        divergence={selectedDivergenceForAction}
+        open={fixModalOpen}
+        onOpenChange={setFixModalOpen}
+        onSuccess={loadIntegrityData}
+      />
+
+      {/* DIÁLOGO: DETALHES COMPLETOS DA DIVERGÊNCIA */}
+      <DivergenceDetailModal
+        divergence={selectedDivergenceForDetail}
+        open={detailModalOpen}
+        onOpenChange={setDetailModalOpen}
+        onActionClick={(div) => {
+          setSelectedDivergenceForAction(div)
+          setFixModalOpen(true)
+        }}
       />
     </div>
   )

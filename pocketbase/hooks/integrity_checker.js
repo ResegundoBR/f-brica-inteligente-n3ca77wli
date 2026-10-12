@@ -14,278 +14,127 @@
 // 1. ROTINA AGENDADA DIÁRIA (cronAdd) às 04:00 UTC (01:00 BRT)
 cronAdd('suprimentos_integrity_verifier', '0 4 * * *', () => {
   try {
-    var divergences = []
-    var nowIso = new Date().toISOString()
+    var countCancelled = 0
+    var todayDate = new Date()
+    var day = String(todayDate.getDate()).padStart(2, '0')
+    var month = String(todayDate.getMonth() + 1).padStart(2, '0')
+    var dateFormatted = day + '/' + month
 
-    // REGRA 1
-    try {
-      var shortagesWithOrder = $app.findRecordsByFilter(
-        'material_shortages',
-        'order_id != "" && (status = "Recebido" || status = "Recebido_Parcial")',
-        'created',
-        1000,
-        0,
-      )
-      for (var i = 0; i < shortagesWithOrder.length; i++) {
-        var s = shortagesWithOrder[i]
-        var orderId = s.getString('order_id')
-        var code = s.getString('code')
-        var receivedQty = Number(s.getFloat('received_quantity')) || 0
-        var registeredQty = Number(s.getFloat('quantity')) || 0
-        if (orderId && code && receivedQty > 0) {
-          var opMaterials = $app.findRecordsByFilter(
-            'pcp_order_materials',
-            'order_id = "' + orderId + '" && code = "' + code.replace(/"/g, '""') + '"',
-            '',
-            10,
-            0,
-          )
-          var totalDemand = 0
-          for (var m = 0; m < opMaterials.length; m++) {
-            totalDemand += Number(opMaterials[m].getFloat('quantity')) || 0
-          }
-          if (opMaterials.length > 0 && receivedQty > totalDemand + 0.0001) {
-            divergences.push({
-              id: 'div_recv_demand_' + s.id,
-              category: 'recebimento_acima_demanda',
-              severity: 'alta',
-              item_type: 'material_shortage',
-              record_id: s.id,
-              code: code,
-              description: s.getString('description'),
-              problem:
-                'Quantidade recebida (' +
-                receivedQty +
-                ' un) excede a demanda total da OP de origem (' +
-                totalDemand +
-                ' un).',
-              suggestion:
-                'Ajustar o registro da falta e seu recebimento para ' +
-                totalDemand +
-                ' un e destinar o excedente ao estoque geral.',
-              detected_at: nowIso,
-              details: {
-                order_id: orderId,
-                received_quantity: receivedQty,
-                registered_quantity: registeredQty,
-                op_demand: totalDemand,
-              },
-            })
-          }
-        }
-      }
-    } catch (err1) {
-      console.error('[INTEGRITY_CHECK] Erro ao validar regra 1:', String(err1))
-    }
-
-    // REGRA 2
-    try {
-      var allInventory = $app.findRecordsByFilter('inventory', '1=1', 'code', 1000, 0)
-      for (var j = 0; j < allInventory.length; j++) {
-        var inv = allInventory[j]
-        var invId = inv.id
-        var invCode = inv.getString('code')
-        var invQty = Number(inv.getFloat('quantity')) || 0
-        var movs = $app.findRecordsByFilter(
-          'inventory_movements',
-          'inventory_id = "' + invId + '"',
-          'created',
-          1000,
-          0,
-        )
-        if (movs.length > 0) {
-          var runningBal = 0
-          var hasBalanceAfterDrift = false
-          for (var k = 0; k < movs.length; k++) {
-            var mov = movs[k]
-            var mType = mov.getString('type')
-            var mQty = Number(mov.getFloat('quantity')) || 0
-            var mBal = Number(mov.getFloat('balance_after')) || 0
-            if (mType === 'Entrada') {
-              runningBal += mQty
-            } else {
-              runningBal -= mQty
-            }
-            runningBal = Math.round(runningBal * 1000) / 1000
-            if (Math.abs(mBal - runningBal) > 0.001) {
-              hasBalanceAfterDrift = true
-            }
-          }
-          if (Math.abs(invQty - runningBal) > 0.001) {
-            divergences.push({
-              id: 'div_inv_balance_' + invId,
-              category: 'saldo_estoque_incoerente',
-              severity: 'alta',
-              item_type: 'inventory',
-              record_id: invId,
-              code: invCode,
-              description: inv.getString('description'),
-              problem:
-                'Saldo cadastrado no estoque (' +
-                invQty +
-                ') diverge da soma dos movimentos cronológicos (' +
-                runningBal +
-                ').',
-              suggestion:
-                'Ajustar o saldo do item de inventário para ' +
-                runningBal +
-                ' un e auditar os movimentos de entrada/saída.',
-              detected_at: nowIso,
-            })
-          }
-        }
-      }
-    } catch (err2) {
-      console.error('[INTEGRITY_CHECK] Erro ao validar regra 2:', String(err2))
-    }
-
-    console.log(
-      '[CRON] Verificador permanente de Suprimentos executado: ' +
-        divergences.length +
-        ' divergência(s) detectada(s).',
+    var openShortages = $app.findRecordsByFilter(
+      'material_shortages',
+      '(status = "Pendente" || status = "Cotação" || status = "Compra") && order_id != ""',
+      'created',
+      1000,
+      0,
     )
 
-    // ETAPA 5 — Cancelamento automático de solicitações de OPs encerradas
-    try {
-      var autoCleanCount = runAutoCancelClosedOpShortages()
-      if (autoCleanCount > 0) {
-        console.log(
-          '[CRON] Cancelamento automático: ' +
-            autoCleanCount +
-            ' solicitação(ões) de OP encerrada cancelada(s).',
+    for (var i = 0; i < openShortages.length; i++) {
+      var shortage = openShortages[i]
+      var orderId = shortage.getString('order_id')
+      if (!orderId) continue
+
+      var order = null
+      try {
+        order = $app.findRecordById('pcp_orders', orderId)
+      } catch (_) {
+        continue
+      }
+
+      if (!order) continue
+      var opStatus = order.getString('status')
+      var isOpClosed =
+        opStatus === 'Concluído' || opStatus === 'Cancelada' || opStatus === 'Cancelado'
+      if (!isOpClosed) continue
+
+      var opNum = order.getString('op_number') || order.getString('order_number') || orderId
+      var batchId = (shortage.getString('batch_id') || '').trim()
+      var itemQty = Number(shortage.getFloat('quantity')) || 0
+      var itemCode = shortage.getString('code') || 'S/ Código'
+
+      var hasLivingBatchMates = false
+      if (batchId) {
+        try {
+          var batchMates = $app.findRecordsByFilter(
+            'material_shortages',
+            'batch_id = "' +
+              batchId.replace(/"/g, '""') +
+              '" && id != "' +
+              shortage.id +
+              '" && (status = "Pendente" || status = "Cotação" || status = "Compra")',
+            '',
+            100,
+            0,
+          )
+          for (var b = 0; b < batchMates.length; b++) {
+            var mateOrderId = batchMates[b].getString('order_id')
+            if (mateOrderId) {
+              try {
+                var mateOrder = $app.findRecordById('pcp_orders', mateOrderId)
+                var mateStatus = mateOrder.getString('status')
+                if (
+                  mateStatus !== 'Concluído' &&
+                  mateStatus !== 'Cancelada' &&
+                  mateStatus !== 'Cancelado'
+                ) {
+                  hasLivingBatchMates = true
+                  break
+                }
+              } catch (_) {}
+            } else {
+              hasLivingBatchMates = true
+              break
+            }
+          }
+        } catch (_) {}
+      }
+
+      var auditNote =
+        'Cancelada automaticamente: OP ' +
+        opNum +
+        ' encerrada em ' +
+        dateFormatted +
+        ' (item: ' +
+        itemCode +
+        ', qtde: ' +
+        itemQty +
+        ' un)'
+      var currentObs = shortage.getString('observation') || ''
+      var finalObs = currentObs ? currentObs + ' | ' + auditNote : auditNote
+
+      if (hasLivingBatchMates) {
+        shortage.set('batch_id', '')
+        shortage.set('status', 'Cancelado')
+        shortage.set(
+          'observation',
+          finalObs + ' [Removido do lote ' + batchId + ' - demais membros de OPs ativas mantidos]',
+        )
+      } else {
+        shortage.set('status', 'Cancelado')
+        shortage.set('observation', finalObs)
+      }
+
+      try {
+        $app.save(shortage)
+        countCancelled++
+      } catch (saveErr) {
+        console.error(
+          '[AUTO_CANCEL] Erro ao cancelar shortage ' + shortage.id + ':',
+          String(saveErr),
         )
       }
-    } catch (cleanErr) {
-      console.error(
-        '[CRON] Erro no cancelamento automático de solicitações de OPs encerradas:',
-        String(cleanErr),
+    }
+
+    if (countCancelled > 0) {
+      console.log(
+        '[CRON] Cancelamento automático: ' +
+          countCancelled +
+          ' solicitação(ões) de OP encerrada cancelada(s).',
       )
     }
   } catch (err) {
     console.error('[CRON] Erro no verificador:', String(err))
   }
 })
-
-/**
- * Função utilitária compartilhada entre o cron e o endpoint de limpeza
- * Cancela automaticamente solicitações (Pendente/Cotação/Compra) cuja OP de origem está Concluída ou Cancelada.
- * Cuidado: NÃO cancela registros de lote cujos demais membros ainda pertençam a OPs vivas — nesses casos,
- * apenas remove o membro da OP encerrada do lote/rateio com observação.
- * NÃO toca em registros Recebido/Recebido_Parcial.
- */
-function runAutoCancelClosedOpShortages() {
-  var openShortages = $app.findRecordsByFilter(
-    'material_shortages',
-    '(status = "Pendente" || status = "Cotação" || status = "Compra") && order_id != ""',
-    'created',
-    1000,
-    0,
-  )
-
-  var countCancelled = 0
-  var todayDate = new Date()
-  var day = String(todayDate.getDate()).padStart(2, '0')
-  var month = String(todayDate.getMonth() + 1).padStart(2, '0')
-  var dateFormatted = day + '/' + month
-
-  for (var i = 0; i < openShortages.length; i++) {
-    var shortage = openShortages[i]
-    var orderId = shortage.getString('order_id')
-    if (!orderId) continue
-
-    var order = null
-    try {
-      order = $app.findRecordById('pcp_orders', orderId)
-    } catch (_) {
-      continue
-    }
-
-    if (!order) continue
-    var opStatus = order.getString('status')
-    var isOpClosed =
-      opStatus === 'Concluído' || opStatus === 'Cancelada' || opStatus === 'Cancelado'
-    if (!isOpClosed) continue
-
-    var opNum = order.getString('op_number') || order.getString('order_number') || orderId
-    var batchId = (shortage.getString('batch_id') || '').trim()
-    var itemQty = Number(shortage.getFloat('quantity')) || 0
-    var itemCode = shortage.getString('code') || 'S/ Código'
-
-    // Verificar se faz parte de lote com outros membros vivos
-    var hasLivingBatchMates = false
-    if (batchId) {
-      try {
-        var batchMates = $app.findRecordsByFilter(
-          'material_shortages',
-          'batch_id = "' +
-            batchId.replace(/"/g, '""') +
-            '" && id != "' +
-            shortage.id +
-            '" && (status = "Pendente" || status = "Cotação" || status = "Compra")',
-          '',
-          100,
-          0,
-        )
-        for (var b = 0; b < batchMates.length; b++) {
-          var mateOrderId = batchMates[b].getString('order_id')
-          if (mateOrderId) {
-            try {
-              var mateOrder = $app.findRecordById('pcp_orders', mateOrderId)
-              var mateStatus = mateOrder.getString('status')
-              if (
-                mateStatus !== 'Concluído' &&
-                mateStatus !== 'Cancelada' &&
-                mateStatus !== 'Cancelado'
-              ) {
-                hasLivingBatchMates = true
-                break
-              }
-            } catch (_) {}
-          } else {
-            // Membro de estoque no mesmo lote
-            hasLivingBatchMates = true
-            break
-          }
-        }
-      } catch (_) {}
-    }
-
-    var auditNote =
-      'Cancelada automaticamente: OP ' +
-      opNum +
-      ' encerrada em ' +
-      dateFormatted +
-      ' (item: ' +
-      itemCode +
-      ', qtde: ' +
-      itemQty +
-      ' un)'
-    var currentObs = shortage.getString('observation') || ''
-    var finalObs = currentObs ? currentObs + ' | ' + auditNote : auditNote
-
-    if (hasLivingBatchMates) {
-      // Se há membros de OPs vivas no mesmo lote: desvincula este registro do lote e cancela individualmente
-      shortage.set('batch_id', '')
-      shortage.set('status', 'Cancelado')
-      shortage.set(
-        'observation',
-        finalObs + ' [Removido do lote ' + batchId + ' - demais membros de OPs ativas mantidos]',
-      )
-    } else {
-      shortage.set('status', 'Cancelado')
-      shortage.set('observation', finalObs)
-    }
-
-    try {
-      $app.save(shortage)
-      countCancelled++
-    } catch (saveErr) {
-      console.error('[AUTO_CANCEL] Erro ao cancelar shortage ' + shortage.id + ':', String(saveErr))
-    }
-  }
-
-  return countCancelled
-}
 
 // 2. ENDPOINT REST PARA O FRONTEND (/backend/v1/suprimentos/integrity-check)
 routerAdd(
@@ -295,6 +144,56 @@ routerAdd(
     try {
       var divergences = []
       var nowIso = new Date().toISOString()
+
+      // Helper para buscar informações de OP
+      var getOrderInfo = function (orderId) {
+        if (!orderId) return { op_number: '', order_number: '', status: '', client_name: '' }
+        try {
+          var rec = $app.findRecordById('pcp_orders', orderId)
+          return {
+            op_number: rec.getString('op_number') || rec.getString('order_number') || '',
+            order_number: rec.getString('order_number') || '',
+            status: rec.getString('status') || '',
+            client_name: rec.getString('client_name') || '',
+          }
+        } catch (_) {
+          return { op_number: '', order_number: '', status: '', client_name: '' }
+        }
+      }
+
+      // Helper para buscar lote
+      var getBatchDetails = function (shortageRecord) {
+        var batchId = (shortageRecord.getString('batch_id') || '').trim()
+        if (!batchId) return null
+        var mates = []
+        try {
+          var matesRecs = $app.findRecordsByFilter(
+            'material_shortages',
+            'batch_id = "' + batchId.replace(/"/g, '""') + '"',
+            'created',
+            20,
+            0,
+          )
+          for (var b = 0; b < matesRecs.length; b++) {
+            var mRec = matesRecs[b]
+            var mOrd = getOrderInfo(mRec.getString('order_id'))
+            mates.push({
+              id: mRec.id,
+              order_id: mRec.getString('order_id'),
+              op_number: mOrd.op_number,
+              order_number: mOrd.order_number,
+              quantity: Number(mRec.getFloat('quantity')) || 0,
+              received_quantity: Number(mRec.getFloat('received_quantity')) || 0,
+              status: mRec.getString('status'),
+            })
+          }
+        } catch (_) {}
+        return {
+          batch_id: batchId,
+          members_count: mates.length,
+          members: mates,
+        }
+      }
 
       // -------------------------------------------------------------------------
       // REGRA 1: Recebido <= Demanda real da OP de origem
@@ -330,6 +229,10 @@ routerAdd(
             }
 
             if (opMaterials.length > 0 && receivedQty > totalDemand + 0.0001) {
+              var ordInfo = getOrderInfo(orderId)
+              var batchInfo = getBatchDetails(s)
+              var surplusQty = Math.round((receivedQty - totalDemand) * 10000) / 10000
+
               divergences.push({
                 id: 'div_recv_demand_' + s.id,
                 category: 'recebimento_acima_demanda',
@@ -338,22 +241,40 @@ routerAdd(
                 record_id: s.id,
                 code: code,
                 description: s.getString('description'),
+                order_id: orderId,
+                op_number: ordInfo.op_number,
+                order_number: ordInfo.order_number,
+                record_status: s.getString('status'),
+                record_created: s.getString('created'),
+                batch_id: s.getString('batch_id') || '',
+                batch_members: batchInfo ? batchInfo.members : undefined,
                 problem:
                   'Quantidade recebida (' +
                   receivedQty +
-                  ' un) excede a demanda total da OP de origem (' +
+                  ' un) excede a demanda total da OP ' +
+                  (ordInfo.op_number ? 'OP ' + ordInfo.op_number : '') +
+                  ' (' +
                   totalDemand +
-                  ' un).',
+                  ' un). Excedente: ' +
+                  surplusQty +
+                  ' un.',
                 suggestion:
-                  'Ajustar o registro da falta e seu recebimento para ' +
+                  'Destinar excedente (' +
+                  surplusQty +
+                  ' un) ao estoque geral ou corrigir o registro da falta para ' +
                   totalDemand +
-                  ' un e destinar o excedente ao estoque geral.',
+                  ' un.',
                 detected_at: nowIso,
                 details: {
                   order_id: orderId,
+                  op_number: ordInfo.op_number,
+                  order_number: ordInfo.order_number,
+                  op_status: ordInfo.status,
                   received_quantity: receivedQty,
                   registered_quantity: registeredQty,
                   op_demand: totalDemand,
+                  surplus_quantity: surplusQty,
+                  batch_info: batchInfo,
                 },
               })
             }
@@ -417,16 +338,21 @@ routerAdd(
                 record_id: invId,
                 code: invCode,
                 description: inv.getString('description'),
+                order_id: '',
+                op_number: '',
+                order_number: '',
+                record_status: 'Estoque Físico',
+                record_created: inv.getString('created'),
                 problem:
                   'Saldo cadastrado no estoque (' +
                   invQty +
-                  ') diverge da soma dos movimentos cronológicos (' +
+                  ' un) diverge da soma dos movimentos cronológicos (' +
                   runningBal +
-                  ').',
+                  ' un).',
                 suggestion:
                   'Ajustar o saldo do item de inventário para ' +
                   runningBal +
-                  ' un e auditar os movimentos de entrada/saída.',
+                  ' un com movimento auditado de inventário.',
                 detected_at: nowIso,
                 details: {
                   inventory_quantity: invQty,
@@ -443,6 +369,11 @@ routerAdd(
                 record_id: invId,
                 code: invCode,
                 description: inv.getString('description'),
+                order_id: '',
+                op_number: '',
+                order_number: '',
+                record_status: 'Estoque Físico',
+                record_created: inv.getString('created'),
                 problem:
                   'Existem movimentos históricos com balance_after desalinhado da sequência cronológica de entradas/saídas.',
                 suggestion:
@@ -490,6 +421,9 @@ routerAdd(
                 opStatus === 'Cancelada' ||
                 opStatus === 'Cancelado'
               ) {
+                var ghostOpNum =
+                  orderRec.getString('op_number') || orderRec.getString('order_number')
+                var ghostBatch = getBatchDetails(openItem)
                 divergences.push({
                   id: 'div_ghost_op_concluida_' + openItem.id,
                   category: 'solicitacao_fantasma_op_encerrada',
@@ -498,23 +432,33 @@ routerAdd(
                   record_id: openItem.id,
                   code: openCode,
                   description: openItem.getString('description'),
+                  order_id: openOrderId,
+                  op_number: orderRec.getString('op_number'),
+                  order_number: orderRec.getString('order_number'),
+                  record_status: openItem.getString('status'),
+                  record_created: openItem.getString('created'),
+                  batch_id: openItem.getString('batch_id') || '',
+                  batch_members: ghostBatch ? ghostBatch.members : undefined,
                   problem:
                     'Registro em aberto (' +
                     openItem.getString('status') +
                     ', ' +
                     openQty +
                     ' un) vinculado à OP ' +
-                    (orderRec.getString('op_number') || orderRec.getString('order_number')) +
+                    ghostOpNum +
                     ' que já está ' +
                     opStatus +
                     '.',
                   suggestion:
-                    'A rotina de limpeza automática ou o botão de limpeza cancelará esta solicitação desnecessária.',
+                    'Cancelar esta solicitação desnecessária ou usar "Limpar OPs Encerradas".',
                   detected_at: nowIso,
                   details: {
                     order_id: openOrderId,
                     op_number: orderRec.getString('op_number'),
+                    order_number: orderRec.getString('order_number'),
                     status: openItem.getString('status'),
+                    quantity: openQty,
+                    batch_info: ghostBatch,
                   },
                 })
               }
@@ -538,6 +482,11 @@ routerAdd(
                   record_id: openItem.id,
                   code: openCode,
                   description: openItem.getString('description'),
+                  order_id: '',
+                  op_number: '',
+                  order_number: '',
+                  record_status: 'Compra',
+                  record_created: openItem.getString('created'),
                   problem:
                     'Registro avulso em status Compra sem Ordem de Compra emitida vinculada.',
                   suggestion: 'Emitir Ordem de Compra ou retornar para Cotação/cancelar.',
@@ -579,6 +528,7 @@ routerAdd(
             var hasLeadingTrailingSpaces = sItem.getString('code') !== cCode
 
             if (hasTypoLetter) {
+              var typoOrd = getOrderInfo(sItem.getString('order_id'))
               divergences.push({
                 id: 'div_code_typo_' + sItem.id,
                 category: 'codigo_com_erro_digitacao',
@@ -587,6 +537,12 @@ routerAdd(
                 record_id: sItem.id,
                 code: cCode,
                 description: sItem.getString('description'),
+                order_id: sItem.getString('order_id'),
+                op_number: typoOrd.op_number,
+                order_number: typoOrd.order_number,
+                record_status: sItem.getString('status'),
+                record_created: sItem.getString('created'),
+                batch_id: sItem.getString('batch_id') || '',
                 problem:
                   'Código contém letras suspeitas no meio de sequência numérica (possível "l" em vez de "1" ou "o" em vez de "0").',
                 suggestion:
@@ -598,6 +554,7 @@ routerAdd(
                 },
               })
             } else if (hasLeadingTrailingSpaces) {
+              var spaceOrd = getOrderInfo(sItem.getString('order_id'))
               divergences.push({
                 id: 'div_code_spaces_' + sItem.id,
                 category: 'codigo_com_espacos',
@@ -606,6 +563,12 @@ routerAdd(
                 record_id: sItem.id,
                 code: cCode,
                 description: sItem.getString('description'),
+                order_id: sItem.getString('order_id'),
+                op_number: spaceOrd.op_number,
+                order_number: spaceOrd.order_number,
+                record_status: sItem.getString('status'),
+                record_created: sItem.getString('created'),
+                batch_id: sItem.getString('batch_id') || '',
                 problem: 'Código possui espaços no início ou fim.',
                 suggestion: 'Remover espaços em branco para garantir unicidade na busca.',
                 detected_at: nowIso,
@@ -644,6 +607,11 @@ routerAdd(
             record_id: pInv.id,
             code: pInv.getString('code'),
             description: pInv.getString('description'),
+            order_id: '',
+            op_number: '',
+            order_number: '',
+            record_status: 'Estoque Físico',
+            record_created: pInv.getString('created'),
             problem: "Descrição do item de estoque contém sufixo '(OPs: ...)' indevido.",
             suggestion: 'Remover a menção a OPs da descrição mestra do material.',
             detected_at: nowIso,
@@ -686,13 +654,125 @@ routerAdd(
   '/backend/v1/suprimentos/auto-cancel-closed-ops',
   (e) => {
     try {
-      var cancelledCount = runAutoCancelClosedOpShortages()
+      var openShortages = $app.findRecordsByFilter(
+        'material_shortages',
+        '(status = "Pendente" || status = "Cotação" || status = "Compra") && order_id != ""',
+        'created',
+        1000,
+        0,
+      )
+
+      var countCancelled = 0
+      var todayDate = new Date()
+      var day = String(todayDate.getDate()).padStart(2, '0')
+      var month = String(todayDate.getMonth() + 1).padStart(2, '0')
+      var dateFormatted = day + '/' + month
+
+      for (var i = 0; i < openShortages.length; i++) {
+        var shortage = openShortages[i]
+        var orderId = shortage.getString('order_id')
+        if (!orderId) continue
+
+        var order = null
+        try {
+          order = $app.findRecordById('pcp_orders', orderId)
+        } catch (_) {
+          continue
+        }
+
+        if (!order) continue
+        var opStatus = order.getString('status')
+        var isOpClosed =
+          opStatus === 'Concluído' || opStatus === 'Cancelada' || opStatus === 'Cancelado'
+        if (!isOpClosed) continue
+
+        var opNum = order.getString('op_number') || order.getString('order_number') || orderId
+        var batchId = (shortage.getString('batch_id') || '').trim()
+        var itemQty = Number(shortage.getFloat('quantity')) || 0
+        var itemCode = shortage.getString('code') || 'S/ Código'
+
+        var hasLivingBatchMates = false
+        if (batchId) {
+          try {
+            var batchMates = $app.findRecordsByFilter(
+              'material_shortages',
+              'batch_id = "' +
+                batchId.replace(/"/g, '""') +
+                '" && id != "' +
+                shortage.id +
+                '" && (status = "Pendente" || status = "Cotação" || status = "Compra")',
+              '',
+              100,
+              0,
+            )
+            for (var b = 0; b < batchMates.length; b++) {
+              var mateOrderId = batchMates[b].getString('order_id')
+              if (mateOrderId) {
+                try {
+                  var mateOrder = $app.findRecordById('pcp_orders', mateOrderId)
+                  var mateStatus = mateOrder.getString('status')
+                  if (
+                    mateStatus !== 'Concluído' &&
+                    mateStatus !== 'Cancelada' &&
+                    mateStatus !== 'Cancelado'
+                  ) {
+                    hasLivingBatchMates = true
+                    break
+                  }
+                } catch (_) {}
+              } else {
+                hasLivingBatchMates = true
+                break
+              }
+            }
+          } catch (_) {}
+        }
+
+        var auditNote =
+          'Cancelada automaticamente: OP ' +
+          opNum +
+          ' encerrada em ' +
+          dateFormatted +
+          ' (item: ' +
+          itemCode +
+          ', qtde: ' +
+          itemQty +
+          ' un)'
+        var currentObs = shortage.getString('observation') || ''
+        var finalObs = currentObs ? currentObs + ' | ' + auditNote : auditNote
+
+        if (hasLivingBatchMates) {
+          shortage.set('batch_id', '')
+          shortage.set('status', 'Cancelado')
+          shortage.set(
+            'observation',
+            finalObs +
+              ' [Removido do lote ' +
+              batchId +
+              ' - demais membros de OPs ativas mantidos]',
+          )
+        } else {
+          shortage.set('status', 'Cancelado')
+          shortage.set('observation', finalObs)
+        }
+
+        try {
+          $app.save(shortage)
+          countCancelled++
+        } catch (saveErr) {
+          console.error(
+            '[AUTO_CANCEL] Erro ao cancelar shortage ' + shortage.id + ':',
+            String(saveErr),
+          )
+        }
+      }
+
       return e.json(200, {
         success: true,
-        cancelledCount: cancelledCount,
+        cancelledCount: countCancelled,
         message:
-          cancelledCount > 0
-            ? cancelledCount + ' solicitação(ões) de OP encerrada cancelada(s) automaticamente.'
+          countCancelled > 0
+            ? countCancelled + ' solicitação(ões) de OP encerrada cancelada(s) automaticamente.'
             : 'Nenhuma solicitação pendente de OP encerrada encontrada.',
       })
     } catch (err) {
@@ -785,7 +865,6 @@ routerAdd(
           } catch (_) {}
         }
 
-        // Calcular dias sem alteração
         var updatedDate = new Date(sr.getString('updated').replace(' ', 'T') + 'Z')
         var diffDays = Math.max(
           0,
@@ -862,8 +941,6 @@ routerAdd(
 
       var auditNote = ''
       if (currentStatus === 'Recebido_Parcial') {
-        // Encerra o saldo residual remanescente: mantém recebido como está,
-        // marca como Recebido com nota de saldo residual encerrado (recebido X de Y)
         auditNote =
           'Saldo residual encerrado manualmente por ' +
           authUser +
@@ -879,7 +956,6 @@ routerAdd(
         }
         record.set('status', 'Recebido')
       } else if (currentStatus === 'Cotação' || currentStatus === 'Compra') {
-        // Encerramento de solicitação parada/sem entrega
         auditNote =
           'Solicitação parada em ' +
           currentStatus +
@@ -913,6 +989,365 @@ routerAdd(
       })
     } catch (err) {
       console.error('[API] Erro ao encerrar residual shortage:', String(err))
+      return e.json(500, { success: false, error: String(err) })
+    }
+  },
+  $apis.requireAuth(),
+)
+
+// 6. ENDPOINT REST: AÇÕES DIRETAS DE CORREÇÃO DE DIVERGÊNCIAS AUDITADAS
+routerAdd(
+  'POST',
+  '/backend/v1/suprimentos/fix-divergence',
+  (e) => {
+    try {
+      var info = e.requestInfo()
+      var body = info && info.body ? info.body : {}
+      var action = (body.action || '').trim()
+      var recordId = (body.record_id || '').trim()
+      var reason = (body.reason || '').trim()
+
+      if (!action || !recordId) {
+        return e.json(400, { success: false, error: 'Ação e ID do registro são obrigatórios.' })
+      }
+
+      var authUser = e.auth ? e.auth.getString('name') || e.auth.getString('email') : 'Usuário'
+      var today = new Date()
+      var day = String(today.getDate()).padStart(2, '0')
+      var month = String(today.getMonth() + 1).padStart(2, '0')
+      var year = today.getFullYear()
+      var hours = String(today.getHours()).padStart(2, '0')
+      var mins = String(today.getMinutes()).padStart(2, '0')
+      var dateFormatted = day + '/' + month + '/' + year + ' ' + hours + ':' + mins
+
+      // -------------------------------------------------------------
+      // CASO A: Destinar excedente ao estoque geral
+      // -------------------------------------------------------------
+      if (action === 'destinar_excedente_estoque') {
+        var shortage = null
+        try {
+          shortage = $app.findRecordById('material_shortages', recordId)
+        } catch (_) {
+          return e.json(404, {
+            success: false,
+            error: 'Registro de falta de material não encontrado.',
+          })
+        }
+
+        var orderId = shortage.getString('order_id')
+        var code = shortage.getString('code')
+        var currentRecv = Number(shortage.getFloat('received_quantity')) || 0
+        var currentQty = Number(shortage.getFloat('quantity')) || 0
+
+        var totalDemand = Number(body.target_quantity)
+        if (isNaN(totalDemand) || totalDemand < 0) {
+          if (orderId && code) {
+            var opMats = $app.findRecordsByFilter(
+              'pcp_order_materials',
+              'order_id = "' + orderId + '" && code = "' + code.replace(/"/g, '""') + '"',
+              '',
+              10,
+              0,
+            )
+            totalDemand = 0
+            for (var dm = 0; dm < opMats.length; dm++) {
+              totalDemand += Number(opMats[dm].getFloat('quantity')) || 0
+            }
+          } else {
+            totalDemand = currentQty
+          }
+        }
+
+        var surplus = Math.round((currentRecv - totalDemand) * 10000) / 10000
+        if (surplus <= 0) {
+          return e.json(400, {
+            success: false,
+            error:
+              'Não há excedente a destinar ao estoque (recebido: ' +
+              currentRecv +
+              ', demanda: ' +
+              totalDemand +
+              ').',
+          })
+        }
+
+        var invItem = null
+        try {
+          var invList = $app.findRecordsByFilter(
+            'inventory',
+            'code = "' + code.replace(/"/g, '""') + '"',
+            '-created',
+            1,
+            0,
+          )
+          if (invList.length > 0) {
+            invItem = invList[0]
+          }
+        } catch (_) {}
+
+        if (!invItem) {
+          var invCol = $app.findCollectionByNameOrId('inventory')
+          invItem = new Record(invCol)
+          invItem.set('code', code)
+          invItem.set('description', shortage.getString('description'))
+          invItem.set('quantity', 0)
+          invItem.set('unit', 'un')
+          $app.save(invItem)
+        }
+
+        var invCurrentQty = Number(invItem.getFloat('quantity')) || 0
+        var invNewQty = Math.round((invCurrentQty + surplus) * 10000) / 10000
+
+        var opNumber = ''
+        if (orderId) {
+          try {
+            var opRec = $app.findRecordById('pcp_orders', orderId)
+            opNumber = opRec.getString('op_number') || opRec.getString('order_number')
+          } catch (_) {}
+        }
+
+        var movCol = $app.findCollectionByNameOrId('inventory_movements')
+        var mov = new Record(movCol)
+        mov.set('inventory_id', invItem.id)
+        mov.set('type', 'Entrada')
+        mov.set('quantity', surplus)
+        mov.set('balance_after', invNewQty)
+        mov.set(
+          'reason',
+          'Ajuste: Entrada de excedente de recebimento da OP ' +
+            (opNumber ? 'OP ' + opNumber : '') +
+            ' (' +
+            surplus +
+            ' un)',
+        )
+        if (orderId) mov.set('order_id', orderId)
+        if (e.auth) mov.set('user_id', e.auth.id)
+        mov.set('arrival_date', new Date().toISOString().split('T')[0])
+        $app.save(mov)
+
+        invItem.set('quantity', invNewQty)
+        $app.save(invItem)
+
+        var auditNote =
+          'Excedente de ' +
+          surplus +
+          ' un destinado ao estoque geral por ' +
+          authUser +
+          ' em ' +
+          dateFormatted +
+          ' (recebimento ajustado de ' +
+          currentRecv +
+          ' para ' +
+          totalDemand +
+          ' un)'
+        if (reason) auditNote += ' - Motivo: ' + reason
+
+        var curObs = shortage.getString('observation') || ''
+        shortage.set('observation', curObs ? curObs + ' | ' + auditNote : auditNote)
+        shortage.set('quantity', totalDemand)
+        shortage.set('received_quantity', totalDemand)
+        shortage.set('status', totalDemand > 0 ? 'Recebido' : 'Cancelado')
+        $app.save(shortage)
+
+        return e.json(200, {
+          success: true,
+          message:
+            'Excedente de ' +
+            surplus +
+            ' un destinado com sucesso ao estoque geral. Registro da OP ajustado para ' +
+            totalDemand +
+            ' un.',
+          audit_note: auditNote,
+          surplus_quantity: surplus,
+          target_quantity: totalDemand,
+        })
+      }
+
+      // -------------------------------------------------------------
+      // CASO B: Corrigir registro da falta (quantidades reais)
+      // -------------------------------------------------------------
+      if (action === 'corrigir_registro') {
+        var shortageRec = null
+        try {
+          shortageRec = $app.findRecordById('material_shortages', recordId)
+        } catch (_) {
+          return e.json(404, { success: false, error: 'Registro não encontrado.' })
+        }
+
+        var oldQ = Number(shortageRec.getFloat('quantity')) || 0
+        var oldR = Number(shortageRec.getFloat('received_quantity')) || 0
+
+        var newQ = body.quantity !== undefined ? Number(body.quantity) : oldQ
+        var newR = body.received_quantity !== undefined ? Number(body.received_quantity) : oldR
+
+        if (isNaN(newQ) || newQ < 0) {
+          return e.json(400, { success: false, error: 'Quantidade total inválida.' })
+        }
+        if (isNaN(newR) || newR < 0) {
+          return e.json(400, { success: false, error: 'Quantidade recebida inválida.' })
+        }
+        if (newR > newQ + 0.0001) {
+          return e.json(400, {
+            success: false,
+            error:
+              'Quantidade recebida (' +
+              newR +
+              ') não pode exceder a quantidade do registro (' +
+              newQ +
+              ').',
+          })
+        }
+
+        var auditNote2 =
+          'Registro corrigido por ' +
+          authUser +
+          ' em ' +
+          dateFormatted +
+          ' (Qtd: ' +
+          oldQ +
+          '→' +
+          newQ +
+          ', Rec: ' +
+          oldR +
+          '→' +
+          newR +
+          ')'
+        if (reason) auditNote2 += ' - Motivo: ' + reason
+
+        var curObs2 = shortageRec.getString('observation') || ''
+        shortageRec.set('observation', curObs2 ? curObs2 + ' | ' + auditNote2 : auditNote2)
+        shortageRec.set('quantity', newQ)
+        shortageRec.set('received_quantity', newR)
+
+        if (newQ === 0) {
+          shortageRec.set('status', 'Cancelado')
+        } else if (newR >= newQ - 0.0001 && newR > 0) {
+          shortageRec.set('status', 'Recebido')
+        } else if (newR > 0) {
+          shortageRec.set('status', 'Recebido_Parcial')
+        }
+
+        $app.save(shortageRec)
+
+        return e.json(200, {
+          success: true,
+          message: 'Registro corrigido com sucesso.',
+          audit_note: auditNote2,
+          quantity: newQ,
+          received_quantity: newR,
+          status: shortageRec.getString('status'),
+        })
+      }
+
+      // -------------------------------------------------------------
+      // CASO C: Cancelar solicitação (ex: fantasma de OP encerrada)
+      // -------------------------------------------------------------
+      if (action === 'cancelar_solicitacao') {
+        var shortageGhost = null
+        try {
+          shortageGhost = $app.findRecordById('material_shortages', recordId)
+        } catch (_) {
+          return e.json(404, { success: false, error: 'Registro não encontrado.' })
+        }
+
+        var oldStatusGhost = shortageGhost.getString('status')
+        var auditNote3 =
+          'Solicitação cancelada manualmente na tela de Divergências por ' +
+          authUser +
+          ' em ' +
+          dateFormatted +
+          ' (status anterior: ' +
+          oldStatusGhost +
+          ')'
+        if (reason) auditNote3 += ' - Motivo: ' + reason
+
+        var curObs3 = shortageGhost.getString('observation') || ''
+        shortageGhost.set('observation', curObs3 ? curObs3 + ' | ' + auditNote3 : auditNote3)
+        shortageGhost.set('status', 'Cancelado')
+        $app.save(shortageGhost)
+
+        return e.json(200, {
+          success: true,
+          message: 'Solicitação cancelada com sucesso.',
+          audit_note: auditNote3,
+        })
+      }
+
+      // -------------------------------------------------------------
+      // CASO D: Ajustar saldo do estoque para soma dos movimentos
+      // -------------------------------------------------------------
+      if (action === 'ajustar_saldo_estoque') {
+        var invTarget = null
+        try {
+          invTarget = $app.findRecordById('inventory', recordId)
+        } catch (_) {
+          return e.json(404, { success: false, error: 'Item de estoque não encontrado.' })
+        }
+
+        var oldInvQ = Number(invTarget.getFloat('quantity')) || 0
+        var targetBal = Number(body.target_balance)
+
+        if (isNaN(targetBal)) {
+          var allMovs = $app.findRecordsByFilter(
+            'inventory_movements',
+            'inventory_id = "' + invTarget.id + '"',
+            'created',
+            1000,
+            0,
+          )
+          var runBal = 0
+          for (var mi = 0; mi < allMovs.length; mi++) {
+            var mm = allMovs[mi]
+            if (mm.getString('type') === 'Entrada') {
+              runBal += Number(mm.getFloat('quantity')) || 0
+            } else {
+              runBal -= Number(mm.getFloat('quantity')) || 0
+            }
+          }
+          targetBal = Math.round(runBal * 1000) / 1000
+        }
+
+        var diff = Math.round((targetBal - oldInvQ) * 1000) / 1000
+        if (Math.abs(diff) > 0.0001) {
+          var movColAdj = $app.findCollectionByNameOrId('inventory_movements')
+          var movAdj = new Record(movColAdj)
+          movAdj.set('inventory_id', invTarget.id)
+          movAdj.set('type', diff > 0 ? 'Entrada' : 'Saída')
+          movAdj.set('quantity', Math.abs(diff))
+          movAdj.set('balance_after', targetBal)
+          movAdj.set(
+            'reason',
+            'Ajuste de inventário por ' +
+              authUser +
+              ' em ' +
+              dateFormatted +
+              ' (reconciliação com extrato: ' +
+              oldInvQ +
+              ' → ' +
+              targetBal +
+              ')' +
+              (reason ? ' - Motivo: ' + reason : ''),
+          )
+          if (e.auth) movAdj.set('user_id', e.auth.id)
+          $app.save(movAdj)
+        }
+
+        invTarget.set('quantity', targetBal)
+        $app.save(invTarget)
+
+        return e.json(200, {
+          success: true,
+          message:
+            'Saldo do item de inventário alinhado para ' +
+            targetBal +
+            ' un com movimento auditado de ajuste.',
+          new_balance: targetBal,
+        })
+      }
+
+      return e.json(400, { success: false, error: 'Ação desconhecida: ' + action })
+    } catch (err) {
+      console.error('[API] Erro ao corrigir divergência:', String(err))
       return e.json(500, { success: false, error: String(err) })
     }
   },

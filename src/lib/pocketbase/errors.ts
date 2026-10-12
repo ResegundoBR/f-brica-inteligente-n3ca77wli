@@ -32,18 +32,20 @@ const FIELD_LABELS_PT: Record<string, string> = {
   expected_date: 'Previsão de Entrega',
   supplier: 'Fornecedor',
   supplier_id: 'Fornecedor',
-  payment_terms: 'Condição de Pagamento',
-  delivery_terms: 'Condições de Entrega',
-  delivery_type: 'Tipo de Entrega',
-  total: 'Valor Total',
-  oc_number: 'Número da OC',
+  quantity: 'Quantidade',
+  unit_price: 'Preço Unitário',
+  total_amount: 'Valor Total',
+  status: 'Status',
+  code: 'Código',
+  description: 'Descrição',
+  order_number: 'Número da OC',
 }
 
-const CODE_MESSAGES_PT: Record<string, string> = {
+const ERROR_TRANSLATIONS_PT: Record<string, string> = {
   validation_required: 'Obrigatório',
   validation_invalid_date: 'Data inválida',
-  validation_invalid_email: 'E-mail inválido',
-  validation_not_unique: 'Já cadastrado',
+  'Must be a valid datetime.': 'Data inválida',
+  'Value cannot be blank.': 'Obrigatório',
 }
 
 export function formatDetailedErrorMessage(error: unknown, fallbackMessage?: string): string {
@@ -51,6 +53,7 @@ export function formatDetailedErrorMessage(error: unknown, fallbackMessage?: str
     return fallbackMessage || 'Ocorreu um erro inesperado.'
   }
 
+  // PocketBase ClientResponseError ou objeto mock similar
   const errObj = error as {
     response?: {
       message?: string
@@ -63,20 +66,28 @@ export function formatDetailedErrorMessage(error: unknown, fallbackMessage?: str
   if (data && typeof data === 'object') {
     const fieldDetails: string[] = []
     for (const [field, detail] of Object.entries(data)) {
-      const label = FIELD_LABELS_PT[field] || field
-      let detailMsg = ''
+      const fieldLabel = FIELD_LABELS_PT[field] || field
+      let reason = 'Inválido'
+
       if (detail && typeof detail === 'object') {
         const code = detail.code || ''
-        detailMsg = CODE_MESSAGES_PT[code] || detail.message || 'Valor inválido'
+        const rawMsg = detail.message || ''
+        if (ERROR_TRANSLATIONS_PT[code]) {
+          reason = ERROR_TRANSLATIONS_PT[code]
+        } else if (ERROR_TRANSLATIONS_PT[rawMsg]) {
+          reason = ERROR_TRANSLATIONS_PT[rawMsg]
+        } else if (rawMsg) {
+          reason = rawMsg
+        }
       } else if (typeof detail === 'string') {
-        detailMsg = detail
+        reason = ERROR_TRANSLATIONS_PT[detail] || detail
       }
-      if (detailMsg) {
-        fieldDetails.push(`${label}: ${detailMsg}`)
-      }
+
+      fieldDetails.push(`${fieldLabel}: ${reason}`)
     }
+
     if (fieldDetails.length > 0) {
-      return fieldDetails.join('. ')
+      return fieldDetails.join(' | ')
     }
   }
 

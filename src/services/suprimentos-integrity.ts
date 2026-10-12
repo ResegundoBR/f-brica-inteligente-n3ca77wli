@@ -1,5 +1,15 @@
 import pb from '@/lib/pocketbase/client'
 
+export interface BatchMemberInfo {
+  id: string
+  order_id?: string
+  op_number?: string
+  order_number?: string
+  quantity: number
+  received_quantity: number
+  status: string
+}
+
 export interface DivergenceItem {
   id: string
   category:
@@ -20,7 +30,42 @@ export interface DivergenceItem {
   problem: string
   suggestion: string
   detected_at: string
+  order_id?: string
+  op_number?: string
+  order_number?: string
+  record_status?: string
+  record_created?: string
+  batch_id?: string
+  batch_members?: BatchMemberInfo[]
   details?: Record<string, unknown>
+}
+
+export interface FixDivergenceParams {
+  action:
+    | 'destinar_excedente_estoque'
+    | 'corrigir_registro'
+    | 'cancelar_solicitacao'
+    | 'ajustar_saldo_estoque'
+  record_id: string
+  item_type?: 'material_shortage' | 'inventory' | string
+  target_quantity?: number
+  quantity?: number
+  received_quantity?: number
+  target_balance?: number
+  reason?: string
+}
+
+export interface FixDivergenceResponse {
+  success: boolean
+  message: string
+  audit_note?: string
+  surplus_quantity?: number
+  target_quantity?: number
+  quantity?: number
+  received_quantity?: number
+  new_balance?: number
+  status?: string
+  error?: string
 }
 
 export interface IntegrityCheckResult {
@@ -143,6 +188,20 @@ export async function closeResidualShortage(
   )
   if (!res.success) {
     throw new Error(res.error || 'Falha ao encerrar saldo residual da solicitação.')
+  }
+  return res
+}
+
+/**
+ * Executa ação de correção auditada direta para uma divergência específica
+ */
+export async function fixDivergence(params: FixDivergenceParams): Promise<FixDivergenceResponse> {
+  const res = await pb.send<FixDivergenceResponse>('/backend/v1/suprimentos/fix-divergence', {
+    method: 'POST',
+    body: params,
+  })
+  if (!res.success) {
+    throw new Error(res.error || 'Falha ao executar correção da divergência.')
   }
   return res
 }

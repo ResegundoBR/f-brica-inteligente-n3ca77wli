@@ -34,6 +34,7 @@ interface TriageDetailDialogProps {
   onOpenChange: (open: boolean) => void
   onAction: () => void
   onOpenQuotation?: (item: MaterialShortage) => void
+  existingOrders?: any[]
 }
 export function TriageDetailDialog({
   item,
@@ -42,6 +43,7 @@ export function TriageDetailDialog({
   onOpenChange,
   onAction,
   onOpenQuotation,
+  existingOrders,
 }: TriageDetailDialogProps) {
   const { toast } = useToast()
   const [submitting, setSubmitting] = useState(false)
@@ -192,6 +194,30 @@ export function TriageDetailDialog({
                   </Badge>
                 )}
               </div>
+              <div>
+                <span className="text-muted-foreground">Nº Pedido:</span>{' '}
+                <span className="font-medium notranslate" translate="no">
+                  {item.expand?.order_id?.order_number || '-'}
+                </span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Nº OP:</span>{' '}
+                {item.expand?.order_id?.op_number ? (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenOpModal(item.expand!.order_id!.op_number!)}
+                    title={`Visualizar OP ${item.expand.order_id.op_number} em modal`}
+                    className="font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline cursor-pointer notranslate"
+                    translate="no"
+                  >
+                    {item.expand.order_id.op_number}
+                  </button>
+                ) : (
+                  <span className="font-normal text-muted-foreground notranslate" translate="no">
+                    -
+                  </span>
+                )}
+              </div>
             </div>
             {item.observation && (
               <div className="text-sm">
@@ -314,6 +340,7 @@ export function TriageDetailDialog({
           open={opModalOpen}
           onOpenChange={setOpModalOpen}
           opIdentifier={selectedOpNumber}
+          existingOrders={existingOrders}
           highlightCode={item.code}
         />
       )}

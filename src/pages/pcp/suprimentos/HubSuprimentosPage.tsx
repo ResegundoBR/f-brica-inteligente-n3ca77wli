@@ -118,6 +118,9 @@ export default function HubSuprimentosPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [orders, setOrders] = useState<PcpOrder[]>([])
 
+  // Memoizar orders para referência referencialmente estável entre renders
+  const memoizedOrders = useMemo(() => orders, [orders])
+
   // Confirmação de envio direto para Compras da Fila
   const [confirmComprasOpen, setConfirmComprasOpen] = useState(false)
   const [sendingCompras, setSendingCompras] = useState(false)
@@ -1312,6 +1315,7 @@ export default function HubSuprimentosPage() {
       <TriageDetailDialog
         item={selectedItem}
         allShortages={shortages}
+        existingOrders={memoizedOrders}
         open={!!selectedItem}
         onOpenChange={(o) => !o && setSelectedItem(null)}
         onAction={fetchData}
@@ -1321,6 +1325,7 @@ export default function HubSuprimentosPage() {
       {/* DIÁLOGO DE DECISÃO EM LOTE (Fila) */}
       <TriageGroupDetailDialog
         group={selectedGroup}
+        existingOrders={memoizedOrders}
         open={!!selectedGroup}
         onOpenChange={(o) => !o && setSelectedGroup(null)}
         onAction={() => {

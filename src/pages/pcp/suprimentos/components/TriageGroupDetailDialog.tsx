@@ -24,7 +24,6 @@ import {
   Layers,
   ShoppingBag,
   PackageCheck,
-  FileSearch,
 } from 'lucide-react'
 import { ShortageGroup } from '@/lib/shortage-grouping'
 import { MaterialShortage } from '@/types'
@@ -42,7 +41,6 @@ import {
 } from '@/services/material-reservations'
 import { releaseGroupFromStock } from '@/services/stock-release'
 import { OpReadOnlyModal } from '@/pages/pcp/components/OpReadOnlyModal'
-import { ProductDossierModal } from './ProductDossierModal'
 
 interface TriageGroupDetailDialogProps {
   group: ShortageGroup | null
@@ -51,6 +49,7 @@ interface TriageGroupDetailDialogProps {
   onAction: () => void
   onOpenQuotation?: (item: MaterialShortage, groupItems: MaterialShortage[]) => void
   onOpenDossier?: (item: any) => void
+  existingOrders?: any[]
 }
 export function TriageGroupDetailDialog({
   group,
@@ -58,7 +57,8 @@ export function TriageGroupDetailDialog({
   onOpenChange,
   onAction,
   onOpenQuotation,
-  onOpenDossier,
+  onOpenDossier: _onOpenDossier,
+  existingOrders,
 }: TriageGroupDetailDialogProps) {
   const { toast } = useToast()
   const [loadingAction, setLoadingAction] = useState<string | null>(null)
@@ -66,8 +66,6 @@ export function TriageGroupDetailDialog({
   const [checkingStock, setCheckingStock] = useState(false)
   const [selectedOpNumber, setSelectedOpNumber] = useState<string | null>(null)
   const [opModalOpen, setOpModalOpen] = useState(false)
-  const [localDossierOpen, setLocalDossierOpen] = useState(false)
-  const [localDossierProduct, setLocalDossierProduct] = useState<any>(null)
 
   useEffect(() => {
     if (!group || !open) {
@@ -303,33 +301,8 @@ export function TriageGroupDetailDialog({
                             fallbackText="-"
                           />
                         </TableCell>
-                        <TableCell className="notranslate" translate="no">
-                          {it.expand?.order_id?.order_number ? (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                const productPayload = {
-                                  id: it.expand?.order_id?.product_id,
-                                  code: group.code || it.code,
-                                  description: group.description || it.description,
-                                }
-                                if (onOpenDossier) {
-                                  onOpenDossier(productPayload)
-                                } else {
-                                  setLocalDossierProduct(productPayload)
-                                  setLocalDossierOpen(true)
-                                }
-                              }}
-                              title={`Abrir ficha/dossiê do produto do pedido #${it.expand.order_id.order_number}`}
-                              className="inline-flex items-center gap-1 font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer"
-                            >
-                              <span>{it.expand.order_id.order_number}</span>
-                              <FileSearch className="size-3 opacity-60" />
-                            </button>
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
-                          )}
+                        <TableCell className="notranslate text-muted-foreground" translate="no">
+                          <span>{it.expand?.order_id?.order_number || '-'}</span>
                         </TableCell>
                         <TableCell className="font-medium notranslate" translate="no">
                           {it.expand?.order_id?.op_number ? (
@@ -429,16 +402,10 @@ export function TriageGroupDetailDialog({
           open={opModalOpen}
           onOpenChange={setOpModalOpen}
           opIdentifier={selectedOpNumber}
+          existingOrders={existingOrders}
           highlightCode={group.code}
         />
       )}
-
-      {/* Modal de Dossiê do Produto quando invocado internamente */}
-      <ProductDossierModal
-        open={localDossierOpen}
-        onOpenChange={setLocalDossierOpen}
-        initialProduct={localDossierProduct}
-      />
     </>
   )
 }

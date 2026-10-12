@@ -70,6 +70,19 @@ interface OpReadOnlyModalProps {
   highlightCode?: string | null
 }
 
+// Helper para delay com promise
+function waitDelay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+// Helper para detectar status 429
+function isRateLimitError(err: any): boolean {
+  if (!err) return false
+  if (err.status === 429) return true
+  const msg = String(err.message || '').toLowerCase()
+  return msg.includes('429') || msg.includes('too many requests')
+}
+
 export function OpReadOnlyModal({
   open,
   onOpenChange,
@@ -83,6 +96,11 @@ export function OpReadOnlyModal({
   const [materials, setMaterials] = useState<PcpOrderMaterial[]>([])
   const [activeSectorTab, setActiveSectorTab] = useState<string>('ALL')
   const syncedHighlightRef = useRef<string | null>(null)
+  const existingOrdersRef = useRef<PcpOrder[]>(existingOrders)
+
+  useEffect(() => {
+    existingOrdersRef.current = existingOrders
+  }, [existingOrders])
 
   useEffect(() => {
     if (!open || !opIdentifier) {
@@ -104,11 +122,12 @@ export function OpReadOnlyModal({
         const raw = opIdentifier!.trim()
         const cleanDigits = raw.replace(/\D/g, '')
 
-        // 1. Tentar encontrar a OP na lista em memória (existingOrders)
+        // 1. Tentar encontrar a OP na lista em memória (existingOrders via ref estável)
         let foundOrder: PcpOrder | null = null
+        const currentExisting = existingOrdersRef.current || []
 
         foundOrder =
-          existingOrders.find((o) => {
+          currentExisting.find((o) => {
             if (o.id === raw) return true
             if (o.op_number && (o.op_number === raw || o.op_number.trim() === raw)) return true
             if (o.order_number && (o.order_number === raw || o.order_number.trim() === raw))
@@ -137,10 +156,31 @@ export function OpReadOnlyModal({
             if (fetched) {
               foundOrder = fetched
             }
-          } catch (fetchErr) {
-            // Se já tínhamos em memória mas sem expand, mantemos o da memória
-            if (!foundOrder) {
-              throw fetchErr
+          } catch (fetchErr: any) {
+            // Resiliência a 429: tentar no máximo 1 retry com backoff antes de falhar
+            if (isRateLimitError(fetchErr)) {
+              await waitDelay(600)
+              if (!isMounted) return
+              try {
+                const retryFetched = await pb
+                  .collection('pcp_orders')
+                  .getFirstListItem<PcpOrder>(filterQueries.join(' || '), {
+                    expand: 'product_id,client_id',
+                  })
+                if (retryFetched) {
+                  foundOrder = retryFetched
+                }
+              } catch (retryErr: any) {
+                if (isRateLimitError(retryErr)) {
+                  throw new Error('Muitas consultas seguidas, tente novamente.')
+                }
+                if (!foundOrder) throw retryErr
+              }
+            } else {
+              // Se já tínhamos em memória mas sem expand, mantemos o da memória
+              if (!foundOrder) {
+                throw fetchErr
+              }
             }
           }
         }
@@ -155,24 +195,50 @@ export function OpReadOnlyModal({
 
         setOrder(foundOrder)
 
-        // 3. Carregar os materiais da OP em pcp_order_materials
-        const loadedMaterials = await pb
-          .collection('pcp_order_materials')
-          .getFullList<PcpOrderMaterial>({
-            filter: `order_id = "${foundOrder.id}"`,
-            sort: 'sector,description',
-          })
+        // 3. Carregar os materiais da OP em pcp_order_materials (com resiliência a 429)
+        let loadedMaterials: PcpOrderMaterial[] = []
+        try {
+          loadedMaterials = await pb
+            .collection('pcp_order_materials')
+            .getFullList<PcpOrderMaterial>({
+              filter: `order_id = "${foundOrder.id}"`,
+              sort: 'sector,description',
+            })
+        } catch (matErr: any) {
+          if (isRateLimitError(matErr)) {
+            await waitDelay(600)
+            if (!isMounted) return
+            try {
+              loadedMaterials = await pb
+                .collection('pcp_order_materials')
+                .getFullList<PcpOrderMaterial>({
+                  filter: `order_id = "${foundOrder.id}"`,
+                  sort: 'sector,description',
+                })
+            } catch (retryMatErr: any) {
+              if (isRateLimitError(retryMatErr)) {
+                throw new Error('Muitas consultas seguidas, tente novamente.')
+              }
+              throw retryMatErr
+            }
+          } else {
+            throw matErr
+          }
+        }
 
         if (!isMounted) return
         setMaterials(loadedMaterials)
       } catch (err: any) {
         console.error('Erro ao carregar OP para leitura:', err)
         if (isMounted) {
-          setError(
-            err.message?.includes('404')
-              ? `Ordem de Produção "${opIdentifier}" não encontrada.`
-              : 'Não foi possível carregar os dados da OP.',
-          )
+          const rawMsg = err.message || ''
+          if (isRateLimitError(err) || rawMsg.includes('Muitas consultas')) {
+            setError('Muitas consultas seguidas, tente novamente.')
+          } else if (rawMsg.includes('404')) {
+            setError(`Ordem de Produção "${opIdentifier}" não encontrada.`)
+          } else {
+            setError('Não foi possível carregar os dados da OP.')
+          }
         }
       } finally {
         if (isMounted) {
@@ -186,7 +252,7 @@ export function OpReadOnlyModal({
     return () => {
       isMounted = false
     }
-  }, [open, opIdentifier, existingOrders])
+  }, [open, opIdentifier])
 
   // Formatação de data no padrão DD/MM/AAAA
   const formattedDeliveryDate = useMemo(() => {

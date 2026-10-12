@@ -43,12 +43,7 @@ export function formatDetailedErrorMessage(error: any, fallbackMessage?: string)
 
   // Extração ampla de dados de erro por campo
   const collected: [string, string][] = []
-  const candidates = [
-    error?.data?.data,
-    error?.response?.data,
-    error?.data,
-    error?.fields,
-  ]
+  const candidates = [error?.data?.data, error?.response?.data, error?.data, error?.fields]
 
   for (const src of candidates) {
     if (src && typeof src === 'object') {

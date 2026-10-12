@@ -679,6 +679,7 @@ export default function SolicitacoesPage() {
         open={!!selectedItem}
         onOpenChange={(o) => !o && setSelectedItem(null)}
         onAction={fetchData}
+        existingOrders={orders}
       />
       <TriageGroupDetailDialog
         group={selectedGroup}
@@ -688,6 +689,7 @@ export default function SolicitacoesPage() {
           fetchData()
           clear()
         }}
+        existingOrders={orders}
         onOpenDossier={(prod) => {
           setDossierItem(prod)
           setDossierOpen(true)

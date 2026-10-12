@@ -57,7 +57,6 @@ export function TriageGroupDetailDialog({
   onOpenChange,
   onAction,
   onOpenQuotation,
-  onOpenDossier: _onOpenDossier,
   existingOrders,
 }: TriageGroupDetailDialogProps) {
   const { toast } = useToast()

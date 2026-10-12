@@ -450,17 +450,17 @@ export function SeparationRoundsManager() {
                 <div className="text-xs p-2.5 rounded-md bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/20 flex items-center justify-between">
                   <span>
                     <strong>{detailModal.shortage_count} faltas</strong> foram registradas
-                    automaticamente na Triagem de Suprimentos (/pcp/suprimentos/solicitacoes).
+                    automaticamente no Hub de Suprimentos (/pcp/suprimentos/hub).
                   </span>
                   <Button
                     variant="link"
                     size="sm"
                     className="h-auto p-0 text-rose-700 dark:text-rose-400 font-semibold gap-1"
                     onClick={() => {
-                      window.open('/pcp/suprimentos/solicitacoes', '_blank')
+                      window.open('/pcp/suprimentos/hub', '_blank')
                     }}
                   >
-                    Ver Triagem
+                    Ver Hub
                     <ArrowRight className="h-3 w-3" />
                   </Button>
                 </div>

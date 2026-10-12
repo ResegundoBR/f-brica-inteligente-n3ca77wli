@@ -17,7 +17,7 @@ const REDIRECT_PRIORITY: RedirectEntry[] = [
     path: '/pcp/comercial',
     hasAccess: (r) => !!r.access_visao_comercial || !!r.access_commercial,
   },
-  { path: '/pcp/suprimentos/solicitacoes', hasAccess: (r) => !!r.access_suprimentos },
+  { path: '/pcp/suprimentos/hub', hasAccess: (r) => !!r.access_suprimentos },
   { path: '/pcp/dashboard', hasAccess: (r) => !!r.access_pcp },
   { path: '/catalogo', hasAccess: (r) => !!r.access_catalog },
   { path: '/consulta', hasAccess: (r) => !!r.access_catalog_consultation },

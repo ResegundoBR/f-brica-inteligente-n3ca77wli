@@ -67,13 +67,6 @@ const navItems = [
     group: 'Suprimentos',
   },
   {
-    title: 'Solicitações',
-    url: '/pcp/suprimentos/solicitacoes',
-    icon: ClipboardList,
-    group: 'Suprimentos',
-  },
-  { title: 'Cotações', url: '/pcp/suprimentos/cotacoes', icon: Tags, group: 'Suprimentos' },
-  {
     title: 'Reservas por Programação',
     url: '/pcp/suprimentos/reservas-programacao',
     icon: Calendar,
@@ -210,8 +203,6 @@ export function AppSidebar() {
       case 'Vínculos de PDF':
         return !!role.access_ordens_producao || !!role.access_pcp
       case 'Hub de Suprimentos':
-      case 'Solicitações':
-      case 'Cotações':
       case 'Reservas por Programação':
       case 'Compras':
       case 'Ordens de Compra':

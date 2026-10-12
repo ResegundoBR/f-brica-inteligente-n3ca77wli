@@ -1322,6 +1322,10 @@ export default function HubSuprimentosPage() {
           clearFilaSelection()
         }}
         onOpenQuotation={(item, groupItems) => handleOpenDirectQuotation(item, groupItems)}
+        onOpenDossier={(prod) => {
+          setDossierItem(prod)
+          setDossierOpen(true)
+        }}
       />
 
       {/* DIÁLOGO DE COTAÇÃO MULTI-FORNECEDOR DIRETO (Comprador não precisa trocar de tela) */}

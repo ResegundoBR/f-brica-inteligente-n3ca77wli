@@ -688,6 +688,10 @@ export default function SolicitacoesPage() {
           fetchData()
           clear()
         }}
+        onOpenDossier={(prod) => {
+          setDossierItem(prod)
+          setDossierOpen(true)
+        }}
       />
       <ProductDossierModal
         open={dossierOpen}

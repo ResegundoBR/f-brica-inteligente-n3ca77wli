@@ -1,6 +1,6 @@
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import pb from '@/lib/pocketbase/client'
 
 interface RoleGuardProps {
@@ -27,6 +27,7 @@ export function RoleGuard({ module, children }: RoleGuardProps) {
   const { user, loading: authLoading, setUser } = useAuth()
   const [roleLoading, setRoleLoading] = useState(false)
   const [hasAccess, setHasAccess] = useState<boolean | null>(null)
+  const fetchedUserRef = useRef<string | null>(null)
 
   useEffect(() => {
     let isMounted = true
@@ -51,6 +52,12 @@ export function RoleGuard({ module, children }: RoleGuardProps) {
       // If user has a role ID but it's not expanded yet (e.g. right after login)
       let currentRole = user.expand?.role
       if (!currentRole && user.role) {
+        if (fetchedUserRef.current === user.id) {
+          // Já tentou enriquecer este usuário nesta sessão; evitar loop infinito de setUser -> re-render -> re-fetch
+          if (isMounted) setHasAccess(false)
+          return
+        }
+        fetchedUserRef.current = user.id
         if (isMounted) setRoleLoading(true)
         try {
           const freshUser = await pb.collection('users').getOne(user.id, { expand: 'role' })

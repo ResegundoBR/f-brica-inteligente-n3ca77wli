@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -82,6 +82,7 @@ export function OpReadOnlyModal({
   const [order, setOrder] = useState<PcpOrder | null>(null)
   const [materials, setMaterials] = useState<PcpOrderMaterial[]>([])
   const [activeSectorTab, setActiveSectorTab] = useState<string>('ALL')
+  const syncedHighlightRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (!open || !opIdentifier) {
@@ -89,6 +90,7 @@ export function OpReadOnlyModal({
       setMaterials([])
       setError(null)
       setActiveSectorTab('ALL')
+      syncedHighlightRef.current = null
       return
     }
 
@@ -216,16 +218,26 @@ export function OpReadOnlyModal({
   }, [materials])
 
   // Se houver highlightCode, garante que a tab mostre o setor onde o código está (ou ALL)
+  // Guarda com syncedHighlightRef para evitar loops de setState via activeSectorTab
   useEffect(() => {
-    if (!highlightCode || materials.length === 0) return
-    const normHighlight = highlightCode.trim().toLowerCase()
-    const match = materials.find((m) => (m.code || '').trim().toLowerCase() === normHighlight)
-    if (match && activeSectorTab !== 'ALL' && activeSectorTab !== match.sector) {
-      setActiveSectorTab(match.sector)
+    if (!open || !highlightCode || materials.length === 0) {
+      if (!open) {
+        syncedHighlightRef.current = null
+      }
+      return
     }
-  }, [highlightCode, materials, activeSectorTab])
+    const normHighlight = highlightCode.trim().toLowerCase()
+    if (syncedHighlightRef.current === normHighlight) return
+
+    const match = materials.find((m) => (m.code || '').trim().toLowerCase() === normHighlight)
+    if (match) {
+      syncedHighlightRef.current = normHighlight
+      setActiveSectorTab((current) => (current !== match.sector ? match.sector : current))
+    }
+  }, [open, highlightCode, materials])
 
   // Efeito para rolar suavemente até a linha destacada quando os materiais carregarem
+  // Imperativo com timeout estável e cleanup
   useEffect(() => {
     if (!open || !highlightCode || materials.length === 0 || loading) return
     const timer = setTimeout(() => {
@@ -233,9 +245,9 @@ export function OpReadOnlyModal({
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' })
       }
-    }, 150)
+    }, 120)
     return () => clearTimeout(timer)
-  }, [open, highlightCode, materials, loading, activeSectorTab])
+  }, [open, highlightCode, materials.length, loading, activeSectorTab])
 
   const filteredMaterials = useMemo(() => {
     if (activeSectorTab === 'ALL') return materials

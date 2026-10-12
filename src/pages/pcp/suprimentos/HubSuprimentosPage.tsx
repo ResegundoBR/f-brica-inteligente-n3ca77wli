@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { Button } from '@/components/ui/button'
@@ -245,9 +245,15 @@ export default function HubSuprimentosPage() {
 
   const filaSelectedIdsSet = useMemo(() => new Set(filaSelectedIds), [filaSelectedIds])
 
+  const lastAvailableIdsKeyRef = useRef<string>('')
   useEffect(() => {
     if (activeTab === 'fila') {
-      setAvailableIds(triagemItems.map((i) => i.id))
+      const ids = triagemItems.map((i) => i.id)
+      const key = ids.join(',')
+      if (lastAvailableIdsKeyRef.current !== key) {
+        lastAvailableIdsKeyRef.current = key
+        setAvailableIds(ids)
+      }
     }
   }, [triagemItems, setAvailableIds, activeTab])
 

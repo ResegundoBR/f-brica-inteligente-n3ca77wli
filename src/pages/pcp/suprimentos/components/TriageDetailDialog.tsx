@@ -308,13 +308,15 @@ export function TriageDetailDialog({
         </DialogContent>
       </Dialog>
 
-      {/* Modal sobreposto de leitura da OP com o código da triagem destacado */}
-      <OpReadOnlyModal
-        open={opModalOpen}
-        onOpenChange={setOpModalOpen}
-        opIdentifier={selectedOpNumber}
-        highlightCode={item.code}
-      />
+      {/* Modal sobreposto de leitura da OP com o código da triagem destacado (montagem condicional para evitar cascata composeRefs) */}
+      {opModalOpen && selectedOpNumber && (
+        <OpReadOnlyModal
+          open={opModalOpen}
+          onOpenChange={setOpModalOpen}
+          opIdentifier={selectedOpNumber}
+          highlightCode={item.code}
+        />
+      )}
     </>
   )
 }

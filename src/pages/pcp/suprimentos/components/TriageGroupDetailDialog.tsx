@@ -423,13 +423,15 @@ export function TriageGroupDetailDialog({
         </DialogContent>
       </Dialog>
 
-      {/* Modal sobreposto de leitura da OP com o código da triagem destacado */}
-      <OpReadOnlyModal
-        open={opModalOpen}
-        onOpenChange={setOpModalOpen}
-        opIdentifier={selectedOpNumber}
-        highlightCode={group.code}
-      />
+      {/* Modal sobreposto de leitura da OP com o código da triagem destacado (montagem condicional para evitar cascata composeRefs) */}
+      {opModalOpen && selectedOpNumber && (
+        <OpReadOnlyModal
+          open={opModalOpen}
+          onOpenChange={setOpModalOpen}
+          opIdentifier={selectedOpNumber}
+          highlightCode={group.code}
+        />
+      )}
 
       {/* Modal de Dossiê do Produto quando invocado internamente */}
       <ProductDossierModal

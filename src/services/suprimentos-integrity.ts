@@ -21,6 +21,11 @@ export interface DivergenceItem {
     | 'codigo_com_erro_digitacao'
     | 'codigo_com_espacos'
     | 'descricao_poluida'
+    | 'saldo_sem_movimentos'
+    | 'item_oc_orfa'
+    | 'item_oc_solicitacao_inexistente'
+    | 'divergencia_oc_solicitacao'
+    | 'divergencia_preco_oc_solicitacao'
     | string
   severity: 'alta' | 'media' | 'baixa'
   item_type: 'material_shortage' | 'inventory' | 'component' | string
@@ -65,6 +70,7 @@ export interface FixDivergenceResponse {
   received_quantity?: number
   new_balance?: number
   status?: string
+  already_in_inventory?: boolean
   error?: string
 }
 

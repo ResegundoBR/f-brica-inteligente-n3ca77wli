@@ -28,76 +28,70 @@ export function getErrorMessage(error: unknown): string {
   return msgs.length > 0 ? msgs.join(' ') : error.message || 'An unexpected error occurred.'
 }
 
-const FIELD_LABELS_PT: Record<string, string> = {
-  expected_date: 'Previsão de Entrega',
+const FIELD_LABELS: Record<string, string> = {
+  oc_number: 'Número da OC',
   supplier: 'Fornecedor',
   supplier_id: 'Fornecedor',
+  expected_date: 'Previsão de Entrega',
+  delivery_terms: 'Condições de Entrega',
+  payment_terms: 'Condições de Pagamento',
+  delivery_type: 'Tipo de Entrega',
+  total: 'Total',
   quantity: 'Quantidade',
   unit_price: 'Preço Unitário',
-  total_amount: 'Valor Total',
-  status: 'Status',
   code: 'Código',
   description: 'Descrição',
-  order_number: 'Número da OC',
 }
 
-const ERROR_TRANSLATIONS_PT: Record<string, string> = {
-  validation_required: 'Obrigatório',
-  validation_invalid_date: 'Data inválida',
+const MESSAGE_TRANSLATIONS: Record<string, string> = {
   'Must be a valid datetime.': 'Data inválida',
   'Value cannot be blank.': 'Obrigatório',
+  validation_invalid_date: 'Data inválida',
+  validation_required: 'Obrigatório',
 }
 
-export function formatDetailedErrorMessage(error: unknown, fallbackMessage?: string): string {
-  if (!error || typeof error !== 'object') {
-    return fallbackMessage || 'Ocorreu um erro inesperado.'
-  }
+export function formatDetailedErrorMessage(
+  error: unknown,
+  fallback = 'Falha ao processar solicitação.',
+): string {
+  if (!error || typeof error !== 'object') return fallback
 
-  // PocketBase ClientResponseError ou objeto mock similar
-  const errObj = error as {
-    response?: {
-      message?: string
-      data?: Record<string, { code?: string; message?: string } | string>
-    }
-    message?: string
-  }
+  const response = (error as { response?: { message?: string; data?: Record<string, unknown> } })
+    .response
+  const data = response?.data
 
-  const data = errObj.response?.data
-  if (data && typeof data === 'object') {
-    const fieldDetails: string[] = []
+  if (data && typeof data === 'object' && Object.keys(data).length > 0) {
+    const parts: string[] = []
     for (const [field, detail] of Object.entries(data)) {
-      const fieldLabel = FIELD_LABELS_PT[field] || field
-      let reason = 'Inválido'
+      const fieldName = FIELD_LABELS[field] || field
+      let msg = ''
 
       if (detail && typeof detail === 'object') {
-        const code = detail.code || ''
-        const rawMsg = detail.message || ''
-        if (ERROR_TRANSLATIONS_PT[code]) {
-          reason = ERROR_TRANSLATIONS_PT[code]
-        } else if (ERROR_TRANSLATIONS_PT[rawMsg]) {
-          reason = ERROR_TRANSLATIONS_PT[rawMsg]
-        } else if (rawMsg) {
-          reason = rawMsg
+        const d = detail as { message?: string; code?: string }
+        if (d.message && MESSAGE_TRANSLATIONS[d.message]) {
+          msg = MESSAGE_TRANSLATIONS[d.message]
+        } else if (d.code && MESSAGE_TRANSLATIONS[d.code]) {
+          msg = MESSAGE_TRANSLATIONS[d.code]
+        } else if (d.message) {
+          msg = d.message
         }
       } else if (typeof detail === 'string') {
-        reason = ERROR_TRANSLATIONS_PT[detail] || detail
+        msg = MESSAGE_TRANSLATIONS[detail] || detail
       }
 
-      fieldDetails.push(`${fieldLabel}: ${reason}`)
+      if (msg) {
+        parts.push(`${fieldName}: ${msg}`)
+      } else {
+        parts.push(`${fieldName} inválido`)
+      }
     }
 
-    if (fieldDetails.length > 0) {
-      return fieldDetails.join(' | ')
+    if (parts.length > 0) {
+      return parts.join(' | ')
     }
   }
 
-  if (errObj.response?.message) {
-    return errObj.response.message
-  }
-
-  if (errObj.message) {
-    return errObj.message
-  }
-
-  return fallbackMessage || 'Ocorreu um erro inesperado.'
+  if (response?.message) return response.message
+  if (error instanceof Error && error.message) return error.message
+  return fallback
 }

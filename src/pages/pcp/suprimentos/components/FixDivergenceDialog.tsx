@@ -82,6 +82,7 @@ export function FixDivergenceDialog({
   const isRecvAboveDemand = divergence.category === 'recebimento_acima_demanda'
   const isGhostOp = divergence.category === 'solicitacao_fantasma_op_encerrada'
   const isBalanceMismatch = divergence.category === 'saldo_estoque_incoerente'
+  const alreadyInInventory = Boolean(details.already_in_inventory)
 
   // Executa destinação ao estoque
   const handleDestinarExcedente = async () => {
@@ -316,26 +317,54 @@ export function FixDivergenceDialog({
               <div className="space-y-3 p-3.5 rounded-lg border border-blue-200 bg-blue-50/50 dark:bg-blue-950/20 dark:border-blue-900 text-xs text-slate-700 dark:text-slate-300">
                 <div className="font-semibold text-blue-900 dark:text-blue-200 flex items-center gap-1.5">
                   <CheckCircle2 className="size-4 text-blue-600 shrink-0" />
-                  O que esta ação fará:
+                  {alreadyInInventory
+                    ? 'Proteção contra Contagem em Dobro Ativa:'
+                    : 'O que esta ação fará:'}
                 </div>
+
+                {alreadyInInventory ? (
+                  <div className="p-2.5 rounded bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 space-y-1">
+                    <div className="font-bold flex items-center gap-1">
+                      <AlertTriangle className="size-3.5 text-amber-600" />
+                      O recebimento original já deu entrada integral no inventário físico!
+                    </div>
+                    <p className="text-[11px] leading-relaxed">
+                      O excedente de <strong>{surplusQty} un</strong> já foi incorporado ao saldo de
+                      estoque anteriormente (ex: caso real do código 05090029). Esta ação irá apenas
+                      reconciliar as quantidades da solicitação (de{' '}
+                      <strong>{receivedQty} un</strong> para a demanda real de{' '}
+                      <strong>{opDemand} un</strong>), <strong>SEM criar nova entrada</strong> para
+                      não inflar o saldo em duplicidade.
+                    </p>
+                  </div>
+                ) : null}
+
                 <ul className="list-disc list-inside space-y-1 pl-1 text-slate-600 dark:text-slate-400">
                   <li>
                     Ajustará a solicitação da OP {divergence.op_number || ''} para{' '}
                     <strong className="text-slate-800 dark:text-slate-100">{opDemand} un</strong>{' '}
                     (demanda real da OP) e marcará como recebida exatamente nesta quantidade.
                   </li>
-                  <li>
-                    Lançará uma{' '}
-                    <strong className="text-slate-800 dark:text-slate-100">Entrada</strong> auditada
-                    de <strong className="text-emerald-600 font-bold">{surplusQty} un</strong> no
-                    item de inventário físico correspondente.
-                  </li>
+                  {alreadyInInventory ? (
+                    <li className="text-emerald-700 dark:text-emerald-400 font-medium">
+                      <strong>Nenhuma entrada duplicada de estoque</strong> será criada: o saldo do
+                      inventário será preservado no valor correto já existente.
+                    </li>
+                  ) : (
+                    <li>
+                      Lançará uma{' '}
+                      <strong className="text-slate-800 dark:text-slate-100">Entrada</strong>{' '}
+                      auditada de{' '}
+                      <strong className="text-emerald-600 font-bold">{surplusQty} un</strong> no
+                      item de inventário físico correspondente.
+                    </li>
+                  )}
                   <li>
                     Gravará auditoria completa no histórico com seu usuário, data e detalhes da
                     reconciliação.
                   </li>
                   <li className="text-[11px] text-amber-700 dark:text-amber-400">
-                    Regra inviolável: nenhum outro registro de solicitação será alterado
+                    Regra inviolável: nenhum outro registro de solicitação em aberto será alterado
                     silenciosamente.
                   </li>
                 </ul>
@@ -365,7 +394,9 @@ export function FixDivergenceDialog({
                     ) : (
                       <PackagePlus className="size-4" />
                     )}
-                    Confirmar Destinação de {surplusQty} un ao Estoque
+                    {alreadyInInventory
+                      ? `Reconciliar Registro para ${opDemand} un (Sem Duplicar Estoque)`
+                      : `Confirmar Destinação de ${surplusQty} un ao Estoque`}
                   </Button>
                 </div>
               </div>

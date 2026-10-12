@@ -228,10 +228,44 @@ routerAdd(
               totalDemand += Number(opMaterials[m].getFloat('quantity')) || 0
             }
 
-            if (opMaterials.length > 0 && receivedQty > totalDemand + 0.0001) {
+            var effectiveDemand = totalDemand
+            var hasBom = opMaterials.length > 0
+
+            // Ponto cego 2(b): quando a OP não tiver linha de BOM do código,
+            // comparar com a quantidade original registrada na observação de auditoria
+            // 'Qtde ajustada de X para Y' e sinalizar se recebido > X
+            if (!hasBom) {
+              var obsText = s.getString('observation') || ''
+              var matchAdjust = obsText.match(
+                /Qtde ajustada de\s+(\d+(?:[.,]\d+)?)\s+para\s+(\d+(?:[.,]\d+)?)/i,
+              )
+              if (matchAdjust) {
+                var originalQty = parseFloat(matchAdjust[1].replace(',', '.'))
+                if (!isNaN(originalQty) && originalQty >= 0) {
+                  effectiveDemand = originalQty
+                }
+              }
+            }
+
+            if ((hasBom || effectiveDemand > 0) && receivedQty > effectiveDemand + 0.0001) {
               var ordInfo = getOrderInfo(orderId)
               var batchInfo = getBatchDetails(s)
-              var surplusQty = Math.round((receivedQty - totalDemand) * 10000) / 10000
+              var surplusQty = Math.round((receivedQty - effectiveDemand) * 10000) / 10000
+
+              // Verificar se o recebimento deste registro já foi lançado integralmente no estoque
+              var alreadyInInventory = false
+              try {
+                var checkMovs = $app.findRecordsByFilter(
+                  'inventory_movements',
+                  "type = 'Entrada' && (reason ~ '" + s.id + "')",
+                  '-created',
+                  1,
+                  0,
+                )
+                if (checkMovs.length > 0) {
+                  alreadyInInventory = true
+                }
+              } catch (_) {}
 
               divergences.push({
                 id: 'div_recv_demand_' + s.id,
@@ -251,19 +285,26 @@ routerAdd(
                 problem:
                   'Quantidade recebida (' +
                   receivedQty +
-                  ' un) excede a demanda total da OP ' +
+                  ' un) excede a demanda real da OP ' +
                   (ordInfo.op_number ? 'OP ' + ordInfo.op_number : '') +
                   ' (' +
-                  totalDemand +
-                  ' un). Excedente: ' +
+                  effectiveDemand +
+                  ' un' +
+                  (!hasBom ? ' via auditoria original' : '') +
+                  '). Excedente: ' +
                   surplusQty +
                   ' un.',
-                suggestion:
-                  'Destinar excedente (' +
-                  surplusQty +
-                  ' un) ao estoque geral ou corrigir o registro da falta para ' +
-                  totalDemand +
-                  ' un.',
+                suggestion: alreadyInInventory
+                  ? 'Excedente (' +
+                    surplusQty +
+                    ' un) já foi recebido no inventário físico. Ajustar registro da OP para ' +
+                    effectiveDemand +
+                    ' un SEM lançar nova entrada duplicada.'
+                  : 'Destinar excedente (' +
+                    surplusQty +
+                    ' un) ao estoque geral ou corrigir o registro da falta para ' +
+                    effectiveDemand +
+                    ' un.',
                 detected_at: nowIso,
                 details: {
                   order_id: orderId,
@@ -272,9 +313,11 @@ routerAdd(
                   op_status: ordInfo.status,
                   received_quantity: receivedQty,
                   registered_quantity: registeredQty,
-                  op_demand: totalDemand,
+                  op_demand: effectiveDemand,
                   surplus_quantity: surplusQty,
                   batch_info: batchInfo,
+                  has_bom: hasBom,
+                  already_in_inventory: alreadyInInventory,
                 },
               })
             }
@@ -289,6 +332,8 @@ routerAdd(
 
       // -------------------------------------------------------------------------
       // REGRA 2: Saldo de cada inventário = soma dos movimentos (balance_after coerente)
+      // Ponto cego 2(a): validar itens de inventário SEM nenhum movimento
+      // (saldo cadastrado sem histórico = divergência informativa / baixa)
       // -------------------------------------------------------------------------
       try {
         var allInventory = $app.findRecordsByFilter('inventory', '1=1', 'code', 1000, 0)
@@ -307,7 +352,36 @@ routerAdd(
             0,
           )
 
-          if (movs.length > 0) {
+          if (movs.length === 0) {
+            // Ponto cego 2(a): Item com saldo diferente de zero ou sem histórico
+            if (Math.abs(invQty) > 0.001) {
+              divergences.push({
+                id: 'div_inv_no_movs_' + invId,
+                category: 'saldo_sem_movimentos',
+                severity: 'baixa',
+                item_type: 'inventory',
+                record_id: invId,
+                code: invCode,
+                description: inv.getString('description'),
+                order_id: '',
+                op_number: '',
+                order_number: '',
+                record_status: 'Estoque Físico',
+                record_created: inv.getString('created'),
+                problem:
+                  'Item possui saldo cadastrado (' +
+                  invQty +
+                  ' un) mas nenhum movimento de entrada ou saída registrado no histórico.',
+                suggestion:
+                  'Registrar movimento inicial auditado ou alinhar saldo para 0 caso seja resíduo.',
+                detected_at: nowIso,
+                details: {
+                  inventory_quantity: invQty,
+                  movements_count: 0,
+                },
+              })
+            }
+          } else {
             var runningBal = 0
             var hasBalanceAfterDrift = false
 
@@ -621,6 +695,183 @@ routerAdd(
         console.error(
           '[INTEGRITY_CHECK] Erro ao validar regra 5 (descrições poluídas):',
           String(err5),
+        )
+      }
+
+      // -------------------------------------------------------------------------
+      // REGRA 6 (NOVA): Conferir ordem_compra_itens contra as compras reais
+      // (quantidade/preço do item × registro de solicitação vinculado; itens órfãos de OC inexistente)
+      // -------------------------------------------------------------------------
+      try {
+        var allOcItens = $app.findRecordsByFilter('ordem_compra_itens', '1=1', 'created', 1000, 0)
+
+        for (var ocIdx = 0; ocIdx < allOcItens.length; ocIdx++) {
+          var ocItem = allOcItens[ocIdx]
+          var ocId = ocItem.getString('oc_id')
+          var shortageId = ocItem.getString('material_shortage_id')
+          var itemCode = ocItem.getString('code') || ''
+          var itemDesc = ocItem.getString('description') || ''
+          var ocItemQty = Number(ocItem.getFloat('quantity')) || 0
+          var ocItemPrice = Number(ocItem.getFloat('unit_price')) || 0
+
+          // 1. Item órfão: oc_id inexistente na tabela ordens_de_compra
+          var ocRecord = null
+          if (ocId) {
+            try {
+              ocRecord = $app.findRecordById('ordens_de_compra', ocId)
+            } catch (_) {}
+          }
+
+          if (!ocId || !ocRecord) {
+            divergences.push({
+              id: 'div_oc_orphan_' + ocItem.id,
+              category: 'item_oc_orfa',
+              severity: 'alta',
+              item_type: 'ordem_compra_item',
+              record_id: ocItem.id,
+              code: itemCode,
+              description: itemDesc,
+              order_id: '',
+              op_number: '',
+              order_number: '',
+              record_status: 'Órfão',
+              record_created: ocItem.getString('created'),
+              problem:
+                'Item de ordem de compra (ID: ' +
+                ocItem.id +
+                ') está vinculado a uma OC inexistente ou vazia (oc_id: ' +
+                (ocId || 'vazio') +
+                ').',
+              suggestion: 'Remover item órfão ou vincular à OC correspondente.',
+              detected_at: nowIso,
+              details: {
+                oc_id: ocId,
+                material_shortage_id: shortageId,
+                quantity: ocItemQty,
+                unit_price: ocItemPrice,
+              },
+            })
+            continue
+          }
+
+          var ocNumber = ocRecord.getString('oc_number') || ocRecord.id
+
+          // 2. Conferir item contra a solicitação vinculada (material_shortage_id)
+          if (shortageId) {
+            var shortageRec = null
+            try {
+              shortageRec = $app.findRecordById('material_shortages', shortageId)
+            } catch (_) {}
+
+            if (!shortageRec) {
+              divergences.push({
+                id: 'div_oc_shortage_missing_' + ocItem.id,
+                category: 'item_oc_solicitacao_inexistente',
+                severity: 'media',
+                item_type: 'ordem_compra_item',
+                record_id: ocItem.id,
+                code: itemCode,
+                description: itemDesc,
+                order_id: '',
+                op_number: '',
+                order_number: '',
+                record_status: 'OC ' + ocNumber,
+                record_created: ocItem.getString('created'),
+                problem:
+                  'Item da OC ' +
+                  ocNumber +
+                  ' aponta para solicitação inexistente (ID: ' +
+                  shortageId +
+                  ').',
+                suggestion: 'Limpar vínculo inválido de solicitação do item de OC.',
+                detected_at: nowIso,
+                details: {
+                  oc_id: ocId,
+                  oc_number: ocNumber,
+                  material_shortage_id: shortageId,
+                },
+              })
+            } else {
+              var sQty = Number(shortageRec.getFloat('quantity')) || 0
+              var sPrice = Number(shortageRec.getFloat('unit_price')) || 0
+              var sOrderId = shortageRec.getString('order_id')
+              var sOrdInfo = getOrderInfo(sOrderId)
+
+              var qtyDiff = Math.abs(ocItemQty - sQty)
+              var priceDiff = Math.abs(ocItemPrice - sPrice)
+
+              if (qtyDiff > 0.0001) {
+                divergences.push({
+                  id: 'div_oc_qty_mismatch_' + ocItem.id,
+                  category: 'divergencia_oc_solicitacao',
+                  severity: 'media',
+                  item_type: 'ordem_compra_item',
+                  record_id: ocItem.id,
+                  code: itemCode || shortageRec.getString('code'),
+                  description: itemDesc || shortageRec.getString('description'),
+                  order_id: sOrderId,
+                  op_number: sOrdInfo.op_number,
+                  order_number: sOrdInfo.order_number,
+                  record_status: 'OC ' + ocNumber,
+                  record_created: ocItem.getString('created'),
+                  problem:
+                    'Quantidade na OC ' +
+                    ocNumber +
+                    ' (' +
+                    ocItemQty +
+                    ' un) diverge da quantidade na solicitação vinculada (' +
+                    sQty +
+                    ' un).',
+                  suggestion: 'Alinhar a quantidade do item da OC com a solicitação de compra.',
+                  detected_at: nowIso,
+                  details: {
+                    oc_id: ocId,
+                    oc_number: ocNumber,
+                    oc_item_quantity: ocItemQty,
+                    shortage_quantity: sQty,
+                    shortage_id: shortageId,
+                  },
+                })
+              } else if (priceDiff > 0.01 && sPrice > 0) {
+                divergences.push({
+                  id: 'div_oc_price_mismatch_' + ocItem.id,
+                  category: 'divergencia_preco_oc_solicitacao',
+                  severity: 'baixa',
+                  item_type: 'ordem_compra_item',
+                  record_id: ocItem.id,
+                  code: itemCode || shortageRec.getString('code'),
+                  description: itemDesc || shortageRec.getString('description'),
+                  order_id: sOrderId,
+                  op_number: sOrdInfo.op_number,
+                  order_number: sOrdInfo.order_number,
+                  record_status: 'OC ' + ocNumber,
+                  record_created: ocItem.getString('created'),
+                  problem:
+                    'Preço unitário na OC ' +
+                    ocNumber +
+                    ' (R$ ' +
+                    ocItemPrice +
+                    ') diverge do preço na solicitação vinculada (R$ ' +
+                    sPrice +
+                    ').',
+                  suggestion: 'Alinhar os preços cadastrados na ordem de compra e na solicitação.',
+                  detected_at: nowIso,
+                  details: {
+                    oc_id: ocId,
+                    oc_number: ocNumber,
+                    oc_item_price: ocItemPrice,
+                    shortage_price: sPrice,
+                    shortage_id: shortageId,
+                  },
+                })
+              }
+            }
+          }
+        }
+      } catch (err6) {
+        console.error(
+          '[INTEGRITY_CHECK] Erro ao validar regra 6 (itens de ordem de compra):',
+          String(err6),
         )
       }
 
@@ -1095,8 +1346,28 @@ routerAdd(
           $app.save(invItem)
         }
 
-        var invCurrentQty = Number(invItem.getFloat('quantity')) || 0
-        var invNewQty = Math.round((invCurrentQty + surplus) * 10000) / 10000
+        // Verificar se o recebimento deste registro já gerou movimento 'Entrada' no inventário
+        // referenciando este shortageId. Se sim, a entrada integral já ocorreu (excedente já está físico no estoque);
+        // criar outra entrada causaria contagem em dobro.
+        var alreadyInInventory = false
+        try {
+          var matchingEntries = $app.findRecordsByFilter(
+            'inventory_movements',
+            "inventory_id = '" +
+              invItem.id +
+              "' && type = 'Entrada' && (reason ~ '" +
+              recordId +
+              "' || reason ~ '" +
+              shortage.id +
+              "')",
+            '-created',
+            10,
+            0,
+          )
+          if (matchingEntries.length > 0) {
+            alreadyInInventory = true
+          }
+        } catch (_) {}
 
         var opNumber = ''
         if (orderId) {
@@ -1106,40 +1377,56 @@ routerAdd(
           } catch (_) {}
         }
 
-        var movCol = $app.findCollectionByNameOrId('inventory_movements')
-        var mov = new Record(movCol)
-        mov.set('inventory_id', invItem.id)
-        mov.set('type', 'Entrada')
-        mov.set('quantity', surplus)
-        mov.set('balance_after', invNewQty)
-        mov.set(
-          'reason',
-          'Ajuste: Entrada de excedente de recebimento da OP ' +
-            (opNumber ? 'OP ' + opNumber : '') +
-            ' (' +
+        if (!alreadyInInventory) {
+          var invCurrentQty = Number(invItem.getFloat('quantity')) || 0
+          var invNewQty = Math.round((invCurrentQty + surplus) * 10000) / 10000
+
+          var movCol = $app.findCollectionByNameOrId('inventory_movements')
+          var mov = new Record(movCol)
+          mov.set('inventory_id', invItem.id)
+          mov.set('type', 'Entrada')
+          mov.set('quantity', surplus)
+          mov.set('balance_after', invNewQty)
+          mov.set(
+            'reason',
+            'Ajuste: Entrada de excedente de recebimento da OP ' +
+              (opNumber ? 'OP ' + opNumber : '') +
+              ' (' +
+              surplus +
+              ' un)',
+          )
+          if (orderId) mov.set('order_id', orderId)
+          if (e.auth) mov.set('user_id', e.auth.id)
+          mov.set('arrival_date', new Date().toISOString().split('T')[0])
+          $app.save(mov)
+
+          invItem.set('quantity', invNewQty)
+          $app.save(invItem)
+        }
+
+        var auditNote = alreadyInInventory
+          ? 'Excedente de ' +
             surplus +
-            ' un)',
-        )
-        if (orderId) mov.set('order_id', orderId)
-        if (e.auth) mov.set('user_id', e.auth.id)
-        mov.set('arrival_date', new Date().toISOString().split('T')[0])
-        $app.save(mov)
-
-        invItem.set('quantity', invNewQty)
-        $app.save(invItem)
-
-        var auditNote =
-          'Excedente de ' +
-          surplus +
-          ' un destinado ao estoque geral por ' +
-          authUser +
-          ' em ' +
-          dateFormatted +
-          ' (recebimento ajustado de ' +
-          currentRecv +
-          ' para ' +
-          totalDemand +
-          ' un)'
+            ' un reconhecido no estoque geral (já incorporado no recebimento original) por ' +
+            authUser +
+            ' em ' +
+            dateFormatted +
+            ' (registro ajustado de ' +
+            currentRecv +
+            ' para ' +
+            totalDemand +
+            ' un sem duplicar entrada)'
+          : 'Excedente de ' +
+            surplus +
+            ' un destinado ao estoque geral por ' +
+            authUser +
+            ' em ' +
+            dateFormatted +
+            ' (recebimento ajustado de ' +
+            currentRecv +
+            ' para ' +
+            totalDemand +
+            ' un)'
         if (reason) auditNote += ' - Motivo: ' + reason
 
         var curObs = shortage.getString('observation') || ''
@@ -1151,13 +1438,19 @@ routerAdd(
 
         return e.json(200, {
           success: true,
-          message:
-            'Excedente de ' +
-            surplus +
-            ' un destinado com sucesso ao estoque geral. Registro da OP ajustado para ' +
-            totalDemand +
-            ' un.',
+          message: alreadyInInventory
+            ? 'Registro da OP ajustado para a demanda real (' +
+              totalDemand +
+              ' un). O excedente de ' +
+              surplus +
+              ' un já estava registrado no estoque físico (nenhuma entrada duplicada foi criada).'
+            : 'Excedente de ' +
+              surplus +
+              ' un destinado com sucesso ao estoque geral. Registro da OP ajustado para ' +
+              totalDemand +
+              ' un.',
           audit_note: auditNote,
+          already_in_inventory: alreadyInInventory,
           surplus_quantity: surplus,
           target_quantity: totalDemand,
         })

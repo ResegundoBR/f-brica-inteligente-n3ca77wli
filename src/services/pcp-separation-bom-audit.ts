@@ -16,6 +16,19 @@ export interface OpInvolvement {
   isConcluded: boolean
 }
 
+export interface ExistingAuditShortageInfo {
+  id: string
+  code: string
+  description: string
+  quantity: number
+  received_quantity: number
+  sector: string
+  status: string
+  created: string
+  observation?: string
+  order_id?: string
+}
+
 export interface SeparationAuditItem {
   code: string
   description: string
@@ -27,6 +40,10 @@ export interface SeparationAuditItem {
   difference: number
   classification: AuditClassification
   involvedOps: OpInvolvement[]
+  // Rastreabilidade do Hub e faltas existentes
+  existingShortages?: ExistingAuditShortageInfo[]
+  sentToHubAt?: string
+  sentToHubShortageId?: string
 }
 
 export interface SeparationAuditReport {
@@ -383,17 +400,32 @@ export async function generateSeparationBomAudit(
     // 7. Agrupar FALTAS REGISTRADAS (material_shortages) por código do item
     // Somar quantity e received_quantity dos status ativos
     const registeredShortageByCode = new Map<string, number>()
+    const existingShortagesByCode = new Map<string, ExistingAuditShortageInfo[]>()
+
     for (const sh of shortages) {
       if (!sh.code) continue
       const cKey = normalizeKey(sh.code)
-      // Somar quantity e received_quantity conforme instrução da tarefa 3:
-      // "somar quantity e received_quantity"
       const shQty = Number(sh.quantity) || 0
       const recQty = Number(sh.received_quantity) || 0
       const totalShortageCov = shQty + recQty
 
       const cur = registeredShortageByCode.get(cKey) || 0
       registeredShortageByCode.set(cKey, cur + totalShortageCov)
+
+      const list = existingShortagesByCode.get(cKey) || []
+      list.push({
+        id: sh.id,
+        code: sh.code,
+        description: sh.description || '',
+        quantity: shQty,
+        received_quantity: recQty,
+        sector: sh.sector || 'Suprimentos',
+        status: sh.status,
+        created: sh.created,
+        observation: sh.observation || '',
+        order_id: sh.order_id || undefined,
+      })
+      existingShortagesByCode.set(cKey, list)
     }
 
     // 8. Montar a lista final auditada para este relatório
@@ -410,12 +442,22 @@ export async function generateSeparationBomAudit(
 
       // Falta registrada para este código
       const registeredShortage = registeredShortageByCode.get(codeKey) || 0
+      const existingShortagesForCode = existingShortagesByCode.get(codeKey) || []
 
       const { classification, difference } = classifyAuditItem({
         expected,
         separated,
         registeredShortage,
       })
+
+      // Verificar se algum registro existente já foi criado pela Auditoria BOM para esta separação
+      // Procurando por "Auditoria BOM — separação #{progSeq ou sepId}" na observação
+      const targetSepTag = `separação #${sep.expand?.programacao_id?.seq_number ?? sepId}`
+      const auditCreatedShortage = existingShortagesForCode.find(
+        (s) =>
+          (s.observation || '').includes('Auditoria BOM') &&
+          (s.observation || '').toLowerCase().includes(targetSepTag.toLowerCase()),
+      )
 
       items.push({
         code: group.code,
@@ -428,21 +470,14 @@ export async function generateSeparationBomAudit(
         difference: Math.round(difference * 10000) / 10000,
         classification,
         involvedOps: Array.from(group.involvedOps.values()),
+        existingShortages: existingShortagesForCode,
+        sentToHubAt: auditCreatedShortage?.created,
+        sentToHubShortageId: auditCreatedShortage?.id,
       })
     }
 
-    // Ordenar itens: primeiro os que possuem anomalias ('FALTA ESCONDIDA', 'FALTA A MENOR', 'SEPARADO A MENOR'), depois 'OK'
-    const severityOrder: Record<AuditClassification, number> = {
-      'FALTA ESCONDIDA': 1,
-      'FALTA A MENOR': 2,
-      'SEPARADO A MENOR': 3,
-      OK: 4,
-    }
-    items.sort((a, b) => {
-      const diffSev = severityOrder[a.classification] - severityOrder[b.classification]
-      if (diffSev !== 0) return diffSev
-      return a.code.localeCompare(b.code)
-    })
+    // Ordenar itens por código dentro de cada separação conforme Tarefa (1)
+    items.sort((a, b) => a.code.localeCompare(b.code))
 
     // Totais do rodapé
     const totals = {

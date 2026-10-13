@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Search,
   RefreshCw,
@@ -27,11 +28,16 @@ import {
   PackageX,
   Layers,
   Filter,
+  Send,
+  Sliders,
+  ExternalLink,
 } from 'lucide-react'
 import { NoTranslate } from '@/components/NoTranslate'
 import { useToast } from '@/hooks/use-toast'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+import { SendToHubModal, type SendToHubTargetItem } from './SendToHubModal'
+import { AdjustShortageQuantityModal } from './AdjustShortageQuantityModal'
 
 export function SeparationBomAuditPanel() {
   const { toast } = useToast()
@@ -43,6 +49,21 @@ export function SeparationBomAuditPanel() {
   const [sectorFilter, setSectorFilter] = useState<string>('todos')
   const [expandedRowKeys, setExpandedRowKeys] = useState<Set<string>>(new Set())
   const [copied, setCopied] = useState<boolean>(false)
+
+  // Seleção múltipla para "Enviar ao Hub" em lote
+  // Chave: `${report.separationId}:::${item.code}:::${item.sector}`
+  const [selectedRowKeys, setSelectedRowKeys] = useState<Set<string>>(new Set())
+
+  // Modais de ação
+  const [sendToHubModalOpen, setSendToHubModalOpen] = useState(false)
+  const [sendToHubTargets, setSendToHubTargets] = useState<SendToHubTargetItem[]>([])
+
+  const [adjustModalOpen, setAdjustModalOpen] = useState(false)
+  const [adjustTargetItem, setAdjustTargetItem] = useState<{
+    item: SeparationAuditItem
+    separationSeq?: number
+    separationTitle?: string
+  } | null>(null)
 
   const loadAuditData = async () => {
     setLoading(true)
@@ -98,12 +119,32 @@ export function SeparationBomAuditPanel() {
     return { totalItems, faltaEscondida, faltaAMenor, separadoAMenor, ok }
   }, [reports])
 
+  // Contagem global de itens selecionados para o Hub em todas as separações
+  const totalSelectedCount = useMemo(() => {
+    let count = 0
+    for (const report of filteredReports) {
+      for (const item of report.filteredItems) {
+        const key = `${report.separationId}:::${item.code}:::${item.sector}`
+        if (
+          selectedRowKeys.has(key) &&
+          (item.classification === 'FALTA ESCONDIDA' ||
+            item.classification === 'SEPARADO A MENOR') &&
+          item.difference > 0 &&
+          !item.sentToHubAt
+        ) {
+          count++
+        }
+      }
+    }
+    return count
+  }, [filteredReports, selectedRowKeys])
+
   // Filtragem dos itens de cada relatório
   const filteredReports = useMemo(() => {
     const term = searchTerm.toLowerCase().trim()
 
-    return reports.map((report) => {
-      const filteredItems = report.items.filter((item) => {
+    const processed = reports.map((report) => {
+      const filtered = report.items.filter((item) => {
         // Busca
         const matchesTerm =
           !term ||
@@ -126,6 +167,10 @@ export function SeparationBomAuditPanel() {
 
         return matchesTerm && matchesClass && matchesSector
       })
+
+      // Garantir ordenação estrita por código conforme requisito (1):
+      // "ordenar a tabela por código dentro de cada separação (e entre separações no modo 'Todas')"
+      const filteredItems = [...filtered].sort((a, b) => a.code.localeCompare(b.code))
 
       // Recalcular totais visíveis
       const visibleTotals = {
@@ -152,7 +197,48 @@ export function SeparationBomAuditPanel() {
         visibleTotals,
       }
     })
+
+    return processed
   }, [reports, searchTerm, classificationFilter, sectorFilter])
+
+  // Recalcular totais consolidados para a barra global
+  const aggregatedStats = useMemo(() => {
+    let totalItems = 0
+    let faltaEscondida = 0
+    let faltaAMenor = 0
+    let separadoAMenor = 0
+    let ok = 0
+
+    for (const r of reports) {
+      totalItems += r.totals.totalItems
+      faltaEscondida += r.totals.faltaEscondidaCount
+      faltaAMenor += r.totals.faltaAMenorCount
+      separadoAMenor += r.totals.separadoAMenorCount
+      ok += r.totals.okCount
+    }
+
+    return { totalItems, faltaEscondida, faltaAMenor, separadoAMenor, ok }
+  }, [reports])
+
+  // Contagem global de itens selecionados para o Hub em todas as separações
+  const totalSelectedCount = useMemo(() => {
+    let count = 0
+    for (const report of filteredReports) {
+      for (const item of report.filteredItems) {
+        const key = `${report.separationId}:::${item.code}:::${item.sector}`
+        if (
+          selectedRowKeys.has(key) &&
+          (item.classification === 'FALTA ESCONDIDA' ||
+            item.classification === 'SEPARADO A MENOR') &&
+          item.difference > 0 &&
+          !item.sentToHubAt
+        ) {
+          count++
+        }
+      }
+    }
+    return count
+  }, [filteredReports, selectedRowKeys])
 
   const formatQty = (val: number, unit?: string) => {
     const formatted = val.toLocaleString('pt-BR', {
@@ -224,6 +310,102 @@ export function SeparationBomAuditPanel() {
     window.print()
   }
 
+  // Itens elegíveis para "Enviar ao Hub" (FALTA ESCONDIDA ou SEPARADO A MENOR com diferença > 0 e que ainda não foram enviados)
+  const isEligibleForHub = (item: SeparationAuditItem) => {
+    return (
+      (item.classification === 'FALTA ESCONDIDA' || item.classification === 'SEPARADO A MENOR') &&
+      item.difference > 0 &&
+      !item.sentToHubAt
+    )
+  }
+
+  // Toggle de seleção de uma linha individual
+  const toggleRowSelect = (key: string, e?: React.MouseEvent) => {
+    e?.stopPropagation()
+    setSelectedRowKeys((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+  }
+
+  // Toggle de todas as linhas elegíveis visíveis de uma separação
+  const toggleAllEligibleInReport = (report: (typeof filteredReports)[0]) => {
+    const eligibleKeys = report.filteredItems
+      .filter(isEligibleForHub)
+      .map((it) => `${report.separationId}:::${it.code}:::${it.sector}`)
+
+    if (eligibleKeys.length === 0) return
+
+    const allSelected = eligibleKeys.every((k) => selectedRowKeys.has(k))
+    setSelectedRowKeys((prev) => {
+      const next = new Set(prev)
+      if (allSelected) {
+        eligibleKeys.forEach((k) => next.delete(k))
+      } else {
+        eligibleKeys.forEach((k) => next.add(k))
+      }
+      return next
+    })
+  }
+
+  // Abrir envio individual ao Hub
+  const handleOpenSendSingle = (report: (typeof filteredReports)[0], item: SeparationAuditItem) => {
+    setSendToHubTargets([
+      {
+        separationId: report.separationId,
+        separationTitle: report.separationTitle,
+        separationSeq: report.programacaoSeq,
+        item,
+      },
+    ])
+    setSendToHubModalOpen(true)
+  }
+
+  // Abrir envio em lote para todos os selecionados
+  const handleOpenSendBatch = () => {
+    const targets: SendToHubTargetItem[] = []
+
+    for (const report of filteredReports) {
+      for (const item of report.filteredItems) {
+        const key = `${report.separationId}:::${item.code}:::${item.sector}`
+        if (selectedRowKeys.has(key) && isEligibleForHub(item)) {
+          targets.push({
+            separationId: report.separationId,
+            separationTitle: report.separationTitle,
+            separationSeq: report.programacaoSeq,
+            item,
+          })
+        }
+      }
+    }
+
+    if (targets.length === 0) {
+      toast({
+        title: 'Nenhum item selecionado',
+        description: 'Selecione uma ou mais linhas elegíveis usando as caixas de seleção.',
+      })
+      return
+    }
+
+    setSendToHubTargets(targets)
+    setSendToHubModalOpen(true)
+  }
+
+  // Abrir modal de Ajuste de Quantidade para FALTA A MENOR
+  const handleOpenAdjust = (report: (typeof filteredReports)[0], item: SeparationAuditItem) => {
+    setAdjustTargetItem({
+      item,
+      separationSeq: report.programacaoSeq,
+      separationTitle: report.separationTitle,
+    })
+    setAdjustModalOpen(true)
+  }
+
   return (
     <div className="flex flex-col gap-6 w-full print:p-0">
       {/* Banner / Cabeçalho da Auditoria */}
@@ -253,8 +435,32 @@ export function SeparationBomAuditPanel() {
               </CardDescription>
             </div>
 
-            {/* Ações de exportação */}
+            {/* Ações de exportação e Envio em Lote */}
             <div className="flex flex-wrap items-center gap-2 print:hidden">
+              {(() => {
+                let count = 0
+                for (const report of filteredReports) {
+                  for (const item of report.filteredItems) {
+                    const key = `${report.separationId}:::${item.code}:::${item.sector}`
+                    if (selectedRowKeys.has(key) && isEligibleForHub(item)) {
+                      count++
+                    }
+                  }
+                }
+                if (count === 0) return null
+                return (
+                  <Button
+                    size="sm"
+                    onClick={handleOpenSendBatch}
+                    className="gap-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs"
+                    title="Criar solicitações no Hub de Suprimentos para os itens selecionados"
+                  >
+                    <Send className="size-3.5" />
+                    Enviar ao Hub ({count})
+                  </Button>
+                )
+              })()}
+
               <Button
                 variant="outline"
                 size="sm"
@@ -491,28 +697,50 @@ export function SeparationBomAuditPanel() {
                   </div>
                 </div>
 
-                {/* Badges de resumo desta separação */}
-                <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                  {report.visibleTotals.faltaEscondidaCount > 0 && (
-                    <Badge className="bg-red-600 text-white font-bold text-[11px]">
-                      {report.visibleTotals.faltaEscondidaCount} Falta Escondida
-                    </Badge>
-                  )}
-                  {report.visibleTotals.faltaAMenorCount > 0 && (
-                    <Badge className="bg-amber-600 text-white font-bold text-[11px]">
-                      {report.visibleTotals.faltaAMenorCount} Falta a Menor
-                    </Badge>
-                  )}
-                  {report.visibleTotals.separadoAMenorCount > 0 && (
-                    <Badge className="bg-orange-500 text-white font-bold text-[11px]">
-                      {report.visibleTotals.separadoAMenorCount} Separado a Menor
-                    </Badge>
-                  )}
-                  {report.visibleTotals.okCount > 0 && (
-                    <Badge className="bg-emerald-600 text-white font-semibold text-[11px]">
-                      {report.visibleTotals.okCount} OK
-                    </Badge>
-                  )}
+                {/* Badges de resumo desta separação e Botão de Ação em Lote */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                    {report.visibleTotals.faltaEscondidaCount > 0 && (
+                      <Badge className="bg-red-600 text-white font-bold text-[11px]">
+                        {report.visibleTotals.faltaEscondidaCount} Falta Escondida
+                      </Badge>
+                    )}
+                    {report.visibleTotals.faltaAMenorCount > 0 && (
+                      <Badge className="bg-amber-600 text-white font-bold text-[11px]">
+                        {report.visibleTotals.faltaAMenorCount} Falta a Menor
+                      </Badge>
+                    )}
+                    {report.visibleTotals.separadoAMenorCount > 0 && (
+                      <Badge className="bg-orange-500 text-white font-bold text-[11px]">
+                        {report.visibleTotals.separadoAMenorCount} Separado a Menor
+                      </Badge>
+                    )}
+                    {report.visibleTotals.okCount > 0 && (
+                      <Badge className="bg-emerald-600 text-white font-semibold text-[11px]">
+                        {report.visibleTotals.okCount} OK
+                      </Badge>
+                    )}
+                  </div>
+
+                  {/* Botão de Envio em Lote se houver selecionados desta separação */}
+                  {(() => {
+                    const selectedInThisReport = report.filteredItems.filter((it) =>
+                      selectedRowKeys.has(`${report.separationId}:::${it.code}:::${it.sector}`),
+                    )
+                    if (selectedInThisReport.length === 0) return null
+
+                    return (
+                      <Button
+                        size="sm"
+                        onClick={handleOpenSendBatch}
+                        className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold gap-1.5 shadow-xs"
+                        title="Enviar todos os itens selecionados para a Fila de Triagem do Hub"
+                      >
+                        <Send className="size-3.5" />
+                        Enviar Selecionados ao Hub ({selectedInThisReport.length})
+                      </Button>
+                    )
+                  })()}
                 </div>
               </div>
 
@@ -521,28 +749,60 @@ export function SeparationBomAuditPanel() {
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-100/70 dark:bg-slate-800/40 text-slate-600 dark:text-slate-300 font-semibold border-b">
                     <tr>
+                      <th
+                        className="py-2.5 px-3 w-8 text-center"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {(() => {
+                          const eligible = report.filteredItems.filter(isEligibleForHub)
+                          if (eligible.length === 0) return null
+                          const allSelected = eligible.every((it) =>
+                            selectedRowKeys.has(
+                              `${report.separationId}:::${it.code}:::${it.sector}`,
+                            ),
+                          )
+                          const someSelected =
+                            !allSelected &&
+                            eligible.some((it) =>
+                              selectedRowKeys.has(
+                                `${report.separationId}:::${it.code}:::${it.sector}`,
+                              ),
+                            )
+                          return (
+                            <Checkbox
+                              checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+                              onCheckedChange={() => toggleAllEligibleInReport(report)}
+                              title="Selecionar/Desmarcar todas as linhas elegíveis desta separação"
+                            />
+                          )
+                        })()}
+                      </th>
                       <th className="py-2.5 px-3 w-8"></th>
                       <th className="py-2.5 px-3 w-[110px]">Código</th>
                       <th className="py-2.5 px-3 min-w-[200px]">Descrição</th>
                       <th className="py-2.5 px-3 w-[100px]">Setor</th>
-                      <th className="py-2.5 px-3 w-[120px] text-right">Esperado (BOM)</th>
-                      <th className="py-2.5 px-3 w-[100px] text-right">Separado</th>
-                      <th className="py-2.5 px-3 w-[110px] text-right">Falta Registrada</th>
-                      <th className="py-2.5 px-3 w-[100px] text-right">Diferença</th>
-                      <th className="py-2.5 px-3 w-[150px] text-center">Classificação</th>
+                      <th className="py-2.5 px-3 w-[110px] text-right">Esperado (BOM)</th>
+                      <th className="py-2.5 px-3 w-[95px] text-right">Separado</th>
+                      <th className="py-2.5 px-3 w-[105px] text-right">Falta Registrada</th>
+                      <th className="py-2.5 px-3 w-[95px] text-right">Diferença</th>
+                      <th className="py-2.5 px-3 w-[140px] text-center">Classificação</th>
+                      <th className="py-2.5 px-3 w-[150px] text-center print:hidden">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {report.filteredItems.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="py-8 text-center text-slate-400">
+                        <td colSpan={11} className="py-8 text-center text-slate-400">
                           Nenhum item corresponde aos filtros selecionados nesta separação.
                         </td>
                       </tr>
                     ) : (
                       report.filteredItems.map((item) => {
                         const rowKey = `${report.separationId}-${item.code}-${item.sector}`
+                        const selectKey = `${report.separationId}:::${item.code}:::${item.sector}`
                         const isExpanded = expandedRowKeys.has(rowKey)
+                        const isSelected = selectedRowKeys.has(selectKey)
+                        const eligible = isEligibleForHub(item)
 
                         return (
                           <React.Fragment key={rowKey}>
@@ -558,7 +818,28 @@ export function SeparationBomAuditPanel() {
                                       : 'hover:bg-slate-50/70 dark:hover:bg-slate-800/40'
                               }`}
                             >
-                              <td className="py-2 px-3 text-center text-slate-400">
+                              <td
+                                className="py-2 px-3 text-center"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  if (eligible) {
+                                    toggleRowSelect(selectKey, e)
+                                  }
+                                }}
+                              >
+                                {eligible ? (
+                                  <Checkbox
+                                    checked={isSelected}
+                                    onCheckedChange={() => toggleRowSelect(selectKey)}
+                                    aria-label={`Selecionar ${item.code}`}
+                                  />
+                                ) : (
+                                  <span className="text-slate-300 dark:text-slate-700 text-xs">
+                                    —
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-2 px-2 text-center text-slate-400">
                                 {item.involvedOps.length > 0 &&
                                   (isExpanded ? (
                                     <ChevronDown className="size-3.5 inline text-slate-600" />
@@ -606,12 +887,73 @@ export function SeparationBomAuditPanel() {
                               <td className="py-2 px-3 text-center whitespace-nowrap">
                                 {getClassificationBadge(item.classification)}
                               </td>
-                            </tr>
+                              <td
+                                className="py-2 px-3 text-center whitespace-nowrap print:hidden"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {/* AÇÃO 2: ENVIAR AO HUB (FALTA ESCONDIDA ou SEPARADO A MENOR) */}
+                                {(item.classification === 'FALTA ESCONDIDA' ||
+                                  item.classification === 'SEPARADO A MENOR') &&
+                                  (item.sentToHubAt ? (
+                                    <div className="inline-flex flex-col items-center">
+                                      <Badge
+                                        variant="outline"
+                                        className="bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 text-[10px] gap-1 py-0.5"
+                                        title={`Solicitação criada/atualizada em ${format(new Date(item.sentToHubAt), 'dd/MM/yyyy HH:mm')}`}
+                                      >
+                                        <CheckCircle2 className="size-3 text-emerald-600" />
+                                        Enviada ao Hub
+                                      </Badge>
+                                      {item.sentToHubShortageId && (
+                                        <a
+                                          href="/pcp/suprimentos/hub"
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5 mt-0.5 font-mono"
+                                          title="Abrir no Hub de Suprimentos"
+                                        >
+                                          #{item.sentToHubShortageId.slice(0, 6)}
+                                          <ExternalLink className="size-2.5" />
+                                        </a>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => handleOpenSendSingle(report, item)}
+                                      className="h-7 px-2.5 text-[11px] bg-indigo-600 hover:bg-indigo-700 text-white font-semibold gap-1 shadow-xs"
+                                      title="Criar solicitação de compra no Hub de Suprimentos (Fila de Entrada/Triagem)"
+                                    >
+                                      <Send className="size-3" />
+                                      Enviar ao Hub
+                                    </Button>
+                                  ))}
 
+                                {/* AÇÃO 3: AJUSTAR QUANTIDADE (FALTA A MENOR) */}
+                                {item.classification === 'FALTA A MENOR' && (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleOpenAdjust(report, item)}
+                                    className="h-7 px-2.5 text-[11px] bg-amber-600 hover:bg-amber-700 text-white font-semibold gap-1 shadow-xs"
+                                    title="Ajustar quantidade do registro de falta existente sem duplicar"
+                                  >
+                                    <Sliders className="size-3" />
+                                    Ajustar quantidade
+                                  </Button>
+                                )}
+
+                                {/* LINHA OK */}
+                                {item.classification === 'OK' && (
+                                  <span className="text-[11px] text-slate-400 font-normal">
+                                    Regular
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
                             {/* Linha expansível com o detalhamento das OPs envolvidas */}
                             {isExpanded && (
                               <tr className="bg-slate-50/80 dark:bg-slate-900/60 border-y border-dashed border-slate-200 dark:border-slate-800">
-                                <td colSpan={9} className="p-3 pl-8">
+                                <td colSpan={11} className="p-3 pl-8">
                                   <div className="bg-white dark:bg-slate-950 p-3 rounded-lg border text-xs shadow-xs">
                                     <div className="text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                                       <Info className="size-3.5 text-indigo-600" />
@@ -690,7 +1032,7 @@ export function SeparationBomAuditPanel() {
                     <tfoot className="bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-bold border-t-2 border-slate-300 dark:border-slate-700">
                       <tr>
                         <td
-                          colSpan={4}
+                          colSpan={5}
                           className="py-2.5 px-3 text-right uppercase tracking-wider text-[11px]"
                         >
                           Totais desta Separação ({report.visibleTotals.totalItems} itens):
@@ -721,6 +1063,7 @@ export function SeparationBomAuditPanel() {
                             </span>
                           )}
                         </td>
+                        <td className="py-2.5 px-3 print:hidden"></td>
                       </tr>
                     </tfoot>
                   )}
@@ -730,6 +1073,29 @@ export function SeparationBomAuditPanel() {
           ))}
         </div>
       )}
+
+      {/* Modal: Enviar ao Hub */}
+      <SendToHubModal
+        open={sendToHubModalOpen}
+        onOpenChange={setSendToHubModalOpen}
+        targetItems={sendToHubTargets}
+        onSuccess={() => {
+          setSelectedRowKeys(new Set())
+          loadAuditReports()
+        }}
+      />
+
+      {/* Modal: Ajustar Quantidade (Falta a Menor) */}
+      <AdjustShortageQuantityModal
+        open={adjustModalOpen}
+        onOpenChange={setAdjustModalOpen}
+        item={adjustTargetItem?.item || null}
+        separationSeq={adjustTargetItem?.separationSeq}
+        separationTitle={adjustTargetItem?.separationTitle}
+        onSuccess={() => {
+          loadAuditReports()
+        }}
+      />
     </div>
   )
 }

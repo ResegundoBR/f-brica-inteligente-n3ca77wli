@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils'
 export interface NoTranslateProps extends React.HTMLAttributes<HTMLElement> {
   as?: React.ElementType
   children?: React.ReactNode
+  text?: React.ReactNode
   className?: string
   [key: string]: any
 }
@@ -12,18 +13,21 @@ export interface NoTranslateProps extends React.HTMLAttributes<HTMLElement> {
  * Componente que impede a tradução automática do navegador em textos críticos
  * como códigos/SKUs, descrições de materiais/produtos, unidades, quantidades e medidas de corte.
  *
+ * Suporta tanto `children` quanto a prop `text` para retrocompatibilidade.
  * Utiliza o atributo translate="no" e a classe "notranslate" reconhecida pelo Google Translate e Chrome/Safari.
  */
 export const NoTranslate: React.FC<NoTranslateProps> = ({
   as: Component = 'span',
   children,
+  text,
   className,
   ...props
 }) => {
   const Comp = Component as any
+  const content = children !== undefined ? children : text
   return (
     <Comp translate="no" className={cn('notranslate', className)} {...props}>
-      {children}
+      {content}
     </Comp>
   )
 }

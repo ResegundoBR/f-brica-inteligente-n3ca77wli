@@ -192,14 +192,16 @@ export async function generateSeparationBomAudit(
       }
     }
 
-    // 4. Carregar solicitações de falta vinculadas a essas OPs
+    // 4. Carregar solicitações de falta vinculadas a essas OPs E também solicitações sem OP (gerais / Auditoria BOM)
     let shortages: any[] = []
     if (orderIds.length > 0) {
       try {
         const activeFilter = ACTIVE_SHORTAGE_STATUSES.map((s) => `status = "${s}"`).join(' || ')
         const ordersFilter = orderIds.map((id) => `order_id = "${id}"`).join(' || ')
+        // Busca com order_id vinculado às OPs da separação OU sem order_id (solicitações gerais/criadas via Hub)
+        const combinedFilter = `(${ordersFilter} || order_id = "" || order_id = null) && (${activeFilter})`
         shortages = await pb.collection('material_shortages').getFullList({
-          filter: `(${ordersFilter}) && (${activeFilter})`,
+          filter: combinedFilter,
         })
       } catch (err) {
         console.error(`[AUDITORIA BOM] Erro ao buscar material_shortages:`, err)
@@ -397,35 +399,38 @@ export async function generateSeparationBomAudit(
       }
     }
 
-    // 7. Agrupar FALTAS REGISTRADAS (material_shortages) por código do item
-    // Somar quantity e received_quantity dos status ativos
-    const registeredShortageByCode = new Map<string, number>()
-    const existingShortagesByCode = new Map<string, ExistingAuditShortageInfo[]>()
+    // 7. Agrupar FALTAS REGISTRADAS (material_shortages):
+    // Casamento duplo e seguro (sem contar em dobro):
+    // 1o nível: Faltas vinculadas diretamente a uma OP desta separação (order_id in orderIds)
+    // 2o nível (fallback): Faltas SEM OP vinculada cujo código normalizado + setor coincidam com o item da BOM.
+    // Garantir que cada registro de falta seja somado no máximo UMA vez.
+    const orderIdSet = new Set(orderIds)
+    const matchedShortageIds = new Set<string>()
+
+    // Mapeamentos indexados
+    // a) Faltas vinculadas por OP: codeKey -> shortages[]
+    // b) Faltas avulsas (sem OP ou order_id vazio): `${codeKey}:::${sectorKey}` -> shortages[]
+    const shortagesWithOpByCode = new Map<string, any[]>()
+    const shortagesWithoutOpByItemKey = new Map<string, any[]>()
+    const existingShortagesByItemKey = new Map<string, ExistingAuditShortageInfo[]>()
 
     for (const sh of shortages) {
       if (!sh.code) continue
       const cKey = normalizeKey(sh.code)
-      const shQty = Number(sh.quantity) || 0
-      const recQty = Number(sh.received_quantity) || 0
-      const totalShortageCov = shQty + recQty
+      const shSectorNorm = normalizeSector(sh.sector)
+      const hasOrderMatch = sh.order_id && orderIdSet.has(sh.order_id)
 
-      const cur = registeredShortageByCode.get(cKey) || 0
-      registeredShortageByCode.set(cKey, cur + totalShortageCov)
-
-      const list = existingShortagesByCode.get(cKey) || []
-      list.push({
-        id: sh.id,
-        code: sh.code,
-        description: sh.description || '',
-        quantity: shQty,
-        received_quantity: recQty,
-        sector: sh.sector || 'Suprimentos',
-        status: sh.status,
-        created: sh.created,
-        observation: sh.observation || '',
-        order_id: sh.order_id || undefined,
-      })
-      existingShortagesByCode.set(cKey, list)
+      if (hasOrderMatch) {
+        const list = shortagesWithOpByCode.get(cKey) || []
+        list.push(sh)
+        shortagesWithOpByCode.set(cKey, list)
+      } else if (!sh.order_id || sh.order_id === '') {
+        // Sem OP: agrupa por código normalizado + setor normalizado
+        const itemKey = `${cKey}:::${shSectorNorm}`
+        const list = shortagesWithoutOpByItemKey.get(itemKey) || []
+        list.push(sh)
+        shortagesWithoutOpByItemKey.set(itemKey, list)
+      }
     }
 
     // 8. Montar a lista final auditada para este relatório
@@ -433,16 +438,68 @@ export async function generateSeparationBomAudit(
 
     for (const group of consolidatedMap.values()) {
       const codeKey = normalizeKey(group.code)
+      const secNorm = group.sector
+      const itemKey = `${codeKey}:::${secNorm}`
       const expected = Math.round(group.expectedQuantity * 10000) / 10000
 
       // Separado gravado para este código
       const totalSeparatedForCode = separatedQtyByCodeAndSector.get(codeKey) || 0
-      // Proporcionalizar ou atribuir ao setor
       const separated = Math.min(expected, totalSeparatedForCode)
 
-      // Falta registrada para este código
-      const registeredShortage = registeredShortageByCode.get(codeKey) || 0
-      const existingShortagesForCode = existingShortagesByCode.get(codeKey) || []
+      // Calcular falta registrada para este item (com casamento prioritário por OP e fallback por código+setor sem OP)
+      let itemRegisteredShortage = 0
+      const existingShortagesForThisItem: ExistingAuditShortageInfo[] = []
+
+      // 1o nível: Faltas casadas por OP (pertencentes às OPs envolvidas no grupo)
+      const opShortageList = shortagesWithOpByCode.get(codeKey) || []
+      for (const sh of opShortageList) {
+        if (!sh || matchedShortageIds.has(sh.id)) continue
+        // Verificar se a OP da falta está entre as OPs deste grupo
+        if (sh.order_id && group.involvedOps.has(sh.order_id)) {
+          matchedShortageIds.add(sh.id)
+          const shQty = Number(sh.quantity) || 0
+          const recQty = Number(sh.received_quantity) || 0
+          itemRegisteredShortage += shQty + recQty
+
+          existingShortagesForThisItem.push({
+            id: sh.id,
+            code: sh.code,
+            description: sh.description || '',
+            quantity: shQty,
+            received_quantity: recQty,
+            sector: sh.sector || 'Suprimentos',
+            status: sh.status,
+            created: sh.created,
+            observation: sh.observation || '',
+            order_id: sh.order_id || undefined,
+          })
+        }
+      }
+
+      // 2o nível (fallback): Faltas SEM OP vinculada cujo código + setor coincidam
+      const unlinkedShortageList = shortagesWithoutOpByItemKey.get(itemKey) || []
+      for (const sh of unlinkedShortageList) {
+        if (!sh || matchedShortageIds.has(sh.id)) continue
+        matchedShortageIds.add(sh.id)
+        const shQty = Number(sh.quantity) || 0
+        const recQty = Number(sh.received_quantity) || 0
+        itemRegisteredShortage += shQty + recQty
+
+        existingShortagesForThisItem.push({
+          id: sh.id,
+          code: sh.code,
+          description: sh.description || '',
+          quantity: shQty,
+          received_quantity: recQty,
+          sector: sh.sector || 'Suprimentos',
+          status: sh.status,
+          created: sh.created,
+          observation: sh.observation || '',
+          order_id: undefined,
+        })
+      }
+
+      const registeredShortage = Math.round(itemRegisteredShortage * 10000) / 10000
 
       const { classification, difference } = classifyAuditItem({
         expected,
@@ -450,14 +507,19 @@ export async function generateSeparationBomAudit(
         registeredShortage,
       })
 
-      // Verificar se algum registro existente já foi criado pela Auditoria BOM para esta separação
-      // Procurando por "Auditoria BOM — separação #{progSeq ou sepId}" na observação
+      // Identificar se foi enviada ao Hub:
+      // Pode ser identificada pela tag de observação da Auditoria BOM
+      // OU por qualquer solicitação vinculada existente que cubra a falta
       const targetSepTag = `separação #${sep.expand?.programacao_id?.seq_number ?? sepId}`
-      const auditCreatedShortage = existingShortagesForCode.find(
-        (s) =>
-          (s.observation || '').includes('Auditoria BOM') &&
-          (s.observation || '').toLowerCase().includes(targetSepTag.toLowerCase()),
-      )
+      const auditCreatedShortage =
+        existingShortagesForThisItem.find(
+          (s) =>
+            (s.observation || '').includes('Auditoria BOM') &&
+            ((s.observation || '').toLowerCase().includes(targetSepTag.toLowerCase()) ||
+              (s.observation || '').includes(sepId)),
+        ) || existingShortagesForThisItem[0]
+
+      const isSentToHub = Boolean(auditCreatedShortage)
 
       items.push({
         code: group.code,
@@ -466,11 +528,11 @@ export async function generateSeparationBomAudit(
         unit: group.unit,
         expectedQuantity: expected,
         separatedQuantity: Math.round(separated * 10000) / 10000,
-        registeredShortageQuantity: Math.round(registeredShortage * 10000) / 10000,
+        registeredShortageQuantity: registeredShortage,
         difference: Math.round(difference * 10000) / 10000,
         classification,
         involvedOps: Array.from(group.involvedOps.values()),
-        existingShortages: existingShortagesForCode,
+        existingShortages: existingShortagesForThisItem,
         sentToHubAt: auditCreatedShortage?.created,
         sentToHubShortageId: auditCreatedShortage?.id,
       })

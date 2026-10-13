@@ -102,4 +102,16 @@ describe('classifyAuditItem', () => {
     expect(result.classification).toBe('SEPARADO A MENOR')
     expect(result.difference).toBe(4)
   })
+
+  it('reconhece resolução com falta registrada cobrindo diferença do cabo elétrico (exemplo do usuário)', () => {
+    // Exemplo real: esperado 13,7 MT, separado 5,808 MT, diferença 7,892 MT
+    // Com falta registrada de 7.892 (ou 7.8916), torna-se OK com diferença 0
+    const resolved = classifyAuditItem({
+      expected: 13.7,
+      separated: 5.808,
+      registeredShortage: 7.892,
+    })
+    expect(resolved.classification).toBe('OK')
+    expect(resolved.difference).toBe(0)
+  })
 })

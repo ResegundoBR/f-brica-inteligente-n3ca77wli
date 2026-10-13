@@ -96,36 +96,102 @@ export function SendToHubModal({
         const chosenSector =
           groupingMode === 'by_sector' ? item.sector || 'MONTAGEM' : 'Suprimentos'
 
-        // Ordem principal (se houver apenas 1 OP envolvida vincula ela; se forem várias, sem order_id com ops na obs)
-        const singleOrderId =
-          item.involvedOps.length === 1 ? item.involvedOps[0].orderId : undefined
+        // Se houver apenas 1 OP envolvida: vincula diretamente a order_id dessa OP
+        // Se houver mais de 1 OP envolvida: cria um registro para cada OP rateando a diferença proporcionalmente
+        // à demanda da OP, e vincula todos através de um batch_id compartilhado (padrão de compra em lote do sistema).
+        if (item.involvedOps.length <= 1) {
+          const singleOrderId = item.involvedOps[0]?.orderId || undefined
+          try {
+            const res = await upsertMaterialShortage(
+              {
+                order_id: singleOrderId,
+                code: item.code,
+                description: item.description,
+                quantity: item.difference,
+                sector: chosenSector,
+                status: 'Pendente',
+                request_type: 'Materiais',
+                priority: 'Sem pressa',
+                requested_by: user?.id,
+                observation: auditObs,
+              },
+              userLabel,
+              { accumulateQty: true },
+            )
 
-        try {
-          const res = await upsertMaterialShortage(
-            {
-              order_id: singleOrderId,
-              code: item.code,
-              description: item.description,
-              quantity: item.difference,
-              sector: chosenSector,
-              status: 'Pendente',
-              request_type: 'Materiais',
-              priority: 'Sem pressa',
-              requested_by: user?.id,
-              observation: auditObs,
-            },
-            userLabel,
-            { accumulateQty: true },
-          )
-
-          if (res.isNew) {
-            createdCount++
-          } else {
-            updatedCount++
+            if (res.isNew) {
+              createdCount++
+            } else {
+              updatedCount++
+            }
+          } catch (itemErr: any) {
+            console.error(`Erro ao criar solicitação para item ${item.code}:`, itemErr)
+            errors.push(`${item.code}: ${itemErr.message || 'Falha ao gravar'}`)
           }
-        } catch (itemErr: any) {
-          console.error(`Erro ao criar solicitação para item ${item.code}:`, itemErr)
-          errors.push(`${item.code}: ${itemErr.message || 'Falha ao gravar'}`)
+        } else {
+          // Múltiplas OPs: ratear a diferença proporcionalmente à demanda de cada OP envolvida
+          const totalInvolvedDemand = item.involvedOps.reduce(
+            (acc, op) => acc + (op.itemQuantity || 0),
+            0,
+          )
+          const batchId = `lote_audit_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
+          let allocatedDiffAcc = 0
+
+          for (let opIdx = 0; opIdx < item.involvedOps.length; opIdx++) {
+            const op = item.involvedOps[opIdx]
+            const isLast = opIdx === item.involvedOps.length - 1
+
+            // Proporção da OP sobre a demanda total
+            const ratio =
+              totalInvolvedDemand > 0
+                ? (op.itemQuantity || 0) / totalInvolvedDemand
+                : 1 / item.involvedOps.length
+
+            let opDiff = Math.round(item.difference * ratio * 10000) / 10000
+            if (isLast) {
+              // Ajusta arredondamento na última parcela para fechar exatamente a diferença total
+              opDiff = Math.round((item.difference - allocatedDiffAcc) * 10000) / 10000
+            }
+            allocatedDiffAcc += opDiff
+
+            if (opDiff <= 0) continue
+
+            const opSpecificObs = `Auditoria BOM — separação ${sepDisplay} | Origem: OP ${op.opNumber} (${op.itemQuantity} ${item.unit}) de ${item.difference} ${item.unit} total rateado | Demais OPs: ${opRefs}`
+
+            try {
+              const res = await upsertMaterialShortage(
+                {
+                  order_id: op.orderId,
+                  batch_id: batchId,
+                  code: item.code,
+                  description: item.description,
+                  quantity: opDiff,
+                  sector: chosenSector,
+                  status: 'Pendente',
+                  request_type: 'Materiais',
+                  priority: 'Sem pressa',
+                  requested_by: user?.id,
+                  observation: opSpecificObs,
+                },
+                userLabel,
+                { accumulateQty: true },
+              )
+
+              if (res.isNew) {
+                createdCount++
+              } else {
+                updatedCount++
+              }
+            } catch (itemErr: any) {
+              console.error(
+                `Erro ao criar solicitação rateada para OP ${op.opNumber} do item ${item.code}:`,
+                itemErr,
+              )
+              errors.push(
+                `${item.code} (OP ${op.opNumber}): ${itemErr.message || 'Falha ao gravar'}`,
+              )
+            }
+          }
         }
       }
 

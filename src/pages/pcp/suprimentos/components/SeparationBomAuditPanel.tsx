@@ -219,8 +219,21 @@ export function SeparationBomAuditPanel() {
     return unit ? `${formatted} ${unit}` : formatted
   }
 
-  const getClassificationBadge = (classification: AuditClassification) => {
-    switch (classification) {
+  const getClassificationBadge = (item: SeparationAuditItem) => {
+    // Se o item já foi enviado ao Hub, exibe selo verde "Enviada ao Hub · dd/MM HH:mm"
+    if (item.sentToHubAt) {
+      const formattedDate = format(new Date(item.sentToHubAt), 'dd/MM HH:mm', { locale: ptBR })
+      return (
+        <Badge
+          className="bg-emerald-600 text-white hover:bg-emerald-700 font-bold text-xs gap-1 shadow-xs border-0 whitespace-nowrap"
+          title={`Enviada ao Hub em ${format(new Date(item.sentToHubAt), 'dd/MM/yyyy HH:mm')}`}
+        >
+          <CheckCircle2 className="size-3.5" /> Enviada ao Hub · {formattedDate}
+        </Badge>
+      )
+    }
+
+    switch (item.classification) {
       case 'FALTA ESCONDIDA':
         return (
           <Badge className="bg-red-600 text-white hover:bg-red-700 font-bold text-xs gap-1 shadow-xs border-0">
@@ -832,7 +845,7 @@ export function SeparationBomAuditPanel() {
                                 )}
                               </td>
                               <td className="py-2 px-3 text-center whitespace-nowrap">
-                                {getClassificationBadge(item.classification)}
+                                {getClassificationBadge(item)}
                               </td>
                               <td
                                 className="py-2 px-3 text-center whitespace-nowrap print:hidden"
@@ -842,24 +855,27 @@ export function SeparationBomAuditPanel() {
                                 {(item.classification === 'FALTA ESCONDIDA' ||
                                   item.classification === 'SEPARADO A MENOR') &&
                                   (item.sentToHubAt ? (
-                                    <div className="inline-flex flex-col items-center">
-                                      <Badge
-                                        variant="outline"
-                                        className="bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 text-[10px] gap-1 py-0.5"
-                                        title={`Solicitação criada/atualizada em ${format(new Date(item.sentToHubAt), 'dd/MM/yyyy HH:mm')}`}
+                                    <div className="inline-flex flex-col items-center gap-1">
+                                      <Button
+                                        size="sm"
+                                        disabled
+                                        className="h-7 px-2.5 text-[11px] opacity-60 cursor-not-allowed bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400 font-medium"
+                                        title="Esta solicitação já foi enviada ao Hub de Suprimentos"
                                       >
-                                        <CheckCircle2 className="size-3 text-emerald-600" />
+                                        <CheckCircle2 className="size-3 text-emerald-600 mr-1" />
                                         Enviada ao Hub
-                                      </Badge>
+                                      </Button>
                                       {item.sentToHubShortageId && (
                                         <a
-                                          href="/pcp/suprimentos/hub"
+                                          href={`/pcp/suprimentos/hub?id=${item.sentToHubShortageId}`}
                                           target="_blank"
                                           rel="noreferrer"
-                                          className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5 mt-0.5 font-mono"
-                                          title="Abrir no Hub de Suprimentos"
+                                          className="text-[10px] text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 hover:underline flex items-center gap-1 font-mono font-medium"
+                                          title="Abrir solicitação criada no Hub de Suprimentos"
                                         >
-                                          #{item.sentToHubShortageId.slice(0, 6)}
+                                          <span>
+                                            Abrir no Hub #{item.sentToHubShortageId.slice(0, 6)}
+                                          </span>
                                           <ExternalLink className="size-2.5" />
                                         </a>
                                       )}
@@ -878,22 +894,50 @@ export function SeparationBomAuditPanel() {
 
                                 {/* AÇÃO 3: AJUSTAR QUANTIDADE (FALTA A MENOR) */}
                                 {item.classification === 'FALTA A MENOR' && (
-                                  <Button
-                                    size="sm"
-                                    onClick={() => handleOpenAdjust(report, item)}
-                                    className="h-7 px-2.5 text-[11px] bg-amber-600 hover:bg-amber-700 text-white font-semibold gap-1 shadow-xs"
-                                    title="Ajustar quantidade do registro de falta existente sem duplicar"
-                                  >
-                                    <Sliders className="size-3" />
-                                    Ajustar quantidade
-                                  </Button>
+                                  <div className="inline-flex flex-col items-center gap-1">
+                                    <Button
+                                      size="sm"
+                                      onClick={() => handleOpenAdjust(report, item)}
+                                      className="h-7 px-2.5 text-[11px] bg-amber-600 hover:bg-amber-700 text-white font-semibold gap-1 shadow-xs"
+                                      title="Ajustar quantidade do registro de falta existente sem duplicar"
+                                    >
+                                      <Sliders className="size-3" />
+                                      Ajustar quantidade
+                                    </Button>
+                                    {item.sentToHubShortageId && (
+                                      <a
+                                        href={`/pcp/suprimentos/hub?id=${item.sentToHubShortageId}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-[10px] text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-300 hover:underline flex items-center gap-1 font-mono font-medium"
+                                        title="Ver solicitação no Hub"
+                                      >
+                                        <span>No Hub #{item.sentToHubShortageId.slice(0, 6)}</span>
+                                        <ExternalLink className="size-2.5" />
+                                      </a>
+                                    )}
+                                  </div>
                                 )}
 
                                 {/* LINHA OK */}
                                 {item.classification === 'OK' && (
-                                  <span className="text-[11px] text-slate-400 font-normal">
-                                    Regular
-                                  </span>
+                                  <div className="inline-flex flex-col items-center">
+                                    <span className="text-[11px] text-slate-400 font-normal">
+                                      Regular
+                                    </span>
+                                    {item.sentToHubShortageId && (
+                                      <a
+                                        href={`/pcp/suprimentos/hub?id=${item.sentToHubShortageId}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-[10px] text-slate-500 hover:underline flex items-center gap-0.5 mt-0.5 font-mono"
+                                        title="Ver registro no Hub"
+                                      >
+                                        #{item.sentToHubShortageId.slice(0, 6)}
+                                        <ExternalLink className="size-2.5" />
+                                      </a>
+                                    )}
+                                  </div>
                                 )}
                               </td>
                             </tr>

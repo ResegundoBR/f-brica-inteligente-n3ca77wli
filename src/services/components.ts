@@ -1,4 +1,5 @@
 import pb from '@/lib/pocketbase/client'
+import { isRateLimitError, sleep } from '@/services/pcp-orders-store'
 import { MasterComponent, Inventory, Product } from '@/types'
 
 export interface UnifiedComponentSearchResult {
@@ -225,11 +226,129 @@ export const checkDuplicateComponentCode = async (
 }
 
 /**
- * Validação de código contra o cadastro unificado (componentes mestre OU inventário).
- * Utilizado em UIs antes de submeter requisições ou criar vínculos.
+ * Executa uma requisição com PocketBase com tolerância a 429:
+ * em caso de 429 Too Many Requests, aguarda com backoff e tenta novamente 1 vez.
+ */
+async function fetchWith429Retry<T>(fn: () => Promise<T>, delayMs = 1200): Promise<T> {
+  try {
+    return await fn()
+  } catch (err: any) {
+    if (isRateLimitError(err)) {
+      console.warn(
+        `[components-service] 429 Too Many Requests detectado. Aguardando ${delayMs}ms para retry único...`,
+      )
+      await sleep(delayMs)
+      return await fn()
+    }
+    throw err
+  }
+}
+
+/**
+ * Carrega o catálogo unificado de componentes e inventário em lote (UMA única requisição para components
+ * e UMA para inventory via getFullList / paginação adequada), retornando um mapa indexado por código normalizado (uppercase).
+ *
+ * Elimina o padrão N+1 que causava rajadas de centenas de GETs sequenciais e bloqueios 429.
+ */
+export interface UnifiedCatalogEntry {
+  code: string
+  description: string
+  unit: string
+  component?: MasterComponent
+  inventory?: Inventory
+}
+
+export const fetchUnifiedCatalogMap = async (): Promise<Map<string, UnifiedCatalogEntry>> => {
+  const catalogMap = new Map<string, UnifiedCatalogEntry>()
+
+  const [components, inventory] = await Promise.all([
+    fetchWith429Retry(() =>
+      pb.collection('components').getFullList<MasterComponent>({
+        fields: 'id,code,description,unit,active,source,min_quantity',
+      }),
+    ).catch((err) => {
+      console.warn('[fetchUnifiedCatalogMap] Erro ao carregar components:', err)
+      return [] as MasterComponent[]
+    }),
+    fetchWith429Retry(() =>
+      pb.collection('inventory').getFullList<Inventory>({
+        fields: 'id,code,description,unit,quantity,min_quantity,component_id',
+      }),
+    ).catch((err) => {
+      console.warn('[fetchUnifiedCatalogMap] Erro ao carregar inventory:', err)
+      return [] as Inventory[]
+    }),
+  ])
+
+  for (const comp of components) {
+    const rawCode = (comp.code || '').trim()
+    if (!rawCode) continue
+    const key = rawCode.toUpperCase()
+    catalogMap.set(key, {
+      code: rawCode,
+      description: comp.description || '',
+      unit: comp.unit || 'UN',
+      component: comp,
+    })
+  }
+
+  for (const inv of inventory) {
+    const rawCode = (inv.code || '').trim()
+    if (!rawCode) continue
+    const key = rawCode.toUpperCase()
+    const existing = catalogMap.get(key)
+    if (existing) {
+      existing.inventory = inv
+      if (!existing.description && inv.description) existing.description = inv.description
+      if (!existing.unit && inv.unit) existing.unit = inv.unit
+    } else {
+      catalogMap.set(key, {
+        code: rawCode,
+        description: inv.description || '',
+        unit: inv.unit || 'UN',
+        inventory: inv,
+      })
+    }
+  }
+
+  return catalogMap
+}
+
+/**
+ * Validação de um lote de códigos contra o mapa do catálogo unificado (components OU inventory).
+ * Se o mapa já for fornecido pelo chamador, a validação é 100% síncrona/local (zero requisições ao backend).
+ * Caso contrário, carrega o catálogo em lote uma única vez.
+ */
+export const validateUnifiedCodesBatch = async (
+  codes: string[],
+  catalogMap?: Map<string, UnifiedCatalogEntry>,
+): Promise<Map<string, { exists: boolean; entry?: UnifiedCatalogEntry }>> => {
+  const map = catalogMap || (await fetchUnifiedCatalogMap())
+  const resultMap = new Map<string, { exists: boolean; entry?: UnifiedCatalogEntry }>()
+
+  for (const rawCode of codes) {
+    const clean = (rawCode || '').trim()
+    if (!clean) {
+      resultMap.set(rawCode, { exists: false })
+      continue
+    }
+    const entry = map.get(clean.toUpperCase())
+    resultMap.set(clean, {
+      exists: Boolean(entry),
+      entry,
+    })
+  }
+
+  return resultMap
+}
+
+/**
+ * Validação de código individual contra o cadastro unificado (compatibilidade legada).
+ * Adiciona tolerância a 429 e permite receber mapa local opcional para evitar requisições.
  */
 export const validateUnifiedCodeExists = async (
   code: string,
+  catalogMap?: Map<string, UnifiedCatalogEntry>,
 ): Promise<{
   exists: boolean
   matchedComponent?: MasterComponent
@@ -238,17 +357,33 @@ export const validateUnifiedCodeExists = async (
   const cleanCode = code.trim().replace(/["'\\]/g, '')
   if (!cleanCode) return { exists: false }
 
+  if (catalogMap) {
+    const entry = catalogMap.get(cleanCode.toUpperCase())
+    if (entry) {
+      return {
+        exists: true,
+        matchedComponent: entry.component,
+        matchedInventory: entry.inventory,
+      }
+    }
+    return { exists: false }
+  }
+
   try {
-    const compMatches = await pb.collection('components').getList<MasterComponent>(1, 1, {
-      filter: `code = "${cleanCode}"`,
-    })
+    const compMatches = await fetchWith429Retry(() =>
+      pb.collection('components').getList<MasterComponent>(1, 1, {
+        filter: `code = "${cleanCode}"`,
+      }),
+    )
     if (compMatches.items.length > 0) {
       return { exists: true, matchedComponent: compMatches.items[0] }
     }
 
-    const invMatches = await pb.collection('inventory').getList<Inventory>(1, 1, {
-      filter: `code = "${cleanCode}"`,
-    })
+    const invMatches = await fetchWith429Retry(() =>
+      pb.collection('inventory').getList<Inventory>(1, 1, {
+        filter: `code = "${cleanCode}"`,
+      }),
+    )
     if (invMatches.items.length > 0) {
       return { exists: true, matchedInventory: invMatches.items[0] }
     }
@@ -276,14 +411,16 @@ export const findMaterialInfoFromPcpOrders = async (
   if (!cleanCode) return { code, foundInOps: false }
 
   try {
-    const records = await pb.collection('pcp_order_materials').getList<{
-      code: string
-      description: string
-      unit: string
-    }>(1, 1, {
-      filter: `code = "${cleanCode}"`,
-      sort: '-created',
-    })
+    const records = await fetchWith429Retry(() =>
+      pb.collection('pcp_order_materials').getList<{
+        code: string
+        description: string
+        unit: string
+      }>(1, 1, {
+        filter: `code = "${cleanCode}"`,
+        sort: '-created',
+      }),
+    )
 
     if (records.items.length > 0) {
       const match = records.items[0]

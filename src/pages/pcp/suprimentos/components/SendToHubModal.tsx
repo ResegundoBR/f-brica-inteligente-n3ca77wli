@@ -17,7 +17,12 @@ import { NoTranslate } from '@/components/NoTranslate'
 import { useToast } from '@/hooks/use-toast'
 import { useAuth } from '@/hooks/use-auth'
 import { upsertMaterialShortage } from '@/services/material-shortages'
-import { validateUnifiedCodeExists, findMaterialInfoFromPcpOrders } from '@/services/components'
+import {
+  fetchUnifiedCatalogMap,
+  validateUnifiedCodesBatch,
+  findMaterialInfoFromPcpOrders,
+  type UnifiedCatalogEntry,
+} from '@/services/components'
 import { getComponentCategories } from '@/services/component-categories'
 import { CreateComponentDialog } from './CreateComponentDialog'
 import type { SeparationAuditItem } from '@/services/pcp-separation-bom-audit'
@@ -34,6 +39,7 @@ interface SendToHubModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   targetItems: SendToHubTargetItem[]
+  catalogMap?: Map<string, UnifiedCatalogEntry>
   onSuccess: () => void
 }
 
@@ -41,6 +47,7 @@ export function SendToHubModal({
   open,
   onOpenChange,
   targetItems,
+  catalogMap: parentCatalogMap,
   onSuccess,
 }: SendToHubModalProps) {
   const { toast } = useToast()
@@ -75,18 +82,20 @@ export function SendToHubModal({
       .catch(() => setCategories([]))
   }, [])
 
-  // Verificar quais códigos de materiais existem no cadastro unificado
-  const checkCodesRegistration = async () => {
+  // Verificar quais códigos de materiais existem no cadastro unificado em lote (zero N+1)
+  const checkCodesRegistration = async (overrideCatalog?: Map<string, UnifiedCatalogEntry>) => {
     if (!open || validItems.length === 0) return
     setCheckingCodes(true)
     const newMap: Record<string, boolean> = {}
 
     try {
-      const distinctCodes = Array.from(new Set(validItems.map((t) => (t.item.code || '').trim())))
-      for (const code of distinctCodes) {
-        if (!code) continue
-        const res = await validateUnifiedCodeExists(code)
-        newMap[code] = res.exists
+      const distinctCodes = Array.from(
+        new Set(validItems.map((t) => (t.item.code || '').trim()).filter(Boolean)),
+      )
+      const catalog = overrideCatalog || parentCatalogMap || (await fetchUnifiedCatalogMap())
+      const batchResult = await validateUnifiedCodesBatch(distinctCodes, catalog)
+      for (const [code, status] of batchResult.entries()) {
+        newMap[code] = status.exists
       }
       setCodeRegisteredMap(newMap)
     } catch (err) {
@@ -98,11 +107,11 @@ export function SendToHubModal({
 
   useEffect(() => {
     if (open) {
-      checkCodesRegistration()
+      checkCodesRegistration(parentCatalogMap)
     } else {
       setCodeRegisteredMap({})
     }
-  }, [open, targetItems])
+  }, [open, targetItems, parentCatalogMap])
 
   // Itens não cadastrados
   const unmappedItems = validItems.filter((t) => {
@@ -157,7 +166,14 @@ export function SendToHubModal({
       title: 'Componente cadastrado com sucesso!',
       description: `O código "${newComp.code}" foi registrado no cadastro unificado com origem catalog.`,
     })
-    // Revalidar os códigos imediatamente
+    const compCode = (newComp.code || '').trim()
+    if (compCode) {
+      setCodeRegisteredMap((prev) => ({
+        ...prev,
+        [compCode]: true,
+      }))
+    }
+    // Revalidar os códigos imediatamente em lote
     await checkCodesRegistration()
   }
 

@@ -39,7 +39,12 @@ import { ptBR } from 'date-fns/locale'
 import { SendToHubModal, type SendToHubTargetItem } from './SendToHubModal'
 import { AdjustShortageQuantityModal } from './AdjustShortageQuantityModal'
 import { CreateComponentDialog } from './CreateComponentDialog'
-import { validateUnifiedCodeExists, findMaterialInfoFromPcpOrders } from '@/services/components'
+import {
+  fetchUnifiedCatalogMap,
+  validateUnifiedCodesBatch,
+  findMaterialInfoFromPcpOrders,
+  type UnifiedCatalogEntry,
+} from '@/services/components'
 import { getComponentCategories } from '@/services/component-categories'
 import type { ComponentCategory, MasterComponent } from '@/types'
 
@@ -79,21 +84,28 @@ export function SeparationBomAuditPanel() {
     source: 'catalog'
   } | null>(null)
   const [unregisteredCodes, setUnregisteredCodes] = useState<Set<string>>(new Set())
+  const [catalogMap, setCatalogMap] = useState<Map<string, UnifiedCatalogEntry>>(new Map())
 
   const loadAuditData = useCallback(async () => {
     setLoading(true)
     try {
-      const results = await generateSeparationBomAudit(TARGET_SEPARATIONS.map((sep) => sep.id))
+      // 1. Executa a auditoria das separações
+      // 2. Carrega catálogo unificado em lote (zero N+1)
+      const [results, catalog] = await Promise.all([
+        generateSeparationBomAudit(TARGET_SEPARATIONS.map((sep) => sep.id)),
+        fetchUnifiedCatalogMap(),
+      ])
       setReports(results)
+      setCatalogMap(catalog)
 
-      // Verificar códigos ausentes no cadastro unificado
+      // Verificar códigos ausentes no cadastro unificado de forma local e instantânea
       const allItemCodes = Array.from(
         new Set(results.flatMap((r) => r.items.map((i) => (i.code || '').trim())).filter(Boolean)),
       )
+      const batchResult = await validateUnifiedCodesBatch(allItemCodes, catalog)
       const missing = new Set<string>()
-      for (const code of allItemCodes) {
-        const check = await validateUnifiedCodeExists(code)
-        if (!check.exists) {
+      for (const [code, status] of batchResult.entries()) {
+        if (!status.exists) {
           missing.add(code)
         }
       }
@@ -147,9 +159,22 @@ export function SeparationBomAuditPanel() {
       title: 'Componente cadastrado com sucesso!',
       description: `Código "${newComp.code}" adicionado ao cadastro unificado.`,
     })
+    const compCode = (newComp.code || '').trim()
+    if (compCode) {
+      setCatalogMap((prev) => {
+        const next = new Map(prev)
+        next.set(compCode.toUpperCase(), {
+          code: compCode,
+          description: newComp.description || '',
+          unit: newComp.unit || 'UN',
+          component: newComp,
+        })
+        return next
+      })
+    }
     setUnregisteredCodes((prev) => {
       const next = new Set(prev)
-      if (newComp.code) next.delete(newComp.code.trim())
+      if (compCode) next.delete(compCode)
       return next
     })
   }
@@ -1170,6 +1195,7 @@ export function SeparationBomAuditPanel() {
         open={sendToHubModalOpen}
         onOpenChange={setSendToHubModalOpen}
         targetItems={sendToHubTargets}
+        catalogMap={catalogMap}
         onSuccess={() => {
           setSelectedRowKeys(new Set())
           loadAuditData()

@@ -38,6 +38,10 @@ import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { SendToHubModal, type SendToHubTargetItem } from './SendToHubModal'
 import { AdjustShortageQuantityModal } from './AdjustShortageQuantityModal'
+import { CreateComponentDialog } from './CreateComponentDialog'
+import { validateUnifiedCodeExists, findMaterialInfoFromPcpOrders } from '@/services/components'
+import { getComponentCategories } from '@/services/component-categories'
+import type { ComponentCategory, MasterComponent } from '@/types'
 
 export function SeparationBomAuditPanel() {
   const { toast } = useToast()
@@ -65,11 +69,35 @@ export function SeparationBomAuditPanel() {
     separationTitle?: string
   } | null>(null)
 
+  // Cadastro de componente ausente via confirmação do gestor
+  const [registerModalOpen, setRegisterModalOpen] = useState(false)
+  const [componentCategories, setComponentCategories] = useState<ComponentCategory[]>([])
+  const [registerInitialValues, setRegisterInitialValues] = useState<{
+    code: string
+    description: string
+    unit: string
+    source: 'catalog'
+  } | null>(null)
+  const [unregisteredCodes, setUnregisteredCodes] = useState<Set<string>>(new Set())
+
   const loadAuditData = useCallback(async () => {
     setLoading(true)
     try {
       const results = await generateSeparationBomAudit(TARGET_SEPARATIONS.map((sep) => sep.id))
       setReports(results)
+
+      // Verificar códigos ausentes no cadastro unificado
+      const allItemCodes = Array.from(
+        new Set(results.flatMap((r) => r.items.map((i) => (i.code || '').trim())).filter(Boolean)),
+      )
+      const missing = new Set<string>()
+      for (const code of allItemCodes) {
+        const check = await validateUnifiedCodeExists(code)
+        if (!check.exists) {
+          missing.add(code)
+        }
+      }
+      setUnregisteredCodes(missing)
     } catch (err: any) {
       console.error('Erro ao executar auditoria BOM:', err)
       toast({
@@ -85,7 +113,46 @@ export function SeparationBomAuditPanel() {
 
   useEffect(() => {
     loadAuditData()
+    getComponentCategories()
+      .then(setComponentCategories)
+      .catch(() => setComponentCategories([]))
   }, [loadAuditData])
+
+  const handleOpenRegisterFromAudit = async (
+    code: string,
+    fallbackDesc?: string,
+    fallbackUnit?: string,
+  ) => {
+    try {
+      const pcpData = await findMaterialInfoFromPcpOrders(code)
+      setRegisterInitialValues({
+        code: pcpData.code || code,
+        description: pcpData.description || fallbackDesc || '',
+        unit: pcpData.unit || fallbackUnit || 'PC',
+        source: 'catalog',
+      })
+    } catch {
+      setRegisterInitialValues({
+        code,
+        description: fallbackDesc || '',
+        unit: fallbackUnit || 'PC',
+        source: 'catalog',
+      })
+    }
+    setRegisterModalOpen(true)
+  }
+
+  const handleComponentCreated = async (newComp: MasterComponent) => {
+    toast({
+      title: 'Componente cadastrado com sucesso!',
+      description: `Código "${newComp.code}" adicionado ao cadastro unificado.`,
+    })
+    setUnregisteredCodes((prev) => {
+      const next = new Set(prev)
+      if (newComp.code) next.delete(newComp.code.trim())
+      return next
+    })
+  }
 
   const toggleExpand = (rowKey: string) => {
     setExpandedRowKeys((prev) => {
@@ -808,7 +875,18 @@ export function SeparationBomAuditPanel() {
                                   ))}
                               </td>
                               <td className="py-2 px-3 font-mono font-bold text-slate-900 dark:text-slate-100 notranslate whitespace-nowrap">
-                                <NoTranslate text={item.code} />
+                                <div className="flex items-center gap-1.5">
+                                  <NoTranslate text={item.code} />
+                                  {unregisteredCodes.has((item.code || '').trim()) && (
+                                    <Badge
+                                      variant="destructive"
+                                      className="text-[9px] py-0 px-1 bg-amber-600 text-white"
+                                      title="Código ausente no cadastro unificado"
+                                    >
+                                      Não cadastrado
+                                    </Badge>
+                                  )}
+                                </div>
                               </td>
                               <td className="py-2 px-3 text-slate-800 dark:text-slate-200 notranslate">
                                 <div className="font-medium line-clamp-2">
@@ -881,15 +959,38 @@ export function SeparationBomAuditPanel() {
                                       )}
                                     </div>
                                   ) : (
-                                    <Button
-                                      size="sm"
-                                      onClick={() => handleOpenSendSingle(report, item)}
-                                      className="h-7 px-2.5 text-[11px] bg-indigo-600 hover:bg-indigo-700 text-white font-semibold gap-1 shadow-xs"
-                                      title="Criar solicitação de compra no Hub de Suprimentos (Fila de Entrada/Triagem)"
-                                    >
-                                      <Send className="size-3" />
-                                      Enviar ao Hub
-                                    </Button>
+                                    <div className="inline-flex items-center gap-1">
+                                      {unregisteredCodes.has((item.code || '').trim()) && (
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() =>
+                                            handleOpenRegisterFromAudit(
+                                              item.code,
+                                              item.description,
+                                              item.unit,
+                                            )
+                                          }
+                                          className="h-7 px-2 text-[10px] border-amber-400 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-950/40 font-semibold"
+                                          title="Item não cadastrado! Clique para cadastrar no cadastro unificado com pré-preenchimento das OPs"
+                                        >
+                                          Cadastrar componente
+                                        </Button>
+                                      )}
+                                      <Button
+                                        size="sm"
+                                        onClick={() => handleOpenSendSingle(report, item)}
+                                        className="h-7 px-2.5 text-[11px] bg-indigo-600 hover:bg-indigo-700 text-white font-semibold gap-1 shadow-xs"
+                                        title={
+                                          unregisteredCodes.has((item.code || '').trim())
+                                            ? 'Código ausente no cadastro! O envio avisará antes e solicitará o cadastro.'
+                                            : 'Criar solicitação de compra no Hub de Suprimentos (Fila de Entrada/Triagem)'
+                                        }
+                                      >
+                                        <Send className="size-3" />
+                                        Enviar ao Hub
+                                      </Button>
+                                    </div>
                                   ))}
 
                                 {/* AÇÃO 3: AJUSTAR QUANTIDADE (FALTA A MENOR) */}
@@ -1084,7 +1185,16 @@ export function SeparationBomAuditPanel() {
         onSuccess={() => {
           loadAuditData()
         }}
-      />{' '}
+      />
+
+      {/* Modal: Cadastrar Componente a partir da Linha da Auditoria BOM */}
+      <CreateComponentDialog
+        open={registerModalOpen}
+        onOpenChange={setRegisterModalOpen}
+        categories={componentCategories}
+        initialValues={registerInitialValues || undefined}
+        onCreated={handleComponentCreated}
+      />
     </div>
   )
 }

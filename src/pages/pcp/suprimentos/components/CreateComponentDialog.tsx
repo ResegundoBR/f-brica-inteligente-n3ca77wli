@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -25,32 +25,52 @@ import { Plus, Loader2, AlertCircle } from 'lucide-react'
 interface CreateComponentDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  categories: ComponentCategory[]
+  categories?: ComponentCategory[]
+  initialValues?: {
+    code?: string
+    description?: string
+    unit?: string
+    category?: string | null
+    source?: 'inventory' | 'catalog' | 'manual' | 'imported'
+  }
   onCreated?: (component: MasterComponent) => void
 }
 
 export function CreateComponentDialog({
   open,
   onOpenChange,
-  categories,
+  categories = [],
+  initialValues,
   onCreated,
 }: CreateComponentDialogProps) {
   const { toast } = useToast()
 
-  const [code, setCode] = useState('')
-  const [description, setDescription] = useState('')
-  const [unit, setUnit] = useState('un')
-  const [category, setCategory] = useState<string>('__NONE__')
+  const [code, setCode] = useState(initialValues?.code || '')
+  const [description, setDescription] = useState(initialValues?.description || '')
+  const [unit, setUnit] = useState(initialValues?.unit || 'un')
+  const [category, setCategory] = useState<string>(initialValues?.category || '__NONE__')
   const [status, setStatus] = useState<'ACTIVE' | 'INACTIVE'>('ACTIVE')
   const [minQuantity, setMinQuantity] = useState('0')
   const [isSaving, setIsSaving] = useState(false)
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null)
 
+  // Atualizar campos quando initialValues mudar e o modal estiver aberto
+  React.useEffect(() => {
+    if (open && initialValues) {
+      if (initialValues.code !== undefined) setCode(initialValues.code)
+      if (initialValues.description !== undefined) setDescription(initialValues.description)
+      if (initialValues.unit !== undefined) setUnit(initialValues.unit || 'un')
+      if (initialValues.category !== undefined) {
+        setCategory(initialValues.category || '__NONE__')
+      }
+    }
+  }, [open, initialValues])
+
   const resetForm = () => {
-    setCode('')
-    setDescription('')
-    setUnit('un')
-    setCategory('__NONE__')
+    setCode(initialValues?.code || '')
+    setDescription(initialValues?.description || '')
+    setUnit(initialValues?.unit || 'un')
+    setCategory(initialValues?.category || '__NONE__')
     setStatus('ACTIVE')
     setMinQuantity('0')
     setDuplicateWarning(null)
@@ -114,12 +134,13 @@ export function CreateComponentDialog({
         }
       }
 
+      const sourceToUse = initialValues?.source || 'manual'
       const newComp = await createMasterComponent({
         code: trimmedCode,
         description: trimmedDesc,
         unit: trimmedUnit,
         category: selectedCat,
-        source: 'manual',
+        source: sourceToUse,
         active: status === 'ACTIVE',
         min_quantity: parsedMin,
       })

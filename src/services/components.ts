@@ -260,6 +260,48 @@ export const validateUnifiedCodeExists = async (
 }
 
 /**
+ * Busca dados de referência de um código em pcp_order_materials (materiais de OP).
+ * Útil para pré-preencher código, descrição e unidade quando o código ainda não
+ * está cadastrado no cadastro unificado (components / inventory).
+ */
+export const findMaterialInfoFromPcpOrders = async (
+  code: string,
+): Promise<{
+  code: string
+  description?: string
+  unit?: string
+  foundInOps: boolean
+}> => {
+  const cleanCode = code.trim().replace(/["'\\]/g, '')
+  if (!cleanCode) return { code, foundInOps: false }
+
+  try {
+    const records = await pb.collection('pcp_order_materials').getList<{
+      code: string
+      description: string
+      unit: string
+    }>(1, 1, {
+      filter: `code = "${cleanCode}"`,
+      sort: '-created',
+    })
+
+    if (records.items.length > 0) {
+      const match = records.items[0]
+      return {
+        code: match.code || code,
+        description: match.description || undefined,
+        unit: match.unit || undefined,
+        foundInOps: true,
+      }
+    }
+  } catch (err) {
+    console.warn('Erro ao buscar material em pcp_order_materials:', err)
+  }
+
+  return { code, foundInOps: false }
+}
+
+/**
  * Marca um componente do mestre como inativo com rastreabilidade de quem inativou.
  */
 export const deactivateMasterComponent = async (

@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -12,12 +12,16 @@ import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Send, CheckCircle2, AlertTriangle, Loader2, Info } from 'lucide-react'
+import { Send, CheckCircle2, AlertTriangle, Loader2, Info, PlusCircle } from 'lucide-react'
 import { NoTranslate } from '@/components/NoTranslate'
 import { useToast } from '@/hooks/use-toast'
 import { useAuth } from '@/hooks/use-auth'
 import { upsertMaterialShortage } from '@/services/material-shortages'
+import { validateUnifiedCodeExists, findMaterialInfoFromPcpOrders } from '@/services/components'
+import { getComponentCategories } from '@/services/component-categories'
+import { CreateComponentDialog } from './CreateComponentDialog'
 import type { SeparationAuditItem } from '@/services/pcp-separation-bom-audit'
+import type { ComponentCategory, MasterComponent } from '@/types'
 
 export interface SendToHubTargetItem {
   separationId: string
@@ -42,14 +46,122 @@ export function SendToHubModal({
   const { toast } = useToast()
   const { user } = useAuth()
   const [submitting, setSubmitting] = useState(false)
+  const [checkingCodes, setCheckingCodes] = useState(false)
   // 'single': Uma única solicitação com setor consolidado/geral
   // 'by_sector': Solicitações separadas por setor
   const [groupingMode, setGroupingMode] = useState<'single' | 'by_sector'>('by_sector')
 
-  if (!targetItems || targetItems.length === 0) return null
+  // Mapeamento de status cadastral por código: true = cadastrado, false = ausente
+  const [codeRegisteredMap, setCodeRegisteredMap] = useState<Record<string, boolean>>({})
+
+  // Estado para cadastro do componente ausente via CreateComponentDialog
+  const [registerModalOpen, setRegisterModalOpen] = useState(false)
+  const [categories, setCategories] = useState<ComponentCategory[]>([])
+  const [registerInitialValues, setRegisterInitialValues] = useState<{
+    code: string
+    description: string
+    unit: string
+    source: 'catalog'
+  } | null>(null)
+  const [loadingComponentData, setLoadingComponentData] = useState(false)
 
   // Itens válidos (com diferença > 0)
-  const validItems = targetItems.filter((t) => t.item.difference > 0)
+  const validItems = targetItems ? targetItems.filter((t) => t.item.difference > 0) : []
+
+  // Carregar categorias de componentes uma vez
+  useEffect(() => {
+    getComponentCategories()
+      .then(setCategories)
+      .catch(() => setCategories([]))
+  }, [])
+
+  // Verificar quais códigos de materiais existem no cadastro unificado
+  const checkCodesRegistration = async () => {
+    if (!open || validItems.length === 0) return
+    setCheckingCodes(true)
+    const newMap: Record<string, boolean> = {}
+
+    try {
+      const distinctCodes = Array.from(new Set(validItems.map((t) => (t.item.code || '').trim())))
+      for (const code of distinctCodes) {
+        if (!code) continue
+        const res = await validateUnifiedCodeExists(code)
+        newMap[code] = res.exists
+      }
+      setCodeRegisteredMap(newMap)
+    } catch (err) {
+      console.warn('Erro ao checar cadastro de códigos:', err)
+    } finally {
+      setCheckingCodes(false)
+    }
+  }
+
+  useEffect(() => {
+    if (open) {
+      checkCodesRegistration()
+    } else {
+      setCodeRegisteredMap({})
+    }
+  }, [open, targetItems])
+
+  // Itens não cadastrados
+  const unmappedItems = validItems.filter((t) => {
+    const c = (t.item.code || '').trim()
+    return c && codeRegisteredMap[c] === false
+  })
+
+  // Agrupados únicos para alerta
+  const unmappedUniqueCodes = Array.from(
+    new Set(unmappedItems.map((t) => (t.item.code || '').trim())),
+  ).map((code) => {
+    const item = unmappedItems.find((t) => (t.item.code || '').trim() === code)?.item
+    return {
+      code,
+      description: item?.description || '',
+      unit: item?.unit || 'PC',
+    }
+  })
+
+  // Abrir diálogo de cadastro para um código específico ausente
+  const handleOpenRegisterComponent = async (
+    code: string,
+    fallbackDesc?: string,
+    fallbackUnit?: string,
+  ) => {
+    setLoadingComponentData(true)
+    try {
+      const pcpData = await findMaterialInfoFromPcpOrders(code)
+      setRegisterInitialValues({
+        code: pcpData.code || code,
+        description: pcpData.description || fallbackDesc || '',
+        unit: pcpData.unit || fallbackUnit || 'PC',
+        source: 'catalog',
+      })
+      setRegisterModalOpen(true)
+    } catch (err: any) {
+      console.error('Erro ao buscar dados de pcp_order_materials:', err)
+      setRegisterInitialValues({
+        code,
+        description: fallbackDesc || '',
+        unit: fallbackUnit || 'PC',
+        source: 'catalog',
+      })
+      setRegisterModalOpen(true)
+    } finally {
+      setLoadingComponentData(false)
+    }
+  }
+
+  const handleComponentCreated = async (newComp: MasterComponent) => {
+    toast({
+      title: 'Componente cadastrado com sucesso!',
+      description: `O código "${newComp.code}" foi registrado no cadastro unificado com origem catalog.`,
+    })
+    // Revalidar os códigos imediatamente
+    await checkCodesRegistration()
+  }
+
+  if (!targetItems || targetItems.length === 0) return null
 
   // Agrupamento por setor
   const itemsBySector = validItems.reduce<Record<string, SendToHubTargetItem[]>>((acc, t) => {
@@ -126,7 +238,12 @@ export function SendToHubModal({
             }
           } catch (itemErr: any) {
             console.error(`Erro ao criar solicitação para item ${item.code}:`, itemErr)
-            errors.push(`${item.code}: ${itemErr.message || 'Falha ao gravar'}`)
+            const errMsg =
+              itemErr?.data?.code?.message ||
+              itemErr?.data?.message ||
+              itemErr.message ||
+              'Falha ao gravar'
+            errors.push(`Código [${item.code}] - ${item.description}: ${errMsg}`)
           }
         } else {
           // Múltiplas OPs: ratear a diferença proporcionalmente à demanda de cada OP envolvida
@@ -202,8 +319,13 @@ export function SendToHubModal({
                 `Erro ao criar solicitação rateada para OP ${op.opNumber} do item ${item.code}:`,
                 itemErr,
               )
+              const errMsg =
+                itemErr?.data?.code?.message ||
+                itemErr?.data?.message ||
+                itemErr.message ||
+                'Falha ao gravar'
               errors.push(
-                `${item.code} (OP ${op.opNumber}): ${itemErr.message || 'Falha ao gravar'}`,
+                `Código [${item.code}] - ${item.description} (OP ${op.opNumber}): ${errMsg}`,
               )
             }
           }
@@ -211,9 +333,13 @@ export function SendToHubModal({
       }
 
       if (errors.length > 0) {
+        // Exibir descrição e código detalhados dos itens que falharam
+        const detailedErrorList = errors.slice(0, 3).join('; ')
+        const moreCount = errors.length > 3 ? ` (+${errors.length - 3} outros)` : ''
+
         toast({
-          title: 'Envio parcial ao Hub',
-          description: `${createdCount + updatedCount} processados com sucesso, mas ${errors.length} falharam.`,
+          title: `Falha no envio ao Hub (${errors.length} falharam)`,
+          description: `${createdCount + updatedCount} processados com sucesso. Falharam: ${detailedErrorList}${moreCount}`,
           variant: 'destructive',
         })
       } else {
@@ -253,6 +379,71 @@ export function SendToHubModal({
         </DialogHeader>
 
         <div className="space-y-4 py-2">
+          {/* Alerta de Verificação Cadastral Pré-Envio */}
+          {checkingCodes ? (
+            <div className="flex items-center gap-2 p-2.5 rounded-lg border bg-slate-50 text-xs text-slate-600">
+              <Loader2 className="size-3.5 animate-spin text-indigo-600" />
+              <span>Verificando códigos contra o Cadastro Unificado de Componentes...</span>
+            </div>
+          ) : unmappedUniqueCodes.length > 0 ? (
+            <Alert className="bg-amber-50/70 border-amber-300 dark:bg-amber-950/30 dark:border-amber-800 text-xs py-2.5">
+              <AlertTriangle className="size-4 text-amber-600 shrink-0 mt-0.5" />
+              <div className="ml-2 space-y-2 w-full">
+                <AlertDescription className="text-amber-900 dark:text-amber-200 font-medium leading-relaxed">
+                  <strong>Atenção:</strong>{' '}
+                  {unmappedUniqueCodes.length === 1
+                    ? 'O código abaixo não existe'
+                    : `${unmappedUniqueCodes.length} códigos não existem`}{' '}
+                  no Cadastro Unificado de Componentes e{' '}
+                  <span className="underline font-semibold">
+                    será bloqueado pelo hook do servidor
+                  </span>{' '}
+                  ao enviar ao Hub. Cadastre o componente antes de prosseguir com o envio:
+                </AlertDescription>
+
+                <div className="divide-y divide-amber-200 dark:divide-amber-800/60 rounded border border-amber-200 dark:border-amber-800 bg-white/70 dark:bg-slate-950/70 p-2 space-y-2">
+                  {unmappedUniqueCodes.map((unmapped) => (
+                    <div
+                      key={unmapped.code}
+                      className="pt-1.5 first:pt-0 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                    >
+                      <div className="text-xs">
+                        <span className="font-mono font-bold text-slate-900 dark:text-slate-100 mr-2 notranslate">
+                          {unmapped.code}
+                        </span>
+                        <span className="text-slate-700 dark:text-slate-300 notranslate">
+                          {unmapped.description} ({unmapped.unit})
+                        </span>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          handleOpenRegisterComponent(
+                            unmapped.code,
+                            unmapped.description,
+                            unmapped.unit,
+                          )
+                        }
+                        disabled={submitting || loadingComponentData}
+                        className="h-7 text-xs border-amber-400 text-amber-800 hover:bg-amber-100 dark:text-amber-300 dark:border-amber-700 gap-1 font-semibold shrink-0"
+                      >
+                        <PlusCircle className="size-3 text-amber-600 dark:text-amber-400" />
+                        Cadastrar componente
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </Alert>
+          ) : (
+            <div className="flex items-center gap-2 p-2 rounded-lg border border-emerald-200 bg-emerald-50/50 text-[11px] text-emerald-800 dark:bg-emerald-950/20 dark:border-emerald-800 dark:text-emerald-300">
+              <CheckCircle2 className="size-3.5 text-emerald-600 shrink-0" />
+              <span>Todos os códigos de materiais estão validados no Cadastro Unificado.</span>
+            </div>
+          )}
+
           {/* Informação sobre anti-duplicidade e regra de gravação */}
           <Alert className="bg-indigo-50/50 border-indigo-200 dark:bg-indigo-950/20 dark:border-indigo-800 text-xs py-2">
             <Info className="size-4 text-indigo-600" />
@@ -322,7 +513,18 @@ export function SendToHubModal({
                   {validItems.map((target, idx) => (
                     <tr key={`${target.item.code}-${idx}`} className="hover:bg-slate-50/60">
                       <td className="py-2 px-2.5 font-mono font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap notranslate">
-                        <NoTranslate text={target.item.code} />
+                        <div className="flex items-center gap-1.5">
+                          <NoTranslate text={target.item.code} />
+                          {codeRegisteredMap[target.item.code] === false && (
+                            <Badge
+                              variant="destructive"
+                              className="text-[9px] py-0 px-1 bg-amber-600 text-white"
+                              title="Código não cadastrado no Cadastro Unificado"
+                            >
+                              Não cadastrado
+                            </Badge>
+                          )}
+                        </div>
                       </td>
                       <td
                         className="py-2 px-2.5 max-w-[200px] truncate notranslate"
@@ -368,18 +570,38 @@ export function SendToHubModal({
             type="button"
             size="sm"
             onClick={handleConfirmSend}
-            disabled={submitting || validItems.length === 0}
-            className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white gap-1.5 font-semibold"
+            disabled={submitting || validItems.length === 0 || unmappedUniqueCodes.length > 0}
+            className={`text-xs gap-1.5 font-semibold ${
+              unmappedUniqueCodes.length > 0
+                ? 'bg-slate-300 text-slate-500 cursor-not-allowed dark:bg-slate-800'
+                : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+            }`}
+            title={
+              unmappedUniqueCodes.length > 0
+                ? 'Cadastre os componentes ausentes antes de enviar ao Hub'
+                : 'Enviar solicitações ao Hub'
+            }
           >
             {submitting ? (
               <Loader2 className="size-3.5 animate-spin" />
             ) : (
               <CheckCircle2 className="size-3.5" />
             )}
-            Confirmar e Enviar {validItems.length} item(ns) ao Hub
+            {unmappedUniqueCodes.length > 0
+              ? `Bloqueado (${unmappedUniqueCodes.length} código(s) ausente(s))`
+              : `Confirmar e Enviar ${validItems.length} item(ns) ao Hub`}
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      {/* Diálogo de Cadastro com Pré-Preenchimento e Confirmação do Gestor */}
+      <CreateComponentDialog
+        open={registerModalOpen}
+        onOpenChange={setRegisterModalOpen}
+        categories={categories}
+        initialValues={registerInitialValues || undefined}
+        onCreated={handleComponentCreated}
+      />
     </Dialog>
   )
 }

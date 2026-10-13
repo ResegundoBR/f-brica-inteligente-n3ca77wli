@@ -28,105 +28,74 @@ export function getErrorMessage(error: unknown): string {
   return msgs.length > 0 ? msgs.join(' ') : error.message || 'An unexpected error occurred.'
 }
 
-/**
- * Tradução de campos comuns para português amigável
- */
-const FIELD_LABELS: Record<string, string> = {
-  oc_number: 'Número da OC',
+const FIELD_LABELS_PT: Record<string, string> = {
+  expected_date: 'Previsão de Entrega',
   supplier: 'Fornecedor',
   supplier_id: 'Fornecedor',
-  expected_date: 'Previsão de Entrega',
-  delivery_date: 'Data de Entrega',
-  quotation_date: 'Data da Cotação',
-  purchase_date: 'Data da Compra',
-  payment_terms: 'Condição de Pagamento',
-  delivery_terms: 'Condição de Entrega',
-  delivery_type: 'Tipo de Frete',
-  unit_price: 'Preço Unitário',
-  quantity: 'Quantidade',
+  oc_number: 'Número da OC',
   total: 'Valor Total',
-  observation: 'Observação',
+  payment_terms: 'Condições de Pagamento',
+  delivery_type: 'Tipo de Frete',
+  delivery_terms: 'Prazo de Entrega',
   status: 'Status',
   code: 'Código',
   description: 'Descrição',
-  user_id: 'Usuário',
-  order_id: 'OP / Pedido',
+  unit: 'Unidade',
+  quantity: 'Quantidade',
+}
+
+const ERROR_MESSAGES_PT: Record<string, string> = {
+  validation_invalid_date: 'Data inválida',
+  validation_required: 'Obrigatório',
+  validation_missing_required_elem: 'Campo obrigatório ausente',
+  validation_not_unique: 'Já existe um registro com este valor',
 }
 
 /**
- * Tradução de mensagens de erro comuns da validação PocketBase
- */
-function translateValidationMessage(code: string, originalMsg: string): string {
-  const c = (code || '').toLowerCase()
-  const m = (originalMsg || '').toLowerCase()
-
-  if (c.includes('required') || m.includes('cannot be blank') || m.includes('required')) {
-    return 'Obrigatório'
-  }
-  if (c.includes('invalid_date') || m.includes('valid datetime') || m.includes('valid date')) {
-    return 'Data inválida'
-  }
-  if (c.includes('unique') || m.includes('already exists') || m.includes('must be unique')) {
-    return 'Já existe um registro com este valor'
-  }
-  if (c.includes('min') || m.includes('minimum')) {
-    return 'Valor abaixo do permitido'
-  }
-  if (c.includes('max') || m.includes('maximum')) {
-    return 'Valor acima do permitido'
-  }
-  return originalMsg || 'Inválido'
-}
-
-/**
- * Formata mensagens de erro detalhadas (incluindo validações campo a campo)
- * em português amigável para exibição ao usuário via toast ou alerta.
+ * Formata erros detalhados retornados pelo PocketBase com mapeamento amigável para o português.
  */
 export function formatDetailedErrorMessage(error: unknown, fallbackMessage?: string): string {
-  if (!error) return fallbackMessage || 'Ocorreu um erro inesperado.'
-
-  // Erro estruturado do PocketBase (ClientResponseError ou objeto similar mockado)
-  const errObj = error as {
-    message?: string
-    response?: {
-      message?: string
-      data?: Record<string, unknown>
-    }
+  if (!error || typeof error !== 'object') {
+    return fallbackMessage || 'Ocorreu um erro inesperado.'
   }
 
-  const responseData = errObj?.response?.data
-  if (responseData && typeof responseData === 'object' && Object.keys(responseData).length > 0) {
-    const details: string[] = []
-
-    for (const [field, val] of Object.entries(responseData)) {
-      const fieldLabel = FIELD_LABELS[field] || field
-      let fieldMsg = 'Inválido'
-
-      if (val && typeof val === 'object') {
-        const v = val as { code?: string; message?: string }
-        fieldMsg = translateValidationMessage(v.code || '', v.message || '')
-      } else if (typeof val === 'string') {
-        fieldMsg = translateValidationMessage('', val)
+  // Se tiver response.data com campos detalhados
+  const errObj = error as any
+  const data = errObj?.response?.data || errObj?.data
+  if (data && typeof data === 'object') {
+    const fieldDetails: string[] = []
+    for (const [field, detail] of Object.entries(data)) {
+      const fieldLabel = FIELD_LABELS_PT[field] || field
+      let reason = 'Inválido'
+      if (typeof detail === 'object' && detail !== null) {
+        const d = detail as any
+        if (d.code && ERROR_MESSAGES_PT[d.code]) {
+          reason = ERROR_MESSAGES_PT[d.code]
+        } else if (d.message) {
+          if (typeof d.message === 'string' && d.message.toLowerCase().includes('blank')) {
+            reason = 'Obrigatório'
+          } else if (
+            typeof d.message === 'string' &&
+            d.message.toLowerCase().includes('datetime')
+          ) {
+            reason = 'Data inválida'
+          } else {
+            reason = String(d.message)
+          }
+        }
+      } else if (typeof detail === 'string') {
+        reason = detail
       }
-
-      details.push(`${fieldLabel}: ${fieldMsg}`)
+      fieldDetails.push(`${fieldLabel}: ${reason}`)
     }
-
-    if (details.length > 0) {
-      return details.join(' | ')
+    if (fieldDetails.length > 0) {
+      return fieldDetails.join('. ')
     }
   }
 
-  if (errObj?.response?.message) {
-    return errObj.response.message
-  }
-
-  if (error instanceof Error && error.message) {
-    return error.message
-  }
-
-  if (typeof error === 'string') {
-    return error
+  const baseMsg = errObj?.response?.message || errObj?.message
+  if (baseMsg && typeof baseMsg === 'string' && baseMsg.trim()) {
+    return baseMsg
   }
 
   return fallbackMessage || 'Ocorreu um erro inesperado.'

@@ -9,6 +9,7 @@ import {
 import { CloseResidualDialog } from './components/CloseResidualDialog'
 import { UnificacaoCadastralPanel } from './components/UnificacaoCadastralPanel'
 import { SeparationBomAuditPanel } from './components/SeparationBomAuditPanel'
+import { FractionalCompositionsPanel } from './components/FractionalCompositionsPanel'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { FixDivergenceDialog } from './components/FixDivergenceDialog'
 import { DivergenceDetailModal } from './components/DivergenceDetailModal'

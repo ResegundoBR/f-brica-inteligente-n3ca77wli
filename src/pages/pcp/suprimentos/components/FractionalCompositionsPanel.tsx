@@ -137,7 +137,7 @@ export function FractionalCompositionsPanel({ onDataChanged }: { onDataChanged?:
 
           // Determinar unidade: priorizar a cadastrada na collection 'components' se existir
           const masterUnit = unitByCode.get(compCode.toUpperCase())
-          const resolvedUnit = masterUnit || (c.unit || 'UN').trim().toUpperCase()
+          const resolvedUnit = masterUnit || (c.unit || 'PC').trim().toUpperCase()
 
           // Unidades fracionadas em MT/M/KG são legítimas! Bug é apenas em unidades PC/peça.
           if (!isStrictlyPieceUnit(resolvedUnit)) {
@@ -150,8 +150,8 @@ export function FractionalCompositionsPanel({ onDataChanged }: { onDataChanged?:
               : parseFloat(String(c.quantity).replace(',', '.'))
           if (isNaN(rawQty) || rawQty <= 0) return
 
-          // Verifica se há fração (não é número inteiro)
-          const isFraction = Math.floor(rawQty) !== rawQty
+          // Verifica se há fração (não é número inteiro com tolerância a float)
+          const isFraction = Math.abs(rawQty - Math.round(rawQty)) > 0.00001
           if (isFraction) {
             const suggested = Math.ceil(rawQty)
             detected.push({

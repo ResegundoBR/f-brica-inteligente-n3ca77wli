@@ -8,6 +8,8 @@ import {
 } from '@/services/suprimentos-integrity'
 import { CloseResidualDialog } from './components/CloseResidualDialog'
 import { UnificacaoCadastralPanel } from './components/UnificacaoCadastralPanel'
+import { SeparationBomAuditPanel } from './components/SeparationBomAuditPanel'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { FixDivergenceDialog } from './components/FixDivergenceDialog'
 import { DivergenceDetailModal } from './components/DivergenceDetailModal'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -44,6 +46,7 @@ export default function DivergenciasPage() {
   const [searchTerm, setSearchTerm] = useState<string>('')
   const [severityFilter, setSeverityFilter] = useState<string>('todos')
   const [categoryFilter, setCategoryFilter] = useState<string>('todos')
+  const [activeTab, setActiveTab] = useState<string>('divergencias')
 
   // Modais de ação direta e detalhes
   const [selectedDivergenceForAction, setSelectedDivergenceForAction] =
@@ -192,313 +195,353 @@ export default function DivergenciasPage() {
         </div>
       )}
 
-      {/* ETAPA 4: PAINEL DE UNIFICAÇÃO CADASTRAL */}
-      <UnificacaoCadastralPanel onDataChanged={loadIntegrityData} />
-
-      {/* Cards de Resumo */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card className="border-l-4 border-l-blue-500">
-          <CardHeader className="py-4">
-            <CardDescription className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Total de Divergências
-            </CardDescription>
-            <CardTitle className="text-3xl font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
-              <Layers className="size-6 text-blue-500" />
-              {data?.total_divergences ?? 0}
-            </CardTitle>
-          </CardHeader>
-        </Card>
-
-        <Card className="border-l-4 border-l-red-500">
-          <CardHeader className="py-4">
-            <CardDescription className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Alta Gravidade
-            </CardDescription>
-            <CardTitle className="text-3xl font-black text-red-600 dark:text-red-400 flex items-center gap-2">
-              <AlertTriangle className="size-6 text-red-500" />
-              {data?.high_severity_count ?? 0}
-            </CardTitle>
-          </CardHeader>
-        </Card>
-
-        <Card className="border-l-4 border-l-emerald-500">
-          <CardHeader className="py-4">
-            <CardDescription className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Última Verificação
-            </CardDescription>
-            <CardTitle className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2 mt-2">
-              <Clock className="size-4 text-emerald-500" />
-              {data?.verified_at
-                ? format(new Date(data.verified_at), "dd/MM/yyyy 'às' HH:mm:ss", {
-                    locale: ptBR,
-                  })
-                : 'Não executado'}
-            </CardTitle>
-          </CardHeader>
-        </Card>
-      </div>
-
-      {/* Regras Validadas */}
-      <Card className="bg-slate-50 dark:bg-slate-900/50 border-dashed">
-        <CardContent className="pt-4 pb-4">
-          <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-            Regras de integridade verificadas automaticamente diariamente e sob demanda:
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-slate-600 dark:text-slate-400">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" />
-              <span>Recebido ≤ demanda real da OP de origem (sem inflação indevida)</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" />
-              <span>Saldo de cada inventário = soma cronológica dos movimentos</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" />
-              <span>Cadeia de balance_after consistente sem saltos ou corrupção</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" />
-              <span>Registros fantasmas em aberto ou vinculados a OPs concluídas</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" />
-              <span>Códigos com erro de digitação (ex: letra 'l'/'o' no meio de números)</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" />
-              <span>Descrições de materiais livres de poluição ou tags temporárias</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" />
-              <span>
-                Unificação cadastral: vínculos entre inventário físico e componentes mestre
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" />
-              <span>
-                Bloqueio de texto livre: novas solicitações validadas contra cadastro unificado
-              </span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Filtros e Busca */}
-      <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
-        <div className="relative w-full sm:w-80">
-          <Search className="absolute left-2.5 top-2.5 size-4 text-slate-400" />
-          <Input
-            placeholder="Buscar por código, material ou problema..."
-            className="pl-9 text-sm"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-          <div className="flex items-center gap-1.5 text-xs text-slate-500">
-            <Filter className="size-3.5" /> Gravidade:
-          </div>
-          <select
-            className="text-xs bg-white dark:bg-slate-900 border rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            value={severityFilter}
-            onChange={(e) => setSeverityFilter(e.target.value)}
+      {/* NAVEGAÇÃO POR ABAS: DIVERGÊNCIAS GERAIS vs AUDITORIA BOM */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="bg-slate-100 dark:bg-slate-800 p-1 rounded-xl h-auto flex flex-wrap gap-1">
+          <TabsTrigger
+            value="divergencias"
+            className="flex items-center gap-2 px-4 py-2 text-xs font-semibold data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-xs dark:data-[state=active]:bg-slate-900 dark:data-[state=active]:text-slate-100"
           >
-            <option value="todos">Todas</option>
-            <option value="alta">Alta</option>
-            <option value="media">Média</option>
-            <option value="baixa">Informativa</option>
-          </select>
+            <ShieldAlert className="size-4 text-blue-600" />
+            Integridade e Divergências
+            {(data?.total_divergences ?? 0) > 0 && (
+              <Badge
+                variant="secondary"
+                className="ml-1 text-[10px] px-1.5 py-0 h-4 bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
+              >
+                {data?.total_divergences}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger
+            value="auditoria-bom"
+            className="flex items-center gap-2 px-4 py-2 text-xs font-semibold data-[state=active]:bg-white data-[state=active]:text-indigo-700 data-[state=active]:shadow-xs dark:data-[state=active]:bg-slate-900 dark:data-[state=active]:text-indigo-400"
+          >
+            <Layers className="size-4 text-indigo-600" />
+            Auditoria BOM (Separações #1 a #4)
+            <Badge
+              variant="outline"
+              className="ml-1 text-[10px] px-1.5 py-0 h-4 border-indigo-300 text-indigo-700 dark:border-indigo-800 dark:text-indigo-400"
+            >
+              Novo
+            </Badge>
+          </TabsTrigger>
+        </TabsList>
 
-          {categories.length > 0 && (
-            <>
-              <div className="flex items-center gap-1.5 text-xs text-slate-500 ml-2">
-                Categoria:
+        <TabsContent value="auditoria-bom" className="mt-6">
+          <SeparationBomAuditPanel />
+        </TabsContent>
+
+        <TabsContent value="divergencias" className="mt-6 flex flex-col gap-6">
+          {/* ETAPA 4: PAINEL DE UNIFICAÇÃO CADASTRAL */}
+          <UnificacaoCadastralPanel onDataChanged={loadIntegrityData} />
+
+          {/* Cards de Resumo */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Card className="border-l-4 border-l-blue-500">
+              <CardHeader className="py-4">
+                <CardDescription className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  Total de Divergências
+                </CardDescription>
+                <CardTitle className="text-3xl font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                  <Layers className="size-6 text-blue-500" />
+                  {data?.total_divergences ?? 0}
+                </CardTitle>
+              </CardHeader>
+            </Card>
+
+            <Card className="border-l-4 border-l-red-500">
+              <CardHeader className="py-4">
+                <CardDescription className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  Alta Gravidade
+                </CardDescription>
+                <CardTitle className="text-3xl font-black text-red-600 dark:text-red-400 flex items-center gap-2">
+                  <AlertTriangle className="size-6 text-red-500" />
+                  {data?.high_severity_count ?? 0}
+                </CardTitle>
+              </CardHeader>
+            </Card>
+
+            <Card className="border-l-4 border-l-emerald-500">
+              <CardHeader className="py-4">
+                <CardDescription className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  Última Verificação
+                </CardDescription>
+                <CardTitle className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2 mt-2">
+                  <Clock className="size-4 text-emerald-500" />
+                  {data?.verified_at
+                    ? format(new Date(data.verified_at), "dd/MM/yyyy 'às' HH:mm:ss", {
+                        locale: ptBR,
+                      })
+                    : 'Não executado'}
+                </CardTitle>
+              </CardHeader>
+            </Card>
+          </div>
+
+          {/* Regras Validadas */}
+          <Card className="bg-slate-50 dark:bg-slate-900/50 border-dashed">
+            <CardContent className="pt-4 pb-4">
+              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                Regras de integridade verificadas automaticamente diariamente e sob demanda:
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-slate-600 dark:text-slate-400">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" />
+                  <span>Recebido ≤ demanda real da OP de origem (sem inflação indevida)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" />
+                  <span>Saldo de cada inventário = soma cronológica dos movimentos</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" />
+                  <span>Cadeia de balance_after consistente sem saltos ou corrupção</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" />
+                  <span>Registros fantasmas em aberto ou vinculados a OPs concluídas</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" />
+                  <span>Códigos com erro de digitação (ex: letra 'l'/'o' no meio de números)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" />
+                  <span>Descrições de materiais livres de poluição ou tags temporárias</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" />
+                  <span>
+                    Unificação cadastral: vínculos entre inventário físico e componentes mestre
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" />
+                  <span>
+                    Bloqueio de texto livre: novas solicitações validadas contra cadastro unificado
+                  </span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Filtros e Busca */}
+          <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
+            <div className="relative w-full sm:w-80">
+              <Search className="absolute left-2.5 top-2.5 size-4 text-slate-400" />
+              <Input
+                placeholder="Buscar por código, material ou problema..."
+                className="pl-9 text-sm"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+              <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                <Filter className="size-3.5" /> Gravidade:
               </div>
               <select
                 className="text-xs bg-white dark:bg-slate-900 border rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                value={categoryFilter}
-                onChange={(e) => setCategoryFilter(e.target.value)}
+                value={severityFilter}
+                onChange={(e) => setSeverityFilter(e.target.value)}
               >
-                <option value="todos">Todas ({categories.length})</option>
-                {categories.map((c) => (
-                  <option key={c} value={c}>
-                    {c.replace(/_/g, ' ')}
-                  </option>
-                ))}
+                <option value="todos">Todas</option>
+                <option value="alta">Alta</option>
+                <option value="media">Média</option>
+                <option value="baixa">Informativa</option>
               </select>
-            </>
-          )}
-        </div>
-      </div>
 
-      {/* Tabela de Divergências */}
-      {error && (
-        <div className="p-4 rounded-lg bg-red-50 text-red-700 border border-red-200 text-sm">
-          {error}
-        </div>
-      )}
-
-      {loading ? (
-        <div className="flex flex-col items-center justify-center p-12 text-slate-400 gap-3">
-          <RefreshCw className="size-8 animate-spin text-blue-500" />
-          <p className="text-sm">
-            Executando auditoria em tempo real nas coleções de suprimentos...
-          </p>
-        </div>
-      ) : filteredDivergences.length === 0 ? (
-        <Card className="border-emerald-200 bg-emerald-50/50 dark:bg-emerald-950/20 dark:border-emerald-900">
-          <CardContent className="flex flex-col items-center justify-center py-12 text-center gap-3">
-            <div className="p-3 bg-emerald-100 dark:bg-emerald-900/50 rounded-full text-emerald-600 dark:text-emerald-400">
-              <ShieldCheck className="size-8" />
+              {categories.length > 0 && (
+                <>
+                  <div className="flex items-center gap-1.5 text-xs text-slate-500 ml-2">
+                    Categoria:
+                  </div>
+                  <select
+                    className="text-xs bg-white dark:bg-slate-900 border rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    value={categoryFilter}
+                    onChange={(e) => setCategoryFilter(e.target.value)}
+                  >
+                    <option value="todos">Todas ({categories.length})</option>
+                    {categories.map((c) => (
+                      <option key={c} value={c}>
+                        {c.replace(/_/g, ' ')}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
             </div>
-            <div className="max-w-md">
-              <h3 className="text-base font-semibold text-emerald-900 dark:text-emerald-100">
-                Nenhuma divergência encontrada!
-              </h3>
-              <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-1">
-                Todas as regras de integridade foram atendidas perfeitamente. Saldo de estoque,
-                demandas de OPs, recebimentos e códigos estão íntegros e auditados.
+          </div>
+
+          {/* Tabela de Divergências */}
+          {error && (
+            <div className="p-4 rounded-lg bg-red-50 text-red-700 border border-red-200 text-sm">
+              {error}
+            </div>
+          )}
+
+          {loading ? (
+            <div className="flex flex-col items-center justify-center p-12 text-slate-400 gap-3">
+              <RefreshCw className="size-8 animate-spin text-blue-500" />
+              <p className="text-sm">
+                Executando auditoria em tempo real nas coleções de suprimentos...
               </p>
             </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="border rounded-lg overflow-hidden bg-white dark:bg-slate-900 shadow-xs">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 text-xs font-semibold border-b">
-                <tr>
-                  <th className="py-3 px-4 w-[110px]">Gravidade</th>
-                  <th className="py-3 px-4 w-[130px]">Código / Item</th>
-                  <th className="py-3 px-4 min-w-[180px] max-w-[240px]">Descrição</th>
-                  <th className="py-3 px-4 w-[130px]">OP / Pedido</th>
-                  <th className="py-3 px-4 min-w-[220px]">Problema Identificado</th>
-                  <th className="py-3 px-4 min-w-[200px]">Sugestão de Correção</th>
-                  <th className="py-3 px-4 w-[130px] text-right">Ação</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {filteredDivergences.map((div) => {
-                  const canAct =
-                    div.category === 'recebimento_acima_demanda' ||
-                    div.category === 'solicitacao_fantasma_op_encerrada' ||
-                    div.category === 'saldo_estoque_incoerente'
+          ) : filteredDivergences.length === 0 ? (
+            <Card className="border-emerald-200 bg-emerald-50/50 dark:bg-emerald-950/20 dark:border-emerald-900">
+              <CardContent className="flex flex-col items-center justify-center py-12 text-center gap-3">
+                <div className="p-3 bg-emerald-100 dark:bg-emerald-900/50 rounded-full text-emerald-600 dark:text-emerald-400">
+                  <ShieldCheck className="size-8" />
+                </div>
+                <div className="max-w-md">
+                  <h3 className="text-base font-semibold text-emerald-900 dark:text-emerald-100">
+                    Nenhuma divergência encontrada!
+                  </h3>
+                  <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-1">
+                    Todas as regras de integridade foram atendidas perfeitamente. Saldo de estoque,
+                    demandas de OPs, recebimentos e códigos estão íntegros e auditados.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="border rounded-lg overflow-hidden bg-white dark:bg-slate-900 shadow-xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 text-xs font-semibold border-b">
+                    <tr>
+                      <th className="py-3 px-4 w-[110px]">Gravidade</th>
+                      <th className="py-3 px-4 w-[130px]">Código / Item</th>
+                      <th className="py-3 px-4 min-w-[180px] max-w-[240px]">Descrição</th>
+                      <th className="py-3 px-4 w-[130px]">OP / Pedido</th>
+                      <th className="py-3 px-4 min-w-[220px]">Problema Identificado</th>
+                      <th className="py-3 px-4 min-w-[200px]">Sugestão de Correção</th>
+                      <th className="py-3 px-4 w-[130px] text-right">Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {filteredDivergences.map((div) => {
+                      const canAct =
+                        div.category === 'recebimento_acima_demanda' ||
+                        div.category === 'solicitacao_fantasma_op_encerrada' ||
+                        div.category === 'saldo_estoque_incoerente'
 
-                  return (
-                    <tr
-                      key={div.id}
-                      onClick={() => {
-                        setSelectedDivergenceForDetail(div)
-                        setDetailModalOpen(true)
-                      }}
-                      className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 cursor-pointer transition-colors"
-                      title="Clique para ver os detalhes completos desta divergência"
-                    >
-                      <td
-                        className="py-3.5 px-4 whitespace-nowrap"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {getSeverityBadge(div.severity)}
-                      </td>
-                      <td className="py-3.5 px-4 whitespace-nowrap font-mono text-xs font-bold text-slate-900 dark:text-slate-100 notranslate">
-                        <NoTranslate text={div.code || 'S/ Código'} />
-                        {div.batch_id && (
-                          <div className="flex items-center gap-1 text-[10px] text-indigo-600 dark:text-indigo-400 font-sans font-semibold mt-0.5">
-                            <Layers className="size-2.5" /> Lote
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-3.5 px-4 max-w-[240px] text-xs text-slate-700 dark:text-slate-300 notranslate">
-                        <div className="line-clamp-2 font-medium">
-                          <NoTranslate text={div.description || '—'} />
-                        </div>
-                        {div.record_status && (
-                          <span className="text-[10px] text-slate-500 font-normal mt-0.5 block">
-                            Status: {div.record_status}
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-3.5 px-4 whitespace-nowrap text-xs">
-                        {div.op_number ? (
-                          <div>
-                            <Badge variant="outline" className="font-semibold text-xs py-0">
-                              OP {div.op_number}
-                            </Badge>
-                            {div.order_number && (
-                              <span className="text-[10px] text-slate-500 block mt-0.5">
-                                Ped. {div.order_number}
+                      return (
+                        <tr
+                          key={div.id}
+                          onClick={() => {
+                            setSelectedDivergenceForDetail(div)
+                            setDetailModalOpen(true)
+                          }}
+                          className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 cursor-pointer transition-colors"
+                          title="Clique para ver os detalhes completos desta divergência"
+                        >
+                          <td
+                            className="py-3.5 px-4 whitespace-nowrap"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {getSeverityBadge(div.severity)}
+                          </td>
+                          <td className="py-3.5 px-4 whitespace-nowrap font-mono text-xs font-bold text-slate-900 dark:text-slate-100 notranslate">
+                            <NoTranslate text={div.code || 'S/ Código'} />
+                            {div.batch_id && (
+                              <div className="flex items-center gap-1 text-[10px] text-indigo-600 dark:text-indigo-400 font-sans font-semibold mt-0.5">
+                                <Layers className="size-2.5" /> Lote
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4 max-w-[240px] text-xs text-slate-700 dark:text-slate-300 notranslate">
+                            <div className="line-clamp-2 font-medium">
+                              <NoTranslate text={div.description || '—'} />
+                            </div>
+                            {div.record_status && (
+                              <span className="text-[10px] text-slate-500 font-normal mt-0.5 block">
+                                Status: {div.record_status}
                               </span>
                             )}
-                          </div>
-                        ) : (
-                          <span className="text-xs text-slate-400">—</span>
-                        )}
-                      </td>
-                      <td className="py-3.5 px-4 text-xs font-medium text-red-700 dark:text-red-400 max-w-sm">
-                        {div.problem}
-                      </td>
-                      <td className="py-3.5 px-4 text-xs text-slate-600 dark:text-slate-400 max-w-sm bg-slate-50/50 dark:bg-slate-800/30">
-                        {div.suggestion}
-                      </td>
-                      <td
-                        className="py-3.5 px-4 whitespace-nowrap text-right text-xs"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {canAct ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setSelectedDivergenceForAction(div)
-                              setFixModalOpen(true)
-                            }}
-                            className="h-7 text-xs gap-1 font-semibold border-blue-200 text-blue-700 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-300 dark:hover:bg-blue-950/40"
+                          </td>
+                          <td className="py-3.5 px-4 whitespace-nowrap text-xs">
+                            {div.op_number ? (
+                              <div>
+                                <Badge variant="outline" className="font-semibold text-xs py-0">
+                                  OP {div.op_number}
+                                </Badge>
+                                {div.order_number && (
+                                  <span className="text-[10px] text-slate-500 block mt-0.5">
+                                    Ped. {div.order_number}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-slate-400">—</span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4 text-xs font-medium text-red-700 dark:text-red-400 max-w-sm">
+                            {div.problem}
+                          </td>
+                          <td className="py-3.5 px-4 text-xs text-slate-600 dark:text-slate-400 max-w-sm bg-slate-50/50 dark:bg-slate-800/30">
+                            {div.suggestion}
+                          </td>
+                          <td
+                            className="py-3.5 px-4 whitespace-nowrap text-right text-xs"
+                            onClick={(e) => e.stopPropagation()}
                           >
-                            {div.category === 'recebimento_acima_demanda' && (
-                              <>
-                                <PackagePlus className="size-3" />
-                                Corrigir
-                              </>
+                            {canAct ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedDivergenceForAction(div)
+                                  setFixModalOpen(true)
+                                }}
+                                className="h-7 text-xs gap-1 font-semibold border-blue-200 text-blue-700 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-300 dark:hover:bg-blue-950/40"
+                              >
+                                {div.category === 'recebimento_acima_demanda' && (
+                                  <>
+                                    <PackagePlus className="size-3" />
+                                    Corrigir
+                                  </>
+                                )}
+                                {div.category === 'solicitacao_fantasma_op_encerrada' && (
+                                  <>
+                                    <XCircle className="size-3 text-red-600" />
+                                    Cancelar
+                                  </>
+                                )}
+                                {div.category === 'saldo_estoque_incoerente' && (
+                                  <>
+                                    <Sliders className="size-3" />
+                                    Alinhar
+                                  </>
+                                )}
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedDivergenceForDetail(div)
+                                  setDetailModalOpen(true)
+                                }}
+                                className="h-7 text-xs gap-1 text-slate-500 hover:text-slate-800"
+                                title="Ver Detalhes"
+                              >
+                                <Eye className="size-3" /> Detalhes
+                              </Button>
                             )}
-                            {div.category === 'solicitacao_fantasma_op_encerrada' && (
-                              <>
-                                <XCircle className="size-3 text-red-600" />
-                                Cancelar
-                              </>
-                            )}
-                            {div.category === 'saldo_estoque_incoerente' && (
-                              <>
-                                <Sliders className="size-3" />
-                                Alinhar
-                              </>
-                            )}
-                          </Button>
-                        ) : (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setSelectedDivergenceForDetail(div)
-                              setDetailModalOpen(true)
-                            }}
-                            className="h-7 text-xs gap-1 text-slate-500 hover:text-slate-800"
-                            title="Ver Detalhes"
-                          >
-                            <Eye className="size-3" /> Detalhes
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
 
       {/* DIÁLOGO: ENCERRAR SALDO RESIDUAL (ETAPA 5 PARTE 2) */}
       <CloseResidualDialog

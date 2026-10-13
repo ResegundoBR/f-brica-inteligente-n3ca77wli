@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import {
-  generateSeparationBomAudit,
   TARGET_SEPARATIONS,
+  runSeparationBomAudit,
   type SeparationAuditReport,
   type SeparationAuditItem,
   type AuditClassification,
@@ -65,85 +65,55 @@ export function SeparationBomAuditPanel() {
     separationTitle?: string
   } | null>(null)
 
-  const loadAuditData = async () => {
+  const loadAuditData = useCallback(async () => {
     setLoading(true)
     try {
-      const idsToFetch =
-        selectedSepId === 'all' ? TARGET_SEPARATIONS.map((s) => s.id) : [selectedSepId]
-      const results = await generateSeparationBomAudit(idsToFetch)
+      const results = await Promise.all(
+        TARGET_SEPARATIONS.map((sep) => runSeparationBomAudit(sep.id)),
+      )
       setReports(results)
-    } catch (err: unknown) {
-      console.error('Erro ao gerar auditoria de BOM:', err)
+    } catch (err: any) {
+      console.error('Erro ao executar auditoria BOM:', err)
       toast({
-        title: 'Erro ao gerar relatório',
-        description: 'Não foi possível carregar os dados das separações.',
+        title: 'Erro ao carregar auditoria BOM',
+        description:
+          err.message || 'Falha ao processar a auditoria das separações. Tente novamente.',
         variant: 'destructive',
       })
     } finally {
       setLoading(false)
     }
-  }
+  }, [toast])
 
   useEffect(() => {
     loadAuditData()
-  }, [selectedSepId])
+  }, [loadAuditData])
 
-  const toggleExpand = (key: string) => {
+  const toggleExpand = (rowKey: string) => {
     setExpandedRowKeys((prev) => {
       const next = new Set(prev)
-      if (next.has(key)) {
-        next.delete(key)
+      if (next.has(rowKey)) {
+        next.delete(rowKey)
       } else {
-        next.add(key)
+        next.add(rowKey)
       }
       return next
     })
   }
 
-  // Estatísticas agregadas de todos os relatórios carregados
-  const aggregatedStats = useMemo(() => {
-    let totalItems = 0
-    let faltaEscondida = 0
-    let faltaAMenor = 0
-    let separadoAMenor = 0
-    let ok = 0
-
-    for (const r of reports) {
-      totalItems += r.totals.totalItems
-      faltaEscondida += r.totals.faltaEscondidaCount
-      faltaAMenor += r.totals.faltaAMenorCount
-      separadoAMenor += r.totals.separadoAMenorCount
-      ok += r.totals.okCount
+  // Filtragem dos relatórios
+  const displayedReports = useMemo(() => {
+    if (selectedSepId === 'all') {
+      return reports
     }
-
-    return { totalItems, faltaEscondida, faltaAMenor, separadoAMenor, ok }
-  }, [reports])
-
-  // Contagem global de itens selecionados para o Hub em todas as separações
-  const totalSelectedCount = useMemo(() => {
-    let count = 0
-    for (const report of filteredReports) {
-      for (const item of report.filteredItems) {
-        const key = `${report.separationId}:::${item.code}:::${item.sector}`
-        if (
-          selectedRowKeys.has(key) &&
-          (item.classification === 'FALTA ESCONDIDA' ||
-            item.classification === 'SEPARADO A MENOR') &&
-          item.difference > 0 &&
-          !item.sentToHubAt
-        ) {
-          count++
-        }
-      }
-    }
-    return count
-  }, [filteredReports, selectedRowKeys])
+    return reports.filter((r) => r.separationId === selectedSepId)
+  }, [reports, selectedSepId])
 
   // Filtragem dos itens de cada relatório
   const filteredReports = useMemo(() => {
     const term = searchTerm.toLowerCase().trim()
 
-    const processed = reports.map((report) => {
+    const processed = displayedReports.map((report) => {
       const filtered = report.items.filter((item) => {
         // Busca
         const matchesTerm =
@@ -199,9 +169,9 @@ export function SeparationBomAuditPanel() {
     })
 
     return processed
-  }, [reports, searchTerm, classificationFilter, sectorFilter])
+  }, [displayedReports, searchTerm, classificationFilter, sectorFilter])
 
-  // Recalcular totais consolidados para a barra global
+  // Estatísticas agregadas de todos os relatórios carregados
   const aggregatedStats = useMemo(() => {
     let totalItems = 0
     let faltaEscondida = 0
@@ -220,25 +190,28 @@ export function SeparationBomAuditPanel() {
     return { totalItems, faltaEscondida, faltaAMenor, separadoAMenor, ok }
   }, [reports])
 
+  // Itens elegíveis para "Enviar ao Hub" (FALTA ESCONDIDA ou SEPARADO A MENOR com diferença > 0 e que ainda não foram enviados)
+  const isEligibleForHub = useCallback((item: SeparationAuditItem) => {
+    return (
+      (item.classification === 'FALTA ESCONDIDA' || item.classification === 'SEPARADO A MENOR') &&
+      item.difference > 0 &&
+      !item.sentToHubAt
+    )
+  }, [])
+
   // Contagem global de itens selecionados para o Hub em todas as separações
   const totalSelectedCount = useMemo(() => {
     let count = 0
     for (const report of filteredReports) {
       for (const item of report.filteredItems) {
         const key = `${report.separationId}:::${item.code}:::${item.sector}`
-        if (
-          selectedRowKeys.has(key) &&
-          (item.classification === 'FALTA ESCONDIDA' ||
-            item.classification === 'SEPARADO A MENOR') &&
-          item.difference > 0 &&
-          !item.sentToHubAt
-        ) {
+        if (selectedRowKeys.has(key) && isEligibleForHub(item)) {
           count++
         }
       }
     }
     return count
-  }, [filteredReports, selectedRowKeys])
+  }, [filteredReports, selectedRowKeys, isEligibleForHub])
 
   const formatQty = (val: number, unit?: string) => {
     const formatted = val.toLocaleString('pt-BR', {
@@ -308,15 +281,6 @@ export function SeparationBomAuditPanel() {
 
   const handlePrint = () => {
     window.print()
-  }
-
-  // Itens elegíveis para "Enviar ao Hub" (FALTA ESCONDIDA ou SEPARADO A MENOR com diferença > 0 e que ainda não foram enviados)
-  const isEligibleForHub = (item: SeparationAuditItem) => {
-    return (
-      (item.classification === 'FALTA ESCONDIDA' || item.classification === 'SEPARADO A MENOR') &&
-      item.difference > 0 &&
-      !item.sentToHubAt
-    )
   }
 
   // Toggle de seleção de uma linha individual
@@ -437,29 +401,17 @@ export function SeparationBomAuditPanel() {
 
             {/* Ações de exportação e Envio em Lote */}
             <div className="flex flex-wrap items-center gap-2 print:hidden">
-              {(() => {
-                let count = 0
-                for (const report of filteredReports) {
-                  for (const item of report.filteredItems) {
-                    const key = `${report.separationId}:::${item.code}:::${item.sector}`
-                    if (selectedRowKeys.has(key) && isEligibleForHub(item)) {
-                      count++
-                    }
-                  }
-                }
-                if (count === 0) return null
-                return (
-                  <Button
-                    size="sm"
-                    onClick={handleOpenSendBatch}
-                    className="gap-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs"
-                    title="Criar solicitações no Hub de Suprimentos para os itens selecionados"
-                  >
-                    <Send className="size-3.5" />
-                    Enviar ao Hub ({count})
-                  </Button>
-                )
-              })()}
+              {totalSelectedCount > 0 && (
+                <Button
+                  size="sm"
+                  onClick={handleOpenSendBatch}
+                  className="gap-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs"
+                  title="Criar solicitações no Hub de Suprimentos para os itens selecionados"
+                >
+                  <Send className="size-3.5" />
+                  Enviar ao Hub ({totalSelectedCount})
+                </Button>
+              )}
 
               <Button
                 variant="outline"
@@ -501,7 +453,6 @@ export function SeparationBomAuditPanel() {
           </div>
         </CardHeader>
       </Card>
-
       {/* Cards de Resumo Agregado */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 print:hidden">
         <Card className="border-l-4 border-l-slate-400">
@@ -564,7 +515,6 @@ export function SeparationBomAuditPanel() {
           </CardHeader>
         </Card>
       </div>
-
       {/* Barra de Filtros e Seletor de Separação */}
       <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-between print:hidden">
         {/* Seletor de Separação */}
@@ -640,7 +590,6 @@ export function SeparationBomAuditPanel() {
           </select>
         </div>
       </div>
-
       {/* Conteúdo do Relatório */}
       {loading ? (
         <div className="flex flex-col items-center justify-center p-16 text-slate-400 gap-3 border rounded-lg bg-white dark:bg-slate-900">
@@ -1073,7 +1022,6 @@ export function SeparationBomAuditPanel() {
           ))}
         </div>
       )}
-
       {/* Modal: Enviar ao Hub */}
       <SendToHubModal
         open={sendToHubModalOpen}
@@ -1081,10 +1029,9 @@ export function SeparationBomAuditPanel() {
         targetItems={sendToHubTargets}
         onSuccess={() => {
           setSelectedRowKeys(new Set())
-          loadAuditReports()
+          loadAuditData()
         }}
       />
-
       {/* Modal: Ajustar Quantidade (Falta a Menor) */}
       <AdjustShortageQuantityModal
         open={adjustModalOpen}
@@ -1093,9 +1040,9 @@ export function SeparationBomAuditPanel() {
         separationSeq={adjustTargetItem?.separationSeq}
         separationTitle={adjustTargetItem?.separationTitle}
         onSuccess={() => {
-          loadAuditReports()
+          loadAuditData()
         }}
-      />
+      />{' '}
     </div>
   )
 }

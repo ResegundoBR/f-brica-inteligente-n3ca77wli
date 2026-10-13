@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Sliders, CheckCircle2, AlertTriangle, Loader2, Info } from 'lucide-react'
+import { Sliders, CheckCircle2, Loader2, Info } from 'lucide-react'
 import { NoTranslate } from '@/components/NoTranslate'
 import { useToast } from '@/hooks/use-toast'
 import { useAuth } from '@/hooks/use-auth'
@@ -39,36 +39,31 @@ export function AdjustShortageQuantityModal({
   const { toast } = useToast()
   const { user } = useAuth()
   const [submitting, setSubmitting] = useState(false)
-
-  if (!item) return null
+  const [adjustedQty, setAdjustedQty] = useState<number>(0)
 
   // Identificar o registro existente prioritário de material_shortages
-  // Conforme o serviço de auditoria, temos item.existingShortages
   const existingShortage =
-    item.existingShortages && item.existingShortages.length > 0 ? item.existingShortages[0] : null
+    item?.existingShortages && item.existingShortages.length > 0 ? item.existingShortages[0] : null
 
-  // Cálculo da quantidade correta conforme instrução:
-  // "editar a quantidade para o valor correto (esperado − separado, somando à quantidade existente quando o registro já tem received_quantity, preservando o recebido)"
   const currentQuantity = existingShortage ? Number(existingShortage.quantity) || 0 : 0
   const currentReceived = existingShortage ? Number(existingShortage.received_quantity) || 0 : 0
-  const expectedMissing =
-    Math.round((item.expectedQuantity - item.separatedQuantity) * 10000) / 10000
+  const expectedMissing = item
+    ? Math.round((item.expectedQuantity - item.separatedQuantity) * 10000) / 10000
+    : 0
 
-  // Se o registro já tem received_quantity, o valor de 'quantity' precisa ser no mínimo received_quantity + a diferença faltante
-  // para que (quantity - received_quantity) cubra o que ainda falta comprar,
-  // ou simplesmente o esperado - separado total somando ao recebido se já tiver sido recebido parte.
-  // Regra clara do requisito: "(esperado − separado, somando à quantidade existente quando o registro já tem received_quantity, preservando o recebido)"
   const suggestedQuantity =
     currentReceived > 0
-      ? Math.max(expectedMissing, currentReceived + item.difference)
+      ? Math.max(expectedMissing, currentReceived + (item ? item.difference : 0))
       : expectedMissing
 
-  const [adjustedQty, setAdjustedQty] = useState<number>(suggestedQuantity)
-
   // Resetar ao abrir
-  React.useEffect(() => {
-    setAdjustedQty(suggestedQuantity)
+  useEffect(() => {
+    if (item) {
+      setAdjustedQty(suggestedQuantity)
+    }
   }, [item, suggestedQuantity])
+
+  if (!item) return null
 
   const handleConfirmAdjust = async () => {
     if (!existingShortage) {

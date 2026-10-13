@@ -132,7 +132,10 @@ cronAdd('suprimentos_integrity_verifier', '0 4 * * *', () => {
       )
     }
   } catch (err) {
-    console.error('[CRON] Erro no verificador:', String(err))
+    console.error(
+      '[CRON] Erro no cancelamento automático de solicitações de OPs encerradas:',
+      String(err),
+    )
   }
 })
 

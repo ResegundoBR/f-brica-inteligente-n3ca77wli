@@ -233,6 +233,9 @@ export default function DivergenciasPage() {
         </TabsContent>
 
         <TabsContent value="divergencias" className="mt-6 flex flex-col gap-6">
+          {/* PAINEL: COMPOSIÇÕES COM FRAÇÃO EM ITENS PC */}
+          <FractionalCompositionsPanel onDataChanged={loadIntegrityData} />
+
           {/* ETAPA 4: PAINEL DE UNIFICAÇÃO CADASTRAL */}
           <UnificacaoCadastralPanel onDataChanged={loadIntegrityData} />
 

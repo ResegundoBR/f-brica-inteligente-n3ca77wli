@@ -140,7 +140,8 @@ export function OpPdfReviewModal({
 
     initialRows.forEach((r) => {
       initSec[r.id] = normalizeSector(r.sector)
-      const isLinear = isLinearUnit(r.pdfItem?.unit || r.resolvedUnit)
+      const itemUnit = r.pdfItem?.unit || r.resolvedUnit || 'UN'
+      const isLinear = isLinearUnit(itemUnit)
       const autoMedida = isLinear
         ? r.pdfItem?.measurements ||
           (r.pdfItem?.description
@@ -152,7 +153,14 @@ export function OpPdfReviewModal({
       initMeas[r.id] = autoMedida
 
       const rawPdfQty = Number(r.pdfItem?.quantity ?? r.resolvedQuantity) || 1
-      const normalized = Math.round((rawPdfQty / opQtyVal) * 10000) / 10000
+      let normalized = Math.round((rawPdfQty / opQtyVal) * 10000) / 10000
+
+      // REGRA: em itens de unidade contável/peça (não-linear), divisão NÃO pode gerar fração na composição!
+      // Se resultar fração em item PC/UN, sugerir o inteiro mais próximo/superior para não fracionar peça
+      if (!isLinear && Math.floor(normalized) !== normalized) {
+        normalized = Math.ceil(normalized)
+      }
+
       initQty[r.id] = normalized
       initCats[r.id] = r.resolvedCategory || r.suggestedCategory || 'Outros'
     })
@@ -424,8 +432,13 @@ export function OpPdfReviewModal({
           rowMeasurements[row.id] !== undefined
             ? rowMeasurements[row.id]
             : row.resolvedMeasurements || row.pdfItem?.measurements || ''
-        const qtyVal =
+        let qtyVal =
           rowQuantities[row.id] !== undefined ? rowQuantities[row.id] : row.resolvedQuantity
+
+        // REGRA MANDATÓRIA: Em itens PC/peça, NUNCA gravar fração na composição do produto!
+        if (!isLinear && qtyVal > 0 && Math.floor(qtyVal) !== qtyVal) {
+          qtyVal = Math.ceil(qtyVal)
+        }
 
         if (row.status === 'divergent' && row.catalogItem) {
           const idx = updatedComp.findIndex((c) => c.id === row.catalogItem?.id)
@@ -949,8 +962,19 @@ export function OpPdfReviewModal({
                                   const val = parseFloat(e.target.value)
                                   handleQuantityChange(row.id, isNaN(val) ? 0 : Math.max(0, val))
                                 }}
-                                className="h-7 text-xs font-mono w-[85px] bg-white dark:bg-slate-900"
+                                className={cn(
+                                  'h-7 text-xs font-mono w-[85px] bg-white dark:bg-slate-900',
+                                  !isLinear &&
+                                    Math.floor(currentQty) !== currentQty &&
+                                    'border-amber-500 bg-amber-50/50 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200',
+                                )}
                               />
+                              {!isLinear && Math.floor(currentQty) !== currentQty && (
+                                <span className="text-[9px] text-amber-700 dark:text-amber-400 font-bold block leading-tight">
+                                  ⚠️ Fração em item {itemUnit}: será gravado {Math.ceil(currentQty)}{' '}
+                                  {itemUnit}
+                                </span>
+                              )}
                               <span className="text-[9px] text-muted-foreground font-mono">
                                 {opQty > 1 ? `${row.pdfItem.quantity} ÷ ${opQty}` : 'p/ 1 peça'}
                               </span>

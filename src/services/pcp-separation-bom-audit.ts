@@ -79,6 +79,59 @@ export const ACTIVE_SHORTAGE_STATUSES = [
   'Recebido_Parcial',
 ] as const
 
+// Unidades lineares legítimas com fração (cabos, barras, tubos, etc.)
+export function isLinearOrContinuousUnit(unitStr?: string): boolean {
+  const u = (unitStr || '').trim().toUpperCase()
+  return (
+    u === 'MT' ||
+    u === 'M' ||
+    u === 'MTR' ||
+    u === 'METRO' ||
+    u === 'METROS' ||
+    u === 'KG' ||
+    u === 'G' ||
+    u === 'L' ||
+    u === 'LT' ||
+    u === 'LITRO' ||
+    u === 'LITROS' ||
+    u === 'ML' ||
+    u === 'M2' ||
+    u === 'M²' ||
+    u === 'M3' ||
+    u === 'M³'
+  )
+}
+
+// Verifica se é estritamente peça / unidade contável que NUNCA pode ter fração (PC, UN, etc.)
+export function isPieceUnit(unitStr?: string): boolean {
+  const u = (unitStr || '').trim().toUpperCase()
+  if (!u) return false
+  if (isLinearOrContinuousUnit(u)) return false
+  return (
+    u === 'PC' ||
+    u === 'PÇ' ||
+    u === 'PECA' ||
+    u === 'PEÇA' ||
+    u === 'UN' ||
+    u === 'UND' ||
+    u === 'UNID' ||
+    u === 'UNIDADE' ||
+    u === 'CJ' ||
+    u === 'CONJ' ||
+    u === 'CONJUNTO' ||
+    u === 'PAR' ||
+    u === 'PARES' ||
+    u === 'KIT' ||
+    u === 'RL' ||
+    u === 'ROLO' ||
+    u === 'CX' ||
+    u === 'CAIXA' ||
+    u === 'PT' ||
+    u === 'PCT' ||
+    u === 'PACOTE'
+  )
+}
+
 /**
  * Normaliza o setor da composição ou do material para os 4 padrões do PCP.
  */
@@ -337,9 +390,40 @@ export async function generateSeparationBomAudit(
       const isConcluded = order.status === 'Concluído'
       const opQty = Number(order.quantity) || 1
 
-      if (isConcluded) {
-        // REGRA MANDATÓRIA: Para OPs CONCLUÍDAS, as linhas de pcp_order_materials NÃO foram reparadas
-        // (ficaram unitárias). O esperado DEVE ser recomputado da composição do produto (products.data.composition).
+      // REGRA DE AUDITORIA BOM:
+      // Priorizar SEMPRE a linha de pcp_order_materials quando ela existir para esta OP.
+      // Se não houver linha em pcp_order_materials para o item na OP, recomputar a partir
+      // da composição do produto (products.data.composition) × opQty.
+      // Ao recomputar por composição, quando a unidade for PC / contável (não linear),
+      // SEMPRE arredondar a quantidade para CIMA (Math.ceil) — nunca fracionar peça!
+      const opMats = orderMaterials.filter((m) => m.order_id === order.id)
+      const hasOpMats = opMats.length > 0
+
+      if (hasOpMats) {
+        // Priorizar as linhas reais registradas na OP
+        for (const m of opMats) {
+          const mCode = (m.code || '').trim()
+          if (!mCode || isFabricatedCode(mCode)) continue
+          let mQty = Number(m.quantity) || 0
+
+          // Se por resíduo anterior a linha de PC veio fracionária, arredonda para cima
+          const mUnit = m.unit || 'UN'
+          if (isPieceUnit(mUnit) && mQty > 0 && Math.floor(mQty) !== mQty) {
+            mQty = Math.ceil(mQty)
+          }
+
+          addExpectedDemand({
+            code: mCode,
+            description: m.description || '',
+            sector: m.sector || 'FABRICAÇÃO',
+            unit: mUnit,
+            qty: mQty,
+            order,
+            isConcluded,
+          })
+        }
+      } else {
+        // Se a OP não possui registros em pcp_order_materials, recomputar da composição do produto
         const product = order.expand?.product_id
         const rawComp = safeUnwrapJson<any[]>(product?.data?.composition) || []
         const composition = Array.isArray(rawComp) ? rawComp : []
@@ -348,53 +432,28 @@ export async function generateSeparationBomAudit(
           for (const c of composition) {
             const compCode = (c.code || '').trim()
             if (!compCode || isFabricatedCode(compCode)) continue
+            const compUnit = c.unit || 'UN'
             const compQtyPerUnit = Number(c.quantity) || 1
-            const expectedTotal = Math.round(compQtyPerUnit * opQty * 10000) / 10000
+
+            let expectedTotal = compQtyPerUnit * opQty
+            // Arredondar peças contáveis (PC, UN, etc.) SEMPRE para cima — nunca fracionar peça!
+            // Para unidades lineares (MT, KG, etc.), mantém a fração precisa de 4 casas
+            if (isPieceUnit(compUnit)) {
+              expectedTotal = Math.ceil(expectedTotal)
+            } else {
+              expectedTotal = Math.round(expectedTotal * 10000) / 10000
+            }
 
             addExpectedDemand({
               code: compCode,
               description: c.description || '',
               sector: c.etapa || 'FABRICAÇÃO',
-              unit: c.unit || 'UN',
+              unit: compUnit,
               qty: expectedTotal,
               order,
-              isConcluded: true,
+              isConcluded,
             })
           }
-        } else {
-          // Se o produto não tem composição registrada (ex: especial/manual),
-          // fallback para materiais da OP
-          const opMats = orderMaterials.filter((m) => m.order_id === order.id)
-          for (const m of opMats) {
-            const mQty = Number(m.quantity) || 0
-            addExpectedDemand({
-              code: m.code,
-              description: m.description,
-              sector: m.sector,
-              unit: m.unit,
-              qty: mQty,
-              order,
-              isConcluded: true,
-            })
-          }
-        }
-      } else {
-        // OP NÃO CONCLUÍDA: pcp_order_materials já foi reparado e pode ser lido direto!
-        const opMats = orderMaterials.filter((m) => m.order_id === order.id)
-        for (const m of opMats) {
-          const mCode = (m.code || '').trim()
-          if (!mCode || isFabricatedCode(mCode)) continue
-          const mQty = Number(m.quantity) || 0
-
-          addExpectedDemand({
-            code: mCode,
-            description: m.description || '',
-            sector: m.sector || 'FABRICAÇÃO',
-            unit: m.unit || 'UN',
-            qty: mQty,
-            order,
-            isConcluded: false,
-          })
         }
       }
     }

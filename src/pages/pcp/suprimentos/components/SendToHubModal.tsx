@@ -147,10 +147,25 @@ export function SendToHubModal({
                 ? (op.itemQuantity || 0) / totalInvolvedDemand
                 : 1 / item.involvedOps.length
 
-            let opDiff = Math.round(item.difference * ratio * 10000) / 10000
-            if (isLast) {
-              // Ajusta arredondamento na última parcela para fechar exatamente a diferença total
-              opDiff = Math.round((item.difference - allocatedDiffAcc) * 10000) / 10000
+            let opDiff: number
+            const unitUpper = (item.unit || '').trim().toUpperCase()
+            const isPiece =
+              unitUpper === 'PC' ||
+              unitUpper === 'PÇ' ||
+              unitUpper === 'PECA' ||
+              unitUpper === 'PEÇA' ||
+              unitUpper === 'UN' ||
+              unitUpper === 'UND'
+
+            if (isPiece) {
+              // Em itens de unidade PC/UN, cada OP recebe quantidade inteira arredondada para cima
+              opDiff = Math.ceil(item.difference * ratio)
+            } else {
+              opDiff = Math.round(item.difference * ratio * 10000) / 10000
+              if (isLast) {
+                // Ajusta arredondamento na última parcela para fechar exatamente a diferença total em unidades fracionárias
+                opDiff = Math.round((item.difference - allocatedDiffAcc) * 10000) / 10000
+              }
             }
             allocatedDiffAcc += opDiff
 

@@ -32,45 +32,59 @@ const FIELD_LABELS_PT: Record<string, string> = {
   expected_date: 'Previsão de Entrega',
   supplier: 'Fornecedor',
   supplier_id: 'Fornecedor',
-  payment_terms: 'Condição de Pagamento',
-  delivery_type: 'Tipo de Frete/Entrega',
-  delivery_terms: 'Prazo de Entrega',
   oc_number: 'Número da OC',
-  total: 'Valor Total',
-  observations: 'Observações',
+  total: 'Total',
+  status: 'Status',
+  payment_terms: 'Condições de Pagamento',
+  delivery_type: 'Tipo de Entrega',
+  quantity: 'Quantidade',
+  unit_price: 'Preço Unitário',
+  code: 'Código',
+  description: 'Descrição',
 }
 
-const ERROR_TRANSLATIONS_PT: Record<string, string> = {
-  validation_invalid_date: 'Data inválida',
+const ERROR_CODES_PT: Record<string, string> = {
   validation_required: 'Obrigatório',
-  validation_not_unique: 'Já cadastrado / duplicado',
+  validation_invalid_date: 'Data inválida',
+  validation_not_unique: 'Já existe um registro com este valor',
+  validation_min_target: 'Valor abaixo do mínimo permitido',
+  validation_max_target: 'Valor acima do máximo permitido',
 }
 
-export function formatDetailedErrorMessage(error: unknown, fallbackHeader?: string): string {
-  const errObj = error as any
-  const data =
-    errObj?.response?.data || (error instanceof ClientResponseError ? error.response?.data : null)
+export function formatDetailedErrorMessage(error: unknown, fallbackMessage?: string): string {
+  if (!error || typeof error !== 'object') {
+    return fallbackMessage || 'Erro desconhecido.'
+  }
 
-  if (data && typeof data === 'object' && Object.keys(data).length > 0) {
-    const details: string[] = []
-    for (const [field, detail] of Object.entries(data)) {
-      const fieldLabel = FIELD_LABELS_PT[field] || field
-      let msg = ''
-      if (detail && typeof detail === 'object') {
-        const d = detail as any
-        msg = ERROR_TRANSLATIONS_PT[d.code] || d.message || 'Inválido'
-      } else if (typeof detail === 'string') {
-        msg = detail
-      }
-      if (msg) {
-        details.push(`${fieldLabel}: ${msg}`)
-      }
-    }
-    if (details.length > 0) {
-      const header = fallbackHeader ? `${fallbackHeader} - ` : ''
-      return `${header}${details.join(', ')}`
+  const errObj = error as {
+    message?: string
+    response?: {
+      message?: string
+      data?: Record<string, { code?: string; message?: string }>
     }
   }
 
-  return getErrorMessage(error)
+  const data = errObj.response?.data
+  if (data && typeof data === 'object') {
+    const parts: string[] = []
+    for (const [field, detail] of Object.entries(data)) {
+      if (detail && typeof detail === 'object') {
+        const label = FIELD_LABELS_PT[field] || field
+        let msg =
+          detail.code && ERROR_CODES_PT[detail.code]
+            ? ERROR_CODES_PT[detail.code]
+            : detail.message || 'Inválido'
+        if (msg === 'Value cannot be blank.') msg = 'Obrigatório'
+        if (msg === 'Must be a valid datetime.') msg = 'Data inválida'
+        parts.push(`${label}: ${msg}`)
+      }
+    }
+    if (parts.length > 0) {
+      return parts.join(' | ')
+    }
+  }
+
+  if (errObj.response?.message) return errObj.response.message
+  if (errObj.message) return errObj.message
+  return fallbackMessage || 'Erro inesperado ao processar solicitação.'
 }

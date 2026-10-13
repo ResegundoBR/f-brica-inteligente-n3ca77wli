@@ -123,6 +123,114 @@ cronAdd('suprimentos_integrity_verifier', '0 4 * * *', () => {
         )
       }
     }
+    var todayDate = new Date()
+    var day = String(todayDate.getDate()).padStart(2, '0')
+    var month = String(todayDate.getMonth() + 1).padStart(2, '0')
+    var dateFormatted = day + '/' + month
+
+    var openShortages = $app.findRecordsByFilter(
+      'material_shortages',
+      '(status = "Pendente" || status = "Cotação" || status = "Compra") && order_id != ""',
+      'created',
+      1000,
+      0,
+    )
+
+    for (var i = 0; i < openShortages.length; i++) {
+      var shortage = openShortages[i]
+      var orderId = shortage.getString('order_id')
+      if (!orderId) continue
+
+      var order = null
+      try {
+        order = $app.findRecordById('pcp_orders', orderId)
+      } catch (_) {
+        continue
+      }
+
+      if (!order) continue
+      var opStatus = order.getString('status')
+      var isOpClosed =
+        opStatus === 'Concluído' || opStatus === 'Cancelada' || opStatus === 'Cancelado'
+      if (!isOpClosed) continue
+
+      var opNum = order.getString('op_number') || order.getString('order_number') || orderId
+      var batchId = (shortage.getString('batch_id') || '').trim()
+      var itemQty = Number(shortage.getFloat('quantity')) || 0
+      var itemCode = shortage.getString('code') || 'S/ Código'
+
+      var hasLivingBatchMates = false
+      if (batchId) {
+        try {
+          var batchMates = $app.findRecordsByFilter(
+            'material_shortages',
+            'batch_id = "' +
+              batchId.replace(/"/g, '""') +
+              '" && id != "' +
+              shortage.id +
+              '" && (status = "Pendente" || status = "Cotação" || status = "Compra")',
+            '',
+            100,
+            0,
+          )
+          for (var b = 0; b < batchMates.length; b++) {
+            var mateOrderId = batchMates[b].getString('order_id')
+            if (mateOrderId) {
+              try {
+                var mateOrder = $app.findRecordById('pcp_orders', mateOrderId)
+                var mateStatus = mateOrder.getString('status')
+                if (
+                  mateStatus !== 'Concluído' &&
+                  mateStatus !== 'Cancelada' &&
+                  mateStatus !== 'Cancelado'
+                ) {
+                  hasLivingBatchMates = true
+                  break
+                }
+              } catch (_) {}
+            } else {
+              hasLivingBatchMates = true
+              break
+            }
+          }
+        } catch (_) {}
+      }
+
+      var auditNote =
+        'Cancelada automaticamente: OP ' +
+        opNum +
+        ' encerrada em ' +
+        dateFormatted +
+        ' (item: ' +
+        itemCode +
+        ', qtde: ' +
+        itemQty +
+        ' un)'
+      var currentObs = shortage.getString('observation') || ''
+      var finalObs = currentObs ? currentObs + ' | ' + auditNote : auditNote
+
+      if (hasLivingBatchMates) {
+        shortage.set('batch_id', '')
+        shortage.set('status', 'Cancelado')
+        shortage.set(
+          'observation',
+          finalObs + ' [Removido do lote ' + batchId + ' - demais membros de OPs ativas mantidos]',
+        )
+      } else {
+        shortage.set('status', 'Cancelado')
+        shortage.set('observation', finalObs)
+      }
+
+      try {
+        $app.save(shortage)
+        countCancelled++
+      } catch (saveErr) {
+        console.error(
+          '[AUTO_CANCEL] Erro ao cancelar shortage ' + shortage.id + ':',
+          String(saveErr),
+        )
+      }
+    }
 
     if (countCancelled > 0) {
       console.log(
@@ -234,9 +342,6 @@ routerAdd(
             var effectiveDemand = totalDemand
             var hasBom = opMaterials.length > 0
 
-            // Ponto cego 2(b): quando a OP não tiver linha de BOM do código,
-            // comparar com a quantidade original registrada na observação de auditoria
-            // 'Qtde ajustada de X para Y' e sinalizar se recebido > X
             if (!hasBom) {
               var obsText = s.getString('observation') || ''
               var matchAdjust = obsText.match(
@@ -255,7 +360,6 @@ routerAdd(
               var batchInfo = getBatchDetails(s)
               var surplusQty = Math.round((receivedQty - effectiveDemand) * 10000) / 10000
 
-              // Verificar se o recebimento deste registro já foi lançado integralmente no estoque
               var alreadyInInventory = false
               try {
                 var checkMovs = $app.findRecordsByFilter(
@@ -335,8 +439,6 @@ routerAdd(
 
       // -------------------------------------------------------------------------
       // REGRA 2: Saldo de cada inventário = soma dos movimentos (balance_after coerente)
-      // Ponto cego 2(a): validar itens de inventário SEM nenhum movimento
-      // (saldo cadastrado sem histórico = divergência informativa / baixa)
       // -------------------------------------------------------------------------
       try {
         var allInventory = $app.findRecordsByFilter('inventory', '1=1', 'code', 1000, 0)
@@ -356,7 +458,6 @@ routerAdd(
           )
 
           if (movs.length === 0) {
-            // Ponto cego 2(a): Item com saldo diferente de zero ou sem histórico
             if (Math.abs(invQty) > 0.001) {
               divergences.push({
                 id: 'div_inv_no_movs_' + invId,
@@ -541,7 +642,6 @@ routerAdd(
               }
             } catch (_) {}
           } else {
-            // Registro avulso (sem OP vinculada)
             if (openItem.getString('status') === 'Compra') {
               var ocItens = $app.findRecordsByFilter(
                 'ordem_compra_itens',
@@ -585,7 +685,7 @@ routerAdd(
       }
 
       // -------------------------------------------------------------------------
-      // REGRA 4: Códigos com caracteres inválidos (letras minúsculas 'l', 'o', espaços, etc.)
+      // REGRA 4: Códigos com caracteres inválidos
       // -------------------------------------------------------------------------
       try {
         var allShortages = $app.findRecordsByFilter(
@@ -664,7 +764,7 @@ routerAdd(
       }
 
       // -------------------------------------------------------------------------
-      // REGRA 5: Descrições de estoque ou componentes poluídas com '(OPs: ...)'
+      // REGRA 5: Descrições de estoque ou componentes poluídas
       // -------------------------------------------------------------------------
       try {
         var pollutedInv = $app.findRecordsByFilter(
@@ -702,8 +802,7 @@ routerAdd(
       }
 
       // -------------------------------------------------------------------------
-      // REGRA 6 (NOVA): Conferir ordem_compra_itens contra as compras reais
-      // (quantidade/preço do item × registro de solicitação vinculado; itens órfãos de OC inexistente)
+      // REGRA 6: Itens de ordem de compra
       // -------------------------------------------------------------------------
       try {
         var allOcItens = $app.findRecordsByFilter('ordem_compra_itens', '1=1', 'created', 1000, 0)
@@ -717,7 +816,6 @@ routerAdd(
           var ocItemQty = Number(ocItem.getFloat('quantity')) || 0
           var ocItemPrice = Number(ocItem.getFloat('unit_price')) || 0
 
-          // 1. Item órfão: oc_id inexistente na tabela ordens_de_compra
           var ocRecord = null
           if (ocId) {
             try {
@@ -759,7 +857,6 @@ routerAdd(
 
           var ocNumber = ocRecord.getString('oc_number') || ocRecord.id
 
-          // 2. Conferir item contra a solicitação vinculada (material_shortage_id)
           if (shortageId) {
             var shortageRec = null
             try {

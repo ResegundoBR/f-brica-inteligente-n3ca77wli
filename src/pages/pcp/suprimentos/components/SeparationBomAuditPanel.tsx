@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import {
   TARGET_SEPARATIONS,
-  runSeparationBomAudit,
+  generateSeparationBomAudit,
   type SeparationAuditReport,
   type SeparationAuditItem,
   type AuditClassification,
@@ -68,9 +68,7 @@ export function SeparationBomAuditPanel() {
   const loadAuditData = useCallback(async () => {
     setLoading(true)
     try {
-      const results = await Promise.all(
-        TARGET_SEPARATIONS.map((sep) => runSeparationBomAudit(sep.id)),
-      )
+      const results = await generateSeparationBomAudit(TARGET_SEPARATIONS.map((sep) => sep.id))
       setReports(results)
     } catch (err: any) {
       console.error('Erro ao executar auditoria BOM:', err)

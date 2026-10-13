@@ -344,14 +344,17 @@ export function OpPdfReviewModal({
           rowMeasurements[r.id] !== undefined
             ? rowMeasurements[r.id]
             : r.resolvedMeasurements || r.pdfItem?.measurements || ''
-        const qtyVal = rowQuantities[r.id] !== undefined ? rowQuantities[r.id] : r.resolvedQuantity
+        const perUnitQty =
+          rowQuantities[r.id] !== undefined ? rowQuantities[r.id] : r.resolvedQuantity
         const catVal = rowCategories[r.id] || r.resolvedCategory || r.suggestedCategory || 'Outros'
+        const opQty = Number(editableHeader.quantity) > 0 ? Number(editableHeader.quantity) : 1
+        const totalQtyForOp = Math.round(perUnitQty * opQty * 10000) / 10000
 
         return {
           sector: sectorVal,
           code: r.resolvedCode || '',
           description: r.resolvedDescription,
-          quantity: qtyVal,
+          quantity: totalQtyForOp,
           unit: itemUnit,
           measurements: measVal,
           category: catVal,

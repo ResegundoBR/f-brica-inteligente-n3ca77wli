@@ -38,10 +38,10 @@ import { useAuth } from '@/hooks/use-auth'
 import { useIsMobile } from '@/hooks/use-mobile'
 import {
   getOrderMaterials,
-  updateOrderMaterialStatus,
   createOrderMaterialsBatch,
-} from '@/services/pcp-order-materials'
-import { upsertMaterialShortage } from '@/services/material-shortages'
+  updateOrderMaterialStatus,
+  buildOrderMaterialsFromComposition,
+} from '@/services/pcp-order-materials'import { upsertMaterialShortage } from '@/services/material-shortages'
 import { createMovement } from '@/services/inventory'
 import {
   searchUnifiedComponentsWithStock,
@@ -130,25 +130,10 @@ export function SeparationMaterialsModal({
           const prod = await pb.collection('products').getOne<Product>(op.product_id)
           const comp = prod.data?.composition || []
           if (comp.length > 0) {
-            const initialInputs = comp.map((c) => {
-              let sec: PcpOrderMaterialSector = 'FABRICAÇÃO'
-              const etapa = (c.etapa || '').toUpperCase()
-              if (etapa.includes('PREPAR') || etapa.includes('ACABAM')) sec = 'PREPARAÇÃO'
-              else if (etapa.includes('MONTAG')) sec = 'MONTAGEM'
-              else if (etapa.includes('EXPED') || etapa.includes('EMBAL')) sec = 'EXPEDIÇÃO'
-
-              const opQty = Number(op.quantity) || 1
-              const compQty = Number(c.quantity) || 1
-              return {
-                order_id: op.id,
-                sector: sec,
-                code: c.code || '',
-                description: c.description,
-                quantity: compQty * opQty,
-                unit: 'UN',
-                measurements: c.measurements || '',
-                status: 'Pendente' as const,
-              }
+            const initialInputs = buildOrderMaterialsFromComposition({
+              orderId: op.id,
+              orderQuantity: Number(op.quantity) || 1,
+              composition: comp,
             })
             list = await createOrderMaterialsBatch(initialInputs)
           }

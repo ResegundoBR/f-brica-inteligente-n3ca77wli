@@ -66,3 +66,80 @@ export const deleteOrderMaterialsByOrder = async (orderId: string): Promise<void
     await pb.collection('pcp_order_materials').delete(item.id)
   }
 }
+
+/**
+ * Mapeia e escala itens da composição do catálogo de produto para linhas de pcp_order_materials
+ * aplicando estritamente: quantity = per_unit_quantity * op_quantity.
+ */
+export function buildOrderMaterialsFromComposition(params: {
+  orderId: string
+  orderQuantity: number
+  composition: Array<{
+    code?: string
+    description?: string
+    quantity?: number | string
+    unit?: string
+    measurements?: string
+    etapa?: string
+  }>
+}): CreatePcpOrderMaterialInput[] {
+  const { orderId, orderQuantity, composition } = params
+  const opQty = Number(orderQuantity) > 0 ? Number(orderQuantity) : 1
+
+  return (composition || []).map((c) => {
+    let sec: PcpOrderMaterialSector = 'FABRICAÇÃO'
+    const etapa = (c.etapa || '').toUpperCase()
+    if (etapa.includes('PREPAR') || etapa.includes('ACABAM')) sec = 'PREPARAÇÃO'
+    else if (etapa.includes('MONTAG')) sec = 'MONTAGEM'
+    else if (etapa.includes('EXPED') || etapa.includes('EMBAL')) sec = 'EXPEDIÇÃO'
+
+    const compQty = Number(c.quantity) || 1
+    const totalQty = Math.round(compQty * opQty * 10000) / 10000
+
+    return {
+      order_id: orderId,
+      sector: sec,
+      code: c.code || '',
+      description: c.description || '',
+      quantity: totalQty,
+      unit: c.unit || 'UN',
+      measurements: c.measurements || '',
+      status: 'Pendente',
+    }
+  })
+}
+
+/**
+ * Escala itens revisados do modal de PDF aplicando:
+ * quantity = per_unit_quantity * op_quantity.
+ */
+export function scaleReviewedPdfMaterialsForOp(params: {
+  orderId: string
+  orderQuantity: number
+  reviewedMaterials: Array<{
+    sector: PcpOrderMaterialSector
+    code?: string
+    description: string
+    quantity: number
+    unit?: string
+    measurements?: string
+    category?: string
+  }>
+}): CreatePcpOrderMaterialInput[] {
+  const { orderId, orderQuantity, reviewedMaterials } = params
+  const opQty = Number(orderQuantity) > 0 ? Number(orderQuantity) : 1
+
+  return (reviewedMaterials || []).map((m) => {
+    const totalQty = Math.round(Number(m.quantity || 0) * opQty * 10000) / 10000
+    return {
+      order_id: orderId,
+      sector: m.sector,
+      code: m.code || '',
+      description: m.description,
+      quantity: totalQty,
+      unit: m.unit,
+      measurements: m.measurements,
+      status: 'Pendente',
+    }
+  })
+}

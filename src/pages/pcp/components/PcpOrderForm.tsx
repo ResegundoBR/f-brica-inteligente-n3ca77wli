@@ -50,6 +50,7 @@ import { OpPdfReviewModal } from './OpPdfReviewModal'
 import {
   createOrderMaterialsBatch,
   deleteOrderMaterialsByOrder,
+  buildOrderMaterialsFromComposition,
 } from '@/services/pcp-order-materials'
 import type { PcpOrderMaterialSector } from '@/types'
 
@@ -633,6 +634,10 @@ export function PcpOrderForm({
       }
 
       // Save extracted/selected materials to pcp_order_materials for this OP
+      // Caso haja pendingMaterialsToSave (vindos de PDF), já estão multiplicados para o total da OP.
+      // Se NÃO houver importação via PDF e for OP de Linha com produto vinculado,
+      // popula automaticamente a partir de product.data.composition multiplicado pela quantidade da OP.
+      const opQty = Number(data.quantity) > 0 ? Number(data.quantity) : 1
       if (pendingMaterialsToSave.length > 0) {
         const matsToCreate = pendingMaterialsToSave.map((m) => ({
           order_id: record.id,
@@ -645,6 +650,17 @@ export function PcpOrderForm({
           status: 'Pendente' as const,
         }))
         await createOrderMaterialsBatch(matsToCreate)
+      } else if (data.op_type === 'Linha' && data.product_id) {
+        const prod = products.find((p) => p.id === data.product_id)
+        const comp = prod?.data?.composition
+        if (Array.isArray(comp) && comp.length > 0) {
+          const matsToCreate = buildOrderMaterialsFromComposition({
+            orderId: record.id,
+            orderQuantity: opQty,
+            composition: comp,
+          })
+          await createOrderMaterialsBatch(matsToCreate)
+        }
       }
 
       toast({ title: 'OP criada com sucesso!' })
@@ -1171,9 +1187,14 @@ export function PcpOrderForm({
         }}
         onSaved={async () => {
           const data = missingTimeProduct?.pendingFormData
+          const isUpd = missingTimeProduct?.isUpdate
           setMissingTimeProduct(null)
           if (data) {
-            await createOrder(data)
+            if (isUpd) {
+              await updateOrder(data)
+            } else {
+              await createOrder(data)
+            }
           }
         }}
       />

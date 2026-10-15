@@ -30,6 +30,7 @@ export default function ConsultationDetail() {
   const [loading, setLoading] = useState(true)
   const [generalObservation, setGeneralObservation] = useState('')
   const [submittingGeneral, setSubmittingGeneral] = useState(false)
+  const [showAllProcesses, setShowAllProcesses] = useState(false)
   const { user } = useAuth()
   const { toast } = useToast()
 
@@ -120,20 +121,20 @@ export default function ConsultationDetail() {
   const composition = product.data?.composition || []
   const isPendencia = statusLower.includes('pendência') || statusLower.includes('ajuste')
 
-  // Filtra apenas processos com preenchimento (conteúdo útil para o operador).
-  // kanban_stage NÃO conta como preenchimento pois é atribuído automaticamente na criação dos processos-padrão.
+  // Processo é considerado preenchido se tem descrição/instruções gravadas no catálogo técnico
+  // ou imagens anexadas. estimated_hours/estimated_days ou kanban_stage pré-definidos sozinhos
+  // não representam instrução técnica ao operador.
   const isProcessFilled = (proc: ProductProcessModel) => {
     const hasDescription = Boolean(proc.description && proc.description.trim().length > 0)
     const hasImages = Array.isArray(proc.image)
       ? proc.image.length > 0
       : Boolean(proc.image && typeof proc.image === 'string' && proc.image.trim().length > 0)
-    const hasHours = typeof proc.estimated_hours === 'number' && proc.estimated_hours > 0
-    const hasDays = typeof proc.estimated_days === 'number' && proc.estimated_days > 0
 
-    return hasDescription || hasImages || hasHours || hasDays
+    return hasDescription || hasImages
   }
 
   const filledProcesses = processes.filter(isProcessFilled)
+  const displayedProcesses = showAllProcesses ? processes : filledProcesses
 
   return (
     <div className="space-y-6 animate-fade-in-up max-w-full overflow-x-hidden pb-8">
@@ -236,23 +237,37 @@ export default function ConsultationDetail() {
       )}
 
       <div className="space-y-3">
-        <div>
-          <h2 className="text-lg font-semibold">Processos de Fabricação</h2>
-          <p className="text-sm text-muted-foreground">
-            Reporte discrepâncias diretamente do chão de fábrica.
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div>
+            <h2 className="text-lg font-semibold">Processos de Fabricação</h2>
+            <p className="text-sm text-muted-foreground">
+              Reporte discrepâncias diretamente do chão de fábrica.
+            </p>
+          </div>
+          {processes.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowAllProcesses((prev) => !prev)}
+              className="text-xs text-muted-foreground hover:text-foreground self-start sm:self-auto h-8 px-2"
+            >
+              {showAllProcesses
+                ? 'Ocultar processos sem instrução'
+                : `Mostrar todos os processos (${processes.length})`}
+            </Button>
+          )}
         </div>
         {processes.length === 0 ? (
           <Card className="p-6 text-center text-muted-foreground">
-            Nenhum processo cadastrado para este produto.
+            Nenhum processo detalhado para este produto.
           </Card>
-        ) : filledProcesses.length === 0 ? (
+        ) : !showAllProcesses && filledProcesses.length === 0 ? (
           <Card className="p-6 text-center text-muted-foreground">
-            Nenhum processo preenchido para esta OP.
+            Nenhum processo detalhado para este produto.
           </Card>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {filledProcesses.map((proc) => (
+            {displayedProcesses.map((proc) => (
               <ProcessObservationCard key={proc.id} process={proc} productId={product.id} />
             ))}
           </div>

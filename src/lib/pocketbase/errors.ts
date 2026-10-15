@@ -28,47 +28,71 @@ export function getErrorMessage(error: unknown): string {
   return msgs.length > 0 ? msgs.join(' ') : error.message || 'An unexpected error occurred.'
 }
 
-const FIELD_LABEL_MAP: Record<string, string> = {
+const FIELD_LABELS_PT: Record<string, string> = {
   expected_date: 'Previsão de Entrega',
   supplier: 'Fornecedor',
   supplier_id: 'Fornecedor',
   oc_number: 'Número da OC',
   total: 'Total',
+  quantity: 'Quantidade',
+  unit_price: 'Preço Unitário',
+  delivery_type: 'Tipo de Entrega',
+  payment_terms: 'Condições de Pagamento',
+  delivery_terms: 'Condições de Entrega',
   status: 'Status',
   code: 'Código',
   description: 'Descrição',
-  quantity: 'Quantidade',
-  unit: 'Unidade',
-  price: 'Preço',
+}
+
+const ERROR_MESSAGE_TRANSLATIONS: Record<string, string> = {
+  'Must be a valid datetime.': 'Data inválida',
+  'Value cannot be blank.': 'Obrigatório',
+  'Must be a number.': 'Deve ser um número',
+  'Must not be empty.': 'Não pode ficar vazio',
 }
 
 export function formatDetailedErrorMessage(
   error: unknown,
-  fallbackMessage = 'Verifique os dados informados.',
+  fallback = 'Erro desconhecido.',
 ): string {
-  if (!error) return fallbackMessage
+  if (!error) return fallback
 
   const rawData =
     (error as any)?.response?.data ||
-    (error instanceof ClientResponseError ? error.response?.data : undefined)
+    (error as any)?.data ||
+    ((error as any) instanceof ClientResponseError
+      ? (error as ClientResponseError).response?.data
+      : null)
 
-  if (rawData && typeof rawData === 'object') {
-    const errorEntries = Object.entries(rawData)
-    if (errorEntries.length > 0) {
-      const parts = errorEntries.map(([field, detail]: [string, any]) => {
-        const fieldName = FIELD_LABEL_MAP[field] || field
-        let msg = detail?.message || detail?.code || 'Valor inválido'
-        if (detail?.code === 'validation_required' || /cannot be blank/i.test(msg)) {
-          msg = 'Obrigatório'
-        } else if (detail?.code === 'validation_invalid_date' || /valid datetime/i.test(msg)) {
-          msg = 'Data inválida'
-        }
-        return `${fieldName}: ${msg}`
-      })
+  if (rawData && typeof rawData === 'object' && Object.keys(rawData).length > 0) {
+    const parts: string[] = []
+    for (const [field, detail] of Object.entries(rawData)) {
+      const label = FIELD_LABELS_PT[field] || field
+      let msg = ''
+      if (typeof detail === 'string') {
+        msg = detail
+      } else if (detail && typeof detail === 'object') {
+        const rawMsg = (detail as any).message || (detail as any).code || ''
+        msg = ERROR_MESSAGE_TRANSLATIONS[rawMsg] || rawMsg
+      }
+      parts.push(`${label}: ${msg || 'Inválido'}`)
+    }
+    if (parts.length > 0) {
       return parts.join(' | ')
     }
   }
 
-  const baseMsg = (error as any)?.response?.message || (error as any)?.message
-  return baseMsg || fallbackMessage
+  if (error instanceof ClientResponseError) {
+    return error.message || fallback
+  }
+
+  if (error instanceof Error) {
+    return error.message || fallback
+  }
+
+  if (typeof error === 'string') {
+    return error
+  }
+
+  return fallback
 }

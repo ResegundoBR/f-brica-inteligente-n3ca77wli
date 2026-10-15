@@ -8,26 +8,30 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { TableCell, TableRow } from '@/components/ui/table'
-import { Eye } from 'lucide-react'
+import { Eye, Pencil } from 'lucide-react'
 import { format, parseISO, isBefore, startOfDay } from 'date-fns'
 import type { OrdemCompra } from '@/types'
 import { UserActionBadge } from '@/components/UserActionBadge'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 interface OrdemCompraRowProps {
   oc: OrdemCompra
   onStatusChange: (id: string, status: string) => void
   onViewDoc: (oc: OrdemCompra) => void
+  onEdit?: (oc: OrdemCompra) => void
 }
 
 const formatCurrency = (v: number) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
-export function OrdemCompraRow({ oc, onStatusChange, onViewDoc }: OrdemCompraRowProps) {
+export function OrdemCompraRow({ oc, onStatusChange, onViewDoc, onEdit }: OrdemCompraRowProps) {
   const overdue =
     oc.expected_date &&
     oc.status !== 'Recebida' &&
     oc.status !== 'Cancelada' &&
     isBefore(parseISO(oc.expected_date), startOfDay(new Date()))
+
+  const isReceived = oc.status === 'Recebida'
 
   return (
     <TableRow className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
@@ -89,9 +93,42 @@ export function OrdemCompraRow({ oc, onStatusChange, onViewDoc }: OrdemCompraRow
       <TableCell className="text-xs">{oc.delivery_type || '-'}</TableCell>
       <TableCell className="text-xs text-muted-foreground">{oc.payment_terms || '-'}</TableCell>
       <TableCell>
-        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => onViewDoc(oc)}>
-          <Eye className="size-3.5" />
-        </Button>
+        <div className="flex items-center gap-1 justify-end">
+          {onEdit && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 w-7 p-0"
+                      disabled={isReceived}
+                      onClick={() => onEdit(oc)}
+                      aria-label="Editar Ordem de Compra"
+                    >
+                      <Pencil className="size-3.5 text-slate-600 dark:text-slate-400" />
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {isReceived
+                    ? 'Ordens de compra com status "Recebida" não podem ser editadas.'
+                    : 'Editar Ordem de Compra'}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 p-0"
+            onClick={() => onViewDoc(oc)}
+            aria-label="Visualizar documento da OC"
+          >
+            <Eye className="size-3.5 text-slate-600 dark:text-slate-400" />
+          </Button>
+        </div>
       </TableCell>
     </TableRow>
   )

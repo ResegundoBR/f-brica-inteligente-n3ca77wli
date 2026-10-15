@@ -10,6 +10,7 @@ interface OrdemCompraGroupedViewProps {
   ocs: OrdemCompra[]
   onStatusChange: (id: string, status: string) => void
   onViewDoc: (oc: OrdemCompra) => void
+  onEdit?: (oc: OrdemCompra) => void
 }
 
 const formatCurrency = (v: number) =>
@@ -19,6 +20,7 @@ export function OrdemCompraGroupedView({
   ocs,
   onStatusChange,
   onViewDoc,
+  onEdit,
 }: OrdemCompraGroupedViewProps) {
   const groups = (() => {
     const map = new Map<string, OrdemCompra[]>()
@@ -43,6 +45,7 @@ export function OrdemCompraGroupedView({
             ocs={items}
             onStatusChange={onStatusChange}
             onViewDoc={onViewDoc}
+            onEdit={onEdit}
           />
         )
       })}
@@ -57,6 +60,7 @@ function GroupSection({
   ocs,
   onStatusChange,
   onViewDoc,
+  onEdit,
 }: {
   supplier: string
   itemCount: number
@@ -64,6 +68,7 @@ function GroupSection({
   ocs: OrdemCompra[]
   onStatusChange: (id: string, status: string) => void
   onViewDoc: (oc: OrdemCompra) => void
+  onEdit?: (oc: OrdemCompra) => void
 }) {
   const [collapsed, setCollapsed] = useState(false)
   return (
@@ -115,6 +120,7 @@ function GroupSection({
                 oc={oc}
                 onStatusChange={onStatusChange}
                 onViewDoc={onViewDoc}
+                onEdit={onEdit}
               />
             ))}
           </TableBody>

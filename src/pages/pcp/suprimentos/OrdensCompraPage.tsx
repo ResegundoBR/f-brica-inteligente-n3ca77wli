@@ -7,6 +7,7 @@ import { FileText, Layers } from 'lucide-react'
 import { parseISO, isBefore, startOfDay } from 'date-fns'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
 import { OrdemCompraDocument } from './components/OrdemCompraDocument'
+import { EditOrdemCompraModal } from './components/EditOrdemCompraModal'
 import {
   getOrdensCompra,
   getOrdemCompraItens,
@@ -29,6 +30,8 @@ export default function OrdensCompraPage() {
   const [docOc, setDocOc] = useState<OrdemCompra | null>(null)
   const [docItems, setDocItems] = useState<OrdemCompraItem[]>([])
   const [docOpen, setDocOpen] = useState(false)
+  const [editOc, setEditOc] = useState<OrdemCompra | null>(null)
+  const [editModalOpen, setEditModalOpen] = useState(false)
   const [grouped, setGrouped] = useState(false)
   const [selectedSector, setSelectedSector] = useState<string | null>(null)
   const [sectorModalOpen, setSectorModalOpen] = useState(false)
@@ -80,6 +83,11 @@ export default function OrdensCompraPage() {
     } catch (err: any) {
       toast({ title: 'Erro', description: err.message, variant: 'destructive' })
     }
+  }
+
+  const handleEditOc = (oc: OrdemCompra) => {
+    setEditOc(oc)
+    setEditModalOpen(true)
   }
 
   const handleSectorClick = (sector: string) => {
@@ -169,6 +177,7 @@ export default function OrdensCompraPage() {
           ocs={ocs}
           onStatusChange={handleStatusChange}
           onViewDoc={handleViewDoc}
+          onEdit={handleEditOc}
         />
       ) : (
         <div className="bg-white dark:bg-slate-900 rounded-lg border shadow-sm overflow-hidden">
@@ -183,7 +192,7 @@ export default function OrdensCompraPage() {
                 <TableHead className="text-right w-[120px]">Total</TableHead>
                 <TableHead className="w-[100px]">Entrega</TableHead>
                 <TableHead className="w-[120px]">Pagamento</TableHead>
-                <TableHead className="w-[60px]"></TableHead>
+                <TableHead className="w-[80px]"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -193,12 +202,23 @@ export default function OrdensCompraPage() {
                   oc={oc}
                   onStatusChange={handleStatusChange}
                   onViewDoc={handleViewDoc}
+                  onEdit={handleEditOc}
                 />
               ))}
             </TableBody>
           </Table>
         </div>
       )}
+
+      <EditOrdemCompraModal
+        oc={editOc}
+        open={editModalOpen}
+        onOpenChange={setEditModalOpen}
+        onSuccess={() => {
+          fetchOCs()
+          fetchShortages()
+        }}
+      />
 
       <OrdemCompraDocument oc={docOc} items={docItems} open={docOpen} onOpenChange={setDocOpen} />
 

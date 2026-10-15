@@ -3,33 +3,39 @@ import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { MaterialShortage } from '@/types'
-import { PackageCheck, Layers } from 'lucide-react'
+import { MaterialShortage, OrdemCompraItem } from '@/types'
+import { PackageCheck, Layers, FileText, List } from 'lucide-react'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
 import { SmartReceiveDialog } from './components/SmartReceiveDialog'
 import { RecebimentoTable, buildRecebimentoDisplayItems } from './components/RecebimentoTable'
+import { getActiveOrdemCompraItens } from '@/services/ordens-compra'
 import { useToast } from '@/hooks/use-toast'
 
 export default function RecebimentoPage() {
   const [shortages, setShortages] = useState<MaterialShortage[]>([])
+  const [activeOcItems, setActiveOcItems] = useState<OrdemCompraItem[]>([])
   const [codeInputs, setCodeInputs] = useState<Record<string, string>>({})
   const [smartReceiveItem, setSmartReceiveItem] = useState<MaterialShortage | null>(null)
-  const [grouped, setGrouped] = useState(false)
+  const [viewMode, setViewMode] = useState<'oc' | 'supplier' | 'list'>('oc')
   const { toast } = useToast()
 
   const fetchShortages = async () => {
     try {
-      const res = await pb.collection('material_shortages').getFullList<MaterialShortage>({
-        filter: 'status = "Compra" || status = "Recebido_Parcial"',
-        sort: '-created',
-        expand: 'order_id,requested_by',
-      })
+      const [res, ocItensRes] = await Promise.all([
+        pb.collection('material_shortages').getFullList<MaterialShortage>({
+          filter: 'status = "Compra" || status = "Recebido_Parcial"',
+          sort: '-created',
+          expand: 'order_id,requested_by',
+        }),
+        getActiveOrdemCompraItens(),
+      ])
       const activePending = res.filter((item) => {
         const total = Number(item.quantity) || 0
         const received = Number(item.received_quantity) || 0
         return total === 0 || received < total
       })
       setShortages(activePending)
+      setActiveOcItems(ocItensRes)
     } catch {
       /* ignored */
     }
@@ -40,6 +46,8 @@ export default function RecebimentoPage() {
   }, [])
 
   useRealtime('material_shortages', fetchShortages)
+  useRealtime('ordens_de_compra', fetchShortages)
+  useRealtime('ordem_compra_itens', fetchShortages)
 
   const displayItems = useMemo(() => buildRecebimentoDisplayItems(shortages), [shortages])
 
@@ -57,10 +65,32 @@ export default function RecebimentoPage() {
           description="Confira o recebimento físico de materiais e atualize o estoque automaticamente."
           icon={PackageCheck}
         />
-        <Button variant="outline" size="sm" onClick={() => setGrouped((g) => !g)}>
-          <Layers className="w-4 h-4" />
-          {grouped ? 'Lista' : 'Agrupar por fornecedor'}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant={viewMode === 'oc' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setViewMode('oc')}
+          >
+            <FileText className="w-4 h-4" />
+            Por Ordem de Compra
+          </Button>
+          <Button
+            variant={viewMode === 'supplier' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setViewMode('supplier')}
+          >
+            <Layers className="w-4 h-4" />
+            Agrupar por Fornecedor
+          </Button>
+          <Button
+            variant={viewMode === 'list' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setViewMode('list')}
+          >
+            <List className="w-4 h-4" />
+            Lista simples
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -97,7 +127,8 @@ export default function RecebimentoPage() {
       ) : (
         <RecebimentoTable
           items={shortages}
-          grouped={grouped}
+          viewMode={viewMode}
+          activeOcItems={activeOcItems}
           codeInputs={codeInputs}
           onCodeChange={(id, value) => setCodeInputs((prev) => ({ ...prev, [id]: value }))}
           onDistribuir={setSmartReceiveItem}

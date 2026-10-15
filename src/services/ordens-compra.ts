@@ -272,3 +272,20 @@ export const deleteOrdemCompra = async (id: string) => {
   }
   await pb.collection('ordens_de_compra').delete(id)
 }
+
+/**
+ * Retorna todos os itens de OC vinculados a OCs com status != 'Cancelada'
+ * com expand: 'oc_id,oc_id.supplier_id'
+ */
+export async function getActiveOrdemCompraItens(): Promise<OrdemCompraItem[]> {
+  try {
+    const items = await pb.collection('ordem_compra_itens').getFullList<OrdemCompraItem>({
+      filter: `oc_id.status != "Cancelada"`,
+      expand: 'oc_id,oc_id.supplier_id',
+    })
+    return items
+  } catch (err) {
+    console.warn('Erro ao carregar itens de OCs ativas:', err)
+    return []
+  }
+}

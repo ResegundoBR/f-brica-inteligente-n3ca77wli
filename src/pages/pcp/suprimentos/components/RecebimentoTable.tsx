@@ -3,6 +3,7 @@ import { format, parseISO } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { Progress } from '@/components/ui/progress'
 import { NoTranslate } from '@/components/NoTranslate'
 import {
   Table,
@@ -12,8 +13,16 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { MaterialShortage } from '@/types'
-import { CheckCircle, Layers, ChevronDown, ChevronRight, Warehouse, Package } from 'lucide-react'
+import { MaterialShortage, OrdemCompra, OrdemCompraItem } from '@/types'
+import {
+  CheckCircle,
+  Layers,
+  ChevronDown,
+  ChevronRight,
+  Warehouse,
+  Package,
+  FileText,
+} from 'lucide-react'
 import { cn, formatQuantity } from '@/lib/utils'
 import { SupplierGroupSection } from './SupplierGroupSection'
 
@@ -165,9 +174,19 @@ export function buildRecebimentoDisplayItems(items: MaterialShortage[]): Recebim
   return result
 }
 
+export interface OcGroupedRecebimento {
+  oc: OrdemCompra
+  supplier: string
+  expectedDate?: string
+  totalItemsCount: number // Total de componentes distintos nesta OC
+  receivedItemsCount: number // Quantos já estão totalmente recebidos
+  pendingDisplayItems: RecebimentoDisplayItem[]
+}
+
 interface RecebimentoTableProps {
   items: MaterialShortage[]
-  grouped: boolean
+  viewMode?: 'oc' | 'supplier' | 'list'
+  activeOcItems?: OrdemCompraItem[]
   codeInputs: Record<string, string>
   onCodeChange: (id: string, value: string) => void
   onDistribuir: (item: MaterialShortage) => void
@@ -444,15 +463,293 @@ function TableCols() {
   )
 }
 
+function OcComponentRow({
+  displayItem,
+  onDistribuir,
+}: {
+  displayItem: RecebimentoDisplayItem
+  onDistribuir: (item: MaterialShortage) => void
+}) {
+  const rep = displayItem.representative
+  const total = displayItem.totalQuantity
+  const received = displayItem.receivedQuantity
+  const saldo = Math.max(0, total - received)
+  const isBatch = displayItem.type === 'batch'
+
+  return (
+    <TableRow className="hover:bg-slate-50 dark:hover:bg-slate-800/60 border-t border-slate-100 dark:border-slate-800">
+      <TableCell className="text-xs font-mono font-medium text-slate-700 dark:text-slate-300 w-[140px]">
+        <NoTranslate as="span">{displayItem.code || '-'}</NoTranslate>
+      </TableCell>
+      <TableCell className="font-medium text-sm">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {isBatch && (
+            <Badge
+              variant="outline"
+              className="border-blue-400 bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-200 text-[10px] gap-1 px-1.5 py-0.5"
+            >
+              <Layers className="w-3 h-3" />
+              Lote ({displayItem.opItems.length} OPs
+              {displayItem.surplusQuantity > 0 ? ` + Estoque` : ''})
+            </Badge>
+          )}
+          <NoTranslate as="span">{displayItem.description}</NoTranslate>
+        </div>
+      </TableCell>
+      <TableCell className="text-right text-xs font-semibold w-[100px]">
+        <NoTranslate as="span">{formatQuantity(total)} un</NoTranslate>
+      </TableCell>
+      <TableCell className="text-right text-xs font-semibold text-emerald-600 dark:text-emerald-400 w-[110px]">
+        <NoTranslate as="span">{formatQuantity(received)} un</NoTranslate>
+      </TableCell>
+      <TableCell className="text-right text-xs font-bold text-amber-700 dark:text-amber-400 w-[100px]">
+        <NoTranslate as="span">{formatQuantity(saldo)} un</NoTranslate>
+      </TableCell>
+      <TableCell className="text-right w-[150px]">
+        <Button
+          size="sm"
+          className="h-7 bg-green-600 hover:bg-green-700 text-white text-xs px-2.5"
+          onClick={() => onDistribuir(rep)}
+        >
+          <CheckCircle className="size-3.5 mr-1" />
+          Distribuir
+        </Button>
+      </TableCell>
+    </TableRow>
+  )
+}
+
+function OcGroupRow({
+  group,
+  onDistribuir,
+}: {
+  group: OcGroupedRecebimento
+  onDistribuir: (item: MaterialShortage) => void
+}) {
+  const [expanded, setExpanded] = useState(true)
+  const pct =
+    group.totalItemsCount > 0
+      ? Math.round((group.receivedItemsCount / group.totalItemsCount) * 100)
+      : 0
+
+  return (
+    <div className="border rounded-lg bg-white dark:bg-slate-900 shadow-xs overflow-hidden transition-all">
+      {/* Cabeçalho da Ordem de Compra */}
+      <div
+        onClick={() => setExpanded((v) => !v)}
+        className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 bg-slate-50/80 dark:bg-slate-800/40 hover:bg-slate-100/80 dark:hover:bg-slate-800/70 cursor-pointer border-b select-none"
+      >
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+          >
+            {expanded ? (
+              <ChevronDown className="w-4 h-4 text-slate-600 dark:text-slate-300" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-slate-600 dark:text-slate-300" />
+            )}
+          </button>
+          <div className="flex items-center gap-2">
+            <Badge
+              variant="outline"
+              className="bg-blue-50 text-blue-900 border-blue-300 dark:bg-blue-950 dark:text-blue-200 text-xs font-bold gap-1 px-2 py-0.5"
+            >
+              <FileText className="w-3.5 h-3.5 text-blue-600" />
+              OC #{group.oc.oc_number}
+            </Badge>
+            <span className="font-semibold text-sm text-slate-900 dark:text-slate-100">
+              <NoTranslate as="span">{group.supplier}</NoTranslate>
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-4 text-xs ml-7 sm:ml-0 flex-wrap">
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <span>Previsão:</span>
+            <span className="font-medium text-slate-800 dark:text-slate-200">
+              {group.expectedDate
+                ? format(parseISO(group.expectedDate), 'dd/MM/yyyy')
+                : 'Não definida'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 min-w-[170px]">
+            <span className="text-muted-foreground whitespace-nowrap">
+              Progresso:{' '}
+              <strong className="text-slate-800 dark:text-slate-200">
+                {group.receivedItemsCount}
+              </strong>{' '}
+              de <strong>{group.totalItemsCount}</strong> itens
+            </span>
+            <Progress value={pct} className="w-16 h-2" />
+          </div>
+
+          <Badge
+            variant="outline"
+            className={cn(
+              'text-[11px] whitespace-nowrap',
+              group.oc.status === 'Pendente' &&
+                'border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-950 dark:text-amber-200',
+              group.oc.status === 'Enviada' &&
+                'border-blue-300 bg-blue-50 text-blue-900 dark:bg-blue-950 dark:text-blue-200',
+              group.oc.status === 'Recebida' &&
+                'border-emerald-300 bg-emerald-50 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200',
+            )}
+          >
+            {group.oc.status || 'Ativa'}
+          </Badge>
+        </div>
+      </div>
+
+      {/* Tabela de componentes expandíveis da OC */}
+      {expanded && (
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader className="bg-slate-50/50 dark:bg-slate-800/20 text-xs">
+              <TableRow>
+                <TableHead className="w-[140px]">Código</TableHead>
+                <TableHead>Descrição</TableHead>
+                <TableHead className="text-right w-[100px]">Comprado</TableHead>
+                <TableHead className="text-right w-[110px]">Já Recebido</TableHead>
+                <TableHead className="text-right w-[100px]">Saldo</TableHead>
+                <TableHead className="text-right w-[150px]">Ação</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {group.pendingDisplayItems.map((dItem) => (
+                <OcComponentRow key={dItem.id} displayItem={dItem} onDistribuir={onDistribuir} />
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function RecebimentoTable({
   items,
-  grouped,
+  viewMode = 'oc',
+  activeOcItems = [],
   codeInputs,
   onCodeChange,
   onDistribuir,
 }: RecebimentoTableProps) {
   const displayItems = useMemo(() => buildRecebimentoDisplayItems(items), [items])
 
+  // Mapeamento de shortageId -> Ordem de Compra ativa vinculada
+  const shortageToOcMap = useMemo(() => {
+    const map = new Map<string, OrdemCompra>()
+    for (const it of activeOcItems) {
+      if (!it.material_shortage_id) continue
+      const oc = it.expand?.oc_id
+      if (oc && oc.status !== 'Cancelada') {
+        map.set(it.material_shortage_id, oc)
+      }
+    }
+    // Propagar em lotes (batch_id)
+    const batchToOc = new Map<string, OrdemCompra>()
+    for (const s of items) {
+      if (s.batch_id && map.has(s.id)) {
+        batchToOc.set(s.batch_id, map.get(s.id)!)
+      }
+    }
+    for (const s of items) {
+      if (s.batch_id && !map.has(s.id) && batchToOc.has(s.batch_id)) {
+        map.set(s.id, batchToOc.get(s.batch_id)!)
+      }
+    }
+    return map
+  }, [activeOcItems, items])
+
+  // 1. Visão padrão: 'Por Ordem de Compra'
+  const { ocGroups, semOcDisplayItems } = useMemo(() => {
+    // Mapa de ocId -> { oc, pendingDisplayItems: RecebimentoDisplayItem[] }
+    const groupsMap = new Map<
+      string,
+      {
+        oc: OrdemCompra
+        pendingDisplayItems: RecebimentoDisplayItem[]
+      }
+    >()
+    const semOc: RecebimentoDisplayItem[] = []
+
+    for (const dItem of displayItems) {
+      // Procura OC vinculada a este displayItem (direto ou através de membros de lote)
+      let matchedOc: OrdemCompra | undefined
+      for (const mId of dItem.items.map((x) => x.id)) {
+        if (shortageToOcMap.has(mId)) {
+          matchedOc = shortageToOcMap.get(mId)
+          break
+        }
+      }
+
+      if (matchedOc) {
+        const existing = groupsMap.get(matchedOc.id) || {
+          oc: matchedOc,
+          pendingDisplayItems: [],
+        }
+        existing.pendingDisplayItems.push(dItem)
+        groupsMap.set(matchedOc.id, existing)
+      } else {
+        semOc.push(dItem)
+      }
+    }
+
+    // Calcula totalItemsCount e receivedItemsCount para cada OC
+    // baseado em todos os itens daquela OC em activeOcItems
+    const ocAllItensMap = new Map<string, OrdemCompraItem[]>()
+    for (const it of activeOcItems) {
+      const oc = it.expand?.oc_id
+      if (oc && oc.status !== 'Cancelada') {
+        const arr = ocAllItensMap.get(oc.id) || []
+        arr.push(it)
+        ocAllItensMap.set(oc.id, arr)
+      }
+    }
+
+    const ocGroupsList: OcGroupedRecebimento[] = []
+    for (const [ocId, data] of groupsMap.entries()) {
+      const ocAllItens = ocAllItensMap.get(ocId) || []
+      const totalItemsCount =
+        ocAllItens.length > 0 ? ocAllItens.length : data.pendingDisplayItems.length
+
+      // Conta quantos itens daquela OC já foram totalmente recebidos
+      // Um item da OC vinculado a shortage está pendente se consta em items da página
+      let receivedCount = 0
+      for (const ocIt of ocAllItens) {
+        if (!ocIt.material_shortage_id) {
+          // Se não tem shortage vinculado, não podemos monitorar o recebimento físico individual
+          continue
+        }
+        const isStillPending = items.some((s) => s.id === ocIt.material_shortage_id)
+        if (!isStillPending) {
+          receivedCount++
+        }
+      }
+
+      ocGroupsList.push({
+        oc: data.oc,
+        supplier: data.oc.supplier || data.pendingDisplayItems[0]?.supplier || '-',
+        expectedDate: data.oc.expected_date || data.pendingDisplayItems[0]?.expectedDate,
+        totalItemsCount,
+        receivedItemsCount: receivedCount,
+        pendingDisplayItems: data.pendingDisplayItems,
+      })
+    }
+
+    // Ordena OCs por data de criação / número de OC decrescente
+    ocGroupsList.sort((a, b) => {
+      const numA = parseInt(a.oc.oc_number, 10) || 0
+      const numB = parseInt(b.oc.oc_number, 10) || 0
+      return numB - numA
+    })
+
+    return { ocGroups: ocGroupsList, semOcDisplayItems: semOc }
+  }, [displayItems, shortageToOcMap, activeOcItems, items])
+
+  // 2. Visão alternativa: 'Agrupar por Fornecedor'
   const supplierGroups = useMemo(() => {
     const groups = new Map<string, RecebimentoDisplayItem[]>()
     for (const item of displayItems) {
@@ -476,7 +773,8 @@ export function RecebimentoTable({
     return result
   }, [displayItems])
 
-  if (!grouped) {
+  // Renderização: Modo Lista Simples
+  if (viewMode === 'list') {
     return (
       <div className="bg-white dark:bg-slate-900 rounded-lg border shadow-sm overflow-hidden">
         <Table>
@@ -497,34 +795,101 @@ export function RecebimentoTable({
     )
   }
 
+  // Renderização: Modo Agrupar por Fornecedor
+  if (viewMode === 'supplier') {
+    return (
+      <div className="space-y-3">
+        {supplierGroups.map((group) => (
+          <SupplierGroupSection
+            key={group.supplier || '__no_supplier__'}
+            supplier={group.supplier}
+            itemCount={group.items.length}
+            totalValue={group.totalValue}
+            allSelected={false}
+            onSelectAll={() => {}}
+            showCheckbox={false}
+          >
+            <Table>
+              <TableCols />
+              <TableBody>
+                {group.items.map((displayItem) => (
+                  <RecebimentoRow
+                    key={displayItem.id}
+                    displayItem={displayItem}
+                    codeInputs={codeInputs}
+                    onCodeChange={onCodeChange}
+                    onDistribuir={onDistribuir}
+                  />
+                ))}
+              </TableBody>
+            </Table>
+          </SupplierGroupSection>
+        ))}
+      </div>
+    )
+  }
+
+  // Renderização: Modo padrão 'Por Ordem de Compra' (viewMode === 'oc')
   return (
-    <div className="space-y-3">
-      {supplierGroups.map((group) => (
-        <SupplierGroupSection
-          key={group.supplier || '__no_supplier__'}
-          supplier={group.supplier}
-          itemCount={group.items.length}
-          totalValue={group.totalValue}
-          allSelected={false}
-          onSelectAll={() => {}}
-          showCheckbox={false}
-        >
-          <Table>
-            <TableCols />
-            <TableBody>
-              {group.items.map((displayItem) => (
-                <RecebimentoRow
-                  key={displayItem.id}
-                  displayItem={displayItem}
-                  codeInputs={codeInputs}
-                  onCodeChange={onCodeChange}
-                  onDistribuir={onDistribuir}
-                />
-              ))}
-            </TableBody>
-          </Table>
-        </SupplierGroupSection>
-      ))}
+    <div className="space-y-6">
+      {/* 1. Blocos de Ordens de Compra */}
+      {ocGroups.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+              <FileText className="w-4 h-4 text-blue-600" />
+              Ordens de Compra Pendentes de Recebimento ({ocGroups.length})
+            </h3>
+            <span className="text-xs text-muted-foreground">
+              Itens organizados por Ordem de Compra ativa
+            </span>
+          </div>
+
+          <div className="space-y-3">
+            {ocGroups.map((group) => (
+              <OcGroupRow key={group.oc.id} group={group} onDistribuir={onDistribuir} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 2. Bloco: Sem ordem de compra */}
+      {semOcDisplayItems.length > 0 && (
+        <div className="space-y-3 pt-2">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+              <Package className="w-4 h-4 text-amber-600" />
+              Sem ordem de compra ({semOcDisplayItems.length})
+            </h3>
+            <span className="text-xs text-muted-foreground">
+              Solicitações de compra individuais sem Ordem de Compra vinculada
+            </span>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 rounded-lg border shadow-sm overflow-hidden">
+            <Table>
+              <TableCols />
+              <TableBody>
+                {semOcDisplayItems.map((displayItem) => (
+                  <RecebimentoRow
+                    key={displayItem.id}
+                    displayItem={displayItem}
+                    codeInputs={codeInputs}
+                    onCodeChange={onCodeChange}
+                    onDistribuir={onDistribuir}
+                  />
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      )}
+
+      {ocGroups.length === 0 && semOcDisplayItems.length === 0 && (
+        <div className="p-8 text-center border-2 border-dashed rounded-xl border-slate-200 dark:border-slate-800 text-slate-400 font-medium">
+          Nenhum item aguardando recebimento no momento.
+        </div>
+      )}
     </div>
   )
 }

@@ -21,6 +21,14 @@ import { ConsolidatedDemandBadge } from './ConsolidatedDemandBlock'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Badge } from '@/components/ui/badge'
 
+export interface OcLinkInfo {
+  ocId: string
+  ocNumber: string
+  status?: string
+  expectedDate?: string
+  fullOc?: any
+}
+
 export interface ComprasDisplayItem {
   type: 'single' | 'batch'
   id: string // Se batch, batch_id; se single, item.id
@@ -40,6 +48,7 @@ export interface ComprasDisplayItem {
   createdDate: string
   code: string
   description: string
+  ocLink?: OcLinkInfo
 }
 
 interface ComprasTableProps {
@@ -47,11 +56,14 @@ interface ComprasTableProps {
   allShortages?: MaterialShortage[]
   onEdit: (item: MaterialShortage) => void
   onDelete?: (item: MaterialShortage) => void
-  selectedIds: Set<string>
-  onToggleSelect: (id: string) => void
-  onToggleSelectAll: () => void
+  selectedIds?: Set<string>
+  onToggleSelect?: (id: string) => void
+  onToggleSelectAll?: () => void
   onToggleSelectGroup?: (ids: string[]) => void
   grouped?: boolean
+  isEmOc?: boolean
+  shortageOcMap?: Map<string, OcLinkInfo>
+  onOpenOcDoc?: (oc: any) => void
 }
 
 const formatCurrency = (v: number) =>
@@ -63,7 +75,10 @@ const formatCurrency = (v: number) =>
  * com a quantidade real informada, fornecedor, preço e previsão da cotação valendo para o lote todo,
  * permitindo expandir os detalhes do rateio interno (quantidades das OPs + excedente estoque).
  */
-export function buildComprasDisplayItems(items: MaterialShortage[]): ComprasDisplayItem[] {
+export function buildComprasDisplayItems(
+  items: MaterialShortage[],
+  shortageOcMap?: Map<string, OcLinkInfo>,
+): ComprasDisplayItem[] {
   // Blindagem: agrupa por batch_id + code (nunca consolida códigos diferentes na mesma linha)
   const batchMap = new Map<string, MaterialShortage[]>()
   const nonBatch: MaterialShortage[] = []
@@ -140,6 +155,17 @@ export function buildComprasDisplayItems(items: MaterialShortage[]): ComprasDisp
 
     const totalValue = totalQuantity * unitPrice
 
+    // Encontra vínculo de OC em qualquer um dos membros do lote
+    let ocLink: OcLinkInfo | undefined
+    if (shortageOcMap) {
+      for (const bIt of batchItems) {
+        if (shortageOcMap.has(bIt.id)) {
+          ocLink = shortageOcMap.get(bIt.id)
+          break
+        }
+      }
+    }
+
     result.push({
       type: 'batch',
       id: batchId,
@@ -155,10 +181,11 @@ export function buildComprasDisplayItems(items: MaterialShortage[]): ComprasDisp
       supplier,
       unitPrice,
       totalValue,
-      expectedDate,
+      expectedDate: ocLink?.expectedDate || expectedDate,
       createdDate: parent.created,
       code: parent.code || '',
       description: parent.description,
+      ocLink,
     })
   }
 
@@ -166,6 +193,8 @@ export function buildComprasDisplayItems(items: MaterialShortage[]): ComprasDisp
   for (const item of nonBatch) {
     const qty = Number(item.quantity) || 0
     const price = Number(item.unit_price) || 0
+    const ocLink = shortageOcMap?.get(item.id)
+
     result.push({
       type: 'single',
       id: item.id,
@@ -181,10 +210,11 @@ export function buildComprasDisplayItems(items: MaterialShortage[]): ComprasDisp
       supplier: item.supplier || '-',
       unitPrice: price,
       totalValue: qty * price,
-      expectedDate: item.expected_date,
+      expectedDate: ocLink?.expectedDate || item.expected_date,
       createdDate: item.created,
       code: item.code || '',
       description: item.description,
+      ocLink,
     })
   }
 
@@ -201,28 +231,38 @@ function ComprasDisplayRow({
   onDelete,
   selectedIds,
   onToggleSelect,
+  isEmOc,
+  onOpenOcDoc,
 }: {
   displayItem: ComprasDisplayItem
   consolidation?: ReturnType<typeof findOtherOpDemands>
   onEdit: (item: MaterialShortage) => void
   onDelete?: (item: MaterialShortage) => void
-  selectedIds: Set<string>
-  onToggleSelect: (id: string) => void
+  selectedIds?: Set<string>
+  onToggleSelect?: (id: string) => void
+  isEmOc?: boolean
+  onOpenOcDoc?: (oc: any) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const isBatch = displayItem.type === 'batch'
   const rep = displayItem.representative
 
   // Checkbox de seleção: se lote, selecionado se todos os membros estiverem selecionados
-  const isSelected = displayItem.allMemberIds.every((id) => selectedIds.has(id))
-  const isIndeterminate = !isSelected && displayItem.allMemberIds.some((id) => selectedIds.has(id))
+  const isSelected = selectedIds
+    ? displayItem.allMemberIds.every((id) => selectedIds.has(id))
+    : false
+  const isIndeterminate =
+    selectedIds && !isSelected && displayItem.allMemberIds.some((id) => selectedIds.has(id))
 
   const handleToggle = () => {
+    if (!onToggleSelect) return
     // Alterna todos os membros do lote de uma vez
     for (const id of displayItem.allMemberIds) {
       onToggleSelect(id)
     }
   }
+
+  const ocLink = displayItem.ocLink
 
   return (
     <Fragment>
@@ -233,12 +273,29 @@ function ComprasDisplayRow({
           expanded && 'border-b-0 bg-blue-50/40 dark:bg-blue-950/20',
         )}
       >
-        <TableCell onClick={(e) => e.stopPropagation()}>
-          <Checkbox
-            checked={isSelected ? true : isIndeterminate ? 'indeterminate' : false}
-            onCheckedChange={handleToggle}
-          />
-        </TableCell>
+        {!isEmOc ? (
+          <TableCell onClick={(e) => e.stopPropagation()}>
+            <Checkbox
+              checked={isSelected ? true : isIndeterminate ? 'indeterminate' : false}
+              onCheckedChange={handleToggle}
+            />
+          </TableCell>
+        ) : (
+          <TableCell className="w-[100px] text-xs font-medium">
+            {ocLink ? (
+              <button
+                type="button"
+                onClick={() => onOpenOcDoc?.(ocLink.fullOc)}
+                className="inline-flex items-center gap-1 font-bold text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline cursor-pointer"
+                title="Abrir documento da Ordem de Compra"
+              >
+                OC #{ocLink.ocNumber}
+              </button>
+            ) : (
+              <span className="text-muted-foreground">-</span>
+            )}
+          </TableCell>
+        )}
 
         <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
           {displayItem.createdDate ? format(parseISO(displayItem.createdDate), 'dd/MM/yy') : '-'}
@@ -335,9 +392,28 @@ function ComprasDisplayRow({
           </NoTranslate>
         </TableCell>
 
-        <TableCell className="text-xs text-muted-foreground">
+        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
           {displayItem.expectedDate ? format(parseISO(displayItem.expectedDate), 'dd/MM/yy') : '-'}
         </TableCell>
+
+        {isEmOc && (
+          <TableCell className="w-[100px]">
+            <Badge
+              variant="outline"
+              className={cn(
+                'text-[10px] whitespace-nowrap font-medium',
+                ocLink?.status === 'Pendente' &&
+                  'border-amber-400 bg-amber-50 text-amber-900 dark:bg-amber-950 dark:text-amber-200',
+                ocLink?.status === 'Enviada' &&
+                  'border-blue-400 bg-blue-50 text-blue-900 dark:bg-blue-950 dark:text-blue-200',
+                ocLink?.status === 'Recebida' &&
+                  'border-emerald-400 bg-emerald-50 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200',
+              )}
+            >
+              {ocLink?.status || 'Ativa'}
+            </Badge>
+          </TableCell>
+        )}
 
         <TableCell>
           <div className="flex items-center gap-1 justify-end">
@@ -379,7 +455,7 @@ function ComprasDisplayRow({
       {/* Detalhe interno expandível do lote com o rateio das OPs e do excedente de estoque */}
       {isBatch && expanded && (
         <TableRow className="bg-blue-50/50 dark:bg-blue-950/25 border-t-0">
-          <TableCell colSpan={11} className="py-2.5 px-4 pl-12">
+          <TableCell colSpan={isEmOc ? 12 : 11} className="py-2.5 px-4 pl-12">
             <div className="p-3 bg-white/90 dark:bg-slate-900/90 rounded-md border border-blue-200 dark:border-blue-900 shadow-xs space-y-2 text-xs">
               <div className="font-semibold text-slate-800 dark:text-slate-200 flex items-center justify-between">
                 <span className="flex items-center gap-1.5">
@@ -473,17 +549,25 @@ function TableCols({
   showCheckbox,
   allSelected,
   onToggleSelectAll,
+  isEmOc,
 }: {
   showCheckbox: boolean
   allSelected: boolean
-  onToggleSelectAll: () => void
+  onToggleSelectAll?: () => void
+  isEmOc?: boolean
 }) {
   return (
     <TableHeader className="bg-slate-50 dark:bg-slate-800/50">
       <TableRow>
-        <TableHead className="w-[40px]">
-          {showCheckbox && <Checkbox checked={allSelected} onCheckedChange={onToggleSelectAll} />}
-        </TableHead>
+        {isEmOc ? (
+          <TableHead className="w-[100px]">Nº OC</TableHead>
+        ) : (
+          <TableHead className="w-[40px]">
+            {showCheckbox && onToggleSelectAll && (
+              <Checkbox checked={allSelected} onCheckedChange={onToggleSelectAll} />
+            )}
+          </TableHead>
+        )}
         <TableHead className="w-[80px]">Data</TableHead>
         <TableHead className="w-[80px]">Código</TableHead>
         <TableHead>Descrição</TableHead>
@@ -492,7 +576,8 @@ function TableCols({
         <TableHead className="text-right w-[80px]">Recebida</TableHead>
         <TableHead className="text-right w-[100px]">Vl. Unit.</TableHead>
         <TableHead className="text-right w-[110px]">Vl. Total</TableHead>
-        <TableHead className="w-[100px]">Prazo</TableHead>
+        <TableHead className="w-[100px]">Previsão</TableHead>
+        {isEmOc && <TableHead className="w-[100px]">Status OC</TableHead>}
         <TableHead className="w-[80px] text-right">Ações</TableHead>
       </TableRow>
     </TableHeader>
@@ -509,13 +594,20 @@ export function ComprasTable({
   onToggleSelectAll,
   onToggleSelectGroup,
   grouped = false,
+  isEmOc = false,
+  shortageOcMap,
+  onOpenOcDoc,
 }: ComprasTableProps) {
   const shortagesPool = allShortages || items
 
   // Constrói os itens consolidados para exibição (lotes agrupados em 1 linha)
-  const displayItems = useMemo(() => buildComprasDisplayItems(items), [items])
+  const displayItems = useMemo(
+    () => buildComprasDisplayItems(items, shortageOcMap),
+    [items, shortageOcMap],
+  )
 
-  const allSelected = items.length > 0 && selectedIds.size === items.length
+  const allSelected =
+    !isEmOc && selectedIds ? items.length > 0 && selectedIds.size === items.length : false
 
   const consolidationsMap = useMemo(() => {
     const map = new Map<string, ReturnType<typeof findOtherOpDemands>>()
@@ -551,7 +643,12 @@ export function ComprasTable({
     return (
       <div className="bg-white dark:bg-slate-900 rounded-lg border shadow-sm overflow-hidden">
         <Table>
-          <TableCols showCheckbox allSelected={allSelected} onToggleSelectAll={onToggleSelectAll} />
+          <TableCols
+            showCheckbox={!isEmOc}
+            allSelected={allSelected}
+            onToggleSelectAll={onToggleSelectAll}
+            isEmOc={isEmOc}
+          />
           <TableBody>
             {displayItems.map((dItem) => (
               <ComprasDisplayRow
@@ -562,6 +659,8 @@ export function ComprasTable({
                 onDelete={onDelete}
                 selectedIds={selectedIds}
                 onToggleSelect={onToggleSelect}
+                isEmOc={isEmOc}
+                onOpenOcDoc={onOpenOcDoc}
               />
             ))}
           </TableBody>
@@ -574,7 +673,9 @@ export function ComprasTable({
     <div className="space-y-3">
       {supplierDisplayGroups.map((group) => {
         const groupAllSelected =
-          group.allItemIds.length > 0 && group.allItemIds.every((id) => selectedIds.has(id))
+          !isEmOc && selectedIds && group.allItemIds.length > 0
+            ? group.allItemIds.every((id) => selectedIds.has(id))
+            : false
 
         return (
           <SupplierGroupSection
@@ -584,9 +685,15 @@ export function ComprasTable({
             totalValue={group.totalValue}
             allSelected={groupAllSelected}
             onSelectAll={() => onToggleSelectGroup?.(group.allItemIds)}
+            showCheckbox={!isEmOc}
           >
             <Table>
-              <TableCols showCheckbox={false} allSelected={false} onToggleSelectAll={() => {}} />
+              <TableCols
+                showCheckbox={false}
+                allSelected={false}
+                onToggleSelectAll={() => {}}
+                isEmOc={isEmOc}
+              />
               <TableBody>
                 {group.displayItems.map((dItem) => (
                   <ComprasDisplayRow
@@ -597,6 +704,8 @@ export function ComprasTable({
                     onDelete={onDelete}
                     selectedIds={selectedIds}
                     onToggleSelect={onToggleSelect}
+                    isEmOc={isEmOc}
+                    onOpenOcDoc={onOpenOcDoc}
                   />
                 ))}
               </TableBody>

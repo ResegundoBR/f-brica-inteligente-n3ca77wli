@@ -5,9 +5,11 @@ import { useAuth } from '@/hooks/use-auth'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { MaterialShortage, OrdemCompra, OrdemCompraItem, PcpOrder, Quotation } from '@/types'
-import { ShoppingCart, FileText, Layers } from 'lucide-react'
+import { ShoppingCart, FileText, Layers, Clock, CheckCircle2 } from 'lucide-react'
 import { parseISO, isBefore, startOfDay, isValid } from 'date-fns'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { Badge } from '@/components/ui/badge'
 import {
   Select,
   SelectContent,
@@ -15,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ComprasTable } from './components/ComprasTable'
+import { ComprasTable, type OcLinkInfo } from './components/ComprasTable'
 import { ComprasItemDialog } from './components/ComprasItemDialog'
 import { DeleteShortageDialog } from './components/DeleteShortageDialog'
 import { OrdemCompraModal, type OCItemInput } from './components/OrdemCompraModal'
@@ -23,7 +25,11 @@ import { ProductDossierModal } from './components/ProductDossierModal'
 import { ProductSearchBar } from './components/ProductSearchBar'
 import { OrdemCompraDocument } from './components/OrdemCompraDocument'
 import { CategoryFilterChips } from './components/CategoryFilterChips'
-import { createOrdemCompra, getOrdemCompraItens } from '@/services/ordens-compra'
+import {
+  createOrdemCompra,
+  getOrdemCompraItens,
+  getActiveOrdemCompraItens,
+} from '@/services/ordens-compra'
 import { getMasterComponents } from '@/services/components'
 import { getComponentCategories } from '@/services/component-categories'
 import { useCategoryGroups } from '@/hooks/use-category-groups'
@@ -53,20 +59,24 @@ export default function ComprasPage() {
   const [grouped, setGrouped] = useState(false)
   const [opFilter, setOpFilter] = useState('all')
   const [orders, setOrders] = useState<PcpOrder[]>([])
+  const [activeTab, setActiveTab] = useState<'aguardando_oc' | 'em_oc'>('aguardando_oc')
+  const [activeOcItems, setActiveOcItems] = useState<OrdemCompraItem[]>([])
 
   const fetchShortages = async () => {
     try {
-      const [res, compRes, catRes] = await Promise.all([
+      const [res, compRes, catRes, ocItensRes] = await Promise.all([
         pb.collection('material_shortages').getFullList<MaterialShortage>({
           sort: '-created',
           expand: 'order_id,order_id.product_id,requested_by',
         }),
         getMasterComponents('', { includeInactive: true, expand: 'category' }),
         getComponentCategories(),
+        getActiveOrdemCompraItens(),
       ])
       setShortages(res)
       setComponents(compRes)
       setCategories(catRes)
+      setActiveOcItems(ocItensRes)
     } catch {
       /* ignored */
     }
@@ -84,6 +94,43 @@ export default function ComprasPage() {
   useRealtime('material_shortages', fetchShortages)
   useRealtime('components', fetchShortages)
   useRealtime('component_categories', fetchShortages)
+  useRealtime('ordens_de_compra', fetchShortages)
+  useRealtime('ordem_compra_itens', fetchShortages)
+
+  // Mapa de shortageId -> OcLinkInfo (com OC ativa não-cancelada)
+  // Leva em conta também lotes (batch_id): se algum membro do lote tem OC, propaga para o batch
+  const shortageOcMap = useMemo(() => {
+    const map = new Map<string, OcLinkInfo>()
+    for (const it of activeOcItems) {
+      if (!it.material_shortage_id) continue
+      const oc = it.expand?.oc_id
+      if (!oc || oc.status === 'Cancelada') continue
+      const linkInfo: OcLinkInfo = {
+        ocId: oc.id,
+        ocNumber: oc.oc_number,
+        status: oc.status,
+        expectedDate: oc.expected_date,
+        fullOc: oc,
+      }
+      map.set(it.material_shortage_id, linkInfo)
+    }
+
+    // Se um membro de lote (batch_id) tem OC, mapeia para os outros membros do mesmo lote
+    // para manter consistência no lote consolidado
+    const batchToOc = new Map<string, OcLinkInfo>()
+    for (const s of shortages) {
+      if (s.batch_id && map.has(s.id)) {
+        batchToOc.set(s.batch_id, map.get(s.id)!)
+      }
+    }
+    for (const s of shortages) {
+      if (s.batch_id && !map.has(s.id) && batchToOc.has(s.batch_id)) {
+        map.set(s.id, batchToOc.get(s.batch_id)!)
+      }
+    }
+
+    return map
+  }, [activeOcItems, shortages])
 
   const rawComprasItems = useMemo(
     () =>
@@ -97,20 +144,43 @@ export default function ComprasPage() {
     [shortages, opFilter],
   )
 
-  // Totalização e agrupamento por categoria
-  const categoryGroups = useCategoryGroups(rawComprasItems, components, categories)
+  // Separação em dois grupos: Aguardando OC (sem OC ativa) vs Em Ordem de Compra (com OC ativa)
+  const rawAguardandoOcItems = useMemo(
+    () => rawComprasItems.filter((s) => !shortageOcMap.has(s.id)),
+    [rawComprasItems, shortageOcMap],
+  )
 
-  const comprasItems = useMemo(() => {
-    if (selectedCategoryId === null) return rawComprasItems
+  const rawEmOcItems = useMemo(
+    () => rawComprasItems.filter((s) => shortageOcMap.has(s.id)),
+    [rawComprasItems, shortageOcMap],
+  )
+
+  // Totalização e agrupamento por categoria para a lista de Aguardando OC
+  const categoryGroups = useCategoryGroups(rawAguardandoOcItems, components, categories)
+
+  const aguardandoOcItems = useMemo(() => {
+    if (selectedCategoryId === null) return rawAguardandoOcItems
     const activeGroup = categoryGroups.find((g) => g.categoryId === selectedCategoryId)
     return activeGroup ? activeGroup.items : []
-  }, [rawComprasItems, selectedCategoryId, categoryGroups])
+  }, [rawAguardandoOcItems, selectedCategoryId, categoryGroups])
 
+  const emOcItems = useMemo(() => {
+    if (selectedCategoryId === null) return rawEmOcItems
+    // Filtra por categoria também se selecionada
+    const compMap = new Map(components.map((c) => [c.code?.trim().toLowerCase(), c.category]))
+    return rawEmOcItems.filter((it) => {
+      const codeKey = (it.code || '').trim().toLowerCase()
+      const catId = compMap.get(codeKey)
+      return catId === selectedCategoryId
+    })
+  }, [rawEmOcItems, selectedCategoryId, components])
+
+  // Resumo (cards) reflete estritamente os itens Aguardando OC (tarefa 2)
   const summary = useMemo(() => {
     const today = startOfDay(new Date())
     let totalValue = 0
     let overdue = 0
-    comprasItems.forEach((s) => {
+    aguardandoOcItems.forEach((s) => {
       const total = Number(s.quantity) || 0
       const received = Number(s.received_quantity) || 0
       const pendingQty = Math.max(0, total - received)
@@ -121,8 +191,8 @@ export default function ComprasPage() {
         if (isValid(d) && isBefore(startOfDay(d), today)) overdue++
       }
     })
-    return { count: comprasItems.length, totalValue, overdue }
-  }, [comprasItems])
+    return { count: aguardandoOcItems.length, totalValue, overdue }
+  }, [aguardandoOcItems])
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -134,8 +204,8 @@ export default function ComprasPage() {
   }
 
   const toggleSelectAll = () => {
-    if (selectedIds.size === comprasItems.length) setSelectedIds(new Set())
-    else setSelectedIds(new Set(comprasItems.map((i) => i.id)))
+    if (selectedIds.size === aguardandoOcItems.length) setSelectedIds(new Set())
+    else setSelectedIds(new Set(aguardandoOcItems.map((i) => i.id)))
   }
 
   const toggleSelectGroup = (ids: string[]) => {
@@ -161,8 +231,22 @@ export default function ComprasPage() {
     })
   }
 
+  const handleOpenOcDocFromItem = async (ocRecord: any) => {
+    try {
+      if (!ocRecord) return
+      const itens = await getOrdemCompraItens(ocRecord.id)
+      setOcDocument(ocRecord)
+      setOcDocumentItems(itens)
+      setOcDocOpen(true)
+    } catch (err) {
+      console.warn('Erro ao abrir documento da OC:', err)
+      toast.error('Erro ao abrir documento da Ordem de Compra')
+    }
+  }
+
   const handleGerarOC = async () => {
-    const selected = comprasItems.filter((i) => selectedIds.has(i.id))
+    // Apenas itens que estão em aguardandoOcItems (sem OC)
+    const selected = aguardandoOcItems.filter((i) => selectedIds.has(i.id))
     if (selected.length === 0) return
 
     // Agrupa itens selecionados por lote (batch_id) para emitir apenas UMA linha representativa por lote
@@ -510,33 +594,99 @@ export default function ComprasPage() {
         </Card>
       </div>
 
-      {/* TOTALIZAÇÃO E CHIPS POR CATEGORIA DO COMPONENTE */}
-      <CategoryFilterChips
-        categoryGroups={categoryGroups}
-        selectedCategoryId={selectedCategoryId}
-        onSelectCategory={setSelectedCategoryId}
-        onSelectCategoryItems={handleSelectCategoryItems}
-        selectedIds={selectedIds}
-        actionLabel="Selecionar todos para Ordem de Compra"
-      />
+      {/* ABAS: Aguardando OC vs Em Ordem de Compra */}
+      <Tabs
+        value={activeTab}
+        onValueChange={(v) => {
+          setActiveTab(v as 'aguardando_oc' | 'em_oc')
+          setSelectedIds(new Set())
+        }}
+        className="space-y-4"
+      >
+        <div className="flex items-center justify-between border-b pb-2">
+          <TabsList className="bg-slate-100 dark:bg-slate-800 p-1">
+            <TabsTrigger value="aguardando_oc" className="gap-2">
+              <Clock className="w-4 h-4" />
+              <span>Aguardando OC</span>
+              <Badge
+                variant="secondary"
+                className="ml-1 px-1.5 py-0 text-xs font-semibold bg-white dark:bg-slate-900"
+              >
+                {rawAguardandoOcItems.length}
+              </Badge>
+            </TabsTrigger>
+            <TabsTrigger value="em_oc" className="gap-2">
+              <CheckCircle2 className="w-4 h-4 text-blue-600" />
+              <span>Em Ordem de Compra</span>
+              <Badge
+                variant="secondary"
+                className="ml-1 px-1.5 py-0 text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300"
+              >
+                {rawEmOcItems.length}
+              </Badge>
+            </TabsTrigger>
+          </TabsList>
 
-      {comprasItems.length === 0 ? (
-        <div className="p-8 text-center border-2 border-dashed rounded-xl border-slate-200 dark:border-slate-800 text-slate-400 font-medium">
-          Nenhuma compra ativa no momento.
+          <span className="text-xs text-muted-foreground hidden sm:inline">
+            {activeTab === 'aguardando_oc'
+              ? 'Selecione itens para gerar novas Ordens de Compra'
+              : 'Itens com OC ativa emitida — clique no nº da OC para visualizar o documento'}
+          </span>
         </div>
-      ) : (
-        <ComprasTable
-          items={comprasItems}
-          allShortages={shortages}
-          onEdit={setEditItem}
-          onDelete={setDeleteItem}
-          selectedIds={selectedIds}
-          onToggleSelect={toggleSelect}
-          onToggleSelectAll={toggleSelectAll}
-          onToggleSelectGroup={toggleSelectGroup}
-          grouped={grouped}
-        />
-      )}
+
+        {/* ABA: AGUARDANDO OC */}
+        <TabsContent value="aguardando_oc" className="space-y-4 focus-visible:outline-none">
+          {/* TOTALIZAÇÃO E CHIPS POR CATEGORIA DO COMPONENTE */}
+          <CategoryFilterChips
+            categoryGroups={categoryGroups}
+            selectedCategoryId={selectedCategoryId}
+            onSelectCategory={setSelectedCategoryId}
+            onSelectCategoryItems={handleSelectCategoryItems}
+            selectedIds={selectedIds}
+            actionLabel="Selecionar todos para Ordem de Compra"
+          />
+
+          {aguardandoOcItems.length === 0 ? (
+            <div className="p-8 text-center border-2 border-dashed rounded-xl border-slate-200 dark:border-slate-800 text-slate-400 font-medium">
+              Nenhum item aguardando Ordem de Compra.
+            </div>
+          ) : (
+            <ComprasTable
+              items={aguardandoOcItems}
+              allShortages={shortages}
+              onEdit={setEditItem}
+              onDelete={setDeleteItem}
+              selectedIds={selectedIds}
+              onToggleSelect={toggleSelect}
+              onToggleSelectAll={toggleSelectAll}
+              onToggleSelectGroup={toggleSelectGroup}
+              grouped={grouped}
+              isEmOc={false}
+              shortageOcMap={shortageOcMap}
+            />
+          )}
+        </TabsContent>
+
+        {/* ABA: EM ORDEM DE COMPRA */}
+        <TabsContent value="em_oc" className="space-y-4 focus-visible:outline-none">
+          {emOcItems.length === 0 ? (
+            <div className="p-8 text-center border-2 border-dashed rounded-xl border-slate-200 dark:border-slate-800 text-slate-400 font-medium">
+              Nenhum item em Ordem de Compra ativa no momento.
+            </div>
+          ) : (
+            <ComprasTable
+              items={emOcItems}
+              allShortages={shortages}
+              onEdit={setEditItem}
+              onDelete={setDeleteItem}
+              grouped={grouped}
+              isEmOc={true}
+              shortageOcMap={shortageOcMap}
+              onOpenOcDoc={handleOpenOcDocFromItem}
+            />
+          )}
+        </TabsContent>
+      </Tabs>
 
       <ComprasItemDialog
         item={editItem}

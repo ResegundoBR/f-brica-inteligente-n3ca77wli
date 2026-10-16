@@ -24,8 +24,20 @@ import { Inventory, InventoryMovement } from '@/types'
 import { getMovementsByInventory, createMovement } from '@/services/inventory'
 import { useToast } from '@/hooks/use-toast'
 import { UserActionBadge } from '@/components/UserActionBadge'
-import { cn, formatQuantity } from '@/lib/utils'
+import { cn } from '@/lib/utils'
+import { formatQuantity, parseQuantityInput } from '@/lib/pcp-utils'
 import { format, parseISO, isValid } from 'date-fns'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { AlertTriangle, AlertCircle } from 'lucide-react'
 
 function fmtDate(val?: string) {
   if (!val) return '-'
@@ -65,6 +77,8 @@ export function InventoryItemDialog({
   const [type, setType] = useState<'Entrada' | 'Saída'>('Entrada')
   const [quantity, setQuantity] = useState('')
   const [reason, setReason] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [confirmLargeOpen, setConfirmLargeOpen] = useState(false)
   const { toast } = useToast()
 
   useEffect(() => {
@@ -75,31 +89,76 @@ export function InventoryItemDialog({
       setType('Entrada')
       setQuantity('')
       setReason('')
+      setConfirmLargeOpen(false)
     }
   }, [open, item])
 
-  const handleAddMovement = async () => {
+  const executeMovement = async (confirmedLarge = false) => {
     if (!item) return
-    const numQty = Number(quantity)
+    const numQty = parseQuantityInput(quantity)
     if (!Number.isFinite(numQty) || numQty <= 0) {
       toast({ title: 'Erro', description: 'Quantidade inválida', variant: 'destructive' })
       return
     }
+
+    if (numQty > 100000) {
+      toast({
+        title: 'Quantidade bloqueada',
+        description:
+          'Quantidades acima de 100.000 unidades não são permitidas por segurança do sistema.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    setIsSubmitting(true)
     try {
       await createMovement({
         inventory_id: item.id,
         quantity: numQty,
         type,
         reason: reason.trim() || undefined,
+        confirmed_large: confirmedLarge,
       })
       const refreshed = await getMovementsByInventory(item.id)
       setMovements(refreshed)
       setQuantity('')
       setReason('')
-      toast({ title: 'Movimentação registrada' })
+      setConfirmLargeOpen(false)
+      toast({ title: 'Movimentação registrada com sucesso' })
     } catch (err: any) {
       toast({ title: 'Erro', description: err.message, variant: 'destructive' })
+    } finally {
+      setIsSubmitting(false)
     }
+  }
+
+  const handleAddMovement = async () => {
+    if (!item) return
+    const numQty = parseQuantityInput(quantity)
+    if (!Number.isFinite(numQty) || numQty <= 0) {
+      toast({ title: 'Erro', description: 'Quantidade inválida', variant: 'destructive' })
+      return
+    }
+
+    if (numQty > 100000) {
+      toast({
+        title: 'Quantidade bloqueada',
+        description:
+          'Quantidades acima de 100.000 unidades não são permitidas por segurança do sistema.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    const currentStock = Number(item.quantity) || 0
+    // Regra: se saída > 10x saldo atual, requer confirmação explícita
+    if (type === 'Saída' && currentStock > 0 && numQty > currentStock * 10) {
+      setConfirmLargeOpen(true)
+      return
+    }
+
+    await executeMovement(false)
   }
 
   if (!item) return null
@@ -312,15 +371,14 @@ export function InventoryItemDialog({
               <div className="space-y-1">
                 <Label className="text-xs">Quantidade</Label>
                 <Input
-                  type="number"
-                  min="0.01"
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
                   value={quantity}
                   onChange={(e) => setQuantity(e.target.value)}
-                  placeholder="0"
+                  placeholder="Ex: 5,73 ou 10"
                   className="notranslate"
                   translate="no"
-                />{' '}
+                />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Motivo</Label>
@@ -331,12 +389,72 @@ export function InventoryItemDialog({
                 />
               </div>
             </div>
-            <Button size="sm" onClick={handleAddMovement} disabled={!quantity}>
-              Registrar Movimentação
+            {parseQuantityInput(quantity) > 100000 && (
+              <div className="p-2.5 rounded border border-red-300 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 text-xs flex items-center gap-2">
+                <AlertCircle className="size-4 shrink-0 text-red-600" />
+                <span>
+                  Atenção: Quantidades acima de 100.000 unidades são rejeitadas pelo sistema.
+                </span>
+              </div>
+            )}
+            <Button
+              size="sm"
+              onClick={handleAddMovement}
+              disabled={!quantity || isSubmitting || parseQuantityInput(quantity) > 100000}
+            >
+              {isSubmitting ? 'Registrando...' : 'Registrar Movimentação'}
             </Button>
           </div>
         </div>
       </DialogContent>
+
+      <AlertDialog open={confirmLargeOpen} onOpenChange={setConfirmLargeOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-amber-600">
+              <AlertTriangle className="size-5 text-amber-600" />
+              Confirmação de Saída de Grande Porte
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3 pt-2">
+              <p>
+                A quantidade informada para saída é mais de <strong>10 vezes superior</strong> ao
+                saldo atual em estoque deste item:
+              </p>
+              <div className="p-3 rounded-lg border bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200">
+                <div className="text-xs uppercase font-bold text-amber-700 dark:text-amber-400">
+                  Quantidade Digitada
+                </div>
+                <div className="text-2xl font-black text-amber-800 dark:text-amber-200">
+                  {formatQuantity(parseQuantityInput(quantity))} {item.unit || 'un'}
+                </div>
+                <div className="text-xs mt-1 text-amber-700 dark:text-amber-300">
+                  Saldo atual em estoque:{' '}
+                  <strong>
+                    {formatQuantity(item.quantity)} {item.unit || 'un'}
+                  </strong>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Confirme se a quantidade está correta para autorizar a operação com a sinalização de
+                saída extraordinária.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSubmitting}>Cancelar e Corrigir</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isSubmitting}
+              className="bg-amber-600 hover:bg-amber-700 text-white font-bold"
+              onClick={(e) => {
+                e.preventDefault()
+                executeMovement(true)
+              }}
+            >
+              {isSubmitting ? 'Registrando...' : 'Sim, Confirmar Saída Extraordinária'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   )
 }

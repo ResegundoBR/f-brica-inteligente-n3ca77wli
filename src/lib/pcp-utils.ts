@@ -475,9 +475,115 @@ export function getNextStageForOp(
  * - Sem minimumFractionDigits: inteiros aparecem limpos (ex: 10 -> "10", 0 -> "0").
  * - Valores fracionários (metros, mm, etc.): até 2 casas decimais (ex: 5.8084 -> "5,81", 183.4464 -> "183,45").
  */
+/**
+ * Converte input de texto do usuário em número float-safe respeitando o padrão brasileiro:
+ * - Aceita vírgula como decimal: '5,73' -> 5.73; '0,5' -> 0.5.
+ * - Ponto como separador de milhar APENAS quando o padrão for claramente milhar (ex.: '1.234,56' -> 1234.56, '12.345' -> 12345).
+ * - Quando o usuário digita '5.73' ou '5.730' ou '0.5' com intenção de decimal, NÃO deve virar milhar:
+ *   - '5.73' -> 5.73
+ *   - '5.730' -> 5.73 (evita virar 5730!)
+ *   - '0.541' -> 0.541
+ *   - '1.234' -> se tiver vírgula posterior (1.234,56), o ponto é milhar.
+ *   - Ponto isolado seguido de exatamente 3 dígitos com valor à esquerda >= 1 e sem vírgula:
+ *     Se for >= 10 (ex.: '10.000'), trata como 10000. Se for dígito único (ex.: '5.730'), a intenção no Brasil ao digitar
+ *     ponto no teclado numérico costuma ser decimal (5,730 -> 5.73), prevenindo compras/baixas infladas de 5730 unidades.
+ *     Regra de segurança anti-inflação: se o valor inteiro for < 10 e tiver ponto com 3 dígitos (ex: 5.730, 1.459),
+ *     trata como decimal 5.73 / 1.459!
+ */
+export function parseQuantityInput(val: string | number | null | undefined): number {
+  if (val === null || val === undefined || val === '') return 0
+  if (typeof val === 'number') {
+    return isNaN(val) ? 0 : Math.round(val * 10000) / 10000
+  }
+
+  const raw = String(val).trim()
+  if (!raw) return 0
+
+  // Caso 1: Contém vírgula e ponto (ex.: 1.234,56 ou 1,234.56)
+  if (raw.includes(',') && raw.includes('.')) {
+    const lastComma = raw.lastIndexOf(',')
+    const lastDot = raw.lastIndexOf('.')
+    if (lastComma > lastDot) {
+      // 1.234,56 -> ponto é milhar, vírgula é decimal
+      const normalized = raw.replace(/\./g, '').replace(',', '.')
+      const n = parseFloat(normalized)
+      return isNaN(n) ? 0 : Math.round(n * 10000) / 10000
+    } else {
+      // 1,234.56 -> vírgula é milhar, ponto é decimal
+      const normalized = raw.replace(/,/g, '')
+      const n = parseFloat(normalized)
+      return isNaN(n) ? 0 : Math.round(n * 10000) / 10000
+    }
+  }
+
+  // Caso 2: Apenas vírgula (ex.: '5,73', '10,5', '0,541')
+  if (raw.includes(',')) {
+    const countCommas = (raw.match(/,/g) || []).length
+    if (countCommas === 1) {
+      const n = parseFloat(raw.replace(',', '.'))
+      return isNaN(n) ? 0 : Math.round(n * 10000) / 10000
+    }
+    // Múltiplas vírgulas (ex: 1,000,000)
+    const normalized = raw.replace(/,/g, '')
+    const n = parseFloat(normalized)
+    return isNaN(n) ? 0 : Math.round(n * 10000) / 10000
+  }
+
+  // Caso 3: Apenas ponto (ex.: '5.73', '5.730', '0.541', '1.234', '10.000')
+  if (raw.includes('.')) {
+    const countDots = (raw.match(/\./g) || []).length
+    if (countDots > 1) {
+      // Claramente separadores de milhar (ex.: 1.000.000)
+      const n = parseFloat(raw.replace(/\./g, ''))
+      return isNaN(n) ? 0 : Math.round(n * 10000) / 10000
+    }
+
+    // Exatamente um ponto.
+    // Padrões como:
+    // '0.541' -> 0.541 (começa com 0 -> sempre decimal)
+    // '5.73' -> 5.73 (1 ou 2 dígitos decimais -> sempre decimal)
+    // '5.7300' ou mais -> decimal
+    // '5.730' -> 3 dígitos após o ponto. Se a parte inteira for < 10 (ex.: '5.730'),
+    // a diretriz explícita diz: "'5.730' digitado com intenção de 5,73 não deve virar 5.730 [cinco mil e setecentos e trinta]."
+    // Portanto trata como decimal 5.73!
+    const parts = raw.split('.')
+    const integerPart = parts[0]
+    const decimalPart = parts[1]
+
+    if (decimalPart.length !== 3) {
+      // 1, 2, 4+ dígitos pós-ponto são inquestionavelmente decimais no input
+      const n = parseFloat(raw)
+      return isNaN(n) ? 0 : Math.round(n * 10000) / 10000
+    }
+
+    // Exatamente 3 dígitos após o ponto:
+    const intVal = parseInt(integerPart, 10)
+    if (isNaN(intVal) || intVal < 10) {
+      // Dígito único à esquerda como '5.730' ou '0.541' ou '1.459' -> intenção de decimal
+      const n = parseFloat(raw)
+      return isNaN(n) ? 0 : Math.round(n * 10000) / 10000
+    }
+
+    // Para números grandes com 2 ou mais dígitos à esquerda e 3 zeros ou padrão de milhar (ex.: '10.000', '100.000')
+    // Padrão clássico de milhar:
+    if (/^\d{2,3}\.000$/.test(raw)) {
+      return parseInt(raw.replace('.', ''), 10)
+    }
+
+    // Por segurança e padrão brasileiro para entrada de quantidades industriais fracionárias,
+    // se o usuário usou ponto no teclado numérico, tratamos como decimal.
+    const n = parseFloat(raw)
+    return isNaN(n) ? 0 : Math.round(n * 10000) / 10000
+  }
+
+  // Caso 4: Inteiro puro (ex.: '10', '500')
+  const n = parseFloat(raw)
+  return isNaN(n) ? 0 : Math.round(n * 10000) / 10000
+}
+
 export function formatQuantity(val: number | string | null | undefined): string {
   if (val === null || val === undefined || val === '') return '0'
-  const num = typeof val === 'number' ? val : parseFloat(String(val).replace(',', '.'))
+  const num = typeof val === 'number' ? val : parseQuantityInput(val)
   if (Number.isNaN(num)) return '0'
   return num.toLocaleString('pt-BR', { maximumFractionDigits: 2 })
 }

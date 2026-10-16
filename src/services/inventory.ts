@@ -59,6 +59,7 @@ export const createMovement = async (data: {
   total_value?: number
   freight?: number
   exit_date?: string
+  confirmed_large?: boolean
 }) => {
   const item = await pb.collection('inventory').getOne<Inventory>(data.inventory_id)
   const currentQty = Number(item.quantity) || 0

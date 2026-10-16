@@ -16,7 +16,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { distributeOcItemDirectToInventory } from '@/services/material-distribution'
 import { useToast } from '@/hooks/use-toast'
 import { getErrorMessage } from '@/lib/pocketbase/errors'
-import { toDateFieldValue, formatQuantity } from '@/lib/pcp-utils'
+import { toDateFieldValue, formatQuantity, parseQuantityInput } from '@/lib/pcp-utils'
 import { checkAndUpdateAffectedOcs } from '@/services/oc-receiving-automation'
 import { NoTranslate } from '@/components/NoTranslate'
 
@@ -43,24 +43,30 @@ export function DirectInventoryReceiveDialog({
 
   const totalQty = ocItem ? Number(ocItem.quantity) || 0 : 0
   const alreadyRcvd = ocItem ? Number(ocItem.received_quantity) || 0 : 0
-  const saldo = Math.max(0, totalQty - alreadyRcvd)
+  const saldo = Math.max(0, Math.round((totalQty - alreadyRcvd) * 10000) / 10000)
 
   useEffect(() => {
     if (!open || !ocItem) return
     const currentSaldo = Math.max(
       0,
-      (Number(ocItem.quantity) || 0) - (Number(ocItem.received_quantity) || 0),
+      Math.round(
+        ((Number(ocItem.quantity) || 0) - (Number(ocItem.received_quantity) || 0)) * 10000,
+      ) / 10000,
     )
-    setReceivedQty(currentSaldo > 0 ? String(currentSaldo) : String(ocItem.quantity || 0))
+    setReceivedQty(
+      currentSaldo > 0
+        ? String(currentSaldo).replace('.', ',')
+        : String(ocItem.quantity || 0).replace('.', ','),
+    )
     setPurchaseDate(toDateFieldValue(ocItem.created || new Date()))
     setArrivalDate(toDateFieldValue(new Date()))
     setUnitPrice(ocItem.unit_price ? String(ocItem.unit_price) : '')
     setFreight('')
   }, [open, ocItem])
 
-  const numReceivedQty = Number(receivedQty) || 0
-  const numUnitPrice = Number(unitPrice) || 0
-  const numFreight = Number(freight) || 0
+  const numReceivedQty = parseQuantityInput(receivedQty)
+  const numUnitPrice = parseQuantityInput(unitPrice)
+  const numFreight = parseQuantityInput(freight)
   const isOverSaldo = numReceivedQty > saldo + 0.0001
   const computedTotalValue =
     numUnitPrice > 0 ? numUnitPrice * numReceivedQty + numFreight : numFreight
@@ -206,13 +212,11 @@ export function DirectInventoryReceiveDialog({
           {/* Campo Quantidade a Receber */}
           <div className="space-y-1">
             <Label className="text-xs font-semibold">
-              Quantidade a Receber Agora (Saldo máx: {formatQuantity(saldo)} un)
+              Quantidade a Receber Agora (Saldo máx: {formatQuantity(saldo)} un/mt)
             </Label>
             <Input
-              type="number"
-              min="0.001"
-              step="any"
-              max={saldo}
+              type="text"
+              inputMode="decimal"
               placeholder="0"
               className="max-w-[200px] notranslate"
               translate="no"
@@ -222,7 +226,7 @@ export function DirectInventoryReceiveDialog({
             {isOverSaldo && (
               <p className="text-xs text-red-600 font-semibold flex items-center gap-1 mt-1">
                 <AlertCircle className="size-3.5" /> Quantidade excede o saldo da OC (
-                {formatQuantity(saldo)} un)
+                {formatQuantity(saldo)})
               </p>
             )}
           </div>

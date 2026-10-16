@@ -189,6 +189,8 @@ export interface OcItemDisplayRow {
   isBatch?: boolean
   opItems?: MaterialShortage[]
   surplusQuantity?: number
+  hasPendingOpDemand?: boolean
+  isSurplusOnly?: boolean
 }
 
 export interface OcGroupedRecebimento {
@@ -551,6 +553,16 @@ function OcComponentRow({
           >
             Recebido
           </Badge>
+        ) : row.isSurplusOnly ? (
+          <Button
+            size="sm"
+            className="h-7 bg-amber-600 hover:bg-amber-700 text-white text-xs px-2.5 shadow-sm"
+            onClick={() => onDistribuirOcItem && onDistribuirOcItem(row.ocItem)}
+            title="OPs vinculadas já atendidas integralmente. Receber o saldo remanescente diretamente no estoque."
+          >
+            <Warehouse className="size-3.5 mr-1" />
+            Receber excedente ao estoque
+          </Button>
         ) : isStandalone ? (
           <Button
             size="sm"
@@ -558,9 +570,9 @@ function OcComponentRow({
             onClick={() => onDistribuirOcItem && onDistribuirOcItem(row.ocItem)}
           >
             <Warehouse className="size-3.5 mr-1" />
-            Distribuir
+            Receber ao estoque
           </Button>
-        ) : row.shortage && row.saldoQty > 0.0001 ? (
+        ) : row.shortage && row.saldoQty > 0.0001 && row.hasPendingOpDemand ? (
           <Button
             size="sm"
             className="h-7 bg-green-600 hover:bg-green-700 text-white text-xs px-2.5"
@@ -568,6 +580,16 @@ function OcComponentRow({
           >
             <CheckCircle className="size-3.5 mr-1" />
             Distribuir
+          </Button>
+        ) : row.saldoQty > 0.0001 ? (
+          <Button
+            size="sm"
+            className="h-7 bg-amber-600 hover:bg-amber-700 text-white text-xs px-2.5 shadow-sm"
+            onClick={() => onDistribuirOcItem && onDistribuirOcItem(row.ocItem)}
+            title="Receber saldo no estoque"
+          >
+            <Warehouse className="size-3.5 mr-1" />
+            Receber excedente ao estoque
           </Button>
         ) : (
           <span className="text-xs text-muted-foreground">-</span>
@@ -807,6 +829,7 @@ export function RecebimentoTable({
         let isBatch = false
         let batchOpItems: MaterialShortage[] = []
         let surplusQuantity = 0
+        let hasPendingOpDemand = false
 
         if (shortage) {
           // As colunas Comprado / Já Recebido / Saldo vêm da quantidade do item da OC (purchasedQty)
@@ -842,7 +865,26 @@ export function RecebimentoTable({
                 (m) => !m.order_id && m.observation?.includes('Compra para estoque'),
               )
               surplusQuantity = surplus ? Number(surplus.quantity) || 0 : 0
+
+              // Verifica se ainda há demanda de OP pendente no lote
+              hasPendingOpDemand = batchOpItems.some((m) => {
+                const mQty = Number(m.quantity) || 0
+                const mRcvd = Number(m.received_quantity) || 0
+                return m.status !== 'Recebido' && mQty - mRcvd > 0.0001
+              })
+            } else {
+              // Lote com 1 membro
+              const hasOp = Boolean(shortage.order_id)
+              const pend =
+                (Number(shortage.quantity) || 0) - (Number(shortage.received_quantity) || 0)
+              hasPendingOpDemand = hasOp && shortage.status !== 'Recebido' && pend > 0.0001
             }
+          } else {
+            // Shortage individual
+            const hasOp = Boolean(shortage.order_id)
+            const pend =
+              (Number(shortage.quantity) || 0) - (Number(shortage.received_quantity) || 0)
+            hasPendingOpDemand = hasOp && shortage.status !== 'Recebido' && pend > 0.0001
           }
         }
 
@@ -850,6 +892,10 @@ export function RecebimentoTable({
         if (purchasedQty > 0 && receivedQty >= purchasedQty - 0.0001) {
           fullyReceivedCount++
         }
+
+        // Se o item tem saldo na OC mas NÃO há mais nenhuma demanda pendente de OP
+        // vinculada a ele (todos os shortages já recebidos ou item avulso/excedente):
+        const isSurplusOnly = !isStandalone && !hasPendingOpDemand && saldoQty > 0.0001
 
         itemRows.push({
           type: isStandalone ? 'standalone' : 'shortage',
@@ -866,6 +912,8 @@ export function RecebimentoTable({
           isBatch,
           opItems: batchOpItems,
           surplusQuantity,
+          hasPendingOpDemand,
+          isSurplusOnly,
         })
       }
 

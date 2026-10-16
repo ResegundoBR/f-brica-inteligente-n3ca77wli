@@ -151,10 +151,10 @@ export function OrdemCompraModal({
       {
         description: newDesc.trim(),
         ...(newCode.trim() && { code: newCode.trim() }),
-        quantity: Number(newQty) || 1,
-        unit_price: Number(newPrice) || 0,
-        st_value: Number(newSt) || 0,
-        ipi_value: Number(newIpi) || 0,
+        quantity: parseQuantityInput(newQty) || 1,
+        unit_price: parseQuantityInput(newPrice) || 0,
+        st_value: parseQuantityInput(newSt) || 0,
+        ipi_value: parseQuantityInput(newIpi) || 0,
       },
     ])
     setNewDesc('')
@@ -311,11 +311,12 @@ export function OrdemCompraModal({
                       </TableCell>
                       <TableCell>
                         <Input
-                          type="number"
+                          type="text"
+                          inputMode="decimal"
                           className="h-8 w-16 notranslate"
                           translate="no"
                           value={item.quantity}
-                          onChange={(e) => updateQty(idx, Number(e.target.value) || 0)}
+                          onChange={(e) => updateQty(idx, parseQuantityInput(e.target.value))}
                         />
                       </TableCell>
                       <TableCell>
@@ -396,7 +397,8 @@ export function OrdemCompraModal({
             <div className="w-16 space-y-1">
               <Label className="text-xs">Qtde</Label>
               <Input
-                type="number"
+                type="text"
+                inputMode="decimal"
                 value={newQty}
                 onChange={(e) => setNewQty(e.target.value)}
                 className="notranslate"

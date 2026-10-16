@@ -15,7 +15,7 @@ import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
 import { useAuth } from '@/hooks/use-auth'
 import { createMovement } from '@/services/inventory'
-import { normalizeSearchText, formatQuantity } from '@/lib/pcp-utils'
+import { normalizeSearchText, formatQuantity, parseQuantityInput } from '@/lib/pcp-utils'
 import type { PcpOrder, Inventory } from '@/types'
 import {
   Package,
@@ -27,6 +27,16 @@ import {
   AlertCircle,
   Check,
 } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 
 interface StockWithdrawalModalProps {
   op: PcpOrder | null
@@ -57,6 +67,7 @@ export function StockWithdrawalModal({
   // Quantity input
   const [quantityInput, setQuantityInput] = useState('1')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [confirmLargeOpen, setConfirmLargeOpen] = useState(false)
 
   const dropdownRef = useRef<HTMLDivElement>(null)
 
@@ -110,8 +121,7 @@ export function StockWithdrawalModal({
       .slice(0, 30)
   }, [inventoryList, searchQuery])
 
-  const parsedQty = parseFloat(quantityInput.replace(',', '.'))
-  const numQty = isNaN(parsedQty) ? 0 : parsedQty
+  const numQty = parseQuantityInput(quantityInput)
   const currentStock = selectedItem ? Number(selectedItem.quantity) || 0 : 0
   const isOverStock = selectedItem !== null && numQty > currentStock
 
@@ -135,6 +145,64 @@ export function StockWithdrawalModal({
     }
   }
 
+  const executeWithdrawal = async (confirmedLarge = false) => {
+    if (!op || !selectedItem) return
+
+    if (numQty <= 0) {
+      toast({
+        title: 'Quantidade inválida',
+        description: 'Informe uma quantidade maior que zero.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    if (numQty > 100000) {
+      toast({
+        title: 'Quantidade bloqueada',
+        description:
+          'Quantidades acima de 100.000 unidades não são permitidas por segurança do sistema.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    setIsSubmitting(true)
+    try {
+      const orderNumber = op.order_number || '-'
+      const opNumber = op.op_number || '-'
+      const reason = `Retirada manual — Pedido ${orderNumber} / OP ${opNumber}`
+      const exitDate = new Date().toISOString()
+
+      await createMovement({
+        inventory_id: selectedItem.id,
+        quantity: numQty,
+        type: 'Saída',
+        reason,
+        order_id: op.id,
+        exit_date: exitDate,
+        confirmed_large: confirmedLarge,
+      })
+
+      toast({
+        title: 'Retirada realizada com sucesso!',
+        description: `${formatQuantity(numQty)} ${selectedItem.unit || 'un'} de "${selectedItem.description}" retirado(s) do estoque para a OP ${opNumber}.`,
+      })
+
+      setConfirmLargeOpen(false)
+      onWithdrawalSuccess?.()
+      onOpenChange(false)
+    } catch (err: any) {
+      toast({
+        title: 'Erro ao registrar retirada',
+        description: err.message,
+        variant: 'destructive',
+      })
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   const handleConfirmWithdrawal = async () => {
     if (!op) return
     if (!selectedItem) {
@@ -155,38 +223,25 @@ export function StockWithdrawalModal({
       return
     }
 
-    setIsSubmitting(true)
-    try {
-      const orderNumber = op.order_number || '-'
-      const opNumber = op.op_number || '-'
-      const reason = `Retirada manual — Pedido ${orderNumber} / OP ${opNumber}`
-      const exitDate = new Date().toISOString()
-
-      await createMovement({
-        inventory_id: selectedItem.id,
-        quantity: numQty,
-        type: 'Saída',
-        reason,
-        order_id: op.id,
-        exit_date: exitDate,
-      })
-
+    if (numQty > 100000) {
       toast({
-        title: 'Retirada realizada com sucesso!',
-        description: `${numQty} ${selectedItem.unit || 'un'} de "${selectedItem.description}" retirado(s) do estoque para a OP ${opNumber}.`,
-      })
-
-      onWithdrawalSuccess?.()
-      onOpenChange(false)
-    } catch (err: any) {
-      toast({
-        title: 'Erro ao registrar retirada',
-        description: err.message,
+        title: 'Quantidade bloqueada',
+        description:
+          'Quantidades acima de 100.000 unidades não são permitidas por segurança do sistema.',
         variant: 'destructive',
       })
-    } finally {
-      setIsSubmitting(false)
+      return
     }
+
+    // Regra: quando a quantidade digitada for maior que 10x o saldo atual do item,
+    // o frontend deve mostrar modal de confirmação exibindo o valor digitado em destaque
+    // e, ao confirmar, enviar a flag confirmed_large=true.
+    if (currentStock > 0 && numQty > currentStock * 10) {
+      setConfirmLargeOpen(true)
+      return
+    }
+
+    await executeWithdrawal(false)
   }
 
   const handleRedirectToShortage = () => {
@@ -320,14 +375,22 @@ export function StockWithdrawalModal({
             </Label>
             <Input
               id="stock-qty"
-              type="number"
-              step="any"
-              min="0.001"
+              type="text"
+              inputMode="decimal"
               value={quantityInput}
               onChange={(e) => setQuantityInput(e.target.value)}
-              placeholder="1"
-              className="text-base font-semibold h-11"
+              placeholder="Ex: 5,73 ou 10"
+              className="text-base font-semibold h-11 notranslate"
+              translate="no"
             />
+            {numQty > 100000 && (
+              <div className="p-2.5 rounded border border-red-300 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 text-xs flex items-center gap-2">
+                <AlertCircle className="size-4 shrink-0 text-red-600" />
+                <span>
+                  Atenção: Quantidades acima de 100.000 unidades são rejeitadas pelo sistema.
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Warning: quantity > stock (NON-BLOCKING) */}
@@ -387,7 +450,7 @@ export function StockWithdrawalModal({
           <Button
             type="button"
             className="h-11 font-bold bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm"
-            disabled={isSubmitting || !selectedItem || numQty <= 0}
+            disabled={isSubmitting || !selectedItem || numQty <= 0 || numQty > 100000}
             onClick={handleConfirmWithdrawal}
           >
             {isSubmitting ? (
@@ -402,6 +465,54 @@ export function StockWithdrawalModal({
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      <AlertDialog open={confirmLargeOpen} onOpenChange={setConfirmLargeOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-amber-600">
+              <AlertTriangle className="size-5 text-amber-600" />
+              Confirmação de Retirada de Grande Porte
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3 pt-2">
+              <p>
+                A quantidade informada para retirada é mais de <strong>10 vezes superior</strong> ao
+                saldo atual em estoque deste item:
+              </p>
+              <div className="p-3 rounded-lg border bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200">
+                <div className="text-xs uppercase font-bold text-amber-700 dark:text-amber-400">
+                  Quantidade Digitada
+                </div>
+                <div className="text-2xl font-black text-amber-800 dark:text-amber-200">
+                  {formatQuantity(numQty)} {selectedItem?.unit || 'un'}
+                </div>
+                <div className="text-xs mt-1 text-amber-700 dark:text-amber-300">
+                  Saldo atual em estoque:{' '}
+                  <strong>
+                    {formatQuantity(currentStock)} {selectedItem?.unit || 'un'}
+                  </strong>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Confirme se a quantidade foi digitada corretamente para autorizar a operação com a
+                marcação de retirada extraordinária.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSubmitting}>Cancelar e Corrigir</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isSubmitting}
+              className="bg-amber-600 hover:bg-amber-700 text-white font-bold"
+              onClick={(e) => {
+                e.preventDefault()
+                executeWithdrawal(true)
+              }}
+            >
+              {isSubmitting ? 'Registrando...' : 'Sim, Confirmar Retirada Extraordinária'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   )
 }

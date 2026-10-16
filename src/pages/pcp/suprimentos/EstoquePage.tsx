@@ -28,7 +28,8 @@ import { EditInventoryItemDialog } from './components/EditInventoryItemDialog'
 import { ProductDossierModal } from './components/ProductDossierModal'
 import { ProductSearchBar } from './components/ProductSearchBar'
 import { useToast } from '@/hooks/use-toast'
-import { cn, formatQuantity } from '@/lib/utils'
+import { cn } from '@/lib/utils'
+import { formatQuantity, parseQuantityInput } from '@/lib/pcp-utils'
 import { NoTranslate } from '@/components/NoTranslate'
 import { getInventory, createInventoryItem } from '@/services/inventory'
 import { getActiveReservationsMap, normalizeCode } from '@/services/material-reservations'
@@ -145,8 +146,8 @@ export default function EstoquePage() {
       await createInventoryItem({
         code: newCode.trim(),
         description: newDesc.trim(),
-        quantity: Number(newQty) || 0,
-        min_quantity: Number(newMin) || 0,
+        quantity: parseQuantityInput(newQty) || 0,
+        min_quantity: parseQuantityInput(newMin) || 0,
         unit: newUnit.trim() || 'un',
       })
       toast({ title: 'Item criado com sucesso' })
@@ -549,21 +550,25 @@ export default function EstoquePage() {
               <div className="space-y-2">
                 <Label>Quantidade</Label>
                 <Input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   value={newQty}
                   onChange={(e) => setNewQty(e.target.value)}
                   className="notranslate"
                   translate="no"
+                  placeholder="0"
                 />
               </div>
               <div className="space-y-2">
                 <Label>Estoque Mín.</Label>
                 <Input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   value={newMin}
                   onChange={(e) => setNewMin(e.target.value)}
                   className="notranslate"
                   translate="no"
+                  placeholder="0"
                 />
               </div>
               <div className="space-y-2">

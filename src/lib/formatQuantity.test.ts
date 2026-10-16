@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatQuantity } from './pcp-utils'
+import { formatQuantity, parseQuantityInput } from './pcp-utils'
 
 describe('formatQuantity', () => {
   it('formata números inteiros sem casas decimais extras', () => {
@@ -27,5 +27,32 @@ describe('formatQuantity', () => {
   it('respeita strings numéricas com vírgula ou ponto', () => {
     expect(formatQuantity('183.45')).toBe('183,45')
     expect(formatQuantity('183,45')).toBe('183,45')
+  })
+})
+
+describe('parseQuantityInput', () => {
+  it('aceita vírgula como decimal', () => {
+    expect(parseQuantityInput('5,73')).toBe(5.73)
+    expect(parseQuantityInput('0,541')).toBe(0.541)
+    expect(parseQuantityInput('10,5')).toBe(10.5)
+  })
+
+  it('evita que 5.730 vire 5730 quando digitado com intenção de decimal', () => {
+    expect(parseQuantityInput('5.730')).toBe(5.73)
+    expect(parseQuantityInput('5.73')).toBe(5.73)
+    expect(parseQuantityInput('1.459')).toBe(1.459)
+    expect(parseQuantityInput('0.541')).toBe(0.541)
+  })
+
+  it('aceita separador de milhar quando o padrão for claramente milhar com decimal ou formato clássico', () => {
+    expect(parseQuantityInput('1.234,56')).toBe(1234.56)
+    expect(parseQuantityInput('10.000')).toBe(10000)
+    expect(parseQuantityInput('100.000')).toBe(100000)
+  })
+
+  it('trata valores vazios e numéricos diretos', () => {
+    expect(parseQuantityInput('')).toBe(0)
+    expect(parseQuantityInput(null)).toBe(0)
+    expect(parseQuantityInput(12.34)).toBe(12.34)
   })
 })

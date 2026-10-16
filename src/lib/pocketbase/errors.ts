@@ -29,62 +29,57 @@ export function getErrorMessage(error: unknown): string {
 }
 
 const FIELD_LABELS: Record<string, string> = {
-  expected_date: 'Previsão de Entrega',
   supplier: 'Fornecedor',
-  supplier_id: 'Fornecedor',
-  payment_terms: 'Condições de Pagamento',
-  delivery_terms: 'Termos de Entrega',
+  expected_date: 'Previsão de Entrega',
   delivery_type: 'Tipo de Entrega',
-  oc_number: 'Número da OC',
+  delivery_terms: 'Condições de Entrega',
+  payment_terms: 'Condições de Pagamento',
   quantity: 'Quantidade',
   unit_price: 'Preço Unitário',
+  received_quantity: 'Quantidade Recebida',
   description: 'Descrição',
   code: 'Código',
+  material_shortage_id: 'Solicitação Vinculada',
+  oc_id: 'Ordem de Compra',
 }
 
-const ERROR_CODE_MESSAGES: Record<string, string> = {
+const CODE_MESSAGES: Record<string, string> = {
   validation_required: 'Obrigatório',
   validation_invalid_date: 'Data inválida',
-  validation_not_unique: 'Já existe outro registro com este valor',
-  validation_min: 'Valor abaixo do mínimo permitido',
-  validation_max: 'Valor acima do máximo permitido',
+  validation_min: 'Valor abaixo do mínimo',
+  validation_max: 'Valor excede o limite',
+  validation_not_found: 'Registro não encontrado',
 }
 
-export function formatDetailedErrorMessage(error: unknown, fallback?: string): string {
-  if (!error) return fallback || 'Erro inesperado.'
+export function formatDetailedErrorMessage(error: unknown, fallbackMessage?: string): string {
+  if (!error) return fallbackMessage || 'Erro desconhecido.'
+
+  // Se o objeto de erro tiver response.data com campos detalhados
   const errObj = error as {
     response?: {
       message?: string
-      data?: Record<string, { code?: string; message?: string } | string>
+      data?: Record<string, { code?: string; message?: string }>
     }
     message?: string
   }
 
-  const data = errObj.response?.data
-  if (data && typeof data === 'object') {
+  const data = errObj?.response?.data
+  if (data && typeof data === 'object' && Object.keys(data).length > 0) {
     const parts: string[] = []
-    for (const [field, val] of Object.entries(data)) {
+    for (const [field, detail] of Object.entries(data)) {
       const label = FIELD_LABELS[field] || field
-      let msg = ''
-      if (typeof val === 'string') {
-        msg = val
-      } else if (val && typeof val === 'object') {
-        const code = val.code || ''
-        msg = ERROR_CODE_MESSAGES[code] || val.message || 'Inválido'
+      const code = detail?.code || ''
+      let detailMsg = detail?.message || ''
+      if (code && CODE_MESSAGES[code]) {
+        detailMsg = CODE_MESSAGES[code]
       }
-      if (msg) {
-        parts.push(`${label}: ${msg}`)
-      }
+      parts.push(`${label}: ${detailMsg}`)
     }
     if (parts.length > 0) {
-      return parts.join(' • ')
+      return parts.join('; ')
     }
   }
 
-  return (
-    errObj.response?.message ||
-    errObj.message ||
-    fallback ||
-    'Erro de validação. Verifique os campos.'
-  )
+  const baseMsg = errObj?.response?.message || errObj?.message
+  return baseMsg || fallbackMessage || 'Erro na operação.'
 }

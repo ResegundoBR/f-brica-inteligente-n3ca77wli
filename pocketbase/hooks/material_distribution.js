@@ -44,6 +44,41 @@ routerAdd(
       return 0
     }
 
+    // Atualiza estritamente o item de ordem_compra_itens vinculado exatamente por material_shortage_id
+    function syncLinkedOcItem(shortageId, addedQty) {
+      if (!shortageId || !addedQty || addedQty <= 0) return
+      try {
+        var linkedOcItem = $app.findFirstRecordByFilter(
+          'ordem_compra_itens',
+          "material_shortage_id = '" + shortageId.replace(/'/g, "''") + "'",
+        )
+        if (linkedOcItem) {
+          var curItemRcvd = getRecordFloat(linkedOcItem, 'received_quantity')
+          var itemTotalQty = getRecordFloat(linkedOcItem, 'quantity')
+          var newItemRcvd = Math.round((curItemRcvd + addedQty) * 10000) / 10000
+          if (itemTotalQty > 0 && newItemRcvd > itemTotalQty) {
+            newItemRcvd = itemTotalQty
+          }
+          linkedOcItem.set('received_quantity', newItemRcvd)
+          $app.save(linkedOcItem)
+          console.log(
+            'Linked OC item ' +
+              linkedOcItem.id +
+              ' updated received_quantity=' +
+              newItemRcvd +
+              ' (added ' +
+              addedQty +
+              ') for shortage ' +
+              shortageId,
+          )
+        }
+      } catch (ocErr) {
+        console.log(
+          'Error syncing linked OC item for shortage ' + shortageId + ': ' + String(ocErr),
+        )
+      }
+    }
+
     try {
       var body = e.requestInfo().body || {}
       var ocItemId = (body.oc_item_id || '').trim()
@@ -455,6 +490,10 @@ routerAdd(
               ' received=' +
               origNewReceived,
           )
+
+          // Sincronizar item de ordem_compra_itens vinculado exclusivamente a este shortage
+          syncLinkedOcItem(shortageIdInput, totalReceived)
+
           results.push({ shortage_id: shortageIdInput, success: true, status: singleStatus })
         } catch (sErr) {
           console.log('Error updating direct shortage ' + shortageIdInput + ': ' + String(sErr))
@@ -565,6 +604,9 @@ routerAdd(
         )
         $app.save(shortage)
         console.log('Shortage saved ' + dist.shortage_id)
+
+        // Sincronizar item de ordem_compra_itens vinculado exclusivamente a este shortage
+        syncLinkedOcItem(dist.shortage_id, distQty)
 
         var orderId = shortage.getString('order_id') || ''
         var opNumber = ''

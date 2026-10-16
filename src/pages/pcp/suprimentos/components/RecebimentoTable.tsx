@@ -560,7 +560,7 @@ function OcComponentRow({
             <Warehouse className="size-3.5 mr-1" />
             Distribuir
           </Button>
-        ) : row.shortage ? (
+        ) : row.shortage && row.saldoQty > 0.0001 ? (
           <Button
             size="sm"
             className="h-7 bg-green-600 hover:bg-green-700 text-white text-xs px-2.5"
@@ -810,9 +810,15 @@ export function RecebimentoTable({
 
         if (shortage) {
           // As colunas Comprado / Já Recebido / Saldo vêm da quantidade do item da OC (purchasedQty)
-          // menos o já recebido correspondente (shortage.received_quantity ou ocItem.received_quantity)
+          // menos o já recebido correspondente (shortage.received_quantity ou ocItem.received_quantity).
+          // Se o shortage já indica recebimento total pelo status 'Recebido' e received_quantity >= quantity,
+          // ou se o shortage.received_quantity é maior, considera recebido pela fonte que indicar recebimento.
           const sRcvd = Number(shortage.received_quantity) || 0
-          if (sRcvd > receivedQty) {
+          const sQty = Number(shortage.quantity) || 0
+          if (shortage.status === 'Recebido' && sQty > 0 && sRcvd >= sQty - 0.0001) {
+            // Se o shortage está totalmente recebido, o item vinculado deve refletir pelo menos o sRcvd (ou o purchasedQty)
+            receivedQty = Math.max(receivedQty, sRcvd, purchasedQty <= sQty ? purchasedQty : sRcvd)
+          } else if (sRcvd > receivedQty) {
             receivedQty = sRcvd
           }
 

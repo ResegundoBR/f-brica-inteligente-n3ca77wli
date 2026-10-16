@@ -248,4 +248,54 @@ describe('Visão Por Ordem de Compra em RecebimentoTable', () => {
     const pct = Math.round((group.receivedItemsCount / group.totalItemsCount) * 100)
     expect(pct).toBe(14)
   })
+
+  it('considera item recebido quando qualquer fonte (OC ou shortage) indicar recebimento e só ativa Distribuir se houver saldo real', () => {
+    // Caso de teste correspondente ao bug das OCs 38924 / 38925:
+    // Item da OC tem quantity=1, received_quantity=0, mas o shortage vinculado tem quantity=1, received_quantity=1 e status='Recebido'
+    const mockOcItemWithShortageRcvd: OrdemCompraItem = {
+      id: 'it_tmac',
+      oc_id: '5977ds9k0s0pib0',
+      code: '05320023',
+      description: 'REPUXO ALUMINIO',
+      quantity: 1,
+      received_quantity: 0,
+      material_shortage_id: 'orss0yvt6bmb7p2',
+      created: '2026-10-15T18:32:43Z',
+      updated: '2026-10-15T18:32:43Z',
+    }
+
+    const mockShortageRcvd: MaterialShortage = {
+      id: 'orss0yvt6bmb7p2',
+      code: '05320023',
+      description: 'REPUXO ALUMINIO',
+      quantity: 1,
+      received_quantity: 1,
+      status: 'Recebido',
+      sector: 'Suprimentos',
+      priority: 'Urgente',
+      request_type: 'Materiais',
+      created: '2026-10-07T19:44:48Z',
+      updated: '2026-10-16T21:57:30Z',
+    }
+
+    const purchasedQty = Number(mockOcItemWithShortageRcvd.quantity)
+    let receivedQty = Number(mockOcItemWithShortageRcvd.received_quantity) || 0
+    const sRcvd = Number(mockShortageRcvd.received_quantity) || 0
+    const sQty = Number(mockShortageRcvd.quantity) || 0
+
+    if (mockShortageRcvd.status === 'Recebido' && sQty > 0 && sRcvd >= sQty - 0.0001) {
+      receivedQty = Math.max(receivedQty, sRcvd, purchasedQty <= sQty ? purchasedQty : sRcvd)
+    } else if (sRcvd > receivedQty) {
+      receivedQty = sRcvd
+    }
+
+    const saldoQty = Math.max(0, purchasedQty - receivedQty)
+    const isFullyReceived = saldoQty <= 0.0001 && purchasedQty > 0
+    const isDistributeActive = !isFullyReceived && saldoQty > 0.0001
+
+    expect(receivedQty).toBe(1)
+    expect(saldoQty).toBe(0)
+    expect(isFullyReceived).toBe(true)
+    expect(isDistributeActive).toBe(false)
+  })
 })

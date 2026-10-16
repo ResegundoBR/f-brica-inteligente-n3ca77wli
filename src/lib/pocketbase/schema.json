@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-16T22:09:46.725Z",
+  "generatedAt": "2026-10-16T22:28:40.452Z",
   "collections": [
     {
       "name": "users",
@@ -1847,6 +1847,12 @@
         {
           "name": "balance_after",
           "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "confirmed_large",
+          "type": "bool",
           "required": false,
           "system": false
         }

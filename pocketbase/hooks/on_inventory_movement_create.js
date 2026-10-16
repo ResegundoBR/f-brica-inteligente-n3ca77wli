@@ -63,6 +63,42 @@ onRecordCreate((e) => {
     reason.indexOf('inventário') !== -1 ||
     reason.indexOf('inventario') !== -1
 
+  // REQUISITO FRENTE A (2):
+  // a) Rejeitar quantidade maior que 100.000 em qualquer movimentação
+  if (qty > 100000) {
+    const errs = {
+      quantity: new ValidationError(
+        'validation_max_quantity_exceeded',
+        'Quantidade inválida: o valor (' +
+          qty +
+          ') excede o limite máximo permitido de 100.000 unidades. Verifique se houve erro de digitação.',
+      ),
+    }
+    throw new BadRequestError('Falha na movimentação de estoque: limite máximo excedido.', errs)
+  }
+
+  // b) Para quantidade de saída maior que 10× o saldo atual do item, exigir flag confirmed_large=true
+  var confirmedLarge = false
+  try {
+    confirmedLarge = record.getBool('confirmed_large') === true
+  } catch (_) {}
+
+  if (type === 'Saída' && currentQty > 0 && qty > currentQty * 10) {
+    if (!confirmedLarge) {
+      const errs = {
+        quantity: new ValidationError(
+          'validation_large_quantity_unconfirmed',
+          'A quantidade solicitada (' +
+            qty +
+            ') é mais de 10 vezes maior que o saldo atual (' +
+            currentQty +
+            '). Confirmação explícita obrigatória (confirmed_large).',
+        ),
+      }
+      throw new BadRequestError('Movimentação requer confirmação de valor elevado.', errs)
+    }
+  }
+
   // TRAVA: Saída sem saldo suficiente (exceto ajuste/retroativo explícito)
   if (type === 'Saída' && qty > currentQty + 0.0001 && !isAdjustmentOrRetroactive) {
     const errs = {

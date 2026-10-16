@@ -281,7 +281,8 @@ export async function getActiveOrdemCompraItens(): Promise<OrdemCompraItem[]> {
   try {
     const items = await pb.collection('ordem_compra_itens').getFullList<OrdemCompraItem>({
       filter: `oc_id.status != "Cancelada"`,
-      expand: 'oc_id,oc_id.supplier_id',
+      expand: 'oc_id,oc_id.supplier_id,material_shortage_id,material_shortage_id.order_id',
+      sort: 'created',
     })
     return items
   } catch (err) {

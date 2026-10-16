@@ -30,3 +30,16 @@ export const distributeMaterials = (
     }),
     headers: { 'Content-Type': 'application/json' },
   })
+
+export interface DistributeOcItemPayload {
+  oc_item_id: string
+  received_quantity: number
+  traceability?: TraceabilityInfo & { unit?: string }
+}
+
+export const distributeOcItemDirectToInventory = (payload: DistributeOcItemPayload) =>
+  pb.send('/backend/v1/materials/distribute-oc-item', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    headers: { 'Content-Type': 'application/json' },
+  })

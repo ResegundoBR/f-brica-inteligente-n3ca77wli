@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-16T21:33:10.796Z",
+  "generatedAt": "2026-10-16T21:46:27.704Z",
   "collections": [
     {
       "name": "users",
@@ -2097,6 +2097,12 @@
         },
         {
           "name": "ipi_value",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "received_quantity",
           "type": "number",
           "required": false,
           "system": false

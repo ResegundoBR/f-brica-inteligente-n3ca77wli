@@ -535,6 +535,7 @@ export interface OrdemCompraItem {
   description: string
   code?: string
   quantity: number
+  received_quantity?: number
   unit_price?: number
   st_value?: number
   ipi_value?: number

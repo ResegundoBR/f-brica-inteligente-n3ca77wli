@@ -174,13 +174,30 @@ export function buildRecebimentoDisplayItems(items: MaterialShortage[]): Recebim
   return result
 }
 
+export interface OcItemDisplayRow {
+  type: 'shortage' | 'standalone'
+  id: string
+  code: string
+  description: string
+  purchasedQty: number
+  receivedQty: number
+  saldoQty: number
+  shortage?: MaterialShortage
+  ocItem: OrdemCompraItem
+  opLabel?: string
+  clientName?: string
+  isBatch?: boolean
+  opItems?: MaterialShortage[]
+  surplusQuantity?: number
+}
+
 export interface OcGroupedRecebimento {
   oc: OrdemCompra
   supplier: string
   expectedDate?: string
-  totalItemsCount: number // Total de componentes distintos nesta OC
+  totalItemsCount: number // Total de itens nesta OC (inclui avulsos)
   receivedItemsCount: number // Quantos já estão totalmente recebidos
-  pendingDisplayItems: RecebimentoDisplayItem[]
+  itemRows: OcItemDisplayRow[]
 }
 
 interface RecebimentoTableProps {
@@ -190,6 +207,7 @@ interface RecebimentoTableProps {
   codeInputs: Record<string, string>
   onCodeChange: (id: string, value: string) => void
   onDistribuir: (item: MaterialShortage) => void
+  onDistribuirOcItem?: (ocItem: OrdemCompraItem) => void
 }
 
 function RecebimentoRow({
@@ -464,56 +482,96 @@ function TableCols() {
 }
 
 function OcComponentRow({
-  displayItem,
+  row,
   onDistribuir,
+  onDistribuirOcItem,
 }: {
-  displayItem: RecebimentoDisplayItem
+  row: OcItemDisplayRow
   onDistribuir: (item: MaterialShortage) => void
+  onDistribuirOcItem?: (ocItem: OrdemCompraItem) => void
 }) {
-  const rep = displayItem.representative
-  const total = displayItem.totalQuantity
-  const received = displayItem.receivedQuantity
-  const saldo = Math.max(0, total - received)
-  const isBatch = displayItem.type === 'batch'
+  const isStandalone = row.type === 'standalone'
+  const isBatch = Boolean(row.isBatch)
+  const isFullyReceived = row.saldoQty <= 0.0001 && row.purchasedQty > 0
 
   return (
     <TableRow className="hover:bg-slate-50 dark:hover:bg-slate-800/60 border-t border-slate-100 dark:border-slate-800">
       <TableCell className="text-xs font-mono font-medium text-slate-700 dark:text-slate-300 w-[140px]">
-        <NoTranslate as="span">{displayItem.code || '-'}</NoTranslate>
+        <NoTranslate as="span">{row.code || '-'}</NoTranslate>
       </TableCell>
       <TableCell className="font-medium text-sm">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {isBatch && (
-            <Badge
-              variant="outline"
-              className="border-blue-400 bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-200 text-[10px] gap-1 px-1.5 py-0.5"
-            >
-              <Layers className="w-3 h-3" />
-              Lote ({displayItem.opItems.length} OPs
-              {displayItem.surplusQuantity > 0 ? ` + Estoque` : ''})
-            </Badge>
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {isStandalone && (
+              <Badge
+                variant="outline"
+                className="border-amber-400 bg-amber-50 text-amber-900 dark:bg-amber-950 dark:text-amber-200 text-[10px] px-1.5 py-0.5"
+              >
+                Item avulso da OC
+              </Badge>
+            )}
+            {isBatch && (
+              <Badge
+                variant="outline"
+                className="border-blue-400 bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-200 text-[10px] gap-1 px-1.5 py-0.5"
+              >
+                <Layers className="w-3 h-3" />
+                Lote ({(row.opItems || []).length} OPs
+                {Number(row.surplusQuantity) > 0 ? ` + Estoque` : ''})
+              </Badge>
+            )}
+            <NoTranslate as="span">{row.description}</NoTranslate>
+          </div>
+
+          {/* Se tem OP vinculada (via shortage), exibe para rastreabilidade */}
+          {row.opLabel && (
+            <div className="text-[11px] text-muted-foreground flex items-center gap-2">
+              <span className="font-semibold text-blue-900 dark:text-blue-200">
+                OP {row.opLabel}
+              </span>
+              {row.clientName && <span>• {row.clientName}</span>}
+            </div>
           )}
-          <NoTranslate as="span">{displayItem.description}</NoTranslate>
         </div>
       </TableCell>
       <TableCell className="text-right text-xs font-semibold w-[100px]">
-        <NoTranslate as="span">{formatQuantity(total)} un</NoTranslate>
+        <NoTranslate as="span">{formatQuantity(row.purchasedQty)} un</NoTranslate>
       </TableCell>
       <TableCell className="text-right text-xs font-semibold text-emerald-600 dark:text-emerald-400 w-[110px]">
-        <NoTranslate as="span">{formatQuantity(received)} un</NoTranslate>
+        <NoTranslate as="span">{formatQuantity(row.receivedQty)} un</NoTranslate>
       </TableCell>
       <TableCell className="text-right text-xs font-bold text-amber-700 dark:text-amber-400 w-[100px]">
-        <NoTranslate as="span">{formatQuantity(saldo)} un</NoTranslate>
+        <NoTranslate as="span">{formatQuantity(row.saldoQty)} un</NoTranslate>
       </TableCell>
       <TableCell className="text-right w-[150px]">
-        <Button
-          size="sm"
-          className="h-7 bg-green-600 hover:bg-green-700 text-white text-xs px-2.5"
-          onClick={() => onDistribuir(rep)}
-        >
-          <CheckCircle className="size-3.5 mr-1" />
-          Distribuir
-        </Button>
+        {isFullyReceived ? (
+          <Badge
+            variant="outline"
+            className="bg-emerald-100 text-emerald-800 border-emerald-300 text-xs py-1 px-2"
+          >
+            Recebido
+          </Badge>
+        ) : isStandalone ? (
+          <Button
+            size="sm"
+            className="h-7 bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-2.5"
+            onClick={() => onDistribuirOcItem && onDistribuirOcItem(row.ocItem)}
+          >
+            <Warehouse className="size-3.5 mr-1" />
+            Distribuir
+          </Button>
+        ) : row.shortage ? (
+          <Button
+            size="sm"
+            className="h-7 bg-green-600 hover:bg-green-700 text-white text-xs px-2.5"
+            onClick={() => onDistribuir(row.shortage!)}
+          >
+            <CheckCircle className="size-3.5 mr-1" />
+            Distribuir
+          </Button>
+        ) : (
+          <span className="text-xs text-muted-foreground">-</span>
+        )}
       </TableCell>
     </TableRow>
   )
@@ -522,9 +580,11 @@ function OcComponentRow({
 function OcGroupRow({
   group,
   onDistribuir,
+  onDistribuirOcItem,
 }: {
   group: OcGroupedRecebimento
   onDistribuir: (item: MaterialShortage) => void
+  onDistribuirOcItem?: (ocItem: OrdemCompraItem) => void
 }) {
   const [expanded, setExpanded] = useState(true)
   const pct =
@@ -602,7 +662,7 @@ function OcGroupRow({
         </div>
       </div>
 
-      {/* Tabela de componentes expandíveis da OC */}
+      {/* Tabela de componentes da OC (todos os itens) */}
       {expanded && (
         <div className="overflow-x-auto">
           <Table>
@@ -617,8 +677,13 @@ function OcGroupRow({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {group.pendingDisplayItems.map((dItem) => (
-                <OcComponentRow key={dItem.id} displayItem={dItem} onDistribuir={onDistribuir} />
+              {group.itemRows.map((row) => (
+                <OcComponentRow
+                  key={row.id}
+                  row={row}
+                  onDistribuir={onDistribuir}
+                  onDistribuirOcItem={onDistribuirOcItem}
+                />
               ))}
             </TableBody>
           </Table>
@@ -635,6 +700,7 @@ export function RecebimentoTable({
   codeInputs,
   onCodeChange,
   onDistribuir,
+  onDistribuirOcItem,
 }: RecebimentoTableProps) {
   const displayItems = useMemo(() => buildRecebimentoDisplayItems(items), [items])
 
@@ -664,90 +730,178 @@ export function RecebimentoTable({
   }, [activeOcItems, items])
 
   // 1. Visão padrão: 'Por Ordem de Compra'
+  // Constrói cada OC DIRETAMENTE a partir dos seus itens (activeOcItems)
   const { ocGroups, semOcDisplayItems } = useMemo(() => {
-    // Mapa de ocId -> { oc, pendingDisplayItems: RecebimentoDisplayItem[] }
-    const groupsMap = new Map<
-      string,
-      {
-        oc: OrdemCompra
-        pendingDisplayItems: RecebimentoDisplayItem[]
-      }
-    >()
-    const semOc: RecebimentoDisplayItem[] = []
+    // Mapa rápido de shortageId -> MaterialShortage
+    const shortagesMap = new Map<string, MaterialShortage>()
+    for (const s of items) {
+      shortagesMap.set(s.id, s)
+    }
 
-    for (const dItem of displayItems) {
-      // Procura OC vinculada a este displayItem (direto ou através de membros de lote)
-      let matchedOc: OrdemCompra | undefined
-      for (const mId of dItem.items.map((x) => x.id)) {
-        if (shortageToOcMap.has(mId)) {
-          matchedOc = shortageToOcMap.get(mId)
-          break
-        }
-      }
-
-      if (matchedOc) {
-        const existing = groupsMap.get(matchedOc.id) || {
-          oc: matchedOc,
-          pendingDisplayItems: [],
-        }
-        existing.pendingDisplayItems.push(dItem)
-        groupsMap.set(matchedOc.id, existing)
-      } else {
-        semOc.push(dItem)
+    // Mapa rápido de batchId -> MaterialShortage[]
+    const batchShortagesMap = new Map<string, MaterialShortage[]>()
+    for (const s of items) {
+      if (s.batch_id) {
+        const arr = batchShortagesMap.get(s.batch_id) || []
+        arr.push(s)
+        batchShortagesMap.set(s.batch_id, arr)
       }
     }
 
-    // Calcula totalItemsCount e receivedItemsCount para cada OC
-    // baseado em todos os itens daquela OC em activeOcItems
-    const ocAllItensMap = new Map<string, OrdemCompraItem[]>()
-    for (const it of activeOcItems) {
-      const oc = it.expand?.oc_id
-      if (oc && oc.status !== 'Cancelada') {
-        const arr = ocAllItensMap.get(oc.id) || []
-        arr.push(it)
-        ocAllItensMap.set(oc.id, arr)
+    // Agrupa activeOcItems por OC
+    const ocMap = new Map<
+      string,
+      {
+        oc: OrdemCompra
+        items: OrdemCompraItem[]
+      }
+    >()
+
+    const shortagesLinkedToAnyOc = new Set<string>()
+
+    for (const ocItem of activeOcItems) {
+      const oc = ocItem.expand?.oc_id
+      if (!oc || oc.status === 'Cancelada') continue
+      const ocId = oc.id
+      if (!ocMap.has(ocId)) {
+        ocMap.set(ocId, { oc, items: [] })
+      }
+      ocMap.get(ocId)!.items.push(ocItem)
+
+      if (ocItem.material_shortage_id) {
+        shortagesLinkedToAnyOc.add(ocItem.material_shortage_id)
+        // Se pertencer a lote, adiciona todos os membros do lote
+        const s = shortagesMap.get(ocItem.material_shortage_id)
+        if (s?.batch_id && batchShortagesMap.has(s.batch_id)) {
+          for (const m of batchShortagesMap.get(s.batch_id)!) {
+            shortagesLinkedToAnyOc.add(m.id)
+          }
+        }
       }
     }
 
     const ocGroupsList: OcGroupedRecebimento[] = []
-    for (const [ocId, data] of groupsMap.entries()) {
-      const ocAllItens = ocAllItensMap.get(ocId) || []
-      const totalItemsCount =
-        ocAllItens.length > 0 ? ocAllItens.length : data.pendingDisplayItems.length
 
-      // Conta quantos itens daquela OC já foram totalmente recebidos
-      // Um item da OC vinculado a shortage está pendente se consta em items da página
-      let receivedCount = 0
-      for (const ocIt of ocAllItens) {
-        if (!ocIt.material_shortage_id) {
-          // Se não tem shortage vinculado, não podemos monitorar o recebimento físico individual
-          continue
+    for (const [, { oc, items: ocItensList }] of ocMap.entries()) {
+      const itemRows: OcItemDisplayRow[] = []
+      let fullyReceivedCount = 0
+
+      for (const ocItem of ocItensList) {
+        const purchasedQty = Number(ocItem.quantity) || 0
+        let receivedQty = Number(ocItem.received_quantity) || 0
+        let shortage = ocItem.material_shortage_id
+          ? shortagesMap.get(ocItem.material_shortage_id)
+          : undefined
+
+        // Se o shortage não estiver no state de pendentes (ex: já finalizado como Recebido no banco),
+        // busca no expand se disponível
+        if (!shortage && ocItem.expand?.material_shortage_id) {
+          shortage = ocItem.expand.material_shortage_id
         }
-        const isStillPending = items.some((s) => s.id === ocIt.material_shortage_id)
-        if (!isStillPending) {
-          receivedCount++
+
+        const isStandalone = !ocItem.material_shortage_id
+
+        // Rastreabilidade de OP se houver shortage
+        let opLabel = ''
+        let clientName = ''
+        let isBatch = false
+        let batchOpItems: MaterialShortage[] = []
+        let surplusQuantity = 0
+
+        if (shortage) {
+          // As colunas Comprado / Já Recebido / Saldo vêm da quantidade do item da OC (purchasedQty)
+          // menos o já recebido correspondente (shortage.received_quantity ou ocItem.received_quantity)
+          const sRcvd = Number(shortage.received_quantity) || 0
+          if (sRcvd > receivedQty) {
+            receivedQty = sRcvd
+          }
+
+          const op = shortage.expand?.order_id
+          if (op) {
+            opLabel = op.op_number || op.order_number || ''
+            clientName = op.client_name || ''
+          }
+
+          if (shortage.batch_id && batchShortagesMap.has(shortage.batch_id)) {
+            const batchMembers = batchShortagesMap.get(shortage.batch_id)!
+            const codeKey = (shortage.code || '').trim().toLowerCase()
+            const sameCodeMembers = batchMembers.filter((m) => {
+              const mCode = (m.code || '').trim().toLowerCase()
+              return !codeKey || !mCode || mCode === codeKey
+            })
+            if (sameCodeMembers.length > 1) {
+              isBatch = true
+              batchOpItems = sameCodeMembers.filter((m) => Boolean(m.order_id))
+              const surplus = sameCodeMembers.find(
+                (m) => !m.order_id && m.observation?.includes('Compra para estoque'),
+              )
+              surplusQuantity = surplus ? Number(surplus.quantity) || 0 : 0
+            }
+          }
         }
+
+        const saldoQty = Math.max(0, purchasedQty - receivedQty)
+        if (purchasedQty > 0 && receivedQty >= purchasedQty - 0.0001) {
+          fullyReceivedCount++
+        }
+
+        itemRows.push({
+          type: isStandalone ? 'standalone' : 'shortage',
+          id: ocItem.id,
+          code: ocItem.code || shortage?.code || '',
+          description: ocItem.description || shortage?.description || '',
+          purchasedQty,
+          receivedQty,
+          saldoQty,
+          shortage,
+          ocItem,
+          opLabel,
+          clientName,
+          isBatch,
+          opItems: batchOpItems,
+          surplusQuantity,
+        })
       }
 
-      ocGroupsList.push({
-        oc: data.oc,
-        supplier: data.oc.supplier || data.pendingDisplayItems[0]?.supplier || '-',
-        expectedDate: data.oc.expected_date || data.pendingDisplayItems[0]?.expectedDate,
-        totalItemsCount,
-        receivedItemsCount: receivedCount,
-        pendingDisplayItems: data.pendingDisplayItems,
+      // Ordena itens: pendentes (saldo > 0) primeiro, depois recebidos
+      itemRows.sort((a, b) => {
+        if (a.saldoQty > 0 && b.saldoQty <= 0) return -1
+        if (a.saldoQty <= 0 && b.saldoQty > 0) return 1
+        return 0
       })
+
+      // Se a OC ainda tem itens pendentes (ou está ativa), exibimos no painel
+      const hasPendingItems = itemRows.some((r) => r.saldoQty > 0.0001)
+      if (hasPendingItems || oc.status !== 'Recebida') {
+        ocGroupsList.push({
+          oc,
+          supplier: oc.supplier || '-',
+          expectedDate: oc.expected_date,
+          totalItemsCount: itemRows.length,
+          receivedItemsCount: fullyReceivedCount,
+          itemRows,
+        })
+      }
     }
 
-    // Ordena OCs por data de criação / número de OC decrescente
+    // Ordena OCs por número decrescente
     ocGroupsList.sort((a, b) => {
       const numA = parseInt(a.oc.oc_number, 10) || 0
       const numB = parseInt(b.oc.oc_number, 10) || 0
       return numB - numA
     })
 
+    // Shortages sem nenhuma OC vinculada (solicitações avulsas sem pedido gerado)
+    const semOc: RecebimentoDisplayItem[] = []
+    for (const dItem of displayItems) {
+      const isLinkedToOc = dItem.items.some((it) => shortagesLinkedToAnyOc.has(it.id))
+      if (!isLinkedToOc) {
+        semOc.push(dItem)
+      }
+    }
+
     return { ocGroups: ocGroupsList, semOcDisplayItems: semOc }
-  }, [displayItems, shortageToOcMap, activeOcItems, items])
+  }, [displayItems, activeOcItems, items])
 
   // 2. Visão alternativa: 'Agrupar por Fornecedor'
   const supplierGroups = useMemo(() => {
@@ -847,7 +1001,12 @@ export function RecebimentoTable({
 
           <div className="space-y-3">
             {ocGroups.map((group) => (
-              <OcGroupRow key={group.oc.id} group={group} onDistribuir={onDistribuir} />
+              <OcGroupRow
+                key={group.oc.id}
+                group={group}
+                onDistribuir={onDistribuir}
+                onDistribuirOcItem={onDistribuirOcItem}
+              />
             ))}
           </div>
         </div>

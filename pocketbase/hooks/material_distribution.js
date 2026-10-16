@@ -2,6 +2,216 @@
 
 routerAdd(
   'POST',
+  '/backend/v1/materials/distribute-oc-item',
+  (e) => {
+    console.log('=== DISTRIBUTE OC ITEM DIRECT TO INVENTORY START ===')
+
+    function safeParseFloat(val) {
+      if (val === null || val === undefined) return 0
+      if (typeof val === 'number') {
+        return isNaN(val) ? 0 : val
+      }
+      var s = String(val).trim()
+      if (!s) return 0
+      s = s.replace(',', '.')
+      var n = parseFloat(s)
+      return isNaN(n) ? 0 : n
+    }
+
+    function getRecordFloat(rec, field) {
+      if (!rec) return 0
+      var raw = null
+      try {
+        raw = rec.get(field)
+      } catch (_) {}
+      if (raw !== null && raw !== undefined && raw !== '') {
+        var parsed = safeParseFloat(raw)
+        if (parsed !== 0 || String(raw).trim() === '0') {
+          return parsed
+        }
+      }
+      try {
+        var gf = rec.getFloat(field)
+        if (gf !== 0) return gf
+      } catch (_) {}
+      try {
+        var gs = rec.getString(field)
+        if (gs) return safeParseFloat(gs)
+      } catch (_) {}
+      try {
+        return safeParseFloat(rec.getInt(field))
+      } catch (_) {}
+      return 0
+    }
+
+    try {
+      var body = e.requestInfo().body || {}
+      var ocItemId = (body.oc_item_id || '').trim()
+      var receivedQty = safeParseFloat(body.received_quantity)
+      var traceability = body.traceability || {}
+      var userId = e.auth ? e.auth.id : ''
+
+      if (!ocItemId) {
+        return e.badRequestError('ID do item da ordem de compra obrigatório')
+      }
+      if (receivedQty <= 0) {
+        return e.badRequestError('Quantidade recebida deve ser maior que zero')
+      }
+
+      var ocItem = null
+      try {
+        ocItem = $app.findRecordById('ordem_compra_itens', ocItemId)
+      } catch (findErr) {
+        return e.badRequestError('Item da Ordem de Compra não encontrado: ' + String(findErr))
+      }
+
+      var ocId = ocItem.getString('oc_id')
+      var ocNumber = ''
+      if (ocId) {
+        try {
+          var ocRec = $app.findRecordById('ordens_de_compra', ocId)
+          ocNumber = ocRec.getString('oc_number') || ''
+        } catch (_) {}
+      }
+
+      var code = (traceability.code || ocItem.getString('code') || '').trim()
+      var description = (traceability.description || ocItem.getString('description') || '').trim()
+      var itemTotalQty = getRecordFloat(ocItem, 'quantity')
+      var itemCurRcvd = getRecordFloat(ocItem, 'received_quantity')
+      var newRcvd = Math.round((itemCurRcvd + receivedQty) * 10000) / 10000
+
+      if (itemTotalQty > 0 && newRcvd > itemTotalQty + 0.0001) {
+        return e.badRequestError(
+          'Quantidade excede o saldo do item da OC (recebido: ' +
+            newRcvd +
+            ', total: ' +
+            itemTotalQty +
+            ')',
+        )
+      }
+
+      // Buscar unidade do componente se existir
+      var unit = (traceability.unit || '').trim() || 'un'
+      if (code && !traceability.unit) {
+        try {
+          var comp = $app.findFirstRecordByFilter(
+            'components',
+            "code = '" + code.replace(/'/g, "''") + "'",
+          )
+          if (comp && comp.getString('unit')) {
+            unit = comp.getString('unit')
+          }
+        } catch (_) {}
+      }
+
+      // --- 1. Buscar ou criar item no inventário (inventory) ---
+      var invRecord = null
+      if (code) {
+        try {
+          invRecord = $app.findFirstRecordByFilter(
+            'inventory',
+            "code = '" + code.replace(/'/g, "''") + "'",
+          )
+        } catch (_) {}
+      }
+      if (!invRecord && description) {
+        try {
+          invRecord = $app.findFirstRecordByFilter(
+            'inventory',
+            "description = '" + description.replace(/'/g, "''") + "'",
+          )
+        } catch (_) {}
+      }
+
+      if (!invRecord) {
+        var invCol = $app.findCollectionByNameOrId('inventory')
+        invRecord = new Record(invCol)
+        var finalCode = code || 'REF-' + $security.randomString(6).toUpperCase()
+        invRecord.set('code', finalCode)
+        invRecord.set('description', description)
+        invRecord.set('quantity', 0)
+        invRecord.set('min_quantity', 0)
+        invRecord.set('unit', unit)
+        $app.save(invRecord)
+        if (!code) code = finalCode
+        invRecord = $app.findRecordById('inventory', invRecord.id)
+      } else {
+        invRecord = $app.findRecordById('inventory', invRecord.id)
+        if (!invRecord.getString('code') && code) {
+          invRecord.set('code', code)
+          $app.save(invRecord)
+        }
+      }
+
+      var runningBalance = getRecordFloat(invRecord, 'quantity')
+      var todayStr = new Date().toISOString().split('T')[0]
+      var purchaseDate = traceability.purchase_date || ''
+      var arrivalDate = traceability.arrival_date || todayStr
+      var unitPrice =
+        safeParseFloat(traceability.unit_price) || getRecordFloat(ocItem, 'unit_price')
+      var freight = safeParseFloat(traceability.freight)
+      var totalValue = unitPrice > 0 ? unitPrice * receivedQty + freight : freight > 0 ? freight : 0
+
+      // --- 2. Registrar Entrada no Estoque (inventory_movements) ---
+      var movCol = $app.findCollectionByNameOrId('inventory_movements')
+      var entrada = new Record(movCol)
+      entrada.set('inventory_id', invRecord.id)
+      entrada.set('quantity', receivedQty)
+      entrada.set('type', 'Entrada')
+      var ocLabel = ocNumber ? 'OC #' + ocNumber : 'OC ' + ocId
+      entrada.set(
+        'reason',
+        'Recebimento direto ao estoque - Item avulso da ' + ocLabel + ' (Item: ' + ocItemId + ')',
+      )
+      entrada.set('arrival_date', arrivalDate)
+      var balanceAfterEntrada = Math.round((runningBalance + receivedQty) * 10000) / 10000
+      entrada.set('balance_after', balanceAfterEntrada)
+      if (purchaseDate) entrada.set('purchase_date', purchaseDate)
+      if (unitPrice > 0) entrada.set('unit_price', unitPrice)
+      if (totalValue > 0) entrada.set('total_value', totalValue)
+      if (freight > 0) entrada.set('freight', freight)
+      if (userId) entrada.set('user_id', userId)
+      $app.save(entrada)
+
+      // --- 3. Atualizar saldo do inventário ---
+      invRecord.set('quantity', balanceAfterEntrada)
+      $app.save(invRecord)
+
+      // --- 4. Atualizar item da Ordem de Compra ---
+      ocItem.set('received_quantity', newRcvd)
+      if (code && !ocItem.getString('code')) {
+        ocItem.set('code', code)
+      }
+      $app.save(ocItem)
+
+      console.log(
+        '=== DISTRIBUTE OC ITEM SUCCESS: item=' +
+          ocItemId +
+          ' newRcvd=' +
+          newRcvd +
+          ' invBalance=' +
+          balanceAfterEntrada +
+          ' ===',
+      )
+
+      return e.json(200, {
+        success: true,
+        oc_item_id: ocItemId,
+        oc_id: ocId,
+        received_quantity: newRcvd,
+        inventory_id: invRecord.id,
+        balance: balanceAfterEntrada,
+      })
+    } catch (err) {
+      console.log('=== DISTRIBUTE OC ITEM ERROR ===', String(err))
+      return e.json(500, { error: 'Erro interno ao receber item avulso: ' + String(err) })
+    }
+  },
+  $apis.requireAuth(),
+)
+
+routerAdd(
+  'POST',
   '/backend/v1/materials/distribute',
   (e) => {
     console.log('=== MATERIAL DISTRIBUTION START ===')

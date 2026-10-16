@@ -38,9 +38,11 @@ export async function checkAndUpdateAffectedOcs(
   if (uniqueShortageIds.length === 0) return result
 
   try {
-    // 1. Buscar os itens de OC vinculados aos shortageIds afetados
-    // Criamos filtro por chunks se houver muitos ids
-    const filterParts = uniqueShortageIds.map((id) => `material_shortage_id = "${id}"`)
+    // 1. Identificar OCs candidatas a partir de shortages informados ou IDs de OC diretos
+    // uniqueShortageIds pode conter IDs de material_shortages ou oc_id diretamente
+    const filterParts = uniqueShortageIds.map(
+      (id) => `material_shortage_id = "${id}" || oc_id = "${id}"`,
+    )
     const itemsFilter = filterParts.join(' || ')
 
     const linkedItems = await pb.collection('ordem_compra_itens').getFullList<OrdemCompraItem>({
@@ -48,7 +50,9 @@ export async function checkAndUpdateAffectedOcs(
       fields: 'id,oc_id,material_shortage_id',
     })
 
-    const ocIds = Array.from(new Set(linkedItems.map((it) => it.oc_id).filter(Boolean)))
+    const ocIdsFromShortages = linkedItems.map((it) => it.oc_id).filter(Boolean)
+    // Também incluir os IDs que possam ser da própria ordens_de_compra
+    const ocIds = Array.from(new Set([...ocIdsFromShortages, ...uniqueShortageIds]))
     if (ocIds.length === 0) return result
 
     for (const ocId of ocIds) {
@@ -69,7 +73,7 @@ export async function checkAndUpdateAffectedOcs(
 
       if (allOcItems.length === 0) continue
 
-      // Para verificar se todos estão recebidos, precisamos do estado atual dos material_shortages
+      // Buscar os material_shortages vinculados aos itens que os possuírem
       const ocShortageIds = Array.from(
         new Set(
           allOcItems
@@ -78,46 +82,45 @@ export async function checkAndUpdateAffectedOcs(
         ),
       )
 
-      // Se nem todos os itens da OC possuem material_shortage_id, a OC tem itens sem rastreio de solicitação
-      if (ocShortageIds.length < allOcItems.length) {
-        continue
-      }
-
-      // Buscar os material_shortages atualizados
-      const sFilter = ocShortageIds.map((id) => `id = "${id}"`).join(' || ')
-      const shortageRecords = await pb
-        .collection('material_shortages')
-        .getFullList<MaterialShortage>({
-          filter: `(${sFilter})`,
-          fields: 'id,quantity,received_quantity,status',
-        })
-
       const shortageMap = new Map<string, MaterialShortage>()
-      for (const s of shortageRecords) {
-        shortageMap.set(s.id, s)
+      if (ocShortageIds.length > 0) {
+        const sFilter = ocShortageIds.map((id) => `id = "${id}"`).join(' || ')
+        const shortageRecords = await pb
+          .collection('material_shortages')
+          .getFullList<MaterialShortage>({
+            filter: `(${sFilter})`,
+            fields: 'id,quantity,received_quantity,status',
+          })
+        for (const s of shortageRecords) {
+          shortageMap.set(s.id, s)
+        }
       }
 
-      // Verificar se TODOS os itens da OC estão totalmente recebidos
-      // (received_quantity >= quantity, com quantity > 0)
+      // Verificar se TODOS os itens da OC estão totalmente recebidos:
+      // - Item com shortage: shortage.received_quantity >= shortage.quantity (ou ocItem.received_quantity >= ocItem.quantity)
+      // - Item avulso (sem shortage): ocItem.received_quantity >= ocItem.quantity
       let allItemsFullyReceived = true
       for (const ocItem of allOcItems) {
-        if (!ocItem.material_shortage_id) {
-          allItemsFullyReceived = false
-          break
-        }
-        const s = shortageMap.get(ocItem.material_shortage_id)
-        if (!s) {
-          allItemsFullyReceived = false
-          break
-        }
+        const ocItemTotal = Number(ocItem.quantity) || 0
+        const ocItemDirectRcvd = Number(ocItem.received_quantity) || 0
 
-        const totalQty = Number(s.quantity) || 0
-        const recQty = Number(s.received_quantity) || 0
-
-        // Regra do prompt: received_quantity >= quantity
-        if (totalQty <= 0 || recQty < totalQty) {
-          allItemsFullyReceived = false
-          break
+        if (ocItem.material_shortage_id) {
+          const s = shortageMap.get(ocItem.material_shortage_id)
+          const shortageTotal = s ? Number(s.quantity) || 0 : 0
+          const shortageRcvd = s ? Number(s.received_quantity) || 0 : 0
+          const isShortageFullyReceived =
+            shortageTotal > 0 && shortageRcvd >= shortageTotal - 0.0001
+          const isItemFullyReceived = ocItemTotal > 0 && ocItemDirectRcvd >= ocItemTotal - 0.0001
+          if (!isShortageFullyReceived && !isItemFullyReceived) {
+            allItemsFullyReceived = false
+            break
+          }
+        } else {
+          // Item avulso sem shortage: verifica pelo received_quantity do item da OC
+          if (ocItemTotal <= 0 || ocItemDirectRcvd < ocItemTotal - 0.0001) {
+            allItemsFullyReceived = false
+            break
+          }
         }
       }
 

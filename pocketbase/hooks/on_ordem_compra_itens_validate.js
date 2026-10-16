@@ -70,6 +70,54 @@ onRecordCreate((e) => {
     throw new BadRequestError('Falha na validação do item da OC.', errs)
   }
 
+  // received_quantity não pode ser negativo nem exceder quantity
+  var receivedQty = 0
+  try {
+    receivedQty = Number(record.getFloat('received_quantity')) || 0
+  } catch (_) {}
+  if (receivedQty < 0) {
+    const errs = {
+      received_quantity: new ValidationError(
+        'validation_min',
+        'A quantidade recebida não pode ser negativa.',
+      ),
+    }
+    throw new BadRequestError('Falha na validação do item da OC.', errs)
+  }
+  if (qty > 0 && receivedQty > qty + 0.0001) {
+    const errs = {
+      received_quantity: new ValidationError(
+        'validation_max',
+        'A quantidade recebida não pode exceder a quantidade comprada do item.',
+      ),
+    }
+    throw new BadRequestError('Falha na validação do item da OC.', errs)
+  }
+
+  // received_quantity não pode ser negativo nem exceder quantity
+  var receivedQty = 0
+  try {
+    receivedQty = Number(record.getFloat('received_quantity')) || 0
+  } catch (_) {}
+  if (receivedQty < 0) {
+    const errs = {
+      received_quantity: new ValidationError(
+        'validation_min',
+        'A quantidade recebida não pode ser negativa.',
+      ),
+    }
+    throw new BadRequestError('Falha na validação do item da OC.', errs)
+  }
+  if (qty > 0 && receivedQty > qty + 0.0001) {
+    const errs = {
+      received_quantity: new ValidationError(
+        'validation_max',
+        'A quantidade recebida não pode exceder a quantidade comprada do item.',
+      ),
+    }
+    throw new BadRequestError('Falha na validação do item da OC.', errs)
+  }
+
   // Se houver vínculo com material_shortage_id, garantir que o registro exista
   const shortageId = (record.getString('material_shortage_id') || '').trim()
   if (shortageId) {

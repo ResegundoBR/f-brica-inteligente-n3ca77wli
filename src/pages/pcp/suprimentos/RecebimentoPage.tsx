@@ -7,6 +7,7 @@ import { MaterialShortage, OrdemCompraItem } from '@/types'
 import { PackageCheck, Layers, FileText, List } from 'lucide-react'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
 import { SmartReceiveDialog } from './components/SmartReceiveDialog'
+import { DirectInventoryReceiveDialog } from './components/DirectInventoryReceiveDialog'
 import { RecebimentoTable, buildRecebimentoDisplayItems } from './components/RecebimentoTable'
 import { getActiveOrdemCompraItens } from '@/services/ordens-compra'
 import { useToast } from '@/hooks/use-toast'
@@ -16,6 +17,7 @@ export default function RecebimentoPage() {
   const [activeOcItems, setActiveOcItems] = useState<OrdemCompraItem[]>([])
   const [codeInputs, setCodeInputs] = useState<Record<string, string>>({})
   const [smartReceiveItem, setSmartReceiveItem] = useState<MaterialShortage | null>(null)
+  const [directReceiveOcItem, setDirectReceiveOcItem] = useState<OrdemCompraItem | null>(null)
   const [viewMode, setViewMode] = useState<'oc' | 'supplier' | 'list'>('oc')
   const { toast } = useToast()
 
@@ -132,6 +134,7 @@ export default function RecebimentoPage() {
           codeInputs={codeInputs}
           onCodeChange={(id, value) => setCodeInputs((prev) => ({ ...prev, [id]: value }))}
           onDistribuir={setSmartReceiveItem}
+          onDistribuirOcItem={setDirectReceiveOcItem}
         />
       )}
 
@@ -139,6 +142,13 @@ export default function RecebimentoPage() {
         item={smartReceiveItem}
         open={!!smartReceiveItem}
         onOpenChange={(o) => !o && setSmartReceiveItem(null)}
+        onUpdate={fetchShortages}
+      />
+
+      <DirectInventoryReceiveDialog
+        ocItem={directReceiveOcItem}
+        open={!!directReceiveOcItem}
+        onOpenChange={(o) => !o && setDirectReceiveOcItem(null)}
         onUpdate={fetchShortages}
       />
     </div>

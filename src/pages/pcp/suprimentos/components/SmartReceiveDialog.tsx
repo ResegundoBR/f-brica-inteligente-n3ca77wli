@@ -289,7 +289,25 @@ export function SmartReceiveDialog({
 
       // 1. Executa a distribuição via endpoint backend (Entrada total_received no inventory + Saída para cada OP)
       // O excedente (received - distribuído) permanece como saldo líquido positivo em `inventory`
-      await distributeMaterials(distArray, received, traceabilityInfo, item?.id)
+      const resp = (await distributeMaterials(distArray, received, traceabilityInfo, item?.id)) as {
+        success?: boolean
+        results?: Array<{ shortage_id: string; success: boolean; error?: string; status?: string }>
+        error?: string
+      }
+
+      const results = resp?.results || []
+      const failures = results.filter((r) => !r.success)
+
+      if (failures.length > 0) {
+        const errorDetails = failures.map((f) => f.error || 'Quantidade excede o total').join('; ')
+        toast({
+          title: 'Erro na distribuição',
+          description: `Falha na distribuição de ${failures.length} item(ns): ${errorDetails}. Verifique as quantidades e tente novamente.`,
+          variant: 'destructive',
+        })
+        onUpdate()
+        return
+      }
 
       // 2. Se este lote tiver registro de excedente ("Compra para estoque" sem order_id),
       // atualiza também esse registro para 'Recebido' para refletir a baixa completa do lote na gestão de suprimentos
@@ -315,7 +333,7 @@ export function SmartReceiveDialog({
 
       toast({
         title: 'Distribuição concluída',
-        description: `${received} unidade(s) recebidas: ${totalDistributed} distribuídas para as OPs e ${surplus} unidade(s) adicionadas ao saldo de estoque.`,
+        description: `${formatQuantity(received)} unidade(s) recebidas: ${formatQuantity(totalDistributed)} distribuídas para as OPs e ${formatQuantity(surplus)} unidade(s) adicionadas ao saldo de estoque.`,
       })
 
       // Automatizar atualização de status de OCs afetadas se todos os itens estiverem totalmente recebidos
@@ -331,10 +349,17 @@ export function SmartReceiveDialog({
       onUpdate()
       onOpenChange(false)
     } catch (err: unknown) {
-      const errAny = err as { response?: { error?: string }; message?: string }
-      const msg = errAny?.response?.error || getErrorMessage(err)
+      const errAny = err as {
+        response?: { error?: string; results?: Array<{ error?: string }> }
+        message?: string
+      }
+      const failureMsgs = errAny?.response?.results
+        ?.map((r) => r.error)
+        .filter(Boolean)
+        .join('; ')
+      const msg = failureMsgs || errAny?.response?.error || getErrorMessage(err)
       toast({
-        title: 'Erro',
+        title: 'Erro na distribuição',
         description: msg || 'Falha na distribuição.',
         variant: 'destructive',
       })

@@ -433,5 +433,27 @@ describe('SmartReceiveDialog - Recebimento de Lote com Quantidade Adicional / Ex
       const state = calculateBatchSmartReceiveInitialState([opWithReceived], opWithReceived, [])
       expect(state.totalReceived).toBe('50')
     })
+
+    it('preserva quantidades fracionadas (ex.: 1.459 MT de tubo redondo) sem truncar nem arredondar', () => {
+      const fractionalShortage: MaterialShortage = {
+        id: 'mba6np1d4f9mtxg',
+        code: '14010035',
+        description: 'TUBO REDONDO AÇO Ø12,70MM - #1,50MM',
+        quantity: 1.459,
+        order_id: '3ox7mmmnu41hhrt',
+        status: 'Compra',
+        sector: 'Corte',
+        priority: 'Sem pressa',
+        request_type: 'Materiais',
+        created: '2026-10-15T12:00:00Z',
+        updated: '2026-10-15T12:00:00Z',
+      }
+
+      const state = calculateBatchSmartReceiveInitialState([fractionalShortage], fractionalShortage)
+      expect(state.totalReceived).toBe('1.459')
+      expect(state.distributions['mba6np1d4f9mtxg']).toBe('1.459')
+      expect(state.totalDistributed).toBe(1.459)
+      expect(state.isOverDistributed).toBe(false)
+    })
   })
 })

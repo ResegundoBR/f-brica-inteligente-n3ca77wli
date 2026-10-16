@@ -6,6 +6,44 @@ routerAdd(
   (e) => {
     console.log('=== MATERIAL DISTRIBUTION START ===')
 
+    function safeParseFloat(val) {
+      if (val === null || val === undefined) return 0
+      if (typeof val === 'number') {
+        return isNaN(val) ? 0 : val
+      }
+      var s = String(val).trim()
+      if (!s) return 0
+      s = s.replace(',', '.')
+      var n = parseFloat(s)
+      return isNaN(n) ? 0 : n
+    }
+
+    function getRecordFloat(rec, field) {
+      if (!rec) return 0
+      var raw = null
+      try {
+        raw = rec.get(field)
+      } catch (_) {}
+      if (raw !== null && raw !== undefined && raw !== '') {
+        var parsed = safeParseFloat(raw)
+        if (parsed !== 0 || String(raw).trim() === '0') {
+          return parsed
+        }
+      }
+      try {
+        var gf = rec.getFloat(field)
+        if (gf !== 0) return gf
+      } catch (_) {}
+      try {
+        var gs = rec.getString(field)
+        if (gs) return safeParseFloat(gs)
+      } catch (_) {}
+      try {
+        return safeParseFloat(rec.getInt(field))
+      } catch (_) {}
+      return 0
+    }
+
     try {
       var body = e.requestInfo().body || {}
       var distributions = body.distributions || []
@@ -13,7 +51,7 @@ routerAdd(
       var traceability = body.traceability || {}
       var userId = e.auth ? e.auth.id : ''
 
-      var totalReceived = Number(body.total_received) || 0
+      var totalReceived = safeParseFloat(body.total_received)
 
       var code = (traceability.code || '').trim()
       var description = (traceability.description || '').trim()
@@ -39,7 +77,7 @@ routerAdd(
         }
         totalReceived = 0
         for (var i = 0; i < distributions.length; i++) {
-          totalReceived += Number(distributions[i].quantity) || 0
+          totalReceived += safeParseFloat(distributions[i].quantity)
         }
       }
 
@@ -104,11 +142,9 @@ routerAdd(
         $app.save(invRecord)
         console.log('Inventory item created id=' + invRecord.id + ' code=' + finalCode)
         if (!code) code = finalCode
-        // Recarrega do banco para garantir que getFloat()/getString() estejam disponíveis
         invRecord = $app.findRecordById('inventory', invRecord.id)
       } else {
         console.log('Inventory item found id=' + invRecord.id)
-        // Recarrega do banco para garantir que getFloat()/getString() estejam disponíveis
         invRecord = $app.findRecordById('inventory', invRecord.id)
         if (!invRecord.getString('code') && code) {
           invRecord.set('code', code)
@@ -118,12 +154,12 @@ routerAdd(
       }
 
       var results = []
-      var runningBalance = Number(invRecord.getInt('quantity')) || 0
+      var runningBalance = getRecordFloat(invRecord, 'quantity')
       var todayStr = new Date().toISOString().split('T')[0]
       var purchaseDate = traceability.purchase_date || ''
       var arrivalDate = traceability.arrival_date || todayStr
-      var unitPrice = Number(traceability.unit_price) || 0
-      var freight = Number(traceability.freight) || 0
+      var unitPrice = safeParseFloat(traceability.unit_price)
+      var freight = safeParseFloat(traceability.freight)
       var totalValue =
         unitPrice > 0 ? unitPrice * totalReceived + freight : freight > 0 ? freight : 0
 
@@ -163,11 +199,12 @@ routerAdd(
 
       var entrada = new Record(movCol)
       entrada.set('inventory_id', invRecord.id)
-      entrada.set('quantity', Number(totalReceived))
+      entrada.set('quantity', totalReceived)
       entrada.set('type', 'Entrada')
       entrada.set('reason', 'Recebimento de Material (IDs: ' + shortageIdsStr + ')')
       entrada.set('arrival_date', arrivalDate)
-      entrada.set('balance_after', Number(runningBalance) + Number(totalReceived))
+      var balanceAfterEntrada = Math.round((runningBalance + totalReceived) * 10000) / 10000
+      entrada.set('balance_after', balanceAfterEntrada)
       if (purchaseDate) entrada.set('purchase_date', purchaseDate)
       if (unitPrice > 0) entrada.set('unit_price', unitPrice)
       if (totalValue > 0) entrada.set('total_value', totalValue)
@@ -176,18 +213,18 @@ routerAdd(
       console.log('Saving Entrada movement (qty=' + totalReceived + ')')
       $app.save(entrada)
       console.log('Entrada movement saved id=' + entrada.id)
-      runningBalance = Number(runningBalance) + Number(totalReceived)
+      runningBalance = balanceAfterEntrada
 
       // --- 2.1 Se não houver distributions mas houver shortageId de origem, atualizar a solicitação ---
       if ((!distributions || distributions.length === 0) && shortageIdInput) {
         try {
           var singleShortage = $app.findRecordById('material_shortages', shortageIdInput)
-          var origTotalQty = Number(singleShortage.getInt('quantity')) || 0
-          var origCurrentReceived = Number(singleShortage.getInt('received_quantity')) || 0
-          var origNewReceived = origCurrentReceived + totalReceived
+          var origTotalQty = getRecordFloat(singleShortage, 'quantity')
+          var origCurrentReceived = getRecordFloat(singleShortage, 'received_quantity')
+          var origNewReceived = Math.round((origCurrentReceived + totalReceived) * 10000) / 10000
 
           var singleStatus = 'Recebido_Parcial'
-          if (origTotalQty > 0 && origNewReceived >= origTotalQty) {
+          if (origTotalQty > 0 && origNewReceived >= origTotalQty - 0.0001) {
             singleStatus = 'Recebido'
           } else if (origTotalQty === 0) {
             singleStatus = 'Recebido'
@@ -211,13 +248,18 @@ routerAdd(
           results.push({ shortage_id: shortageIdInput, success: true, status: singleStatus })
         } catch (sErr) {
           console.log('Error updating direct shortage ' + shortageIdInput + ': ' + String(sErr))
+          results.push({
+            shortage_id: shortageIdInput,
+            success: false,
+            error: 'Erro ao atualizar solicitação: ' + String(sErr),
+          })
         }
       }
 
       // --- 3. Para cada distribuição: atualizar shortage, criar Saída, criar mensagem ---
       for (var k = 0; k < distributions.length; k++) {
         var dist = distributions[k]
-        var distQty = Number(dist.quantity) || 0
+        var distQty = safeParseFloat(dist.quantity)
         console.log(
           'Processing distribution #' +
             (k + 1) +
@@ -227,7 +269,18 @@ routerAdd(
             distQty,
         )
 
-        var shortage = $app.findRecordById('material_shortages', dist.shortage_id)
+        var shortage = null
+        try {
+          shortage = $app.findRecordById('material_shortages', dist.shortage_id)
+        } catch (findShortageErr) {
+          console.log('Shortage not found ' + dist.shortage_id + ': ' + String(findShortageErr))
+          results.push({
+            shortage_id: dist.shortage_id,
+            success: false,
+            error: 'Solicitação de material não encontrada',
+          })
+          continue
+        }
 
         // Trava estrutural contra contaminação cruzada:
         // Se shortageIdInput foi especificado, apenas o próprio registro ou registros que compartilhem
@@ -255,12 +308,21 @@ routerAdd(
           }
         }
 
-        var sTotalQty = Number(shortage.getInt('quantity')) || 0
-        var sCurrentReceived = Number(shortage.getInt('received_quantity')) || 0
-        var sNewReceived = sCurrentReceived + distQty
+        var sTotalQty = getRecordFloat(shortage, 'quantity')
+        var sCurrentReceived = getRecordFloat(shortage, 'received_quantity')
+        var sNewReceived = Math.round((sCurrentReceived + distQty) * 10000) / 10000
 
-        if (sTotalQty > 0 && sNewReceived > sTotalQty) {
-          console.log('Skipped: qty exceeds total for shortage ' + dist.shortage_id)
+        // Tolerância float de 0.0001 para arredondamentos binários
+        if (sTotalQty > 0 && sNewReceived > sTotalQty + 0.0001) {
+          console.log(
+            'Skipped: qty exceeds total for shortage ' +
+              dist.shortage_id +
+              ' (new=' +
+              sNewReceived +
+              ', total=' +
+              sTotalQty +
+              ')',
+          )
           results.push({
             shortage_id: dist.shortage_id,
             success: false,
@@ -270,7 +332,7 @@ routerAdd(
         }
 
         var newStatus = 'Recebido_Parcial'
-        if (sTotalQty > 0 && sNewReceived >= sTotalQty) {
+        if (sTotalQty > 0 && sNewReceived >= sTotalQty - 0.0001) {
           newStatus = 'Recebido'
         } else if (sTotalQty === 0) {
           newStatus = 'Recebido'
@@ -303,6 +365,7 @@ routerAdd(
           } catch (_) {}
         }
 
+        var balanceAfterSaida = Math.round((runningBalance - distQty) * 10000) / 10000
         var saida = new Record(movCol)
         saida.set('inventory_id', invRecord.id)
         saida.set('quantity', distQty)
@@ -316,14 +379,14 @@ routerAdd(
             ')',
         )
         saida.set('exit_date', todayStr)
-        saida.set('balance_after', Number(runningBalance) - distQty)
+        saida.set('balance_after', balanceAfterSaida)
         if (orderId) saida.set('order_id', orderId)
         if (userId) saida.set('user_id', userId)
         if (unitPrice > 0) saida.set('unit_price', unitPrice)
         console.log('Saving Saída movement (qty=' + distQty + ' order=' + orderId + ')')
         $app.save(saida)
         console.log('Saída movement saved id=' + saida.id)
-        runningBalance = Number(runningBalance) - distQty
+        runningBalance = balanceAfterSaida
 
         if (orderId && userId) {
           try {
@@ -352,13 +415,47 @@ routerAdd(
       }
 
       // --- 4. Atualizar saldo final do inventário ---
-      invRecord.set('quantity', Number(runningBalance))
-      console.log('Updating inventory final quantity=' + runningBalance)
+      var finalInvBalance = Math.round(runningBalance * 10000) / 10000
+      invRecord.set('quantity', finalInvBalance)
+      console.log('Updating inventory final quantity=' + finalInvBalance)
       $app.save(invRecord)
       console.log('Inventory quantity updated')
 
+      var hasFailures = false
+      var failureCount = 0
+      for (var r = 0; r < results.length; r++) {
+        if (!results[r].success) {
+          hasFailures = true
+          failureCount++
+        }
+      }
+
+      if (hasFailures) {
+        var failureDetails = []
+        for (var f = 0; f < results.length; f++) {
+          if (!results[f].success) {
+            failureDetails.push(results[f].error || 'Falha na distribuição')
+          }
+        }
+        var errorMsg =
+          'Falha na distribuição de ' + failureCount + ' item(ns): ' + failureDetails.join('; ')
+        console.log('=== MATERIAL DISTRIBUTION PARTIAL/FAIL: ' + errorMsg + ' ===')
+        return e.json(400, {
+          error: errorMsg,
+          success: false,
+          results: results,
+          inventory_id: invRecord.id,
+          balance: finalInvBalance,
+        })
+      }
+
       console.log('=== MATERIAL DISTRIBUTION SUCCESS ===')
-      return e.json(200, { results, inventory_id: invRecord.id, balance: runningBalance })
+      return e.json(200, {
+        success: true,
+        results: results,
+        inventory_id: invRecord.id,
+        balance: finalInvBalance,
+      })
     } catch (err) {
       console.log('=== MATERIAL DISTRIBUTION ERROR ===', String(err))
       return e.json(500, { error: 'Erro interno: ' + String(err) })

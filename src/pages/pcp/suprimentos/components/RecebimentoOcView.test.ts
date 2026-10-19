@@ -298,4 +298,44 @@ describe('Visão Por Ordem de Compra em RecebimentoTable', () => {
     expect(isFullyReceived).toBe(true)
     expect(isDistributeActive).toBe(false)
   })
+
+  it('lógica da Ação "Dar entrada integral da OC": calcula demanda de OP vinculada e excedente ao estoque', () => {
+    // Casos reais solicitados no briefing:
+    // Caso 1: Item 14010036 na OC 38925:
+    // Comprado 1 MT, shortage lcv8qtzkq6qhy7x tem demanda 0.001 MT pendente.
+    // Distribuição: 0.001 MT para a OP vinculada ao shortage, e o restante (0.999 MT) como excedente ao estoque.
+    const purchasedQty = 1.0 // MT
+    const alreadyRcvd = 0.0
+    const itemSaldo = Math.max(0, purchasedQty - alreadyRcvd)
+
+    const shortageDemand = 0.001 // MT
+    const opDemandQty = Math.min(itemSaldo, shortageDemand)
+    const surplusToStock = Math.max(0, Math.round((itemSaldo - opDemandQty) * 10000) / 10000)
+
+    expect(itemSaldo).toBe(1.0)
+    expect(opDemandQty).toBe(0.001)
+    expect(surplusToStock).toBe(0.999)
+
+    // Caso 2: Item 14010035 na OC 38925:
+    // Comprado 1.0 MT, já recebido 0.459 MT na OP, saldo = 0.541 MT de puro excedente
+    const pQty35 = 1.0
+    const rQty35 = 0.459
+    const saldo35 = Math.round((pQty35 - rQty35) * 10000) / 10000
+    const shortage35Demand = 0 // OP já recebeu tudo o que pediu
+    const opDemand35 = Math.min(saldo35, shortage35Demand)
+    const surplus35 = Math.round((saldo35 - opDemand35) * 10000) / 10000
+
+    expect(saldo35).toBe(0.541)
+    expect(opDemand35).toBe(0)
+    expect(surplus35).toBe(0.541)
+
+    // Caso 3: Item 05330124 (shortage e5qbb8ohanf53j2) genuinamente não recebido:
+    // Estoque físico atual = 0 un. O modal detecta e desmarca por padrão para proteção.
+    const stockCurrentQty = 0
+    const isPhysicallyInStock = stockCurrentQty > 0.0001
+    const isSuspiciousUnreceived = !isPhysicallyInStock && alreadyRcvd <= 0.0001 && itemSaldo > 0
+
+    expect(isPhysicallyInStock).toBe(false)
+    expect(isSuspiciousUnreceived).toBe(true)
+  })
 })

@@ -11,25 +11,37 @@ import { DirectInventoryReceiveDialog } from './components/DirectInventoryReceiv
 import { RecebimentoTable, buildRecebimentoDisplayItems } from './components/RecebimentoTable'
 import { getActiveOrdemCompraItens } from '@/services/ordens-compra'
 import { useToast } from '@/hooks/use-toast'
+import { OrdemCompra } from '@/types'
+import { EntradaIntegralOcModal } from './components/EntradaIntegralOcModal'
 
 export default function RecebimentoPage() {
   const [shortages, setShortages] = useState<MaterialShortage[]>([])
   const [activeOcItems, setActiveOcItems] = useState<OrdemCompraItem[]>([])
+  const [inventoryMap, setInventoryMap] = useState<
+    Map<string, { quantity: number; unit?: string }>
+  >(new Map())
   const [codeInputs, setCodeInputs] = useState<Record<string, string>>({})
   const [smartReceiveItem, setSmartReceiveItem] = useState<MaterialShortage | null>(null)
   const [directReceiveOcItem, setDirectReceiveOcItem] = useState<OrdemCompraItem | null>(null)
+  const [entradaIntegralOc, setEntradaIntegralOc] = useState<OrdemCompra | null>(null)
   const [viewMode, setViewMode] = useState<'oc' | 'supplier' | 'list'>('oc')
   const { toast } = useToast()
 
   const fetchShortages = async () => {
     try {
-      const [res, ocItensRes] = await Promise.all([
+      const [res, ocItensRes, invRes] = await Promise.all([
         pb.collection('material_shortages').getFullList<MaterialShortage>({
           filter: 'status = "Compra" || status = "Recebido_Parcial"',
           sort: '-created',
           expand: 'order_id,requested_by',
         }),
         getActiveOrdemCompraItens(),
+        pb
+          .collection('inventory')
+          .getFullList<{ code?: string; quantity?: number; unit?: string }>({
+            fields: 'code,quantity,unit',
+          })
+          .catch(() => []),
       ])
       const activePending = res.filter((item) => {
         const total = Number(item.quantity) || 0
@@ -38,6 +50,17 @@ export default function RecebimentoPage() {
       })
       setShortages(activePending)
       setActiveOcItems(ocItensRes)
+
+      const invMap = new Map<string, { quantity: number; unit?: string }>()
+      for (const inv of invRes) {
+        if (inv.code) {
+          invMap.set(inv.code.trim().toUpperCase(), {
+            quantity: Number(inv.quantity) || 0,
+            unit: inv.unit,
+          })
+        }
+      }
+      setInventoryMap(invMap)
     } catch {
       /* ignored */
     }
@@ -50,6 +73,7 @@ export default function RecebimentoPage() {
   useRealtime('material_shortages', fetchShortages)
   useRealtime('ordens_de_compra', fetchShortages)
   useRealtime('ordem_compra_itens', fetchShortages)
+  useRealtime('inventory', fetchShortages)
 
   const displayItems = useMemo(() => buildRecebimentoDisplayItems(shortages), [shortages])
 
@@ -131,10 +155,25 @@ export default function RecebimentoPage() {
           items={shortages}
           viewMode={viewMode}
           activeOcItems={activeOcItems}
+          inventoryMap={inventoryMap}
           codeInputs={codeInputs}
           onCodeChange={(id, value) => setCodeInputs((prev) => ({ ...prev, [id]: value }))}
           onDistribuir={setSmartReceiveItem}
           onDistribuirOcItem={setDirectReceiveOcItem}
+          onEntradaIntegralOc={setEntradaIntegralOc}
+        />
+      )}
+
+      {/* Modal de Entrada Integral da OC */}
+      {entradaIntegralOc && (
+        <EntradaIntegralOcModal
+          open={!!entradaIntegralOc}
+          onOpenChange={(o) => !o && setEntradaIntegralOc(null)}
+          oc={entradaIntegralOc}
+          items={activeOcItems.filter((it) => it.oc_id === entradaIntegralOc.id)}
+          shortagesMap={new Map(shortages.map((s) => [s.id, s]))}
+          inventoryMap={inventoryMap}
+          onSuccess={fetchShortages}
         />
       )}
 

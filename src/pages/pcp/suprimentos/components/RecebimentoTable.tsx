@@ -43,6 +43,7 @@ export interface RecebimentoDisplayItem {
   code: string
   description: string
   status: string
+  linkedOc?: OrdemCompra
 }
 
 /**
@@ -51,7 +52,10 @@ export interface RecebimentoDisplayItem {
  * exibindo a QUANTIDADE REAL comprada (da ordem de compra / batch_info — ex.: 17 un),
  * e NÃO a soma de registros desatualizados ou duplicados.
  */
-export function buildRecebimentoDisplayItems(items: MaterialShortage[]): RecebimentoDisplayItem[] {
+export function buildRecebimentoDisplayItems(
+  items: MaterialShortage[],
+  shortageToOcMap?: Map<string, OrdemCompra>,
+): RecebimentoDisplayItem[] {
   // Blindagem: agrupa por batch_id + code (nunca consolida códigos diferentes na mesma linha)
   const batchMap = new Map<string, MaterialShortage[]>()
   const nonBatch: MaterialShortage[] = []
@@ -124,6 +128,8 @@ export function buildRecebimentoDisplayItems(items: MaterialShortage[]): Recebim
           ? 'Recebido'
           : parent.status || 'Compra'
 
+    const linkedOc = shortageToOcMap ? shortageToOcMap.get(parent.id) : undefined
+
     result.push({
       type: 'batch',
       id: batchId,
@@ -141,6 +147,7 @@ export function buildRecebimentoDisplayItems(items: MaterialShortage[]): Recebim
       code: parent.code || '',
       description: parent.description,
       status,
+      linkedOc,
     })
   }
 
@@ -148,6 +155,8 @@ export function buildRecebimentoDisplayItems(items: MaterialShortage[]): Recebim
   for (const item of nonBatch) {
     const qty = Number(item.quantity) || 0
     const rcvd = Number(item.received_quantity) || 0
+    const linkedOc = shortageToOcMap ? shortageToOcMap.get(item.id) : undefined
+
     result.push({
       type: 'single',
       id: item.id,
@@ -165,6 +174,7 @@ export function buildRecebimentoDisplayItems(items: MaterialShortage[]): Recebim
       code: item.code || '',
       description: item.description,
       status: item.status,
+      linkedOc,
     })
   }
 
@@ -206,10 +216,12 @@ interface RecebimentoTableProps {
   items: MaterialShortage[]
   viewMode?: 'oc' | 'supplier' | 'list'
   activeOcItems?: OrdemCompraItem[]
+  inventoryMap?: Map<string, { quantity: number; unit?: string }>
   codeInputs: Record<string, string>
   onCodeChange: (id: string, value: string) => void
   onDistribuir: (item: MaterialShortage) => void
   onDistribuirOcItem?: (ocItem: OrdemCompraItem) => void
+  onEntradaIntegralOc?: (oc: OrdemCompra) => void
 }
 
 function RecebimentoRow({
@@ -217,11 +229,13 @@ function RecebimentoRow({
   codeInputs,
   onCodeChange,
   onDistribuir,
+  onEntradaIntegralOc,
 }: {
   displayItem: RecebimentoDisplayItem
   codeInputs: Record<string, string>
   onCodeChange: (id: string, value: string) => void
   onDistribuir: (item: MaterialShortage) => void
+  onEntradaIntegralOc?: (oc: OrdemCompra) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const isBatch = displayItem.type === 'batch'
@@ -346,30 +360,54 @@ function RecebimentoRow({
             : '-'}
         </TableCell>
         <TableCell>
-          <Badge
-            variant="outline"
-            className={cn(
-              'whitespace-nowrap',
-              displayItem.status === 'Recebido_Parcial' &&
-                'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800',
-              displayItem.status === 'Compra' &&
-                'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800',
-              displayItem.status === 'Recebido' &&
-                'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800',
+          <div className="flex flex-col gap-1 items-start">
+            <Badge
+              variant="outline"
+              className={cn(
+                'whitespace-nowrap',
+                displayItem.status === 'Recebido_Parcial' &&
+                  'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800',
+                displayItem.status === 'Compra' &&
+                  'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800',
+                displayItem.status === 'Recebido' &&
+                  'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800',
+              )}
+            >
+              {displayItem.status.replace('_', ' ')}
+            </Badge>
+            {displayItem.linkedOc && (
+              <Badge
+                variant="outline"
+                className="text-[10px] bg-blue-50 text-blue-900 border-blue-200 font-mono"
+              >
+                OC #{displayItem.linkedOc.oc_number}
+              </Badge>
             )}
-          >
-            {displayItem.status.replace('_', ' ')}
-          </Badge>
+          </div>
         </TableCell>
         <TableCell>
-          <Button
-            size="sm"
-            className="h-8 bg-green-600 hover:bg-green-700 text-white"
-            onClick={() => onDistribuir(rep)}
-          >
-            <CheckCircle className="size-3.5 mr-1" />
-            Distribuir
-          </Button>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <Button
+              size="sm"
+              className="h-8 bg-green-600 hover:bg-green-700 text-white text-xs"
+              onClick={() => onDistribuir(rep)}
+            >
+              <CheckCircle className="size-3.5 mr-1" />
+              Distribuir
+            </Button>
+            {displayItem.linkedOc && onEntradaIntegralOc && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+                onClick={() => onEntradaIntegralOc(displayItem.linkedOc!)}
+                title={`Dar entrada integral da OC #${displayItem.linkedOc.oc_number}`}
+              >
+                <Package className="size-3 mr-1 text-emerald-600" />
+                Entrada Integral OC
+              </Button>
+            )}
+          </div>
         </TableCell>
       </TableRow>
 
@@ -603,10 +641,12 @@ function OcGroupRow({
   group,
   onDistribuir,
   onDistribuirOcItem,
+  onEntradaIntegralOc,
 }: {
   group: OcGroupedRecebimento
   onDistribuir: (item: MaterialShortage) => void
   onDistribuirOcItem?: (ocItem: OrdemCompraItem) => void
+  onEntradaIntegralOc?: (oc: OrdemCompra) => void
 }) {
   const [expanded, setExpanded] = useState(true)
   const pct =
@@ -614,14 +654,16 @@ function OcGroupRow({
       ? Math.round((group.receivedItemsCount / group.totalItemsCount) * 100)
       : 0
 
+  const hasPendingItems = group.itemRows.some((r) => r.saldoQty > 0.0001)
+
   return (
     <div className="border rounded-lg bg-white dark:bg-slate-900 shadow-xs overflow-hidden transition-all">
       {/* Cabeçalho da Ordem de Compra */}
-      <div
-        onClick={() => setExpanded((v) => !v)}
-        className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 bg-slate-50/80 dark:bg-slate-800/40 hover:bg-slate-100/80 dark:hover:bg-slate-800/70 cursor-pointer border-b select-none"
-      >
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 bg-slate-50/80 dark:bg-slate-800/40 hover:bg-slate-100/80 dark:hover:bg-slate-800/70 border-b select-none">
+        <div
+          onClick={() => setExpanded((v) => !v)}
+          className="flex items-center gap-3 cursor-pointer"
+        >
           <button
             type="button"
             className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
@@ -646,7 +688,7 @@ function OcGroupRow({
           </div>
         </div>
 
-        <div className="flex items-center gap-4 text-xs ml-7 sm:ml-0 flex-wrap">
+        <div className="flex items-center gap-3 text-xs ml-7 sm:ml-0 flex-wrap">
           <div className="flex items-center gap-1.5 text-muted-foreground">
             <span>Previsão:</span>
             <span className="font-medium text-slate-800 dark:text-slate-200">
@@ -681,6 +723,22 @@ function OcGroupRow({
           >
             {group.oc.status || 'Ativa'}
           </Badge>
+
+          {/* Botão de Ação: Dar entrada integral da OC */}
+          {hasPendingItems && onEntradaIntegralOc && (
+            <Button
+              size="sm"
+              className="h-8 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 shadow-xs gap-1.5"
+              onClick={(e) => {
+                e.stopPropagation()
+                onEntradaIntegralOc(group.oc)
+              }}
+              title={`Dar entrada integral de todos os itens com saldo da OC #${group.oc.oc_number}`}
+            >
+              <Package className="size-3.5" />
+              Dar entrada integral da OC
+            </Button>
+          )}
         </div>
       </div>
 
@@ -723,9 +781,8 @@ export function RecebimentoTable({
   onCodeChange,
   onDistribuir,
   onDistribuirOcItem,
+  onEntradaIntegralOc,
 }: RecebimentoTableProps) {
-  const displayItems = useMemo(() => buildRecebimentoDisplayItems(items), [items])
-
   // Mapeamento de shortageId -> Ordem de Compra ativa vinculada
   const shortageToOcMap = useMemo(() => {
     const map = new Map<string, OrdemCompra>()
@@ -750,6 +807,11 @@ export function RecebimentoTable({
     }
     return map
   }, [activeOcItems, items])
+
+  const displayItems = useMemo(
+    () => buildRecebimentoDisplayItems(items, shortageToOcMap),
+    [items, shortageToOcMap],
+  )
 
   // 1. Visão padrão: 'Por Ordem de Compra'
   // Constrói cada OC DIRETAMENTE a partir dos seus itens (activeOcItems)
@@ -995,6 +1057,7 @@ export function RecebimentoTable({
                 codeInputs={codeInputs}
                 onCodeChange={onCodeChange}
                 onDistribuir={onDistribuir}
+                onEntradaIntegralOc={onEntradaIntegralOc}
               />
             ))}
           </TableBody>
@@ -1060,6 +1123,7 @@ export function RecebimentoTable({
                 group={group}
                 onDistribuir={onDistribuir}
                 onDistribuirOcItem={onDistribuirOcItem}
+                onEntradaIntegralOc={onEntradaIntegralOc}
               />
             ))}
           </div>

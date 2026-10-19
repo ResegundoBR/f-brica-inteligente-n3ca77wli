@@ -247,6 +247,403 @@ routerAdd(
 
 routerAdd(
   'POST',
+  '/backend/v1/materials/distribute-oc-full',
+  (e) => {
+    console.log('=== DISTRIBUTE OC FULL START ===')
+
+    function safeParseFloat(val) {
+      if (val === null || val === undefined) return 0
+      if (typeof val === 'number') {
+        return isNaN(val) ? 0 : val
+      }
+      var s = String(val).trim()
+      if (!s) return 0
+      s = s.replace(',', '.')
+      var n = parseFloat(s)
+      return isNaN(n) ? 0 : n
+    }
+
+    function getRecordFloat(rec, field) {
+      if (!rec) return 0
+      var raw = null
+      try {
+        raw = rec.get(field)
+      } catch (_) {}
+      if (raw !== null && raw !== undefined && raw !== '') {
+        var parsed = safeParseFloat(raw)
+        if (parsed !== 0 || String(raw).trim() === '0') {
+          return parsed
+        }
+      }
+      try {
+        var gf = rec.getFloat(field)
+        if (gf !== 0) return gf
+      } catch (_) {}
+      try {
+        var gs = rec.getString(field)
+        if (gs) return safeParseFloat(gs)
+      } catch (_) {}
+      try {
+        return safeParseFloat(rec.getInt(field))
+      } catch (_) {}
+      return 0
+    }
+
+    try {
+      var body = e.requestInfo().body || {}
+      var ocId = (body.oc_id || '').trim()
+      var selectedItemIds = body.selected_item_ids // array de IDs de ordem_compra_itens
+      var userId = e.auth ? e.auth.id : ''
+      var todayStr = new Date().toISOString().split('T')[0]
+
+      if (!ocId) {
+        return e.badRequestError('ID da Ordem de Compra obrigatório')
+      }
+
+      var oc = null
+      try {
+        oc = $app.findRecordById('ordens_de_compra', ocId)
+      } catch (findOcErr) {
+        return e.badRequestError('Ordem de Compra não encontrada: ' + String(findOcErr))
+      }
+
+      var ocNumber = oc.getString('oc_number') || ocId
+      var ocLabel = 'OC #' + ocNumber
+
+      // Carregar todos os itens da OC
+      var ocItems = $app.findRecordsByFilter(
+        'ordem_compra_itens',
+        "oc_id = '" + ocId.replace(/'/g, "''") + "'",
+        'created',
+        200,
+        0,
+      )
+
+      if (!ocItems || ocItems.length === 0) {
+        return e.badRequestError('A Ordem de Compra não possui itens')
+      }
+
+      var selectedSet = null
+      if (Array.isArray(selectedItemIds)) {
+        selectedSet = {}
+        for (var si = 0; si < selectedItemIds.length; si++) {
+          selectedSet[String(selectedItemIds[si]).trim()] = true
+        }
+      }
+
+      var movCol = $app.findCollectionByNameOrId('inventory_movements')
+      var processedItems = []
+      var skippedItems = []
+
+      for (var i = 0; i < ocItems.length; i++) {
+        var it = ocItems[i]
+        var itemId = it.id
+
+        // Se uma seleção foi fornecida e o item não foi selecionado, pula
+        if (selectedSet && !selectedSet[itemId]) {
+          skippedItems.push({ item_id: itemId, reason: 'Não selecionado pelo usuário' })
+          continue
+        }
+
+        var itemTotalQty = getRecordFloat(it, 'quantity')
+        var itemCurRcvd = getRecordFloat(it, 'received_quantity')
+        var itemSaldo = Math.round(Math.max(0, itemTotalQty - itemCurRcvd) * 10000) / 10000
+
+        // Se item já está integralmente recebido (saldo 0), pula
+        if (itemSaldo <= 0.0001) {
+          skippedItems.push({ item_id: itemId, reason: 'Item já sem saldo pendente' })
+          continue
+        }
+
+        var code = (it.getString('code') || '').trim()
+        var description = (it.getString('description') || '').trim()
+        var unitPrice = getRecordFloat(it, 'unit_price')
+        var shortageId = it.getString('material_shortage_id')
+
+        // 1. Resolver item no inventário
+        var invRecord = null
+        if (code) {
+          try {
+            invRecord = $app.findFirstRecordByFilter(
+              'inventory',
+              "code = '" + code.replace(/'/g, "''") + "'",
+            )
+          } catch (_) {}
+        }
+        if (!invRecord && description) {
+          try {
+            invRecord = $app.findFirstRecordByFilter(
+              'inventory',
+              "description = '" + description.replace(/'/g, "''") + "'",
+            )
+          } catch (_) {}
+        }
+
+        if (!invRecord) {
+          var invCol = $app.findCollectionByNameOrId('inventory')
+          invRecord = new Record(invCol)
+          var finalCode = code || 'REF-' + $security.randomString(6).toUpperCase()
+          invRecord.set('code', finalCode)
+          invRecord.set('description', description)
+          invRecord.set('quantity', 0)
+          invRecord.set('min_quantity', 0)
+          invRecord.set('unit', 'un')
+          $app.save(invRecord)
+          if (!code) code = finalCode
+          invRecord = $app.findRecordById('inventory', invRecord.id)
+        } else {
+          invRecord = $app.findRecordById('inventory', invRecord.id)
+          if (!invRecord.getString('code') && code) {
+            invRecord.set('code', code)
+            $app.save(invRecord)
+          }
+        }
+
+        var runningBalance = getRecordFloat(invRecord, 'quantity')
+
+        // 2. Verificar shortages vinculados exatamente a este item
+        // A regra exige: "usar sempre o vínculo exato por material_shortage_id (nunca tocar registros alheios do mesmo código)"
+        var shortageList = []
+        if (shortageId) {
+          try {
+            var directShortage = $app.findRecordById('material_shortages', shortageId)
+            if (directShortage) {
+              shortageList.push(directShortage)
+              // Se tiver batch_id explícito compartilhado, carregar outros membros do mesmo lote
+              var bId = directShortage.getString('batch_id')
+              if (bId) {
+                var batchShortages = $app.findRecordsByFilter(
+                  'material_shortages',
+                  "batch_id = '" +
+                    bId.replace(/'/g, "''") +
+                    "' && id != '" +
+                    directShortage.id.replace(/'/g, "''") +
+                    "'",
+                  'created',
+                  50,
+                  0,
+                )
+                for (var bs = 0; bs < batchShortages.length; bs++) {
+                  // Confere se código bate
+                  var bsCode = (batchShortages[bs].getString('code') || '').trim()
+                  if (!code || !bsCode || bsCode.toUpperCase() === code.toUpperCase()) {
+                    shortageList.push(batchShortages[bs])
+                  }
+                }
+              }
+            }
+          } catch (stErr) {
+            console.log('Shortage not found for item ' + itemId + ': ' + String(stErr))
+          }
+        }
+
+        // Calcular demanda pendente nas OPs dos shortages vinculados
+        // e excedente restante
+        var opDemands = []
+        var totalOpDemandPending = 0
+
+        for (var s = 0; s < shortageList.length; s++) {
+          var sht = shortageList[s]
+          var hasOp = Boolean(sht.getString('order_id'))
+          var sStatus = sht.getString('status')
+          var sQty = getRecordFloat(sht, 'quantity')
+          var sRcvd = getRecordFloat(sht, 'received_quantity')
+          var sPending = Math.round(Math.max(0, sQty - sRcvd) * 10000) / 10000
+
+          if (hasOp && sStatus !== 'Recebido' && sStatus !== 'Cancelado' && sPending > 0.0001) {
+            opDemands.push({
+              shortage: sht,
+              pending: sPending,
+              order_id: sht.getString('order_id'),
+            })
+            totalOpDemandPending = Math.round((totalOpDemandPending + sPending) * 10000) / 10000
+          }
+        }
+
+        // Se totalOpDemandPending + saldo > 0:
+        // A entrada integral deste item traz para o sistema exatamente 'itemSaldo'.
+        // Esse saldo alimenta primeiro as demandas de OP vinculadas até zerar sua falta;
+        // O restante (excedente) fica como entrada direta ao estoque geral.
+        // Registramos a movimentação de Entrada do total do saldo de uma só vez:
+        var balanceAfterEntrada = Math.round((runningBalance + itemSaldo) * 10000) / 10000
+        var entrada = new Record(movCol)
+        entrada.set('inventory_id', invRecord.id)
+        entrada.set('quantity', itemSaldo)
+        entrada.set('type', 'Entrada')
+        entrada.set('reason', 'Entrada integral da ' + ocLabel + ' - Item ' + (code || it.id))
+        entrada.set('arrival_date', todayStr)
+        entrada.set('balance_after', balanceAfterEntrada)
+        if (unitPrice > 0) entrada.set('unit_price', unitPrice)
+        if (userId) entrada.set('user_id', userId)
+        $app.save(entrada)
+        runningBalance = balanceAfterEntrada
+
+        // Agora distribuir para as OPs com demanda pendente
+        var remainingToDistribute = itemSaldo
+        var distributedOpsCount = 0
+
+        for (var d = 0; d < opDemands.length; d++) {
+          if (remainingToDistribute <= 0.0001) break
+
+          var demand = opDemands[d]
+          var allocQty = Math.min(remainingToDistribute, demand.pending)
+          allocQty = Math.round(allocQty * 10000) / 10000
+          if (allocQty <= 0) continue
+
+          var targetShortage = demand.shortage
+          var curRec = getRecordFloat(targetShortage, 'received_quantity')
+          var curTot = getRecordFloat(targetShortage, 'quantity')
+          var newRec = Math.round((curRec + allocQty) * 10000) / 10000
+
+          var newStatus = 'Recebido_Parcial'
+          if (curTot > 0 && newRec >= curTot - 0.0001) {
+            newStatus = 'Recebido'
+          } else if (curTot === 0) {
+            newStatus = 'Recebido'
+          }
+
+          targetShortage.set('received_quantity', newRec)
+          targetShortage.set('status', newStatus)
+          if (code) targetShortage.set('code', code)
+          if (userId) {
+            targetShortage.set('received_by', userId)
+            targetShortage.set('distributed_by', userId)
+          }
+          $app.save(targetShortage)
+
+          // Registrar Saída para a OP
+          var opNumber = ''
+          if (demand.order_id) {
+            try {
+              var opOrder = $app.findRecordById('pcp_orders', demand.order_id)
+              opNumber = opOrder.getString('op_number') || opOrder.getString('order_number') || ''
+            } catch (_) {}
+          }
+
+          var balanceAfterSaida = Math.round((runningBalance - allocQty) * 10000) / 10000
+          var saida = new Record(movCol)
+          saida.set('inventory_id', invRecord.id)
+          saida.set('quantity', allocQty)
+          saida.set('type', 'Saída')
+          saida.set(
+            'reason',
+            'Distribuição para OP' +
+              (opNumber ? ' ' + opNumber : '') +
+              ' (ID: ' +
+              targetShortage.id +
+              ') via entrada integral da ' +
+              ocLabel,
+          )
+          saida.set('exit_date', todayStr)
+          saida.set('balance_after', balanceAfterSaida)
+          if (demand.order_id) saida.set('order_id', demand.order_id)
+          if (userId) saida.set('user_id', userId)
+          if (unitPrice > 0) saida.set('unit_price', unitPrice)
+          $app.save(saida)
+          runningBalance = balanceAfterSaida
+
+          // Mensagem para a OP
+          if (demand.order_id && userId) {
+            try {
+              var msgCol = $app.findCollectionByNameOrId('pcp_order_messages')
+              var msg = new Record(msgCol)
+              msg.set('order_id', demand.order_id)
+              msg.set('user_id', userId)
+              msg.set(
+                'content',
+                'Material recebido e separado: ' +
+                  targetShortage.getString('description') +
+                  ' (Qtde: ' +
+                  allocQty +
+                  ') via entrada integral da ' +
+                  ocLabel,
+              )
+              msg.set('sector', 'Operador')
+              msg.set('read', false)
+              $app.save(msg)
+            } catch (_) {}
+          }
+
+          remainingToDistribute = Math.round((remainingToDistribute - allocQty) * 10000) / 10000
+          distributedOpsCount++
+        }
+
+        // Se sobrou saldo (excedente), ele permanece no estoque (já entrou pela Entrada acima)
+        var surplusStayedInStock = remainingToDistribute
+
+        // Atualizar saldo final do item no estoque
+        invRecord.set('quantity', runningBalance)
+        $app.save(invRecord)
+
+        // Atualizar o item da OC como integralmente recebido
+        it.set('received_quantity', itemTotalQty)
+        if (code && !it.getString('code')) {
+          it.set('code', code)
+        }
+        $app.save(it)
+
+        processedItems.push({
+          item_id: itemId,
+          code: code,
+          total_qty: itemTotalQty,
+          received_now: itemSaldo,
+          distributed_ops: distributedOpsCount,
+          surplus_stock: surplusStayedInStock,
+          final_inv_balance: runningBalance,
+        })
+      }
+
+      // 3. Após fechar os itens selecionados, verificar se TODOS os itens da OC estão 100% recebidos
+      var allOcItemsNow = $app.findRecordsByFilter(
+        'ordem_compra_itens',
+        "oc_id = '" + ocId.replace(/'/g, "''") + "'",
+        'created',
+        200,
+        0,
+      )
+
+      var allItemsFullyReceived = true
+      for (var j = 0; j < allOcItemsNow.length; j++) {
+        var itCheck = allOcItemsNow[j]
+        var qTotal = getRecordFloat(itCheck, 'quantity')
+        var qRcvd = getRecordFloat(itCheck, 'received_quantity')
+        if (qTotal > 0 && qRcvd < qTotal - 0.0001) {
+          allItemsFullyReceived = false
+          break
+        }
+      }
+
+      var ocMarkedReceived = false
+      if (allItemsFullyReceived && allOcItemsNow.length > 0) {
+        oc.set('status', 'Recebida')
+        $app.save(oc)
+        ocMarkedReceived = true
+        console.log('OC ' + ocId + ' (' + ocNumber + ') marked as Recebida automatically')
+      }
+
+      console.log(
+        '=== DISTRIBUTE OC FULL COMPLETED: ' + processedItems.length + ' items processed ===',
+      )
+
+      return e.json(200, {
+        success: true,
+        oc_id: ocId,
+        oc_number: ocNumber,
+        oc_status: oc.getString('status'),
+        oc_marked_received: ocMarkedReceived,
+        processed_items: processedItems,
+        skipped_items: skippedItems,
+      })
+    } catch (err) {
+      console.log('=== DISTRIBUTE OC FULL ERROR ===', String(err))
+      return e.json(500, { error: 'Erro interno ao dar entrada integral na OC: ' + String(err) })
+    }
+  },
+  $apis.requireAuth(),
+)
+
+routerAdd(
+  'POST',
   '/backend/v1/materials/distribute',
   (e) => {
     console.log('=== MATERIAL DISTRIBUTION START ===')

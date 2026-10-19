@@ -43,3 +43,36 @@ export const distributeOcItemDirectToInventory = (payload: DistributeOcItemPaylo
     body: JSON.stringify(payload),
     headers: { 'Content-Type': 'application/json' },
   })
+
+export interface DistributeOcFullPayload {
+  oc_id: string
+  selected_item_ids?: string[]
+}
+
+export interface DistributeOcFullResult {
+  success: boolean
+  oc_id: string
+  oc_number: string
+  oc_status: string
+  oc_marked_received: boolean
+  processed_items: Array<{
+    item_id: string
+    code: string
+    total_qty: number
+    received_now: number
+    distributed_ops: number
+    surplus_stock: number
+    final_inv_balance: number
+  }>
+  skipped_items: Array<{
+    item_id: string
+    reason: string
+  }>
+}
+
+export const distributeOcFull = (payload: DistributeOcFullPayload) =>
+  pb.send<DistributeOcFullResult>('/backend/v1/materials/distribute-oc-full', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    headers: { 'Content-Type': 'application/json' },
+  })

@@ -30,7 +30,7 @@ import { Badge } from '@/components/ui/badge'
 import { NoTranslate } from '@/components/NoTranslate'
 import { MaterialShortage } from '@/types'
 import { findOtherOpDemands } from '@/services/material-consolidation'
-import { toDateFieldValue, formatQuantity } from '@/lib/pcp-utils'
+import { toDateFieldValue, formatQuantity, parseQuantityInput } from '@/lib/pcp-utils'
 import { formatDetailedErrorMessage } from '@/lib/pocketbase/errors'
 import { toast } from 'sonner'
 

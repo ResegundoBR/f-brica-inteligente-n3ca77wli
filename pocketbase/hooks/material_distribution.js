@@ -293,6 +293,7 @@ routerAdd(
       var body = e.requestInfo().body || {}
       var ocId = (body.oc_id || '').trim()
       var selectedItemIds = body.selected_item_ids // array de IDs de ordem_compra_itens
+      var reconcileOnly = Boolean(body.reconcile_only)
       var userId = e.auth ? e.auth.id : ''
       var todayStr = new Date().toISOString().split('T')[0]
 
@@ -460,120 +461,227 @@ routerAdd(
           }
         }
 
-        // Se totalOpDemandPending + saldo > 0:
-        // A entrada integral deste item traz para o sistema exatamente 'itemSaldo'.
-        // Esse saldo alimenta primeiro as demandas de OP vinculadas até zerar sua falta;
-        // O restante (excedente) fica como entrada direta ao estoque geral.
-        // Registramos a movimentação de Entrada do total do saldo de uma só vez:
-        var balanceAfterEntrada = Math.round((runningBalance + itemSaldo) * 10000) / 10000
-        var entrada = new Record(movCol)
-        entrada.set('inventory_id', invRecord.id)
-        entrada.set('quantity', itemSaldo)
-        entrada.set('type', 'Entrada')
-        entrada.set('reason', 'Entrada integral da ' + ocLabel + ' - Item ' + (code || it.id))
-        entrada.set('arrival_date', todayStr)
-        entrada.set('balance_after', balanceAfterEntrada)
-        if (unitPrice > 0) entrada.set('unit_price', unitPrice)
-        if (userId) entrada.set('user_id', userId)
-        $app.save(entrada)
-        runningBalance = balanceAfterEntrada
-
-        // Agora distribuir para as OPs com demanda pendente
-        var remainingToDistribute = itemSaldo
         var distributedOpsCount = 0
+        var totalAllocatedToOps = 0
 
-        for (var d = 0; d < opDemands.length; d++) {
-          if (remainingToDistribute <= 0.0001) break
+        if (reconcileOnly) {
+          // --- MODO APENAS CONCILIAR ---
+          // O material físico JÁ está no estoque (excedente prévio ou recebido fora do fluxo).
+          // NÃO cria movimentação de Entrada e NÃO altera o saldo total do inventário se não houver saída,
+          // ou distribui as OPs pendentes usando o estoque atual (criando Saída e mensagem na OP).
+          // Distribui a demanda pendente das OPs dos shortages vinculados usando o estoque atual (runningBalance):
+          for (var d = 0; d < opDemands.length; d++) {
+            var demand = opDemands[d]
+            if (demand.pending <= 0.0001) continue
 
-          var demand = opDemands[d]
-          var allocQty = Math.min(remainingToDistribute, demand.pending)
-          allocQty = Math.round(allocQty * 10000) / 10000
-          if (allocQty <= 0) continue
+            // Aloca a demanda pendente da OP limitada pelo estoque atual disponível do item (ou pela demanda total da OP)
+            // No modo conciliar, se runningBalance >= demand.pending, usa demand.pending.
+            // Se runningBalance < demand.pending, aloca o que houver no estoque (Math.min(runningBalance, demand.pending)).
+            var allocQty = demand.pending
+            if (runningBalance > 0 && allocQty > runningBalance) {
+              allocQty = runningBalance
+            }
+            allocQty = Math.round(allocQty * 10000) / 10000
+            if (allocQty <= 0) continue
 
-          var targetShortage = demand.shortage
-          var curRec = getRecordFloat(targetShortage, 'received_quantity')
-          var curTot = getRecordFloat(targetShortage, 'quantity')
-          var newRec = Math.round((curRec + allocQty) * 10000) / 10000
+            var targetShortage = demand.shortage
+            var curRec = getRecordFloat(targetShortage, 'received_quantity')
+            var curTot = getRecordFloat(targetShortage, 'quantity')
+            var newRec = Math.round((curRec + allocQty) * 10000) / 10000
 
-          var newStatus = 'Recebido_Parcial'
-          if (curTot > 0 && newRec >= curTot - 0.0001) {
-            newStatus = 'Recebido'
-          } else if (curTot === 0) {
-            newStatus = 'Recebido'
+            var newStatus = 'Recebido_Parcial'
+            if (curTot > 0 && newRec >= curTot - 0.0001) {
+              newStatus = 'Recebido'
+            } else if (curTot === 0) {
+              newStatus = 'Recebido'
+            }
+
+            targetShortage.set('received_quantity', newRec)
+            targetShortage.set('status', newStatus)
+            if (code) targetShortage.set('code', code)
+            if (userId) {
+              targetShortage.set('received_by', userId)
+              targetShortage.set('distributed_by', userId)
+            }
+            $app.save(targetShortage)
+
+            // Registrar somente a Saída para a OP
+            var opNumber = ''
+            if (demand.order_id) {
+              try {
+                var opOrder = $app.findRecordById('pcp_orders', demand.order_id)
+                opNumber = opOrder.getString('op_number') || opOrder.getString('order_number') || ''
+              } catch (_) {}
+            }
+
+            var balanceAfterSaida =
+              Math.round(Math.max(0, runningBalance - allocQty) * 10000) / 10000
+            var saida = new Record(movCol)
+            saida.set('inventory_id', invRecord.id)
+            saida.set('quantity', allocQty)
+            saida.set('type', 'Saída')
+            saida.set(
+              'reason',
+              'Conciliação de demanda para OP' +
+                (opNumber ? ' ' + opNumber : '') +
+                ' (ID: ' +
+                targetShortage.id +
+                ') via ' +
+                ocLabel +
+                ' (material já em estoque)',
+            )
+            saida.set('exit_date', todayStr)
+            saida.set('balance_after', balanceAfterSaida)
+            if (demand.order_id) saida.set('order_id', demand.order_id)
+            if (userId) saida.set('user_id', userId)
+            if (unitPrice > 0) saida.set('unit_price', unitPrice)
+            $app.save(saida)
+            runningBalance = balanceAfterSaida
+
+            // Mensagem para a OP
+            if (demand.order_id && userId) {
+              try {
+                var msgCol = $app.findCollectionByNameOrId('pcp_order_messages')
+                var msg = new Record(msgCol)
+                msg.set('order_id', demand.order_id)
+                msg.set('user_id', userId)
+                msg.set(
+                  'content',
+                  'Material conciliado do estoque e separado: ' +
+                    targetShortage.getString('description') +
+                    ' (Qtde: ' +
+                    allocQty +
+                    ') via ' +
+                    ocLabel,
+                )
+                msg.set('sector', 'Operador')
+                msg.set('read', false)
+                $app.save(msg)
+              } catch (_) {}
+            }
+
+            totalAllocatedToOps = Math.round((totalAllocatedToOps + allocQty) * 10000) / 10000
+            distributedOpsCount++
           }
 
-          targetShortage.set('received_quantity', newRec)
-          targetShortage.set('status', newStatus)
-          if (code) targetShortage.set('code', code)
-          if (userId) {
-            targetShortage.set('received_by', userId)
-            targetShortage.set('distributed_by', userId)
+          // Se houve saída de estoque para as OPs conciliadas, atualiza o saldo do inventário
+          if (distributedOpsCount > 0) {
+            invRecord.set('quantity', runningBalance)
+            $app.save(invRecord)
           }
-          $app.save(targetShortage)
+        } else {
+          // --- MODO PADRÃO (Entrada + Distribuição) ---
+          // A entrada integral deste item traz para o sistema exatamente 'itemSaldo'.
+          // Esse saldo alimenta primeiro as demandas de OP vinculadas até zerar sua falta;
+          // O restante (excedente) fica como entrada direta ao estoque geral.
+          // Registramos a movimentação de Entrada do total do saldo de uma só vez:
+          var balanceAfterEntrada = Math.round((runningBalance + itemSaldo) * 10000) / 10000
+          var entrada = new Record(movCol)
+          entrada.set('inventory_id', invRecord.id)
+          entrada.set('quantity', itemSaldo)
+          entrada.set('type', 'Entrada')
+          entrada.set('reason', 'Entrada integral da ' + ocLabel + ' - Item ' + (code || it.id))
+          entrada.set('arrival_date', todayStr)
+          entrada.set('balance_after', balanceAfterEntrada)
+          if (unitPrice > 0) entrada.set('unit_price', unitPrice)
+          if (userId) entrada.set('user_id', userId)
+          $app.save(entrada)
+          runningBalance = balanceAfterEntrada
 
-          // Registrar Saída para a OP
-          var opNumber = ''
-          if (demand.order_id) {
-            try {
-              var opOrder = $app.findRecordById('pcp_orders', demand.order_id)
-              opNumber = opOrder.getString('op_number') || opOrder.getString('order_number') || ''
-            } catch (_) {}
+          // Agora distribuir para as OPs com demanda pendente
+          var remainingToDistribute = itemSaldo
+
+          for (var d = 0; d < opDemands.length; d++) {
+            if (remainingToDistribute <= 0.0001) break
+
+            var demand = opDemands[d]
+            var allocQty = Math.min(remainingToDistribute, demand.pending)
+            allocQty = Math.round(allocQty * 10000) / 10000
+            if (allocQty <= 0) continue
+
+            var targetShortage = demand.shortage
+            var curRec = getRecordFloat(targetShortage, 'received_quantity')
+            var curTot = getRecordFloat(targetShortage, 'quantity')
+            var newRec = Math.round((curRec + allocQty) * 10000) / 10000
+
+            var newStatus = 'Recebido_Parcial'
+            if (curTot > 0 && newRec >= curTot - 0.0001) {
+              newStatus = 'Recebido'
+            } else if (curTot === 0) {
+              newStatus = 'Recebido'
+            }
+
+            targetShortage.set('received_quantity', newRec)
+            targetShortage.set('status', newStatus)
+            if (code) targetShortage.set('code', code)
+            if (userId) {
+              targetShortage.set('received_by', userId)
+              targetShortage.set('distributed_by', userId)
+            }
+            $app.save(targetShortage)
+
+            // Registrar Saída para a OP
+            var opNumber = ''
+            if (demand.order_id) {
+              try {
+                var opOrder = $app.findRecordById('pcp_orders', demand.order_id)
+                opNumber = opOrder.getString('op_number') || opOrder.getString('order_number') || ''
+              } catch (_) {}
+            }
+
+            var balanceAfterSaida = Math.round((runningBalance - allocQty) * 10000) / 10000
+            var saida = new Record(movCol)
+            saida.set('inventory_id', invRecord.id)
+            saida.set('quantity', allocQty)
+            saida.set('type', 'Saída')
+            saida.set(
+              'reason',
+              'Distribuição para OP' +
+                (opNumber ? ' ' + opNumber : '') +
+                ' (ID: ' +
+                targetShortage.id +
+                ') via entrada integral da ' +
+                ocLabel,
+            )
+            saida.set('exit_date', todayStr)
+            saida.set('balance_after', balanceAfterSaida)
+            if (demand.order_id) saida.set('order_id', demand.order_id)
+            if (userId) saida.set('user_id', userId)
+            if (unitPrice > 0) saida.set('unit_price', unitPrice)
+            $app.save(saida)
+            runningBalance = balanceAfterSaida
+
+            // Mensagem para a OP
+            if (demand.order_id && userId) {
+              try {
+                var msgCol = $app.findCollectionByNameOrId('pcp_order_messages')
+                var msg = new Record(msgCol)
+                msg.set('order_id', demand.order_id)
+                msg.set('user_id', userId)
+                msg.set(
+                  'content',
+                  'Material recebido e separado: ' +
+                    targetShortage.getString('description') +
+                    ' (Qtde: ' +
+                    allocQty +
+                    ') via entrada integral da ' +
+                    ocLabel,
+                )
+                msg.set('sector', 'Operador')
+                msg.set('read', false)
+                $app.save(msg)
+              } catch (_) {}
+            }
+
+            remainingToDistribute = Math.round((remainingToDistribute - allocQty) * 10000) / 10000
+            totalAllocatedToOps = Math.round((totalAllocatedToOps + allocQty) * 10000) / 10000
+            distributedOpsCount++
           }
 
-          var balanceAfterSaida = Math.round((runningBalance - allocQty) * 10000) / 10000
-          var saida = new Record(movCol)
-          saida.set('inventory_id', invRecord.id)
-          saida.set('quantity', allocQty)
-          saida.set('type', 'Saída')
-          saida.set(
-            'reason',
-            'Distribuição para OP' +
-              (opNumber ? ' ' + opNumber : '') +
-              ' (ID: ' +
-              targetShortage.id +
-              ') via entrada integral da ' +
-              ocLabel,
-          )
-          saida.set('exit_date', todayStr)
-          saida.set('balance_after', balanceAfterSaida)
-          if (demand.order_id) saida.set('order_id', demand.order_id)
-          if (userId) saida.set('user_id', userId)
-          if (unitPrice > 0) saida.set('unit_price', unitPrice)
-          $app.save(saida)
-          runningBalance = balanceAfterSaida
-
-          // Mensagem para a OP
-          if (demand.order_id && userId) {
-            try {
-              var msgCol = $app.findCollectionByNameOrId('pcp_order_messages')
-              var msg = new Record(msgCol)
-              msg.set('order_id', demand.order_id)
-              msg.set('user_id', userId)
-              msg.set(
-                'content',
-                'Material recebido e separado: ' +
-                  targetShortage.getString('description') +
-                  ' (Qtde: ' +
-                  allocQty +
-                  ') via entrada integral da ' +
-                  ocLabel,
-              )
-              msg.set('sector', 'Operador')
-              msg.set('read', false)
-              $app.save(msg)
-            } catch (_) {}
-          }
-
-          remainingToDistribute = Math.round((remainingToDistribute - allocQty) * 10000) / 10000
-          distributedOpsCount++
+          // Atualizar saldo final do item no estoque
+          invRecord.set('quantity', runningBalance)
+          $app.save(invRecord)
         }
-
-        // Se sobrou saldo (excedente), ele permanece no estoque (já entrou pela Entrada acima)
-        var surplusStayedInStock = remainingToDistribute
-
-        // Atualizar saldo final do item no estoque
-        invRecord.set('quantity', runningBalance)
-        $app.save(invRecord)
 
         // Atualizar o item da OC como integralmente recebido
         it.set('received_quantity', itemTotalQty)
@@ -582,14 +690,19 @@ routerAdd(
         }
         $app.save(it)
 
+        var surplusQty = reconcileOnly
+          ? 0
+          : Math.max(0, Math.round((itemSaldo - totalAllocatedToOps) * 10000) / 10000)
+
         processedItems.push({
           item_id: itemId,
           code: code,
           total_qty: itemTotalQty,
           received_now: itemSaldo,
           distributed_ops: distributedOpsCount,
-          surplus_stock: surplusStayedInStock,
+          surplus_stock: surplusQty,
           final_inv_balance: runningBalance,
+          reconciled: reconcileOnly,
         })
       }
 

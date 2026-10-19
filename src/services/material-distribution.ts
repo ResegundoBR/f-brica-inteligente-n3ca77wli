@@ -47,6 +47,7 @@ export const distributeOcItemDirectToInventory = (payload: DistributeOcItemPaylo
 export interface DistributeOcFullPayload {
   oc_id: string
   selected_item_ids?: string[]
+  reconcile_only?: boolean
 }
 
 export interface DistributeOcFullResult {
@@ -63,6 +64,7 @@ export interface DistributeOcFullResult {
     distributed_ops: number
     surplus_stock: number
     final_inv_balance: number
+    reconciled?: boolean
   }>
   skipped_items: Array<{
     item_id: string

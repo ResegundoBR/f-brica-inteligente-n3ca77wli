@@ -168,7 +168,7 @@ export function EntradaIntegralOcModal({
         initial[p.ocItem.id] = false
       } else {
         // Itens com estoque físico já presente (excedente em estoque ou entradas fora do fluxo)
-        // Caso 05330124: sem estoque físico (currentStockQty === 0) e sem entrada física -> desmarcado por padrão
+        // Se sem estoque físico (currentStockQty === 0) e sem entrada física -> desmarcado por padrão
         const isLikelyUnreceived = !p.isPhysicallyInStock && p.alreadyRcvd <= 0.0001
         initial[p.ocItem.id] = !isLikelyUnreceived
         if (p.isPhysicallyInStock && p.saldoQty > 0.0001) {
@@ -332,9 +332,8 @@ export function EntradaIntegralOcModal({
           <div className="p-3 bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 rounded-lg text-amber-900 dark:text-amber-300 flex items-start gap-2 text-xs">
             <Info className="size-4 text-amber-600 shrink-0 mt-0.5" />
             <div>
-              <strong>Atenção aos itens genuinamente não recebidos:</strong> Itens sem nenhuma
-              entrada física real (como a haste 05330124) continuam desmarcados por padrão e NÃO
-              devem ser conciliados. Desmarque qualquer item cujo material não tenha chegado.
+              <strong>Atenção aos itens não recebidos:</strong> Itens sem entrada física continuam
+              desmarcados por padrão. Desmarque qualquer item cujo material ainda não tenha chegado.
             </div>
           </div>
 

@@ -1,83 +1,132 @@
 /// <reference path="../pb_data/types.d.ts" />
 
+function safeParseFloat(val) {
+  if (val === null || val === undefined) return 0
+  if (typeof val === 'number') {
+    return isNaN(val) ? 0 : val
+  }
+  var s = String(val).trim()
+  if (!s) return 0
+  s = s.replace(',', '.')
+  var n = parseFloat(s)
+  return isNaN(n) ? 0 : n
+}
+
+function getRecordFloat(rec, field) {
+  if (!rec) return 0
+  var raw = null
+  try {
+    raw = rec.get(field)
+  } catch (_) {}
+  if (raw !== null && raw !== undefined && raw !== '') {
+    var parsed = safeParseFloat(raw)
+    if (parsed !== 0 || String(raw).trim() === '0') {
+      return parsed
+    }
+  }
+  try {
+    var gf = rec.getFloat(field)
+    if (gf !== 0) return gf
+  } catch (_) {}
+  try {
+    var gs = rec.getString(field)
+    if (gs) return safeParseFloat(gs)
+  } catch (_) {}
+  try {
+    return safeParseFloat(rec.getInt(field))
+  } catch (_) {}
+  return 0
+}
+
+// Atualiza estritamente o item de ordem_compra_itens vinculado exatamente por material_shortage_id
+function syncLinkedOcItem(shortageId, addedQty) {
+  if (!shortageId || !addedQty || addedQty <= 0) return
+  try {
+    var linkedOcItem = $app.findFirstRecordByFilter(
+      'ordem_compra_itens',
+      "material_shortage_id = '" + shortageId.replace(/'/g, "''") + "'",
+    )
+    if (linkedOcItem) {
+      var curItemRcvd = getRecordFloat(linkedOcItem, 'received_quantity')
+      var itemTotalQty = getRecordFloat(linkedOcItem, 'quantity')
+      var newItemRcvd = Math.round((curItemRcvd + addedQty) * 10000) / 10000
+      if (itemTotalQty > 0 && newItemRcvd > itemTotalQty) {
+        newItemRcvd = itemTotalQty
+      }
+      linkedOcItem.set('received_quantity', newItemRcvd)
+      $app.save(linkedOcItem)
+      console.log(
+        'Linked OC item ' +
+          linkedOcItem.id +
+          ' updated received_quantity=' +
+          newItemRcvd +
+          ' (added ' +
+          addedQty +
+          ') for shortage ' +
+          shortageId,
+      )
+
+      // Se o item da OC tem oc_id, verifica se todos os itens dessa OC agora estão 100% recebidos
+      var parentOcId = linkedOcItem.getString('oc_id')
+      if (parentOcId) {
+        checkAndPromoteOcIfComplete(parentOcId)
+      }
+    }
+  } catch (ocErr) {
+    console.log('Error syncing linked OC item for shortage ' + shortageId + ': ' + String(ocErr))
+  }
+}
+
+// Verifica se todos os itens da OC foram recebidos e, se sim, promove o status da OC para 'Recebida'
+function checkAndPromoteOcIfComplete(ocId) {
+  if (!ocId) return false
+  try {
+    var oc = $app.findRecordById('ordens_de_compra', ocId)
+    if (!oc || oc.getString('status') === 'Cancelada' || oc.getString('status') === 'Recebida') {
+      return false
+    }
+    var items = $app.findRecordsByFilter(
+      'ordem_compra_itens',
+      "oc_id = '" + ocId.replace(/'/g, "''") + "'",
+      'created',
+      500,
+      0,
+    )
+    if (!items || items.length === 0) return false
+
+    var allFully = true
+    for (var i = 0; i < items.length; i++) {
+      var qTot = getRecordFloat(items[i], 'quantity')
+      var qRec = getRecordFloat(items[i], 'received_quantity')
+      if (qTot > 0 && qRec < qTot - 0.0001) {
+        allFully = false
+        break
+      }
+    }
+
+    if (allFully) {
+      oc.set('status', 'Recebida')
+      $app.save(oc)
+      console.log(
+        'OC ' +
+          ocId +
+          ' (' +
+          (oc.getString('oc_number') || ocId) +
+          ') automatically promoted to Recebida',
+      )
+      return true
+    }
+  } catch (err) {
+    console.log('Error checking/promoting OC ' + ocId + ': ' + String(err))
+  }
+  return false
+}
+
 routerAdd(
   'POST',
   '/backend/v1/materials/distribute-oc-item',
   (e) => {
     console.log('=== DISTRIBUTE OC ITEM DIRECT TO INVENTORY START ===')
-
-    function safeParseFloat(val) {
-      if (val === null || val === undefined) return 0
-      if (typeof val === 'number') {
-        return isNaN(val) ? 0 : val
-      }
-      var s = String(val).trim()
-      if (!s) return 0
-      s = s.replace(',', '.')
-      var n = parseFloat(s)
-      return isNaN(n) ? 0 : n
-    }
-
-    function getRecordFloat(rec, field) {
-      if (!rec) return 0
-      var raw = null
-      try {
-        raw = rec.get(field)
-      } catch (_) {}
-      if (raw !== null && raw !== undefined && raw !== '') {
-        var parsed = safeParseFloat(raw)
-        if (parsed !== 0 || String(raw).trim() === '0') {
-          return parsed
-        }
-      }
-      try {
-        var gf = rec.getFloat(field)
-        if (gf !== 0) return gf
-      } catch (_) {}
-      try {
-        var gs = rec.getString(field)
-        if (gs) return safeParseFloat(gs)
-      } catch (_) {}
-      try {
-        return safeParseFloat(rec.getInt(field))
-      } catch (_) {}
-      return 0
-    }
-
-    // Atualiza estritamente o item de ordem_compra_itens vinculado exatamente por material_shortage_id
-    function syncLinkedOcItem(shortageId, addedQty) {
-      if (!shortageId || !addedQty || addedQty <= 0) return
-      try {
-        var linkedOcItem = $app.findFirstRecordByFilter(
-          'ordem_compra_itens',
-          "material_shortage_id = '" + shortageId.replace(/'/g, "''") + "'",
-        )
-        if (linkedOcItem) {
-          var curItemRcvd = getRecordFloat(linkedOcItem, 'received_quantity')
-          var itemTotalQty = getRecordFloat(linkedOcItem, 'quantity')
-          var newItemRcvd = Math.round((curItemRcvd + addedQty) * 10000) / 10000
-          if (itemTotalQty > 0 && newItemRcvd > itemTotalQty) {
-            newItemRcvd = itemTotalQty
-          }
-          linkedOcItem.set('received_quantity', newItemRcvd)
-          $app.save(linkedOcItem)
-          console.log(
-            'Linked OC item ' +
-              linkedOcItem.id +
-              ' updated received_quantity=' +
-              newItemRcvd +
-              ' (added ' +
-              addedQty +
-              ') for shortage ' +
-              shortageId,
-          )
-        }
-      } catch (ocErr) {
-        console.log(
-          'Error syncing linked OC item for shortage ' + shortageId + ': ' + String(ocErr),
-        )
-      }
-    }
 
     try {
       var body = e.requestInfo().body || {}
@@ -219,6 +268,10 @@ routerAdd(
       }
       $app.save(ocItem)
 
+      if (ocId) {
+        checkAndPromoteOcIfComplete(ocId)
+      }
+
       console.log(
         '=== DISTRIBUTE OC ITEM SUCCESS: item=' +
           ocItemId +
@@ -250,44 +303,6 @@ routerAdd(
   '/backend/v1/materials/distribute-oc-full',
   (e) => {
     console.log('=== DISTRIBUTE OC FULL START ===')
-
-    function safeParseFloat(val) {
-      if (val === null || val === undefined) return 0
-      if (typeof val === 'number') {
-        return isNaN(val) ? 0 : val
-      }
-      var s = String(val).trim()
-      if (!s) return 0
-      s = s.replace(',', '.')
-      var n = parseFloat(s)
-      return isNaN(n) ? 0 : n
-    }
-
-    function getRecordFloat(rec, field) {
-      if (!rec) return 0
-      var raw = null
-      try {
-        raw = rec.get(field)
-      } catch (_) {}
-      if (raw !== null && raw !== undefined && raw !== '') {
-        var parsed = safeParseFloat(raw)
-        if (parsed !== 0 || String(raw).trim() === '0') {
-          return parsed
-        }
-      }
-      try {
-        var gf = rec.getFloat(field)
-        if (gf !== 0) return gf
-      } catch (_) {}
-      try {
-        var gs = rec.getString(field)
-        if (gs) return safeParseFloat(gs)
-      } catch (_) {}
-      try {
-        return safeParseFloat(rec.getInt(field))
-      } catch (_) {}
-      return 0
-    }
 
     try {
       var body = e.requestInfo().body || {}
@@ -683,12 +698,30 @@ routerAdd(
           $app.save(invRecord)
         }
 
-        // Atualizar o item da OC como integralmente recebido
+        // Atualizar o item da OC como integralmente recebido (float-safe preservando o quantity do item)
         it.set('received_quantity', itemTotalQty)
         if (code && !it.getString('code')) {
           it.set('code', code)
         }
         $app.save(it)
+
+        // Se houver shortage vinculado diretamente a este item de OC, garantir que também esteja sincronizado
+        if (shortageId) {
+          try {
+            var linkedSt = $app.findRecordById('material_shortages', shortageId)
+            var stQty = getRecordFloat(linkedSt, 'quantity')
+            var stRcvd = getRecordFloat(linkedSt, 'received_quantity')
+            if (stRcvd < stQty) {
+              linkedSt.set('received_quantity', stQty)
+              linkedSt.set('status', 'Recebido')
+              if (userId) {
+                linkedSt.set('received_by', userId)
+                linkedSt.set('distributed_by', userId)
+              }
+              $app.save(linkedSt)
+            }
+          } catch (_) {}
+        }
 
         var surplusQty = reconcileOnly
           ? 0
@@ -760,44 +793,6 @@ routerAdd(
   '/backend/v1/materials/distribute',
   (e) => {
     console.log('=== MATERIAL DISTRIBUTION START ===')
-
-    function safeParseFloat(val) {
-      if (val === null || val === undefined) return 0
-      if (typeof val === 'number') {
-        return isNaN(val) ? 0 : val
-      }
-      var s = String(val).trim()
-      if (!s) return 0
-      s = s.replace(',', '.')
-      var n = parseFloat(s)
-      return isNaN(n) ? 0 : n
-    }
-
-    function getRecordFloat(rec, field) {
-      if (!rec) return 0
-      var raw = null
-      try {
-        raw = rec.get(field)
-      } catch (_) {}
-      if (raw !== null && raw !== undefined && raw !== '') {
-        var parsed = safeParseFloat(raw)
-        if (parsed !== 0 || String(raw).trim() === '0') {
-          return parsed
-        }
-      }
-      try {
-        var gf = rec.getFloat(field)
-        if (gf !== 0) return gf
-      } catch (_) {}
-      try {
-        var gs = rec.getString(field)
-        if (gs) return safeParseFloat(gs)
-      } catch (_) {}
-      try {
-        return safeParseFloat(rec.getInt(field))
-      } catch (_) {}
-      return 0
-    }
 
     try {
       var body = e.requestInfo().body || {}

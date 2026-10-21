@@ -6,7 +6,6 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import { NoTranslate } from '@/components/NoTranslate'
 import { Calendar, AlertCircle } from 'lucide-react'
@@ -110,7 +109,7 @@ export function DeadlineOrdersModal({
             <div className="col-span-2 text-right">Prazo / Vencimento</div>
           </div>
 
-          <ScrollArea className="flex-1">
+          <div className="overflow-y-auto h-0 min-h-0 flex-1">
             <div className="divide-y divide-slate-100 dark:divide-slate-800">
               {sortedOrders.map((op) => {
                 const clientName = op.expand?.client_id?.name || op.client_name || '-'
@@ -226,7 +225,7 @@ export function DeadlineOrdersModal({
                 </div>
               )}
             </div>
-          </ScrollArea>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

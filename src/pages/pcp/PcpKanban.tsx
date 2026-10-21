@@ -67,6 +67,7 @@ import { Target, Calendar as CalendarIcon, Pin } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { NoTranslate } from '@/components/NoTranslate'
 import { PcpOrderNotesSection } from './components/PcpOrderNotesSection'
+import { DeadlineOrdersModal } from './components/DeadlineOrdersModal'
 
 const MACRO_GROUPS = [
   {
@@ -181,23 +182,7 @@ export default function PcpKanban() {
   const [activeReworkOrderIds, setActiveReworkOrderIds] = useState<Set<string>>(new Set())
   const [stagnantOnly, setStagnantOnly] = useState(false)
   const [promisedOnly, setPromisedOnly] = useState(false)
-  const [sortByDeadline, setSortByDeadline] = useState(false)
-
-  // Função auxiliar de ordenação por vencimento (parseLocalDate, delivery_date CRESCENTE, inválidas ao final)
-  const sortOrdersByDeadlineAsc = useCallback((items: any[]) => {
-    return [...items].sort((a, b) => {
-      const da = parseLocalDate(a.delivery_date)
-      const db = parseLocalDate(b.delivery_date)
-      const timeA = da && !isNaN(da.getTime()) ? da.getTime() : Infinity
-      const timeB = db && !isNaN(db.getTime()) ? db.getTime() : Infinity
-      if (timeA !== timeB) return timeA - timeB
-      // Desempate estável por data de criação / id
-      const ca = a.created ? new Date(a.created).getTime() : 0
-      const cb = b.created ? new Date(b.created).getTime() : 0
-      if (ca !== cb) return ca - cb
-      return String(a.id || '').localeCompare(String(b.id || ''))
-    })
-  }, [])
+  const [deadlineModalOpen, setDeadlineModalOpen] = useState(false)
   const { user } = useAuth()
   const { toast } = useToast()
 
@@ -532,8 +517,6 @@ export default function PcpKanban() {
   const filteredOrders = useMemo(() => {
     // 1. Filtragem base
     let list = orders.filter((o) => {
-      // Quando sortByDeadline está ativo, considerar APENAS OPs em aberto (status != 'Concluído')
-      if (sortByDeadline && o.status === 'Concluído') return false
       if (hideConcluded && o.status === 'Concluído') return false
       if (opTypeFilter !== 'all' && o.op_type !== opTypeFilter) return false
       if (clientFilter !== 'all' && o.client_id !== clientFilter) return false
@@ -612,11 +595,6 @@ export default function PcpKanban() {
       })
     }
 
-    // Ordenação do filtro rápido "Por Vencimento" (se aplica ao resultado final: delivery_date CRESCENTE via parseLocalDate)
-    if (sortByDeadline) {
-      list = sortOrdersByDeadlineAsc(list)
-    }
-
     return list
   }, [
     orders,
@@ -633,17 +611,12 @@ export default function PcpKanban() {
     stagnantOnly,
     promisedOnly,
     topDelayedOnly,
-    sortByDeadline,
-    sortOrdersByDeadlineAsc,
   ])
 
   const groupedFilteredOrders = useMemo(() => {
-    // Ordenar filteredOrders antes de agrupar para que tanto os grupos
+    // Ordenar filteredOrders canonicamente antes de agrupar para que tanto os grupos
     // (ordem do primeiro item) quanto os itens internos respeitem a mesma sequência.
-    // Quando sortByDeadline está ativo, sobrepõe com sortOrdersByDeadlineAsc.
-    const sorted = sortByDeadline
-      ? sortOrdersByDeadlineAsc(filteredOrders)
-      : sortFilaProductionOrders(filteredOrders)
+    const sorted = sortFilaProductionOrders(filteredOrders)
     const groups: {
       normalized_key: string
       order_number: string
@@ -665,14 +638,12 @@ export default function PcpKanban() {
       }
       map.get(normalized)!.push(op)
     })
-    // Ordena os itens internos de cada grupo (por vencimento ou canônica)
+    // Ordena os itens internos de cada grupo (ordenação canônica)
     groups.forEach((g) => {
-      g.items = sortByDeadline
-        ? sortOrdersByDeadlineAsc(g.items)
-        : sortFilaProductionOrders(g.items)
+      g.items = sortFilaProductionOrders(g.items)
     })
     return groups
-  }, [filteredOrders, sortByDeadline, sortOrdersByDeadlineAsc])
+  }, [filteredOrders])
 
   const stuckOrders = filteredOrders.filter((o) => o.status === 'Parado')
   const [dragOverCardId, setDragOverCardId] = useState<string | null>(null)
@@ -723,7 +694,7 @@ export default function PcpKanban() {
               reworkOnly ||
               stagnantOnly ||
               promisedOnly ||
-              sortByDeadline
+              deadlineModalOpen
                 ? 'default'
                 : quickFiltersOpen
                   ? 'secondary'
@@ -741,7 +712,7 @@ export default function PcpKanban() {
               reworkOnly ||
               stagnantOnly ||
               promisedOnly ||
-              sortByDeadline) && (
+              deadlineModalOpen) && (
               <Badge
                 variant="secondary"
                 className="h-4 px-1 text-[10px] ml-0.5 bg-background text-foreground font-bold"
@@ -753,7 +724,7 @@ export default function PcpKanban() {
                     reworkOnly,
                     stagnantOnly,
                     promisedOnly,
-                    sortByDeadline,
+                    deadlineModalOpen,
                   ].filter(Boolean).length
                 }
               </Badge>
@@ -929,15 +900,15 @@ export default function PcpKanban() {
 
           {/* Por Vencimento */}
           <Button
-            variant={sortByDeadline ? 'default' : 'outline'}
+            variant={deadlineModalOpen ? 'default' : 'outline'}
             size="sm"
             className={cn(
               'h-7 px-2.5 text-xs gap-1.5',
-              sortByDeadline
+              deadlineModalOpen
                 ? 'bg-purple-600 hover:bg-purple-700 text-white'
                 : 'hover:border-purple-300 dark:hover:border-purple-800',
             )}
-            onClick={() => setSortByDeadline(!sortByDeadline)}
+            onClick={() => setDeadlineModalOpen(true)}
           >
             <CalendarIcon className="size-3" />
             Por Vencimento
@@ -949,7 +920,7 @@ export default function PcpKanban() {
             reworkOnly ||
             stagnantOnly ||
             promisedOnly ||
-            sortByDeadline) && (
+            deadlineModalOpen) && (
             <Button
               variant="ghost"
               size="sm"
@@ -960,7 +931,7 @@ export default function PcpKanban() {
                 setReworkOnly(false)
                 setStagnantOnly(false)
                 setPromisedOnly(false)
-                setSortByDeadline(false)
+                setDeadlineModalOpen(false)
               }}
             >
               <X className="size-3" />
@@ -994,13 +965,9 @@ export default function PcpKanban() {
           <div className="flex gap-4 overflow-x-auto h-full pb-4 w-full">
             {STATUSES.map((status) => {
               const rawOrders = filteredOrders.filter((o) => o.status === status)
-              // Na visão por status: se sortByDeadline ativo, sobrepõe com sortOrdersByDeadlineAsc;
-              // caso contrário, na coluna Fila aplicamos a ordenação canônica com prioridades e manual_sequence
-              const statusOrders = sortByDeadline
-                ? sortOrdersByDeadlineAsc(rawOrders)
-                : status === 'Fila'
-                  ? sortFilaProductionOrders(rawOrders)
-                  : rawOrders
+              // Na coluna Fila aplicamos a ordenação canônica com prioridades e manual_sequence
+              const statusOrders =
+                status === 'Fila' ? sortFilaProductionOrders(rawOrders) : rawOrders
 
               return (
                 <div
@@ -1023,7 +990,7 @@ export default function PcpKanban() {
                         {statusOrders.length}
                       </Badge>
                     </div>
-                    {status === 'Fila' && canManageSequence && !sortByDeadline && (
+                    {status === 'Fila' && canManageSequence && (
                       <span className="text-[10px] text-muted-foreground font-medium">
                         Arraste p/ ordenar
                       </span>
@@ -1038,8 +1005,7 @@ export default function PcpKanban() {
                           order.manual_priority === 1 ||
                           order.manual_priority === 2 ||
                           !!order.promised_date
-                        const isReorderable =
-                          !sortByDeadline && isFila && !isPrioritary && canManageSequence
+                        const isReorderable = isFila && !isPrioritary && canManageSequence
 
                         // Para os botões subir/descer na fila gerenciada
                         const managedFilaOrders = statusOrders.filter(
@@ -1148,11 +1114,8 @@ export default function PcpKanban() {
                 <div className="flex flex-1 min-h-0 divide-x divide-slate-100 dark:divide-slate-800">
                   {group.stages.map((stage) => {
                     const rawStageOrders = filteredOrders.filter((o) => o.stage === stage)
-                    // Se sortByDeadline ativo, sobrepõe com sortOrdersByDeadlineAsc;
-                    // caso contrário, ordenação canônica em CADA coluna de etapa (emergenciais -> prazo especial -> data prometida -> manual_sequence -> delivery_date)
-                    const stageOrders = sortByDeadline
-                      ? sortOrdersByDeadlineAsc(rawStageOrders)
-                      : sortFilaProductionOrders(rawStageOrders)
+                    // Ordenação canônica em CADA coluna de etapa (emergenciais -> prazo especial -> data prometida -> manual_sequence -> delivery_date)
+                    const stageOrders = sortFilaProductionOrders(rawStageOrders)
                     const managedStageOrders = stageOrders.filter(isManagedOrder)
 
                     return (
@@ -1189,8 +1152,7 @@ export default function PcpKanban() {
                               order.manual_priority === 1 ||
                               order.manual_priority === 2 ||
                               !!order.promised_date
-                            const isReorderable =
-                              !sortByDeadline && !isPrioritary && canManageSequence
+                            const isReorderable = !isPrioritary && canManageSequence
                             const managedIdx = managedStageOrders.findIndex(
                               (o) => o.id === order.id,
                             )
@@ -2160,6 +2122,12 @@ export default function PcpKanban() {
         open={expeditionModalOpen}
         onOpenChange={setExpeditionModalOpen}
         initialOrderNumber={expeditionOrderNumber}
+      />
+      <DeadlineOrdersModal
+        open={deadlineModalOpen}
+        onOpenChange={setDeadlineModalOpen}
+        orders={filteredOrders}
+        onSelectOrder={(order) => setSelectedOrder(order)}
       />
       {selectedOrder && (
         <PromisedDateModal

@@ -46,24 +46,26 @@ export function DeadlineOrdersModal({
   orders,
   onSelectOrder,
 }: DeadlineOrdersModalProps) {
-  // Ordenar as OPs do vencimento MAIS ANTIGO (mais atrasado) para o mais recente (a vencer).
-  // OPs sem delivery_date vão para o final.
+  // Excluir OPs com status 'Concluído' internamente e ordenar do vencimento
+  // MAIS ANTIGO (mais atrasado) para o mais recente (a vencer). OPs sem delivery_date vão para o final.
   const sortedOrders = useMemo(() => {
-    return [...orders].sort((a, b) => {
-      const da = parseLocalDate(a.delivery_date)
-      const db = parseLocalDate(b.delivery_date)
-      const timeA = da && !isNaN(da.getTime()) ? da.getTime() : Infinity
-      const timeB = db && !isNaN(db.getTime()) ? db.getTime() : Infinity
+    return orders
+      .filter((op) => op.status !== 'Concluído')
+      .sort((a, b) => {
+        const da = parseLocalDate(a.delivery_date)
+        const db = parseLocalDate(b.delivery_date)
+        const timeA = da && !isNaN(da.getTime()) ? da.getTime() : Infinity
+        const timeB = db && !isNaN(db.getTime()) ? db.getTime() : Infinity
 
-      if (timeA !== timeB) return timeA - timeB
+        if (timeA !== timeB) return timeA - timeB
 
-      // Desempate estável por data de criação / id / número do pedido
-      const ca = a.created ? new Date(a.created).getTime() : 0
-      const cb = b.created ? new Date(b.created).getTime() : 0
-      if (ca !== cb) return ca - cb
+        // Desempate estável por data de criação / id / número do pedido
+        const ca = a.created ? new Date(a.created).getTime() : 0
+        const cb = b.created ? new Date(b.created).getTime() : 0
+        if (ca !== cb) return ca - cb
 
-      return String(a.id || '').localeCompare(String(b.id || ''))
-    })
+        return String(a.id || '').localeCompare(String(b.id || ''))
+      })
   }, [orders])
 
   const today = startOfDay(new Date())

@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/sheet'
 import { Label } from '@/components/ui/label'
 import { format, parseISO, isBefore, startOfDay, isValid } from 'date-fns'
-import { formatLocalDate, parseLocalDate } from '@/lib/pcp-utils'
+import { formatLocalDate, parseLocalDate, formatShortDate } from '@/lib/pcp-utils'
 import {
   Paperclip,
   AlertCircle,
@@ -293,13 +293,42 @@ export function PcpOrderDetails({
                   </p>
                 </div>
                 <div>
-                  <Label className="text-muted-foreground">Data de Entrega</Label>
-                  <p className="font-medium text-sm mt-1 flex items-center gap-2">
-                    {isValidDeliveryDate ? formatLocalDate(op.delivery_date) : '-'}
-                    {isDelayed && (
-                      <span className="text-red-500 text-xs font-bold">(Atrasado)</span>
+                  <Label className="text-muted-foreground">Data de Vencimento</Label>
+                  <div className="mt-1 flex flex-col gap-0.5">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      <span
+                        className={cn(
+                          op.promised_date
+                            ? 'line-through text-muted-foreground font-normal'
+                            : 'text-foreground font-semibold',
+                        )}
+                      >
+                        {isValidDeliveryDate ? formatShortDate(op.delivery_date) : '-'}
+                      </span>
+                      {!op.promised_date && isValidDeliveryDate && (
+                        <Badge
+                          variant="outline"
+                          className="text-[9px] px-1 py-0 h-4 border-slate-300 text-slate-600 dark:text-slate-300"
+                        >
+                          vigente
+                        </Badge>
+                      )}
+                      {isDelayed && !op.promised_date && (
+                        <span className="text-red-500 text-xs font-bold">(Atrasado)</span>
+                      )}
+                    </div>
+                    {op.promised_date && (
+                      <div className="flex items-center gap-1.5 text-xs">
+                        <span className="text-muted-foreground text-[11px]">Prometida:</span>
+                        <span className="font-bold text-foreground">
+                          {formatShortDate(op.promised_date)}
+                        </span>
+                        <Badge className="text-[9px] px-1 py-0 h-4 bg-emerald-600 hover:bg-emerald-600 text-white border-transparent">
+                          vale esta
+                        </Badge>
+                      </div>
                     )}
-                  </p>
+                  </div>
                 </div>
                 <div>
                   <Label className="text-muted-foreground">Status</Label>

@@ -1757,7 +1757,7 @@ export default function PcpKanban() {
                   <div>
                     <span className="text-muted-foreground block text-xs">Quantidade e Prazo</span>
                     <div className="font-medium flex flex-col gap-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center flex-wrap gap-2">
                         <span>{selectedOrder.quantity} un</span>
                         <span
                           className={cn(
@@ -1778,10 +1778,47 @@ export default function PcpKanban() {
                           {formatDeadline(selectedOrder.delivery_date, selectedOrder.status)}
                         </span>
                       </div>
+                      {/* Data de Vencimento do Pedido (delivery_date) e Prometida (se houver) */}
+                      <div className="text-xs flex flex-col gap-0.5 pt-0.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-muted-foreground text-[11px]">Vencimento:</span>
+                          <span
+                            className={cn(
+                              'font-semibold',
+                              selectedOrder.promised_date
+                                ? 'line-through text-muted-foreground font-normal'
+                                : 'text-foreground',
+                            )}
+                          >
+                            {formatShortDate(selectedOrder.delivery_date)}
+                          </span>
+                          {!selectedOrder.promised_date && (
+                            <Badge
+                              variant="outline"
+                              className="text-[9px] px-1 py-0 h-4 border-slate-300 text-slate-600 dark:text-slate-300"
+                            >
+                              vigente
+                            </Badge>
+                          )}
+                        </div>
+                        {selectedOrder.promised_date && (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-muted-foreground text-[11px]">
+                              Prometida (PCP):
+                            </span>
+                            <span className="font-bold text-foreground">
+                              {formatShortDate(selectedOrder.promised_date)}
+                            </span>
+                            <Badge className="text-[9px] px-1 py-0 h-4 bg-emerald-600 hover:bg-emerald-600 text-white border-transparent">
+                              vale esta
+                            </Badge>
+                          </div>
+                        )}
+                      </div>
                       <Badge
                         variant="secondary"
                         className={cn(
-                          'text-[10px] w-fit font-semibold',
+                          'text-[10px] w-fit font-semibold mt-0.5',
                           (selectedOrder.delivered_quantity || 0) > 0
                             ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'
                             : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',

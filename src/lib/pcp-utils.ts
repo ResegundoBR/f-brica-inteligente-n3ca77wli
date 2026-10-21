@@ -60,6 +60,30 @@ export function formatLocalDate(dateStr: string | undefined | null): string {
   return dateStr
 }
 
+/**
+ * formatShortDate: 'YYYY-MM-DD' (ou ISO com data) → 'DD/MM' direto, sem shift de fuso
+ */
+export function formatShortDate(dateStr: string | undefined | null): string {
+  if (!dateStr) return '-'
+  const clean = dateStr.trim().split('T')[0].split(' ')[0]
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(clean)
+  if (match) {
+    const [, , month, day] = match
+    return `${day}/${month}`
+  }
+  try {
+    const d = new Date(dateStr)
+    if (!isNaN(d.getTime())) {
+      const day = String(d.getDate()).padStart(2, '0')
+      const month = String(d.getMonth() + 1).padStart(2, '0')
+      return `${day}/${month}`
+    }
+  } catch {
+    /* fallback */
+  }
+  return '-'
+}
+
 export function toDateFieldValue(date: Date | string | undefined | null): string {
   if (!date) return ''
   if (typeof date === 'string') {

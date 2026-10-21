@@ -28,65 +28,68 @@ export function getErrorMessage(error: unknown): string {
   return msgs.length > 0 ? msgs.join(' ') : error.message || 'An unexpected error occurred.'
 }
 
-const FIELD_LABELS: Record<string, string> = {
-  supplier: 'Fornecedor',
-  oc_number: 'Número da OC',
+const FIELD_LABELS_PT: Record<string, string> = {
   expected_date: 'Previsão de Entrega',
-  delivery_type: 'Tipo de Entrega',
-  delivery_terms: 'Condições de Entrega',
+  supplier: 'Fornecedor',
+  supplier_id: 'Fornecedor',
   payment_terms: 'Condições de Pagamento',
+  delivery_type: 'Tipo de Entrega',
+  delivery_terms: 'Frete / Condições de Entrega',
+  status: 'Status',
   quantity: 'Quantidade',
   unit_price: 'Preço Unitário',
-  total: 'Total',
-  code: 'Código',
-  description: 'Descrição',
 }
 
-function translateValidationMessage(code?: string, rawMsg?: string): string {
-  if (code === 'validation_required' || rawMsg?.toLowerCase().includes('cannot be blank')) {
-    return 'Obrigatório'
-  }
-  if (
-    code === 'validation_invalid_date' ||
-    rawMsg?.toLowerCase().includes('valid date') ||
-    rawMsg?.toLowerCase().includes('valid datetime')
-  ) {
-    return 'Data inválida'
-  }
-  if (code === 'validation_not_unique' || rawMsg?.toLowerCase().includes('already exists')) {
-    return 'Já cadastrado'
-  }
-  return rawMsg || 'Inválido'
+const ERROR_MESSAGES_PT: Record<string, string> = {
+  validation_invalid_date: 'Data inválida',
+  validation_required: 'Obrigatório',
+  validation_missing_required_field: 'Obrigatório',
 }
 
-export function formatDetailedErrorMessage(error: unknown, fallbackMessage?: string): string {
-  if (!error) return fallbackMessage || 'Erro inesperado.'
-  if (typeof error === 'string') return error
-
-  // Se tem payload padrão PocketBase (ClientResponseError ou objeto mock/serializado)
-  const errObj = error as {
-    response?: { message?: string; data?: Record<string, unknown> }
-    data?: Record<string, unknown>
-    message?: string
+export function formatDetailedErrorMessage(
+  error: unknown,
+  fallbackMessage = 'Verifique os dados informados.',
+): string {
+  if (!error || typeof error !== 'object') {
+    return fallbackMessage
   }
-  const rawData = errObj?.response?.data || errObj?.data
-  if (rawData && typeof rawData === 'object' && Object.keys(rawData).length > 0) {
-    const fieldDetails: string[] = []
-    for (const [field, detail] of Object.entries(rawData)) {
-      const label = FIELD_LABELS[field] || field
-      let translated = 'Inválido'
-      if (detail && typeof detail === 'object') {
-        const d = detail as { code?: string; message?: string }
-        translated = translateValidationMessage(d.code, d.message)
-      } else if (typeof detail === 'string') {
-        translated = translateValidationMessage(undefined, detail)
+
+  const errObj = error as Record<string, any>
+  const response =
+    errObj.response || (errObj instanceof ClientResponseError ? errObj.response : null)
+  const data = response?.data
+
+  if (data && typeof data === 'object') {
+    const parts: string[] = []
+    for (const [field, detail] of Object.entries(data)) {
+      const fieldLabel = FIELD_LABELS_PT[field] || field
+      let msg = ''
+      if (typeof detail === 'string') {
+        msg = detail
+      } else if (detail && typeof detail === 'object') {
+        const d = detail as Record<string, any>
+        if (d.code && ERROR_MESSAGES_PT[d.code]) {
+          msg = ERROR_MESSAGES_PT[d.code]
+        } else if (d.message) {
+          msg = String(d.message)
+        }
       }
-      fieldDetails.push(`${label}: ${translated}`)
+      if (msg) {
+        parts.push(`${fieldLabel}: ${msg}`)
+      }
     }
-    if (fieldDetails.length > 0) {
-      return fieldDetails.join(' | ')
+    if (parts.length > 0) {
+      return parts.join(', ')
     }
   }
 
-  return getErrorMessage(error) || fallbackMessage || 'Erro inesperado.'
+  if (response?.message) {
+    return String(response.message)
+  }
+
+  if (errObj.message && typeof errObj.message === 'string') {
+    return errObj.message
+  }
+
+  return fallbackMessage
 }

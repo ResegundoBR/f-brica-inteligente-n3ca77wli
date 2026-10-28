@@ -122,6 +122,42 @@ export interface UpdateOrdemCompraItemInput {
   material_shortage_id?: string
 }
 
+/**
+ * Calcula o total de um item de Ordem de Compra:
+ * total = quantity * unit_price + st_value + ipi_value
+ */
+export function calculateOcItemTotal(item: {
+  quantity: number
+  unit_price?: number
+  st_value?: number
+  ipi_value?: number
+  total?: number
+}): number {
+  if (item.total !== undefined && item.total !== null && !isNaN(Number(item.total))) {
+    return Number(item.total)
+  }
+  const q = Number(item.quantity) || 0
+  const p = Number(item.unit_price) || 0
+  const st = Number(item.st_value) || 0
+  const ipi = Number(item.ipi_value) || 0
+  return q * p + st + ipi
+}
+
+/**
+ * Calcula o total geral de uma Ordem de Compra a partir dos seus itens.
+ */
+export function calculateOcGrandTotal(
+  itens: Array<{
+    quantity: number
+    unit_price?: number
+    st_value?: number
+    ipi_value?: number
+    total?: number
+  }>,
+): number {
+  return itens.reduce((sum, item) => sum + calculateOcItemTotal(item), 0)
+}
+
 export interface UpdateOrdemCompraInput {
   supplier: string
   supplier_id?: string
@@ -169,12 +205,7 @@ export const updateOrdemCompra = async (
   const submittedIds = new Set<string>()
 
   for (const item of data.itens) {
-    const itemTotal =
-      item.total !== undefined
-        ? item.total
-        : item.quantity * (Number(item.unit_price) || 0) +
-          (Number(item.st_value) || 0) +
-          (Number(item.ipi_value) || 0)
+    const itemTotal = calculateOcItemTotal(item)
 
     if (item.id && existingMap.has(item.id)) {
       submittedIds.add(item.id)

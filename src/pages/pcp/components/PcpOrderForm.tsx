@@ -266,6 +266,11 @@ export function PcpOrderForm({
 
     if (open) {
       setSubmitError(null)
+      // Zera integralmente qualquer estado residual de importação ao abrir o modal
+      setPendingMaterialsToSave([])
+      setExtractedPdfHeader({})
+      setExtractedPdfComponents([])
+      setComparisonRows([])
       loadClients()
       reloadProducts()
 
@@ -663,6 +668,11 @@ export function PcpOrderForm({
         }
       }
 
+      // Limpa estado residual de materiais após salvar com sucesso
+      setPendingMaterialsToSave([])
+      setExtractedPdfHeader({})
+      setExtractedPdfComponents([])
+      setComparisonRows([])
       toast({ title: 'OP criada com sucesso!' })
       onSuccess?.()
       onOpenChange(false)
@@ -737,6 +747,11 @@ export function PcpOrderForm({
         }
       }
 
+      // Limpa estado residual de materiais após atualizar com sucesso
+      setPendingMaterialsToSave([])
+      setExtractedPdfHeader({})
+      setExtractedPdfComponents([])
+      setComparisonRows([])
       toast({ title: 'OP atualizada com sucesso!' })
       onSuccess?.()
       onOpenChange(false)
@@ -951,6 +966,14 @@ export function PcpOrderForm({
                                     key={p.id}
                                     value={p.name}
                                     onSelect={() => {
+                                      // Ao trocar de produto, LIMPAR integralmente a lista de materiais importada
+                                      // Garantia de ZERO estado residual: produto com composition vazia -> 0 materiais, nunca herda
+                                      if (field.value !== p.id) {
+                                        setPendingMaterialsToSave([])
+                                        setComparisonRows([])
+                                        setExtractedPdfHeader({})
+                                        setExtractedPdfComponents([])
+                                      }
                                       field.onChange(p.id)
                                       setProductOpen(false)
                                     }}

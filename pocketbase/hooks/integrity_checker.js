@@ -239,6 +239,128 @@ cronAdd('suprimentos_integrity_verifier', '0 4 * * *', () => {
           ' solicitação(ões) de OP encerrada cancelada(s).',
       )
     }
+
+    // Check adicional das 04:00: Materiais da OP x Composição do Produto (varredura read-only)
+    try {
+      var allActiveOrders = $app.findRecordsByFilter(
+        'pcp_orders',
+        'product_id != "" && status != "Concluído" && status != "Cancelada" && status != "Cancelado"',
+        'created',
+        500,
+        0,
+      )
+      var opCompositionDivergencesCount = 0
+
+      for (var oIdx = 0; oIdx < allActiveOrders.length; oIdx++) {
+        var ord = allActiveOrders[oIdx]
+        var prodId = ord.getString('product_id')
+        if (!prodId) continue
+
+        var prodRec = null
+        try {
+          prodRec = $app.findRecordById('products', prodId)
+        } catch (_) {}
+        if (!prodRec) continue
+
+        // Ler composição de forma robusta e segura no Goja
+        var prodComposition = []
+        try {
+          var pDataRaw = prodRec.get('data')
+          if (pDataRaw) {
+            var pData = typeof pDataRaw === 'string' ? JSON.parse(pDataRaw) : pDataRaw
+            if (pData && Array.isArray(pData.composition)) {
+              prodComposition = pData.composition
+            }
+          }
+        } catch (_) {}
+
+        var opMats = $app.findRecordsByFilter(
+          'pcp_order_materials',
+          'order_id = "' + ord.id + '"',
+          'created',
+          200,
+          0,
+        )
+
+        var ordQty = Number(ord.getFloat('quantity')) || 1
+        var opNumStr = ord.getString('op_number') || ord.getString('order_number') || ord.id
+
+        // Caso 1: Composição vazia mas com materiais na OP
+        if (prodComposition.length === 0 && opMats.length > 0) {
+          opCompositionDivergencesCount += opMats.length
+          console.warn(
+            '[CRON_AUDIT] OP ' +
+              opNumStr +
+              ' possui produto (' +
+              prodRec.getString('name') +
+              ') com composição vazia mas tem ' +
+              opMats.length +
+              ' materiais associados.',
+          )
+          continue
+        }
+
+        // Mapear composição por código normalizado (trim)
+        var compMap = {}
+        for (var ci = 0; ci < prodComposition.length; ci++) {
+          var cItem = prodComposition[ci]
+          var cCode = (cItem.code || '').toString().trim()
+          if (cCode) {
+            compMap[cCode.toUpperCase()] = cItem
+          }
+        }
+
+        for (var mi = 0; mi < opMats.length; mi++) {
+          var mat = opMats[mi]
+          var mCode = (mat.getString('code') || '').trim()
+          var mUnit = (mat.getString('unit') || '').trim().toUpperCase()
+          var mQty = Number(mat.getFloat('quantity')) || 0
+          var mCodeUpper = mCode.toUpperCase()
+
+          if (!mCode) continue
+
+          var matchedComp = compMap[mCodeUpper]
+          if (!matchedComp) {
+            opCompositionDivergencesCount++
+            console.warn(
+              '[CRON_AUDIT] Material ' +
+                mCode +
+                ' na OP ' +
+                opNumStr +
+                ' não existe na composição do produto ' +
+                prodRec.getString('name'),
+            )
+          } else {
+            var compItemQty = Number(matchedComp.quantity) || 0
+            var expectedQty = compItemQty * ordQty
+            var diff = Math.abs(mQty - expectedQty)
+            var tolerance = mUnit === 'MT' ? 0.001 : 0.0001
+            if (diff > tolerance) {
+              opCompositionDivergencesCount++
+              console.warn(
+                '[CRON_AUDIT] Divergência de quantidade no item ' +
+                  mCode +
+                  ' da OP ' +
+                  opNumStr +
+                  ' (esperado: ' +
+                  expectedQty +
+                  ', na OP: ' +
+                  mQty +
+                  ')',
+              )
+            }
+          }
+        }
+      }
+
+      console.log(
+        '[CRON] Check Materiais da OP x Composição concluído: ' +
+          opCompositionDivergencesCount +
+          ' divergência(s) encontrada(s) em OPs ativas.',
+      )
+    } catch (errAudit) {
+      console.error('[CRON] Erro no check diário Materiais da OP x Composição:', String(errAudit))
+    }
   } catch (err) {
     console.error(
       '[CRON] Erro no cancelamento automático de solicitações de OPs encerradas:',
@@ -972,6 +1094,209 @@ routerAdd(
         console.error(
           '[INTEGRITY_CHECK] Erro ao validar regra 6 (itens de ordem de compra):',
           String(err6),
+        )
+      }
+
+      // -------------------------------------------------------------------------
+      // REGRA 7: Materiais da OP × Composição do Produto (Varredura Read-Only)
+      // -------------------------------------------------------------------------
+      try {
+        var ordersWithProduct = $app.findRecordsByFilter(
+          'pcp_orders',
+          'product_id != ""',
+          'created',
+          1000,
+          0,
+        )
+
+        for (var o = 0; o < ordersWithProduct.length; o++) {
+          var pcpOrder = ordersWithProduct[o]
+          var pId = pcpOrder.getString('product_id')
+          if (!pId) continue
+
+          var pRecord = null
+          try {
+            pRecord = $app.findRecordById('products', pId)
+          } catch (_) {}
+          if (!pRecord) continue
+
+          var compositionList = []
+          try {
+            var rawData = pRecord.get('data')
+            if (rawData) {
+              var parsedData = typeof rawData === 'string' ? JSON.parse(rawData) : rawData
+              if (parsedData && Array.isArray(parsedData.composition)) {
+                compositionList = parsedData.composition
+              }
+            }
+          } catch (_) {}
+
+          var orderMats = $app.findRecordsByFilter(
+            'pcp_order_materials',
+            'order_id = "' + pcpOrder.id + '"',
+            'created',
+            500,
+            0,
+          )
+
+          var orderQty = Number(pcpOrder.getFloat('quantity')) || 1
+          var pcpOpNumber =
+            pcpOrder.getString('op_number') || pcpOrder.getString('order_number') || pcpOrder.id
+          var pcpProductName = pRecord.getString('name') || ''
+
+          // Caso A: Produto com composição vazia mas OP com materiais
+          if (compositionList.length === 0 && orderMats.length > 0) {
+            divergences.push({
+              id: 'div_comp_empty_has_mats_' + pcpOrder.id,
+              category: 'op_com_materiais_produto_sem_composicao',
+              severity: 'alta',
+              item_type: 'pcp_order',
+              record_id: pcpOrder.id,
+              code: pRecord.getString('code') || '',
+              description: pcpProductName,
+              order_id: pcpOrder.id,
+              op_number: pcpOrder.getString('op_number'),
+              order_number: pcpOrder.getString('order_number'),
+              record_status: pcpOrder.getString('status'),
+              record_created: pcpOrder.getString('created'),
+              problem:
+                'OP ' +
+                pcpOpNumber +
+                ' vinculada ao produto "' +
+                pcpProductName +
+                '" possui ' +
+                orderMats.length +
+                ' materiais em pcp_order_materials, porém o produto no catálogo possui composição vazia (possível herança residual).',
+              suggestion:
+                'Verificar se materiais foram importados por engano ou cadastrar a composição oficial do produto no catálogo.',
+              detected_at: nowIso,
+              details: {
+                order_id: pcpOrder.id,
+                product_id: pId,
+                materials_count: orderMats.length,
+                order_quantity: orderQty,
+              },
+            })
+            continue
+          }
+
+          // Mapeamento normalizado da composição (códigos com trim e uppercase)
+          var compByCode = {}
+          for (var cIdx = 0; cIdx < compositionList.length; cIdx++) {
+            var cObj = compositionList[cIdx]
+            var cNormCode = (cObj.code || '').toString().trim().toUpperCase()
+            if (cNormCode) {
+              compByCode[cNormCode] = cObj
+            }
+          }
+
+          for (var omIdx = 0; omIdx < orderMats.length; omIdx++) {
+            var oMat = orderMats[omIdx]
+            var omCode = (oMat.getString('code') || '').trim()
+            var omUnit = (oMat.getString('unit') || '').trim().toUpperCase()
+            var omQty = Number(oMat.getFloat('quantity')) || 0
+            var omCodeNorm = omCode.toUpperCase()
+
+            if (!omCodeNorm) continue
+
+            var compEntry = compByCode[omCodeNorm]
+
+            // Caso B: Material na OP que não existe na composição
+            if (!compEntry) {
+              divergences.push({
+                id: 'div_mat_not_in_comp_' + oMat.id,
+                category: 'material_inexistente_na_composicao',
+                severity: 'media',
+                item_type: 'pcp_order_material',
+                record_id: oMat.id,
+                code: omCode,
+                description: oMat.getString('description'),
+                order_id: pcpOrder.id,
+                op_number: pcpOrder.getString('op_number'),
+                order_number: pcpOrder.getString('order_number'),
+                record_status: oMat.getString('status') || pcpOrder.getString('status'),
+                record_created: oMat.getString('created'),
+                problem:
+                  'Material ' +
+                  omCode +
+                  ' (' +
+                  oMat.getString('description') +
+                  ') consta na OP ' +
+                  pcpOpNumber +
+                  ' mas não existe na composição do produto "' +
+                  pcpProductName +
+                  '".',
+                suggestion:
+                  'Verificar se o material foi adicionado intencionalmente ou é resíduo de cópia.',
+                detected_at: nowIso,
+                details: {
+                  order_id: pcpOrder.id,
+                  product_id: pId,
+                  material_id: oMat.id,
+                  code: omCode,
+                  unit: omUnit,
+                  quantity: omQty,
+                },
+              })
+            } else {
+              // Caso C: Quantidade divergente
+              var baseCompQty = Number(compEntry.quantity) || 0
+              var expectedOrderQty = baseCompQty * orderQty
+              var diffQty = Math.abs(omQty - expectedOrderQty)
+              var tol = omUnit === 'MT' ? 0.001 : 0.0001
+
+              if (diffQty > tol) {
+                divergences.push({
+                  id: 'div_qty_mismatch_comp_' + oMat.id,
+                  category: 'quantidade_divergente_composicao',
+                  severity: 'media',
+                  item_type: 'pcp_order_material',
+                  record_id: oMat.id,
+                  code: omCode,
+                  description: oMat.getString('description'),
+                  order_id: pcpOrder.id,
+                  op_number: pcpOrder.getString('op_number'),
+                  order_number: pcpOrder.getString('order_number'),
+                  record_status: oMat.getString('status') || pcpOrder.getString('status'),
+                  record_created: oMat.getString('created'),
+                  problem:
+                    'Quantidade do material ' +
+                    omCode +
+                    ' na OP ' +
+                    pcpOpNumber +
+                    ' (' +
+                    omQty +
+                    ' ' +
+                    omUnit +
+                    ') diverge da composição cadastrada (' +
+                    expectedOrderQty +
+                    ' ' +
+                    omUnit +
+                    ' para ' +
+                    orderQty +
+                    ' un de produto).',
+                  suggestion: 'Ajustar a quantidade na OP ou revisar a composição no catálogo.',
+                  detected_at: nowIso,
+                  details: {
+                    order_id: pcpOrder.id,
+                    product_id: pId,
+                    material_id: oMat.id,
+                    code: omCode,
+                    unit: omUnit,
+                    op_quantity: omQty,
+                    expected_quantity: expectedOrderQty,
+                    base_composition_quantity: baseCompQty,
+                    order_total_quantity: orderQty,
+                  },
+                })
+              }
+            }
+          }
+        }
+      } catch (err7) {
+        console.error(
+          '[INTEGRITY_CHECK] Erro ao validar regra 7 (materiais OP x composição):',
+          String(err7),
         )
       }
 

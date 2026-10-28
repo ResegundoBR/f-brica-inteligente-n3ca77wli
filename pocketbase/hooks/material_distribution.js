@@ -48,7 +48,11 @@ routerAdd(
       if (!ocId) return false
       try {
         var oc = $app.findRecordById('ordens_de_compra', ocId)
-        if (!oc || oc.getString('status') === 'Cancelada' || oc.getString('status') === 'Recebida') {
+        if (
+          !oc ||
+          oc.getString('status') === 'Cancelada' ||
+          oc.getString('status') === 'Recebida'
+        ) {
           return false
         }
         var items = $app.findRecordsByFilter(
@@ -834,7 +838,11 @@ routerAdd(
       if (!ocId) return false
       try {
         var oc = $app.findRecordById('ordens_de_compra', ocId)
-        if (!oc || oc.getString('status') === 'Cancelada' || oc.getString('status') === 'Recebida') {
+        if (
+          !oc ||
+          oc.getString('status') === 'Cancelada' ||
+          oc.getString('status') === 'Recebida'
+        ) {
           return false
         }
         var items = $app.findRecordsByFilter(
@@ -907,7 +915,9 @@ routerAdd(
           }
         }
       } catch (ocErr) {
-        console.log('Error syncing linked OC item for shortage ' + shortageId + ': ' + String(ocErr))
+        console.log(
+          'Error syncing linked OC item for shortage ' + shortageId + ': ' + String(ocErr),
+        )
       }
     }
 

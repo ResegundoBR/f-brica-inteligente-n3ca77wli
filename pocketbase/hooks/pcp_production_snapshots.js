@@ -543,13 +543,13 @@ routerAdd('GET', '/backend/v1/materials/test-distribution-runner', (e) => {
       distributions: [
         {
           shortage_id: 'nonexistent_test_shortage_id',
-          quantity: 5
-        }
+          quantity: 5,
+        },
       ],
       traceability: {
         code: 'TEST-SIM-CODE',
-        description: 'MATERIAL TEST SIMULATION'
-      }
+        description: 'MATERIAL TEST SIMULATION',
+      },
     }
 
     var res1 = $http.send({
@@ -558,9 +558,9 @@ routerAdd('GET', '/backend/v1/materials/test-distribution-runner', (e) => {
       body: JSON.stringify(testPayload1),
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': token
+        Authorization: token,
       },
-      timeout: 10
+      timeout: 10,
     })
 
     // Teste 2: distribute-oc-item com id de item de OC inexistente para verificar se handler inicializa sem ReferenceError
@@ -569,13 +569,13 @@ routerAdd('GET', '/backend/v1/materials/test-distribution-runner', (e) => {
       method: 'POST',
       body: JSON.stringify({
         oc_item_id: 'nonexistent_oc_item_123',
-        received_quantity: 1
+        received_quantity: 1,
       }),
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': token
+        Authorization: token,
       },
-      timeout: 10
+      timeout: 10,
     })
 
     // Teste 3: distribute-oc-full com id de OC inexistente para verificar se handler inicializa sem ReferenceError
@@ -583,13 +583,13 @@ routerAdd('GET', '/backend/v1/materials/test-distribution-runner', (e) => {
       url: pbUrl + '/backend/v1/materials/distribute-oc-full',
       method: 'POST',
       body: JSON.stringify({
-        oc_id: 'nonexistent_oc_123'
+        oc_id: 'nonexistent_oc_123',
       }),
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': token
+        Authorization: token,
       },
-      timeout: 10
+      timeout: 10,
     })
 
     return e.json(200, {
@@ -597,18 +597,18 @@ routerAdd('GET', '/backend/v1/materials/test-distribution-runner', (e) => {
       test_distribute: {
         statusCode: res1.statusCode,
         raw: res1.raw,
-        json: res1.json
+        json: res1.json,
       },
       test_distribute_oc_item: {
         statusCode: res2.statusCode,
         raw: res2.raw,
-        json: res2.json
+        json: res2.json,
       },
       test_distribute_oc_full: {
         statusCode: res3.statusCode,
         raw: res3.raw,
-        json: res3.json
-      }
+        json: res3.json,
+      },
     })
   } catch (err) {
     return e.json(500, { success: false, error: String(err) })

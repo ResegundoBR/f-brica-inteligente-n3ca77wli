@@ -150,4 +150,110 @@ describe('Trava anti-duplicidade em material_shortages (upsertMaterialShortage)'
     )
     expect(res.isNew).toBe(false)
   })
+
+  it('quando order_id vier nulo, deve encontrar registro ABERTO com mesmo código que JÁ tem order_id, herdar a OP e atualizar', async () => {
+    const existingWithOp = {
+      id: 'existing_shortage_with_op',
+      code: '14040041',
+      description: 'Disco em aço 76.2',
+      quantity: 2,
+      order_id: '55pkrf46xldieeb',
+      sector: 'Suprimentos',
+      status: 'Pendente',
+      observation: 'Criado anteriormente',
+      expand: {
+        order_id: {
+          op_number: '000533/2026',
+        },
+      },
+    }
+
+    collectionMock.getList.mockResolvedValueOnce({ items: [existingWithOp], totalItems: 1 })
+    collectionMock.update.mockResolvedValueOnce({
+      ...existingWithOp,
+      quantity: 4,
+      description: 'Disco em aço 76.2 (OPs: 000533/2026)',
+    })
+
+    const res = await upsertMaterialShortage(
+      {
+        order_id: null,
+        code: '14040041',
+        description: 'Disco em aço 76.2',
+        quantity: 4,
+        sector: 'Suprimentos',
+      },
+      'Gonzalo Valdes',
+    )
+
+    expect(collectionMock.create).not.toHaveBeenCalled()
+    expect(collectionMock.update).toHaveBeenCalledWith(
+      'existing_shortage_with_op',
+      expect.objectContaining({
+        quantity: 4,
+        order_id: '55pkrf46xldieeb',
+        description: 'Disco em aço 76.2 (OPs: 000533/2026)',
+      }),
+    )
+    expect(res.isNew).toBe(false)
+  })
+
+  it('deve deduplicar chamadas concorrentes in-flight com a mesma chave (trava de concorrência em memória)', async () => {
+    let resolveCall: (val: any) => void = () => {}
+    const deferred = new Promise((resolve) => {
+      resolveCall = resolve
+    })
+
+    collectionMock.getList.mockReturnValueOnce(deferred)
+
+    const call1 = upsertMaterialShortage(
+      {
+        order_id: 'op_conc',
+        code: 'CODE_CONC',
+        description: 'Item Concorrente',
+        quantity: 1,
+        sector: 'Suprimentos',
+      },
+      'Op 1',
+    )
+
+    const call2 = upsertMaterialShortage(
+      {
+        order_id: 'op_conc',
+        code: 'CODE_CONC',
+        description: 'Item Concorrente',
+        quantity: 1,
+        sector: 'Suprimentos',
+      },
+      'Op 2',
+    )
+
+    // Apenas uma chamada getList deve ter disparado
+    expect(collectionMock.getList).toHaveBeenCalledTimes(1)
+
+    // Resolve a promise
+    resolveCall({
+      items: [
+        {
+          id: 'rec_conc',
+          code: 'CODE_CONC',
+          quantity: 1,
+          order_id: 'op_conc',
+          status: 'Pendente',
+        },
+      ],
+      totalItems: 1,
+    })
+    collectionMock.update.mockResolvedValue({
+      id: 'rec_conc',
+      code: 'CODE_CONC',
+      quantity: 1,
+      order_id: 'op_conc',
+      status: 'Pendente',
+    })
+
+    const [res1, res2] = await Promise.all([call1, call2])
+    expect(res1).toBe(res2)
+    expect(collectionMock.create).not.toHaveBeenCalled()
+  })
 })

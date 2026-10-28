@@ -44,24 +44,62 @@ export const OPEN_SHORTAGE_STATUS_FILTER =
   "status = 'Pendente' || status = 'Cotação' || status = 'Compra' || status = 'Recebido_Parcial'"
 
 /**
+ * Trava anti-concorrência em memória (cache de promises in-flight).
+ * Evita que chamadas paralelas client-side criem registros duplicados
+ * dentro da mesma janela de milissegundos (~250ms).
+ */
+const inFlightUpserts = new Map<string, Promise<UpsertMaterialShortageResult>>()
+
+/**
  * Salva ou atualiza uma solicitação em `material_shortages` prevenindo duplicações.
  *
  * Trava anti-duplicidade:
  * Antes de criar novo registro, busca registro EM ABERTO (status Pendente/Cotação/Compra) com:
  * 1) mesmo código E mesmo order_id; ou
- * 2) código + descrição + sector quando NÃO houver order_id.
+ * 2) quando NÃO houver order_id: busca qualquer registro aberto do mesmo código independente
+ *    de order_id (incluindo preenchido), ou código+descrição+setor.
  *
  * Se existir: ATUALIZA aquele registro em vez de criar novo:
- * - Quantidade nova SUBSTITUI a anterior.
+ * - Quantidade nova SUBSTITUI a anterior (ou soma se accumulateQty).
  * - Observação acumula 'Re-sinalizado em [data] por [usuário]: Q anterior → Q nova'.
- */
-/**
- * Salva ou atualiza uma solicitação em `material_shortages` prevenindo duplicações.
- *
- * @param options.accumulateQty Se true, SOMA a quantidade ao registro existente em vez de substituir.
- * @param options.bypassCheck Se true, força a criação de um registro novo avulso (com justificativa).
+ * - Preserva/herda order_id, fornecedor, expected_date e enriquece description com (OPs: ...).
  */
 export async function upsertMaterialShortage(
+  input: UpsertMaterialShortageInput,
+  userNameOrEmail?: string,
+  options?: {
+    accumulateQty?: boolean
+    bypassCheck?: boolean
+    bypassReason?: string
+  },
+): Promise<UpsertMaterialShortageResult> {
+  const cleanCode = (input.code || '').trim()
+  const orderId = input.order_id && input.order_id !== 'none' ? input.order_id : null
+  const lockKey = `${cleanCode}:${orderId || 'no-order'}`
+
+  // Trava anti-concorrência em memória para chamadas paralelas in-flight
+  if (!options?.bypassCheck && lockKey !== ':no-order') {
+    const pending = inFlightUpserts.get(lockKey)
+    if (pending) {
+      return pending
+    }
+  }
+
+  const executionPromise = (async () => {
+    return executeUpsertMaterialShortage(input, userNameOrEmail, options)
+  })()
+
+  if (!options?.bypassCheck && lockKey !== ':no-order') {
+    inFlightUpserts.set(lockKey, executionPromise)
+    executionPromise.finally(() => {
+      inFlightUpserts.delete(lockKey)
+    })
+  }
+
+  return executionPromise
+}
+
+async function executeUpsertMaterialShortage(
   input: UpsertMaterialShortageInput,
   userNameOrEmail?: string,
   options?: {
@@ -78,43 +116,65 @@ export async function upsertMaterialShortage(
 
   const batchId = (input.batch_id as string | undefined)?.trim() || null
 
+  let existingRecord: MaterialShortage | null = null
+
   // 1. Montar filtro para buscar registro em aberto
-  let searchFilter = ''
   if (batchId && !orderId) {
     // Registro de excedente/estoque vinculado a um lote específico:
     // Garante que NUNCA nasçam dois registros de excedente para o mesmo lote
-    searchFilter = `(${OPEN_SHORTAGE_STATUS_FILTER}) && (order_id = '' || order_id = null) && batch_id = '${batchId.replace(/'/g, "\\'")}'`
-  } else if (orderId && cleanCode) {
-    // Mesmo código E mesmo order_id
-    searchFilter = `(${OPEN_SHORTAGE_STATUS_FILTER}) && order_id = '${orderId}' && code = '${cleanCode.replace(/'/g, "\\'")}'`
-  } else if (!orderId && cleanCode && cleanDesc && cleanSector) {
-    // Código + descrição + sector sem order_id
-    searchFilter = `(${OPEN_SHORTAGE_STATUS_FILTER}) && (order_id = '' || order_id = null) && code = '${cleanCode.replace(/'/g, "\\'")}' && sector = '${cleanSector.replace(/'/g, "\\'")}'`
-  }
-
-  let existingRecord: MaterialShortage | null = null
-
-  if (searchFilter) {
+    const searchFilter = `(${OPEN_SHORTAGE_STATUS_FILTER}) && (order_id = '' || order_id = null) && batch_id = '${batchId.replace(/'/g, "\\'")}'`
     try {
       const results = await pb.collection('material_shortages').getList<MaterialShortage>(1, 1, {
         filter: searchFilter,
-        sort: 'created', // Mantém o mais antigo como registro principal
+        sort: 'created',
+        expand: 'order_id',
       })
       if (results.items.length > 0) {
         existingRecord = results.items[0]
       }
     } catch (err) {
-      console.warn('Erro ao buscar duplicatas em material_shortages:', err)
+      console.warn('Erro ao buscar duplicatas por batch_id em material_shortages:', err)
+    }
+  } else if (orderId && cleanCode) {
+    // Mesmo código E mesmo order_id
+    const searchFilter = `(${OPEN_SHORTAGE_STATUS_FILTER}) && order_id = '${orderId}' && code = '${cleanCode.replace(/'/g, "\\'")}'`
+    try {
+      const results = await pb.collection('material_shortages').getList<MaterialShortage>(1, 1, {
+        filter: searchFilter,
+        sort: 'created',
+        expand: 'order_id',
+      })
+      if (results.items.length > 0) {
+        existingRecord = results.items[0]
+      }
+    } catch (err) {
+      console.warn('Erro ao buscar duplicatas por order_id em material_shortages:', err)
+    }
+  } else if (!orderId && cleanCode) {
+    // ALTERAÇÃO 1 (a): Quando order_id vier vazio/nulo, buscar registro ABERTO
+    // (não cancelado) do mesmo code INDEPENDENTE de order_id (qualquer valor, incluindo preenchido).
+    try {
+      const results = await pb.collection('material_shortages').getList<MaterialShortage>(1, 1, {
+        filter: `(${OPEN_SHORTAGE_STATUS_FILTER}) && code = '${cleanCode.replace(/'/g, "\\'")}'`,
+        sort: 'created',
+        expand: 'order_id',
+      })
+      if (results.items.length > 0) {
+        existingRecord = results.items[0]
+      }
+    } catch (err) {
+      console.warn('Erro ao buscar duplicatas por code aberto em material_shortages:', err)
     }
   }
 
   // Se não achou por código estrito sem order_id, tenta descrição idêntica + setor
   if (!existingRecord && !orderId && cleanDesc && cleanSector) {
     try {
-      const descFilter = `(${OPEN_SHORTAGE_STATUS_FILTER}) && (order_id = '' || order_id = null) && sector = '${cleanSector.replace(/'/g, "\\'")}' && description = '${cleanDesc.replace(/'/g, "\\'")}'`
+      const descFilter = `(${OPEN_SHORTAGE_STATUS_FILTER}) && sector = '${cleanSector.replace(/'/g, "\\'")}' && description = '${cleanDesc.replace(/'/g, "\\'")}'`
       const results = await pb.collection('material_shortages').getList<MaterialShortage>(1, 1, {
         filter: descFilter,
         sort: 'created',
+        expand: 'order_id',
       })
       if (results.items.length > 0) {
         existingRecord = results.items[0]
@@ -143,11 +203,42 @@ export async function upsertMaterialShortage(
       sector: cleanSector || existingRecord.sector,
     }
 
+    // ALTERAÇÃO 1 (a): Preservar/herdar order_id existente se a chamada veio sem order_id
+    const inheritedOrderId = existingRecord.order_id || null
+    if (inheritedOrderId && !orderId) {
+      updatePayload.order_id = inheritedOrderId
+    }
+
+    // Preservar/herdar expected_date se não veio no input
+    if (input.expected_date !== undefined) {
+      updatePayload.expected_date = input.expected_date
+    } else if (existingRecord.expected_date) {
+      updatePayload.expected_date = existingRecord.expected_date
+    }
+
+    // Preservar/herdar fornecedor se não veio no input
+    if (input.supplier !== undefined) {
+      updatePayload.supplier = input.supplier
+    } else if (existingRecord.supplier) {
+      updatePayload.supplier = existingRecord.supplier
+    }
+
+    // Enriquecer description com "(OPs: ...)" usando a OP herdada/existente, se ainda não tiver
+    let finalDesc = cleanDesc || existingRecord.description || ''
+    const effectiveOpNumber =
+      existingRecord.expand?.order_id?.op_number ||
+      existingRecord.expand?.order_id?.order_number ||
+      ''
+    if (effectiveOpNumber && !/\(OPs?:/i.test(finalDesc)) {
+      finalDesc = `${finalDesc} (OPs: ${effectiveOpNumber})`.trim()
+    }
+    if (finalDesc && finalDesc !== existingRecord.description) {
+      updatePayload.description = finalDesc
+    }
+
     if (input.priority) updatePayload.priority = input.priority
     if (input.request_type) updatePayload.request_type = input.request_type
     if (input.unit_price !== undefined) updatePayload.unit_price = input.unit_price
-    if (input.supplier !== undefined) updatePayload.supplier = input.supplier
-    if (input.expected_date !== undefined) updatePayload.expected_date = input.expected_date
     if (input.purchase_date !== undefined) updatePayload.purchase_date = input.purchase_date
     if (input.status) updatePayload.status = input.status
     if (input.batch_id !== undefined) updatePayload.batch_id = input.batch_id

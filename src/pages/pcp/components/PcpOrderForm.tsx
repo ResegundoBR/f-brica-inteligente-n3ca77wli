@@ -403,11 +403,21 @@ export function PcpOrderForm({
       quantity: number
       unit: string
       measurements?: string
+      category?: string
     }>
     catalogUpdates?: {
       productId: string
       newComposition: any[]
     }
+    revisedComposition?: Array<{
+      sector: PcpOrderMaterialSector
+      code: string
+      description: string
+      quantity: number
+      unit: string
+      measurements?: string
+      category?: string
+    }>
   }) => {
     // 1. Fill editable header fields into form:
     // Número do Pedido, Número da OP, Data de entrega, Quantidade e Cliente
@@ -435,13 +445,14 @@ export function PcpOrderForm({
     }
 
     // Auto select product if found and not yet set
-    const currentProd = form.getValues('product_id')
-    if (!currentProd && decisions.header.product_code) {
+    let targetProductId = form.getValues('product_id')
+    if (!targetProductId && decisions.header.product_code) {
       const cleanCode = decisions.header.product_code.trim().replace(/^0+/, '').toLowerCase()
       const p = products.find(
         (prod) => (prod.code || '').trim().replace(/^0+/, '').toLowerCase() === cleanCode,
       )
       if (p) {
+        targetProductId = p.id
         form.setValue('product_id', p.id)
         form.setValue('op_type', 'Linha')
       }
@@ -450,7 +461,11 @@ export function PcpOrderForm({
     // Save pending materials to be inserted into pcp_order_materials on submit
     setPendingMaterialsToSave(decisions.materialsForOp)
 
-    // 2. If catalog update was requested by user, update the product data in database
+    // 2. Persistir memória de composição no produto:
+    // Se o usuário marcou atualizações explícitas de catálogo (catalogUpdates), ela tem precedência.
+    // Caso contrário, se houver produto selecionado e revisedComposition fornecido,
+    // fazer merge inteligente: preencher itens faltantes ou composição vazia no produto,
+    // normalizando código por trim, sem duplicar itens existentes e respeitando FAB.
     if (decisions.catalogUpdates) {
       try {
         const prod = products.find((p) => p.id === decisions.catalogUpdates!.productId)
@@ -473,6 +488,78 @@ export function PcpOrderForm({
           description: err.message,
           variant: 'destructive',
         })
+      }
+    } else if (
+      targetProductId &&
+      decisions.revisedComposition &&
+      decisions.revisedComposition.length > 0
+    ) {
+      try {
+        const prod = products.find((p) => p.id === targetProductId)
+        if (prod) {
+          const currentComp: any[] = Array.isArray(prod.data?.composition)
+            ? prod.data.composition
+            : []
+          const cleanNorm = (c?: string) => (c || '').trim().replace(/^0+/, '').toLowerCase()
+          const exactTrim = (c?: string) => (c || '').trim().toLowerCase()
+
+          // Helper para saber se um item da revisão já existe na composição atual
+          const existsInComp = (revItem: { code?: string; description?: string }) => {
+            const rCode = (revItem.code || '').trim()
+            const rDesc = (revItem.description || '').trim().toLowerCase()
+            return currentComp.some((existing) => {
+              const eCode = (existing.code || '').trim()
+              const eDesc = (existing.description || '').trim().toLowerCase()
+              if (rCode && eCode) {
+                if (exactTrim(rCode) === exactTrim(eCode)) return true
+                const n1 = cleanNorm(rCode)
+                const n2 = cleanNorm(eCode)
+                if (n1 && n2 && n1 === n2) return true
+              }
+              if (rDesc && eDesc && rDesc === eDesc) return true
+              return false
+            })
+          }
+
+          const itemsToAppend: any[] = []
+          let nextIndex = currentComp.length + 1
+
+          for (const revItem of decisions.revisedComposition) {
+            if (!existsInComp(revItem)) {
+              const itemCode = (revItem.code || '').trim()
+              const isFab = itemCode.toUpperCase().startsWith('FAB')
+              const finalSector = isFab ? 'FABRICAÇÃO' : revItem.sector || 'FABRICAÇÃO'
+              const finalCat = isFab ? 'Fabricação' : revItem.category || 'Outros'
+
+              itemsToAppend.push({
+                id: `comp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+                index: String(nextIndex++),
+                code: itemCode,
+                description: (revItem.description || '').trim(),
+                quantity: revItem.quantity,
+                measurements: revItem.measurements || '',
+                unit: revItem.unit || 'UN',
+                etapa: finalSector,
+                category: finalCat,
+                origem: 'Importação PDF OP',
+                data_importacao: new Date().toISOString(),
+              })
+            }
+          }
+
+          if (itemsToAppend.length > 0) {
+            const mergedComposition = [...currentComp, ...itemsToAppend]
+            await pb.collection('products').update(prod.id, {
+              data: {
+                ...prod.data,
+                composition: mergedComposition,
+              },
+            })
+            reloadProducts()
+          }
+        }
+      } catch (err: any) {
+        console.warn('Não foi possível sincronizar memória de composição do produto:', err)
       }
     }
 

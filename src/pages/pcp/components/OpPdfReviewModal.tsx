@@ -102,6 +102,15 @@ interface OpPdfReviewModalProps {
       productId: string
       newComposition: any[]
     }
+    revisedComposition?: Array<{
+      sector: PcpOrderMaterialSector
+      code: string
+      description: string
+      quantity: number
+      unit: string
+      measurements?: string
+      category?: string
+    }>
   }) => void
 }
 export function OpPdfReviewModal({
@@ -119,17 +128,26 @@ export function OpPdfReviewModal({
   const [rowQuantities, setRowQuantities] = useState<Record<string, number>>({})
   const [rowCategories, setRowCategories] = useState<Record<string, string>>({})
   const [availableCategories, setAvailableCategories] = useState<ComponentCategory[]>([])
+  const [masterComponents, setMasterComponents] = useState<any[]>([])
   const [activeSectorTab, setActiveSectorTab] = useState<string>('ALL')
   const [statusFilter, setStatusFilter] = useState<string>('ALL')
 
-  // Carrega categorias cadastradas do sistema
+  // Carrega categorias cadastradas do sistema e catálogo mestre de componentes
   useEffect(() => {
-    getComponentCategories({ includeInactive: false })
-      .then((cats) => setAvailableCategories(cats))
-      .catch(() => {})
-  }, [])
+    if (!open) return
+    Promise.all([
+      getComponentCategories({ includeInactive: false }).catch(() => []),
+      getMasterComponents('', { includeInactive: true, expand: 'category' }).catch(() => []),
+    ]).then(([cats, comps]) => {
+      setAvailableCategories(cats)
+      setMasterComponents(comps)
+    })
+  }, [open])
 
-  // Initialize sector & cut measurement overrides from initial rows and deterministic extraction
+  // Cruzamento rigoroso em DUAS fontes:
+  // (a) data.composition do produto selecionado -> status "Igual", categoria e quantidade pré-preenchidas
+  // (b) components.ts (cadastro mestre) por código normalizado -> pré-preenche categoria e unidade existentes
+  // "Novo no PDF" SÓ quando não achar em nenhuma das duas. Se código iniciar por "FAB", tratar como fabricada.
   useEffect(() => {
     const initSec: Record<string, PcpOrderMaterialSector> = {}
     const initMeas: Record<string, string> = {}
@@ -137,39 +155,166 @@ export function OpPdfReviewModal({
     const initCats: Record<string, string> = {}
 
     const opQtyVal = Number(initialHeader.quantity) > 0 ? Number(initialHeader.quantity) : 1
+    const productComposition: any[] = selectedProduct?.data?.composition || []
 
-    initialRows.forEach((r) => {
-      initSec[r.id] = normalizeSector(r.sector)
+    const cleanNorm = (c?: string) => (c || '').trim().replace(/^0+/, '').toLowerCase()
+    const exactTrim = (c?: string) => (c || '').trim().toLowerCase()
+    const isCodeMatch = (c1?: string, c2?: string) => {
+      if (!c1 || !c2) return false
+      const t1 = exactTrim(c1)
+      const t2 = exactTrim(c2)
+      if (t1 === t2) return true
+      const n1 = cleanNorm(c1)
+      const n2 = cleanNorm(c2)
+      return Boolean(n1 && n2 && n1 === n2)
+    }
+
+    // Mapa rápido de id de categoria para nome
+    const catIdToName = new Map<string, string>()
+    availableCategories.forEach((cat) => catIdToName.set(cat.id, cat.name))
+
+    const enrichedRows = initialRows.map((r) => {
+      const itemCode = r.pdfItem?.code || r.code || ''
+      const itemDesc = r.pdfItem?.description || r.resolvedDescription || ''
       const itemUnit = r.pdfItem?.unit || r.resolvedUnit || 'UN'
       const isLinear = isLinearUnit(itemUnit)
-      const autoMedida = isLinear
-        ? r.pdfItem?.measurements ||
-          (r.pdfItem?.description
-            ? extractCutMeasurementFromDescription(r.pdfItem.description, r.pdfItem.unit)
-            : '') ||
-          r.resolvedMeasurements ||
-          ''
-        : ''
-      initMeas[r.id] = autoMedida
 
       const rawPdfQty = Number(r.pdfItem?.quantity ?? r.resolvedQuantity) || 1
       let normalized = Math.round((rawPdfQty / opQtyVal) * 10000) / 10000
-
-      // REGRA: em itens de unidade contável/peça (não-linear), divisão NÃO pode gerar fração na composição!
-      // Se resultar fração em item PC/UN, sugerir o inteiro mais próximo/superior para não fracionar peça
       if (!isLinear && Math.floor(normalized) !== normalized) {
         normalized = Math.ceil(normalized)
       }
 
+      // FONTE (a): Composição atual do produto (data.composition)
+      const compItem = productComposition.find(
+        (ci) =>
+          isCodeMatch(ci.code, itemCode) ||
+          (ci.description && exactTrim(ci.description) === exactTrim(itemDesc)),
+      )
+
+      if (compItem) {
+        // Encontrou na composição do produto: status IGUAL
+        const compCatName =
+          (compItem.category || '').trim() ||
+          catIdToName.get(compItem.category_id || '') ||
+          r.resolvedCategory ||
+          r.suggestedCategory ||
+          'Outros'
+
+        const compQty = Number(compItem.quantity) > 0 ? Number(compItem.quantity) : normalized
+        const compSector = compItem.etapa
+          ? normalizeSector(compItem.etapa)
+          : normalizeSector(r.sector)
+        const compMeas =
+          compItem.measurements || r.pdfItem?.measurements || r.resolvedMeasurements || ''
+
+        initSec[r.id] = compSector
+        initMeas[r.id] = compMeas
+        initQty[r.id] = compQty
+        initCats[r.id] = compCatName
+
+        return {
+          ...r,
+          status: 'same' as const,
+          divergenceReasons: undefined,
+          catalogItem: compItem,
+          resolvedSector: compSector,
+          resolvedCode: compItem.code || itemCode,
+          resolvedDescription: compItem.description || itemDesc,
+          resolvedQuantity: compQty,
+          resolvedUnit: compItem.unit || itemUnit,
+          resolvedMeasurements: compMeas,
+          resolvedCategory: compCatName,
+          suggestedCategory: compCatName,
+        }
+      }
+
+      // FONTE (b): Cadastro mestre components.ts
+      const masterComp = masterComponents.find(
+        (mc) =>
+          isCodeMatch(mc.code, itemCode) ||
+          (mc.description && exactTrim(mc.description) === exactTrim(itemDesc)),
+      )
+
+      if (masterComp) {
+        const isFab = (masterComp.code || itemCode).trim().toUpperCase().startsWith('FAB')
+        const compCatName =
+          (masterComp.expand?.category?.name || '').trim() ||
+          catIdToName.get(masterComp.category || '') ||
+          (isFab ? 'Fabricação' : r.suggestedCategory || 'Outros')
+
+        const compUnit = masterComp.unit ? masterComp.unit.toUpperCase() : itemUnit
+        const compSector: PcpOrderMaterialSector = isFab ? 'FABRICAÇÃO' : normalizeSector(r.sector)
+        const autoMedida = isLinear
+          ? r.pdfItem?.measurements ||
+            (itemDesc ? extractCutMeasurementFromDescription(itemDesc, compUnit) : '') ||
+            r.resolvedMeasurements ||
+            ''
+          : ''
+
+        initSec[r.id] = compSector
+        initMeas[r.id] = autoMedida
+        initQty[r.id] = normalized
+        initCats[r.id] = compCatName
+
+        const synthCatalogItem: any = {
+          id: `mc_${masterComp.id}`,
+          code: masterComp.code || itemCode,
+          description: masterComp.description || itemDesc,
+          quantity: normalized,
+          measurements: autoMedida,
+          unit: compUnit,
+          etapa: compSector,
+          category_id: masterComp.category || '',
+          category: compCatName,
+        }
+
+        return {
+          ...r,
+          status: 'same' as const,
+          divergenceReasons: undefined,
+          catalogItem: synthCatalogItem,
+          isMasterCatalog: true,
+          resolvedSector: compSector,
+          resolvedCode: masterComp.code || itemCode,
+          resolvedDescription: masterComp.description || itemDesc,
+          resolvedQuantity: normalized,
+          resolvedUnit: compUnit,
+          resolvedMeasurements: autoMedida,
+          resolvedCategory: compCatName,
+          suggestedCategory: compCatName,
+        }
+      }
+
+      // NÃO achou em nenhuma das duas -> aí sim permanece "Novo no PDF"
+      const isFab = itemCode.trim().toUpperCase().startsWith('FAB')
+      const chosenSector: PcpOrderMaterialSector = isFab ? 'FABRICAÇÃO' : normalizeSector(r.sector)
+      const autoMedida = isLinear
+        ? r.pdfItem?.measurements ||
+          (itemDesc ? extractCutMeasurementFromDescription(itemDesc, itemUnit) : '') ||
+          r.resolvedMeasurements ||
+          ''
+        : ''
+
+      initSec[r.id] = chosenSector
+      initMeas[r.id] = autoMedida
       initQty[r.id] = normalized
-      initCats[r.id] = r.resolvedCategory || r.suggestedCategory || 'Outros'
+      initCats[r.id] = isFab ? 'Fabricação' : r.resolvedCategory || r.suggestedCategory || 'Outros'
+
+      return {
+        ...r,
+        resolvedSector: chosenSector,
+        resolvedMeasurements: autoMedida,
+        resolvedQuantity: normalized,
+      }
     })
+
     setRowSectors(initSec)
     setRowMeasurements(initMeas)
     setRowQuantities(initQty)
     setRowCategories(initCats)
-    setRows(initialRows)
-  }, [initialRows, initialHeader.quantity])
+    setRows(enrichedRows)
+  }, [initialRows, initialHeader.quantity, selectedProduct, masterComponents, availableCategories])
 
   const handleCategoryChange = (rowId: string, newCategory: string) => {
     setRowCategories((prev) => ({ ...prev, [rowId]: newCategory }))
@@ -474,10 +619,42 @@ export function OpPdfReviewModal({
       }
     }
 
+    // 3. Lista revisada completa com quantidade unitária (por peça) e categoria
+    // Para persistir como memória de composição no produto
+    const revisedComposition = rows
+      .filter((r) => r.applyToOp && r.status !== 'removed')
+      .map((r) => {
+        const rawSec = rowSectors[r.id] || r.resolvedSector || r.sector
+        const sectorVal: PcpOrderMaterialSector = normalizeSector(rawSec)
+        const itemUnit = r.resolvedUnit || r.pdfItem?.unit || 'UN'
+        const isLinear = isLinearUnit(itemUnit)
+        const measVal =
+          rowMeasurements[r.id] !== undefined
+            ? rowMeasurements[r.id]
+            : r.resolvedMeasurements || r.pdfItem?.measurements || ''
+        let perUnitQty =
+          rowQuantities[r.id] !== undefined ? rowQuantities[r.id] : r.resolvedQuantity
+        if (!isLinear && perUnitQty > 0 && Math.floor(perUnitQty) !== perUnitQty) {
+          perUnitQty = Math.ceil(perUnitQty)
+        }
+        const catVal = rowCategories[r.id] || r.resolvedCategory || r.suggestedCategory || 'Outros'
+
+        return {
+          sector: sectorVal,
+          code: (r.resolvedCode || '').trim(),
+          description: (r.resolvedDescription || '').trim(),
+          quantity: perUnitQty,
+          unit: itemUnit,
+          measurements: measVal,
+          category: catVal,
+        }
+      })
+
     onConfirm({
       header: editableHeader,
       materialsForOp,
       catalogUpdates,
+      revisedComposition,
     })
     onOpenChange(false)
   }
@@ -1044,6 +1221,14 @@ export function OpPdfReviewModal({
                                     ? `(${row.catalogItem.measurements})`
                                     : ''}
                                 </Badge>
+                                {(row as any).isMasterCatalog && (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[9px] px-1 py-0 bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 font-medium"
+                                  >
+                                    Mestre
+                                  </Badge>
+                                )}
                               </div>
                               <p
                                 className="text-slate-700 dark:text-slate-300 text-xs notranslate"

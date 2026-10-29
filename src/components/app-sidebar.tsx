@@ -30,6 +30,7 @@ import {
   MessageSquare,
   Calendar,
   Link2,
+  RefreshCw,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -53,6 +54,12 @@ import {
 const navItems = [
   { title: 'Dashboard', url: '/', icon: LayoutDashboard, group: 'Produto/Processos' },
   { title: 'Catálogo Técnico', url: '/catalogo', icon: BookOpen, group: 'Produto/Processos' },
+  {
+    title: 'Sincronizar Composições',
+    url: '/catalogo/sincronizar-ops',
+    icon: RefreshCw,
+    group: 'Produto/Processos',
+  },
   { title: 'Consulta Catálogo', url: '/consulta', icon: Search, group: 'Produto/Processos' },
   {
     title: 'Evolução Aprendizado',
@@ -165,6 +172,7 @@ export function AppSidebar() {
       case 'Dashboard':
         return !!role.access_dashboard || !!role.access_produto_processos
       case 'Catálogo Técnico':
+      case 'Sincronizar Composições':
         return !!role.access_catalog || !!role.access_produto_processos
       case 'Consulta Catálogo':
         return !!role.access_catalog_consultation

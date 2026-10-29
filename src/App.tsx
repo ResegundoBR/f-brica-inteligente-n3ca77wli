@@ -7,6 +7,7 @@ import NotFound from './pages/NotFound'
 import Dashboard from './pages/Dashboard'
 import CatalogList from './pages/catalog/CatalogList'
 import CatalogDetail from './pages/catalog/CatalogDetail'
+import SyncCompositionsPage from './pages/catalog/SyncCompositionsPage'
 import Learning from './pages/Learning'
 import AdminUsers from './pages/admin/AdminUsers'
 import AdminRoles from './pages/admin/AdminRoles'
@@ -88,6 +89,14 @@ const App = () => (
                 element={
                   <RoleGuard module="catalog">
                     <CatalogList />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/catalogo/sincronizar-ops"
+                element={
+                  <RoleGuard module="catalog">
+                    <SyncCompositionsPage />
                   </RoleGuard>
                 }
               />

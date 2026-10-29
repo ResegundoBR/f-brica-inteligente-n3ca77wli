@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Plus, Search, Trash2 } from 'lucide-react'
+import { Plus, Search, Trash2, RefreshCw } from 'lucide-react'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import {
   AlertDialog,
@@ -137,11 +137,22 @@ export default function CatalogList() {
           <h1 className="text-3xl font-bold tracking-tight">Catálogo Técnico</h1>
           <p className="text-muted-foreground">Gerencie o cadastro de produtos e especificações.</p>
         </div>
-        {canCreate && (
-          <Button onClick={() => navigate('/catalogo/novo')}>
-            <Plus className="mr-2 h-4 w-4" /> Novo Cadastro
-          </Button>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          {isHighLevel && (
+            <Button
+              variant="outline"
+              onClick={() => navigate('/catalogo/sincronizar-ops')}
+              className="text-xs border-primary/30 hover:bg-primary/5 text-primary"
+            >
+              <RefreshCw className="mr-2 h-3.5 w-3.5" /> Sincronizar Composições de OPs
+            </Button>
+          )}
+          {canCreate && (
+            <Button onClick={() => navigate('/catalogo/novo')}>
+              <Plus className="mr-2 h-4 w-4" /> Novo Cadastro
+            </Button>
+          )}
+        </div>
       </div>
 
       <Card>

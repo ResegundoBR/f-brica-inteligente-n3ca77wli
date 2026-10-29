@@ -49,7 +49,9 @@ migrate(
       return current
     }
 
-    console.log('[MIGRATION 0163] Iniciando backfill aditivo LIVE do PENDENTE HE (rgmu0xiinpcsmiz)...')
+    console.log(
+      '[MIGRATION 0163] Iniciando backfill aditivo LIVE do PENDENTE HE (rgmu0xiinpcsmiz)...',
+    )
 
     var productId = 'rgmu0xiinpcsmiz'
     var orderId = '384h4pie4d0cfk3'
@@ -82,9 +84,17 @@ migrate(
     // Buscar materiais da OP
     var materials = []
     try {
-      materials = app.findRecordsByFilter('pcp_order_materials', "order_id = '" + orderId + "'", 'created', 100, 0)
+      materials = app.findRecordsByFilter(
+        'pcp_order_materials',
+        "order_id = '" + orderId + "'",
+        'created',
+        100,
+        0,
+      )
     } catch (err) {
-      console.warn('[MIGRATION 0163] Falha ao buscar materiais da OP ' + orderId + ': ' + String(err))
+      console.warn(
+        '[MIGRATION 0163] Falha ao buscar materiais da OP ' + orderId + ': ' + String(err),
+      )
       return
     }
 
@@ -93,7 +103,13 @@ migrate(
     // Mapa de componentes cadastrados no catálogo para enriquecimento
     var compMap = {}
     try {
-      var allComps = app.findRecordsByFilter('components', "active = true || active = false", 'code', 1000, 0)
+      var allComps = app.findRecordsByFilter(
+        'components',
+        'active = true || active = false',
+        'code',
+        1000,
+        0,
+      )
       for (var cIdx = 0; cIdx < allComps.length; cIdx++) {
         var cRec = allComps[cIdx]
         var codeVal = (cRec.getString('code') || '').trim()
@@ -160,9 +176,12 @@ migrate(
       }
 
       var matQty = Number(mat.getFloat('quantity')) || 0
-      var qtyPerPiece = opQty > 0 ? (matQty / opQty) : matQty
+      var qtyPerPiece = opQty > 0 ? matQty / opQty : matQty
       // Se for número inteiro, formatar como inteiro limpo
-      var formattedQty = (qtyPerPiece % 1 === 0) ? String(Math.round(qtyPerPiece)) : String(Number(qtyPerPiece.toFixed(4)))
+      var formattedQty =
+        qtyPerPiece % 1 === 0
+          ? String(Math.round(qtyPerPiece))
+          : String(Number(qtyPerPiece.toFixed(4)))
 
       var matSector = mat.getString('sector') || ''
       var matMeasurements = mat.getString('measurements') || ''
@@ -187,14 +206,26 @@ migrate(
       if (matCode) existingCodes[matCode] = true
       if (normMatDesc) existingDescs[normMatDesc] = true
       addedCount++
-      console.log('[MIGRATION 0163] Item adicionado com sucesso: ' + (matCode || matDesc) + ' (Qtd/pç: ' + formattedQty + ')')
+      console.log(
+        '[MIGRATION 0163] Item adicionado com sucesso: ' +
+          (matCode || matDesc) +
+          ' (Qtd/pç: ' +
+          formattedQty +
+          ')',
+      )
     }
 
     if (addedCount > 0) {
       pData.composition = compList
       product.set('data', JSON.stringify(pData))
       app.save(product)
-      console.log('[MIGRATION 0163] Produto ' + productId + ' salvo com sucesso! ' + addedCount + ' itens adicionados.')
+      console.log(
+        '[MIGRATION 0163] Produto ' +
+          productId +
+          ' salvo com sucesso! ' +
+          addedCount +
+          ' itens adicionados.',
+      )
     } else {
       console.log('[MIGRATION 0163] Nenhum item novo a acrescentar (todos já existiam).')
     }
@@ -202,10 +233,14 @@ migrate(
     // Validação LIVE
     var recheck = app.findRecordById('products', productId)
     var verifiedData = unwrapData(recheck.get('data'))
-    var verifiedComp = (verifiedData && Array.isArray(verifiedData.composition)) ? verifiedData.composition : []
-    console.log('[MIGRATION 0163] SUCESSO: Leitura LIVE do banco confirmada. Total de itens na composição do PENDENTE HE = ' + verifiedComp.length)
+    var verifiedComp =
+      verifiedData && Array.isArray(verifiedData.composition) ? verifiedData.composition : []
+    console.log(
+      '[MIGRATION 0163] SUCESSO: Leitura LIVE do banco confirmada. Total de itens na composição do PENDENTE HE = ' +
+        verifiedComp.length,
+    )
   },
   (app) => {
     // Reversão não destrutiva
-  }
+  },
 )

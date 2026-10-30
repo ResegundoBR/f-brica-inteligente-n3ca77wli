@@ -27,25 +27,38 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { cn } from '@/lib/utils'
 import { useRealtime } from '@/hooks/use-realtime'
 import type { CompositionCategory, CompositionItem } from '@/types'
+import {
+  getUnifiedCategories,
+  UnifiedCategory,
+  resolveCategoryIdByName,
+} from '@/services/unified-categories'
 
 const STAGES = ['FABRICAÇÃO', 'PREPARAÇÃO', 'MONTAGEM', 'EXPEDIÇÃO']
 
 function CategorySelector({
   value,
+  categoryName,
   onChange,
   categories,
   onAddCategory,
 }: {
   value?: string
+  categoryName?: string
   onChange: (id: string) => void
-  categories: CompositionCategory[]
+  categories: (CompositionCategory | UnifiedCategory)[]
   onAddCategory: (name: string) => Promise<string | undefined>
 }) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
 
   const filtered = categories.filter((c) => c.name.toLowerCase().includes(search.toLowerCase()))
-  const selected = categories.find((c) => c.id === value)
+  const selected =
+    categories.find((c) => c.id === value) ||
+    (categoryName
+      ? categories.find(
+          (c) => (c.name || '').trim().toLowerCase() === categoryName.trim().toLowerCase(),
+        )
+      : undefined)
 
   const handleSelect = (id: string) => {
     onChange(id)
@@ -133,16 +146,20 @@ export function TabComposition({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
 
-  const [categories, setCategories] = useState<CompositionCategory[]>([])
+  const [categories, setCategories] = useState<UnifiedCategory[]>([])
+  const [rawComponentCategories, setRawComponentCategories] = useState<any[]>([])
+  const [rawCompositionCategories, setRawCompositionCategories] = useState<CompositionCategory[]>(
+    [],
+  )
 
   const loadCategories = async () => {
     try {
-      const records = await pb
-        .collection('composition_categories')
-        .getFullList<CompositionCategory>({ sort: 'name' })
-      setCategories(records)
+      const res = await getUnifiedCategories({ includeInactive: false })
+      setCategories(res.unified)
+      setRawComponentCategories(res.componentCategories)
+      setRawCompositionCategories(res.compositionCategories)
     } catch (e) {
-      console.error(e)
+      console.error('Erro ao carregar categorias unificadas:', e)
     }
   }
 
@@ -153,18 +170,24 @@ export function TabComposition({
   useRealtime('composition_categories', () => {
     loadCategories()
   })
+  useRealtime('component_categories', () => {
+    loadCategories()
+  })
 
   const handleCreateCategory = async (term: string) => {
     if (!term) return undefined
 
     try {
-      const existing = categories.find((c) => c.name.toLowerCase() === term.toLowerCase())
+      const existing = categories.find(
+        (c) => (c.name || '').toLowerCase() === term.trim().toLowerCase(),
+      )
       if (existing) {
         return existing.id
       }
       const record = await pb
         .collection('composition_categories')
-        .create<CompositionCategory>({ name: term })
+        .create<CompositionCategory>({ name: term.trim() })
+      loadCategories()
       return record.id
     } catch (e) {
       toast({
@@ -310,9 +333,20 @@ export function TabComposition({
   }
 
   const updateItem = (id: string, field: keyof CompositionItem, value: any) => {
-    const newComp = (product.data?.composition || []).map((c) =>
-      c.id === id ? { ...c, [field]: value } : c,
-    )
+    const newComp = (product.data?.composition || []).map((c) => {
+      if (c.id !== id) return c
+      const updated = { ...c, [field]: value }
+      // Se alterou a categoria via category_id, mantém também o nome da categoria sincronizado em c.category
+      if (field === 'category_id') {
+        const catObj = categories.find((cat) => cat.id === value)
+        if (catObj) {
+          updated.category = catObj.name
+        } else if (!value) {
+          updated.category = ''
+        }
+      }
+      return updated
+    })
     setProduct({ ...product, data: { ...product.data, composition: newComp } })
   }
 
@@ -462,9 +496,13 @@ export function TabComposition({
                           <TableCell>
                             <CategorySelector
                               value={item.category_id}
+                              categoryName={item.category}
                               onChange={(id) => updateItem(item.id, 'category_id', id)}
                               categories={categories}
-                              onAddCategory={handleCreateCategory}
+                              onAddCategory={async (term) => {
+                                const newId = await handleCreateCategory(term)
+                                return newId
+                              }}
                             />
                           </TableCell>
                           <TableCell>

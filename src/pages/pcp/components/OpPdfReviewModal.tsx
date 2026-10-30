@@ -35,7 +35,11 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Product, PcpOrderMaterialSector, ComponentCategory } from '@/types'
-import { getComponentCategories } from '@/services/component-categories'
+import {
+  getUnifiedCategories,
+  UnifiedCategory,
+  resolveCategoryIdByName,
+} from '@/services/unified-categories'
 import { createMasterComponent, getMasterComponents } from '@/services/components'
 import {
   Select,
@@ -127,19 +131,27 @@ export function OpPdfReviewModal({
   const [rowMeasurements, setRowMeasurements] = useState<Record<string, string>>({})
   const [rowQuantities, setRowQuantities] = useState<Record<string, number>>({})
   const [rowCategories, setRowCategories] = useState<Record<string, string>>({})
-  const [availableCategories, setAvailableCategories] = useState<ComponentCategory[]>([])
+  const [availableCategories, setAvailableCategories] = useState<UnifiedCategory[]>([])
+  const [rawComponentCategories, setRawComponentCategories] = useState<ComponentCategory[]>([])
+  const [rawCompositionCategories, setRawCompositionCategories] = useState<any[]>([])
   const [masterComponents, setMasterComponents] = useState<any[]>([])
   const [activeSectorTab, setActiveSectorTab] = useState<string>('ALL')
   const [statusFilter, setStatusFilter] = useState<string>('ALL')
 
-  // Carrega categorias cadastradas do sistema e catálogo mestre de componentes
+  // Carrega categorias cadastradas do sistema (unificadas) e catálogo mestre de componentes
   useEffect(() => {
     if (!open) return
     Promise.all([
-      getComponentCategories({ includeInactive: false }).catch(() => []),
+      getUnifiedCategories({ includeInactive: false }).catch(() => ({
+        unified: [],
+        componentCategories: [],
+        compositionCategories: [],
+      })),
       getMasterComponents('', { includeInactive: true, expand: 'category' }).catch(() => []),
-    ]).then(([cats, comps]) => {
-      setAvailableCategories(cats)
+    ]).then(([unifiedData, comps]) => {
+      setAvailableCategories(unifiedData.unified)
+      setRawComponentCategories(unifiedData.componentCategories)
+      setRawCompositionCategories(unifiedData.compositionCategories)
       setMasterComponents(comps)
     })
   }, [open])
@@ -525,14 +537,14 @@ export function OpPdfReviewModal({
         if (c.description) compByDesc.set(c.description.trim().toLowerCase(), c)
       })
 
-      // Mapa de categoria por nome para obter id
-      const catNameToId = new Map<string, string>()
-      availableCategories.forEach((cat) => catNameToId.set(cat.name.toLowerCase().trim(), cat.id))
-
       for (const mat of materialsForOp) {
         const cleanC = (mat.code || '').trim().toLowerCase()
         const cleanD = mat.description.trim().toLowerCase()
-        const targetCatId = catNameToId.get((mat.category || '').toLowerCase().trim())
+        const targetCatId = resolveCategoryIdByName(
+          mat.category || '',
+          rawComponentCategories,
+          rawCompositionCategories,
+        )
 
         const match = (cleanC ? compByCode.get(cleanC) : undefined) || compByDesc.get(cleanD)
 
@@ -569,9 +581,6 @@ export function OpPdfReviewModal({
       const existingComp = selectedProduct.data?.composition || []
       const updatedComp = [...existingComp]
 
-      const catNameToId = new Map<string, string>()
-      availableCategories.forEach((cat) => catNameToId.set(cat.name.toLowerCase().trim(), cat.id))
-
       for (const row of itemsToUpdateCatalog) {
         const itemCode = (row.resolvedCode || '').trim()
         const isFab = itemCode.toUpperCase().startsWith('FAB')
@@ -596,7 +605,11 @@ export function OpPdfReviewModal({
           ? 'Fabricação'
           : rowCategories[row.id] || row.resolvedCategory || row.suggestedCategory || 'Outros'
         const chosenCatTrimmed = chosenCat.trim()
-        const chosenCatId = catNameToId.get(chosenCatTrimmed.toLowerCase()) || ''
+        const chosenCatId = resolveCategoryIdByName(
+          chosenCatTrimmed,
+          rawComponentCategories,
+          rawCompositionCategories,
+        )
 
         if (row.status === 'divergent' && row.catalogItem) {
           const idx = updatedComp.findIndex((c) => c.id === row.catalogItem?.id)

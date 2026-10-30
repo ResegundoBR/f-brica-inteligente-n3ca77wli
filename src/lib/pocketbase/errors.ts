@@ -3,12 +3,8 @@ import { ClientResponseError } from 'pocketbase'
 export type FieldErrors = Record<string, string>
 
 export function extractFieldErrors(error: unknown): FieldErrors {
-  let data: Record<string, any> | undefined
-  if (error instanceof ClientResponseError) {
-    data = error.response?.data
-  } else if (error && typeof error === 'object' && 'response' in error) {
-    data = (error as any).response?.data
-  }
+  if (!(error instanceof ClientResponseError)) return {}
+  const data = error.response?.data
   if (!data || typeof data !== 'object') return {}
   const errors: FieldErrors = {}
   for (const [field, detail] of Object.entries(data)) {
@@ -32,62 +28,69 @@ export function getErrorMessage(error: unknown): string {
   return msgs.length > 0 ? msgs.join(' ') : error.message || 'An unexpected error occurred.'
 }
 
-const FIELD_LABELS: Record<string, string> = {
+const FIELD_LABELS_PT: Record<string, string> = {
   expected_date: 'Previsão de Entrega',
   supplier: 'Fornecedor',
   supplier_id: 'Fornecedor',
-  order_number: 'Número do Pedido',
-  op_number: 'Número da OP',
-  quantity: 'Quantidade',
-  unit: 'Unidade',
-  code: 'Código',
-  description: 'Descrição',
-  client_id: 'Cliente',
-  product_id: 'Produto',
+  oc_number: 'Número da OC',
+  total: 'Valor Total',
+  payment_terms: 'Condições de Pagamento',
+  delivery_terms: 'Prazo/Frete',
+  delivery_type: 'Tipo de Entrega',
+  status: 'Status',
 }
 
-const MESSAGE_TRANSLATIONS: Record<string, string> = {
-  'Must be a valid datetime.': 'Data inválida',
-  'Cannot be blank.': 'Obrigatório',
-  'Value cannot be blank.': 'Obrigatório',
-  'Value is required.': 'Obrigatório',
-  'Missing required value.': 'Obrigatório',
+const ERROR_CODES_PT: Record<string, string> = {
+  validation_required: 'Obrigatório',
+  validation_invalid_date: 'Data inválida',
+  validation_not_unique: 'Já cadastrado / duplicado',
 }
 
-export function formatDetailedErrorMessage(error: unknown, fallbackMessage?: string): string {
-  let rawData: Record<string, any> | undefined
-
-  if (error instanceof ClientResponseError) {
-    rawData = error.response?.data
-  } else if (error && typeof error === 'object' && 'response' in error) {
-    rawData = (error as any).response?.data
+export function formatDetailedErrorMessage(
+  error: unknown,
+  fallbackMessage = 'Verifique os dados informados.',
+): string {
+  if (!error || typeof error !== 'object') {
+    return fallbackMessage
   }
 
-  const fieldEntries: Array<[string, string]> = []
-  if (rawData && typeof rawData === 'object') {
-    for (const [field, detail] of Object.entries(rawData)) {
-      if (detail && typeof detail === 'object' && 'message' in detail) {
-        const rawMsg = String((detail as { message: unknown }).message || '')
-        const translatedMsg = MESSAGE_TRANSLATIONS[rawMsg] || rawMsg
-        const fieldLabel = FIELD_LABELS[field] || field
-        fieldEntries.push([fieldLabel, translatedMsg])
+  const errObj = error as any
+  const data = errObj?.response?.data
+
+  if (data && typeof data === 'object') {
+    const details: string[] = []
+    for (const [field, val] of Object.entries(data)) {
+      const fieldObj = val as any
+      const fieldLabel = FIELD_LABELS_PT[field] || field
+      const code = fieldObj?.code
+      const msg = fieldObj?.message
+
+      let translated = ''
+      if (code && ERROR_CODES_PT[code]) {
+        translated = ERROR_CODES_PT[code]
+      } else if (msg) {
+        if (/must be a valid/i.test(msg)) translated = 'Data inválida'
+        else if (/cannot be blank|required/i.test(msg)) translated = 'Obrigatório'
+        else translated = msg
       }
+
+      if (translated) {
+        details.push(`${fieldLabel}: ${translated}`)
+      }
+    }
+
+    if (details.length > 0) {
+      return details.join('; ')
     }
   }
 
-  if (fieldEntries.length > 0) {
-    const list = fieldEntries.map(([field, msg]) => `${field}: ${msg}`).join(', ')
-    return fallbackMessage ? `${fallbackMessage} (${list})` : list
+  if (errObj?.response?.message) {
+    return errObj.response.message
   }
 
-  if (error instanceof Error) return error.message
-  if (
-    error &&
-    typeof error === 'object' &&
-    'message' in error &&
-    typeof (error as any).message === 'string'
-  ) {
-    return (error as any).message
+  if (errObj instanceof Error && errObj.message) {
+    return errObj.message
   }
-  return fallbackMessage || 'Ocorreu um erro inesperado.'
+
+  return fallbackMessage
 }

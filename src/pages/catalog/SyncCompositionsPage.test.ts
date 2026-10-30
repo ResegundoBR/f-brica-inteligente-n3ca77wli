@@ -139,6 +139,37 @@ describe('SyncCompositionsPage - merge aditivo e atualização de categoria/etap
     expect(updatedComp[1]).toEqual(currentComp[1])
   })
 
+  it('resolução de id ao aplicar categoria no catálogo prioriza component_categories e depois composition_categories', () => {
+    // Simula as duas coleções:
+    // Tubos e Barras existe APENAS em composition_categories (id: 6cqiugz3ncamyjr)
+    // Barras e Tubos existe em component_categories (id: 5usy13y7jr9y4e5)
+    // Corte a Laser existe em AMBAS (comp: r80h30x5n135o6c, compos: tkklnokvfxedu0w)
+    const rawComp = [
+      { id: 'r80h30x5n135o6c', name: 'Corte a Laser' },
+      { id: '5usy13y7jr9y4e5', name: 'Barras e Tubos' },
+    ]
+    const rawCompos = [
+      { id: 'tkklnokvfxedu0w', name: 'Corte a Laser' },
+      { id: '6cqiugz3ncamyjr', name: 'Tubos e Barras' },
+      { id: 'qqmzlgrk48rpxo0', name: 'Repuxo' },
+    ]
+
+    const catNameToIdMap = new Map<string, string>()
+    // Popula composition_categories primeiro
+    rawCompos.forEach((c) => catNameToIdMap.set(c.name.toLowerCase().trim(), c.id))
+    // component_categories tem precedência
+    rawComp.forEach((c) => catNameToIdMap.set(c.name.toLowerCase().trim(), c.id))
+
+    // 1. Categoria que existe em ambas (Corte a Laser): id de component_categories
+    expect(catNameToIdMap.get('corte a laser')).toBe('r80h30x5n135o6c')
+
+    // 2. Categoria exclusiva de composition_categories (Tubos e Barras): id de composition_categories
+    expect(catNameToIdMap.get('tubos e barras')).toBe('6cqiugz3ncamyjr')
+
+    // 3. Categoria exclusiva de composition_categories (Repuxo): id de composition_categories
+    expect(catNameToIdMap.get('repuxo')).toBe('qqmzlgrk48rpxo0')
+  })
+
   it('é idempotente se reaplicado sem novas edições', () => {
     const comp: CompositionItem[] = [
       {

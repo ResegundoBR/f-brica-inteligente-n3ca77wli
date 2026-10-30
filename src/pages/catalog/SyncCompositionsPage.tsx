@@ -53,7 +53,11 @@ import type {
   ComponentCategory,
 } from '@/types'
 import { fetchUnifiedCatalogMap } from '@/services/components'
-import { getComponentCategories } from '@/services/component-categories'
+import {
+  getUnifiedCategories,
+  UnifiedCategory,
+  resolveCategoryIdByName,
+} from '@/services/unified-categories'
 
 const STAGES = ['FABRICAÇÃO', 'PREPARAÇÃO', 'MONTAGEM', 'EXPEDIÇÃO']
 
@@ -97,7 +101,9 @@ export default function SyncCompositionsPage() {
   const [showOnlyPending, setShowOnlyPending] = useState(true)
   const [showOnlySuspicious, setShowOnlySuspicious] = useState(false)
   const [expandedProductIds, setExpandedProductIds] = useState<Set<string>>(new Set())
-  const [availableCategories, setAvailableCategories] = useState<ComponentCategory[]>([])
+  const [availableCategories, setAvailableCategories] = useState<UnifiedCategory[]>([])
+  const [rawComponentCategories, setRawComponentCategories] = useState<ComponentCategory[]>([])
+  const [rawCompositionCategories, setRawCompositionCategories] = useState<any[]>([])
 
   // Diálogo de confirmação de suspeito para aplicação individual
   const [suspiciousConfirmGroup, setSuspiciousConfirmGroup] = useState<SyncCandidateGroup | null>(
@@ -196,17 +202,27 @@ export default function SyncCompositionsPage() {
         materialsByOrderId.set(m.order_id, l)
       }
 
-      // 5. Carregar catálogo mestre de components e lista de categorias para enriquecer categoria/unidade
+      // 5. Carregar catálogo mestre de components e lista de categorias unificadas para enriquecer categoria/unidade
       let compCatalogMap = new Map<string, any>()
-      let catList: ComponentCategory[] = []
+      let catList: UnifiedCategory[] = []
+      let compCatsList: ComponentCategory[] = []
+      let composCatsList: any[] = []
       try {
-        const [uMap, cats] = await Promise.all([
+        const [uMap, unifiedData] = await Promise.all([
           fetchUnifiedCatalogMap(),
-          getComponentCategories({ includeInactive: false }).catch(() => []),
+          getUnifiedCategories({ includeInactive: false }).catch(() => ({
+            unified: [],
+            componentCategories: [],
+            compositionCategories: [],
+          })),
         ])
         compCatalogMap = uMap
-        catList = cats
-        setAvailableCategories(cats)
+        catList = unifiedData.unified
+        compCatsList = unifiedData.componentCategories
+        composCatsList = unifiedData.compositionCategories
+        setAvailableCategories(unifiedData.unified)
+        setRawComponentCategories(unifiedData.componentCategories)
+        setRawCompositionCategories(unifiedData.compositionCategories)
       } catch (errCat) {
         console.warn('Aviso ao carregar catálogo unificado / categorias:', errCat)
       }
@@ -214,9 +230,14 @@ export default function SyncCompositionsPage() {
       // Mapa de categoria por ID para nome e vice-versa
       const catIdToName = new Map<string, string>()
       const catNameToId = new Map<string, string>()
-      catList.forEach((c) => {
+      // Popula primeiro composition_categories e depois component_categories (ou usa a lista unificada com prioridade correta)
+      composCatsList.forEach((c) => {
         catIdToName.set(c.id, c.name)
         catNameToId.set(c.name.toLowerCase().trim(), c.id)
+      })
+      compCatsList.forEach((c) => {
+        catIdToName.set(c.id, c.name)
+        catNameToId.set(c.name.toLowerCase().trim(), c.id) // component_categories sobrescreve composition_categories se mesmo nome
       })
 
       // 6. Detecção prévia de contaminação cruzada (padrão OP 483):
@@ -458,14 +479,25 @@ export default function SyncCompositionsPage() {
     })
   }
 
-  // Mapa rápido de nome de categoria -> id (para gravação em category_id)
+  // Mapa rápido de nome de categoria -> id (busca PRIMEIRO em component_categories e DEPOIS em composition_categories)
   const catNameToIdMap = useMemo(() => {
     const map = new Map<string, string>()
-    availableCategories.forEach((c) => {
-      map.set(c.name.toLowerCase().trim(), c.id)
+    // 1. composition_categories como base
+    rawCompositionCategories.forEach((c) => {
+      if (c.name) map.set(c.name.toLowerCase().trim(), c.id)
     })
+    // 2. component_categories tem precedência
+    rawComponentCategories.forEach((c) => {
+      if (c.name) map.set(c.name.toLowerCase().trim(), c.id)
+    })
+    // 3. Fallback para unificados caso as listas brutas estejam vazias
+    if (map.size === 0) {
+      availableCategories.forEach((c) => {
+        map.set(c.name.toLowerCase().trim(), c.id)
+      })
+    }
     return map
-  }, [availableCategories])
+  }, [availableCategories, rawComponentCategories, rawCompositionCategories])
 
   // Atualização em tempo real de categoria editada pelo usuário no preview
   const handleUpdateItemCategory = (productId: string, itemIdx: number, newCategory: string) => {

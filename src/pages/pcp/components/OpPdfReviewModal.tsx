@@ -569,8 +569,15 @@ export function OpPdfReviewModal({
       const existingComp = selectedProduct.data?.composition || []
       const updatedComp = [...existingComp]
 
+      const catNameToId = new Map<string, string>()
+      availableCategories.forEach((cat) => catNameToId.set(cat.name.toLowerCase().trim(), cat.id))
+
       for (const row of itemsToUpdateCatalog) {
-        const sectorVal = rowSectors[row.id] || row.resolvedSector || row.sector
+        const itemCode = (row.resolvedCode || '').trim()
+        const isFab = itemCode.toUpperCase().startsWith('FAB')
+        const sectorVal = isFab
+          ? 'FABRICAÇÃO'
+          : rowSectors[row.id] || row.resolvedSector || row.sector
         const itemUnit = row.resolvedUnit || row.pdfItem?.unit || 'UN'
         const isLinear = isLinearUnit(itemUnit)
         const measVal =
@@ -585,6 +592,12 @@ export function OpPdfReviewModal({
           qtyVal = Math.ceil(qtyVal)
         }
 
+        const chosenCat = isFab
+          ? 'Fabricação'
+          : rowCategories[row.id] || row.resolvedCategory || row.suggestedCategory || 'Outros'
+        const chosenCatTrimmed = chosenCat.trim()
+        const chosenCatId = catNameToId.get(chosenCatTrimmed.toLowerCase()) || ''
+
         if (row.status === 'divergent' && row.catalogItem) {
           const idx = updatedComp.findIndex((c) => c.id === row.catalogItem?.id)
           if (idx !== -1) {
@@ -596,6 +609,8 @@ export function OpPdfReviewModal({
               etapa: sectorVal,
               measurements: measVal || updatedComp[idx].measurements || '',
               unit: itemUnit,
+              category: chosenCatTrimmed,
+              category_id: chosenCatId || updatedComp[idx].category_id || '',
             }
           }
         } else if (row.status === 'new') {
@@ -608,7 +623,8 @@ export function OpPdfReviewModal({
             measurements: measVal,
             unit: itemUnit,
             index: '',
-            category_id: '',
+            category: chosenCatTrimmed,
+            category_id: chosenCatId,
           })
         }
       }

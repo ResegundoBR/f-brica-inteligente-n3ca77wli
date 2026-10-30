@@ -3,8 +3,12 @@ import { ClientResponseError } from 'pocketbase'
 export type FieldErrors = Record<string, string>
 
 export function extractFieldErrors(error: unknown): FieldErrors {
-  if (!(error instanceof ClientResponseError)) return {}
-  const data = error.response?.data
+  let data: Record<string, any> | undefined
+  if (error instanceof ClientResponseError) {
+    data = error.response?.data
+  } else if (error && typeof error === 'object' && 'response' in error) {
+    data = (error as any).response?.data
+  }
   if (!data || typeof data !== 'object') return {}
   const errors: FieldErrors = {}
   for (const [field, detail] of Object.entries(data)) {
@@ -28,50 +32,62 @@ export function getErrorMessage(error: unknown): string {
   return msgs.length > 0 ? msgs.join(' ') : error.message || 'An unexpected error occurred.'
 }
 
-const FIELD_LABEL_MAP: Record<string, string> = {
+const FIELD_LABELS: Record<string, string> = {
   expected_date: 'Previsão de Entrega',
   supplier: 'Fornecedor',
   supplier_id: 'Fornecedor',
+  order_number: 'Número do Pedido',
+  op_number: 'Número da OP',
   quantity: 'Quantidade',
-  unit_price: 'Preço Unitário',
-  total_price: 'Preço Total',
-  payment_terms: 'Condição de Pagamento',
-  delivery_type: 'Tipo de Frete',
-  status: 'Status',
+  unit: 'Unidade',
+  code: 'Código',
+  description: 'Descrição',
+  client_id: 'Cliente',
+  product_id: 'Produto',
+}
+
+const MESSAGE_TRANSLATIONS: Record<string, string> = {
+  'Must be a valid datetime.': 'Data inválida',
+  'Cannot be blank.': 'Obrigatório',
+  'Value cannot be blank.': 'Obrigatório',
+  'Value is required.': 'Obrigatório',
+  'Missing required value.': 'Obrigatório',
 }
 
 export function formatDetailedErrorMessage(error: unknown, fallbackMessage?: string): string {
-  if (!error || typeof error !== 'object') {
-    return fallbackMessage || 'Erro inesperado.'
+  let rawData: Record<string, any> | undefined
+
+  if (error instanceof ClientResponseError) {
+    rawData = error.response?.data
+  } else if (error && typeof error === 'object' && 'response' in error) {
+    rawData = (error as any).response?.data
   }
 
-  const errObj = error as any
-  const responseData =
-    errObj?.response?.data || (error instanceof ClientResponseError ? error.response?.data : null)
-
-  if (responseData && typeof responseData === 'object' && Object.keys(responseData).length > 0) {
-    const details: string[] = []
-    for (const [field, val] of Object.entries(responseData)) {
-      const label = FIELD_LABEL_MAP[field] || field
-      const rawMsg =
-        val && typeof val === 'object' && 'message' in val
-          ? String((val as any).message)
-          : String(val || '')
-
-      let friendlyMsg = rawMsg
-      if (rawMsg.includes('valid datetime') || rawMsg.includes('invalid_date')) {
-        friendlyMsg = 'Data inválida'
-      } else if (rawMsg.includes('cannot be blank') || rawMsg.includes('required')) {
-        friendlyMsg = 'Obrigatório'
+  const fieldEntries: Array<[string, string]> = []
+  if (rawData && typeof rawData === 'object') {
+    for (const [field, detail] of Object.entries(rawData)) {
+      if (detail && typeof detail === 'object' && 'message' in detail) {
+        const rawMsg = String((detail as { message: unknown }).message || '')
+        const translatedMsg = MESSAGE_TRANSLATIONS[rawMsg] || rawMsg
+        const fieldLabel = FIELD_LABELS[field] || field
+        fieldEntries.push([fieldLabel, translatedMsg])
       }
-
-      details.push(`${label}: ${friendlyMsg}`)
-    }
-    if (details.length > 0) {
-      return details.join(' | ')
     }
   }
 
-  if (errObj.message) return errObj.message
-  return fallbackMessage || 'Erro inesperado.'
+  if (fieldEntries.length > 0) {
+    const list = fieldEntries.map(([field, msg]) => `${field}: ${msg}`).join(', ')
+    return fallbackMessage ? `${fallbackMessage} (${list})` : list
+  }
+
+  if (error instanceof Error) return error.message
+  if (
+    error &&
+    typeof error === 'object' &&
+    'message' in error &&
+    typeof (error as any).message === 'string'
+  ) {
+    return (error as any).message
+  }
+  return fallbackMessage || 'Ocorreu um erro inesperado.'
 }

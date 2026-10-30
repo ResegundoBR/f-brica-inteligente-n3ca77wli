@@ -1,4 +1,5 @@
 import type { CompositionItem, Product, PcpOrderMaterialSector } from '@/types'
+import { fixMojibake } from './mojibake'
 
 export interface ExtractedOpHeader {
   order_number?: string
@@ -446,7 +447,7 @@ export async function extractTextFromPdfFile(file: File): Promise<PdfExtractionR
       bucket.items.sort((a, b) => a.transform[4] - b.transform[4])
       const tokens: PdfPositionedToken[] = bucket.items
         .map((it) => ({
-          str: it.str.trim(),
+          str: fixMojibake(it.str).trim(),
           x: it.transform[4],
           y: it.transform[5],
           width: it.width,
@@ -454,11 +455,13 @@ export async function extractTextFromPdfFile(file: File): Promise<PdfExtractionR
         }))
         .filter((t) => t.str.length > 0)
 
-      const lineStr = bucket.items
-        .map((it) => it.str)
-        .join(' ')
-        .replace(/\s+/g, ' ')
-        .trim()
+      const lineStr = fixMojibake(
+        bucket.items
+          .map((it) => it.str)
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim(),
+      )
 
       if (lineStr) {
         pageLines.push(lineStr)
@@ -728,9 +731,16 @@ function findTokensAtX(
 }
 
 export function parseOpPdfDeterministic(
-  allLines: string[],
-  positionedLines?: PdfPositionedLine[],
+  rawAllLines: string[],
+  rawPositionedLines?: PdfPositionedLine[],
 ): ParsedOpPdfResult {
+  const allLines = rawAllLines.map((l) => fixMojibake(l))
+  const positionedLines = rawPositionedLines?.map((pl) => ({
+    ...pl,
+    lineStr: fixMojibake(pl.lineStr),
+    tokens: pl.tokens.map((t) => ({ ...t, str: fixMojibake(t.str) })),
+  }))
+
   const header: ExtractedOpHeader = {}
   const components: ExtractedOpComponent[] = []
 
@@ -2435,7 +2445,14 @@ export function comparePdfWithCatalog(
 
   const catalogMatched = new Set<string>()
 
-  for (const pdfItem of pdfComponents) {
+  for (const rawPdfItem of pdfComponents) {
+    // Normalizar mojibake de forma garantida antes da comparação
+    const pdfItem: ExtractedOpComponent = {
+      ...rawPdfItem,
+      description: fixMojibake(rawPdfItem.description),
+      measurements: rawPdfItem.measurements ? fixMojibake(rawPdfItem.measurements) : undefined,
+    }
+
     // Safety check: skip any residual invalid candidates (headers, dates, labels)
     if (
       isInvalidComponentCandidate(pdfItem.code) &&

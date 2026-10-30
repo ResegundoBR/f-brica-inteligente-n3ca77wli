@@ -70,6 +70,8 @@ export interface SyncCandidateItem {
   category?: string
   origem: string
   status: 'new' | 'already_exists'
+  editedCategory?: boolean
+  editedSector?: boolean
 }
 
 export interface SyncCandidateGroup {
@@ -420,7 +422,10 @@ export default function SyncCompositionsPage() {
   // Filtragem de exibição
   const filteredGroups = useMemo(() => {
     return candidates.filter((g) => {
-      if (showOnlyPending && g.newItems.length === 0) return false
+      const hasPendingItems =
+        g.newItems.length > 0 ||
+        g.allCandidateItems.some((ci) => ci.editedCategory || ci.editedSector)
+      if (showOnlyPending && !hasPendingItems) return false
       if (showOnlySuspicious && !g.isSuspicious) return false
       if (search.trim()) {
         const q = search.toLowerCase()
@@ -433,9 +438,14 @@ export default function SyncCompositionsPage() {
     })
   }, [candidates, showOnlyPending, showOnlySuspicious, search])
 
-  // Aprovados para lote (itens com newItems > 0 e NÃO suspeitos)
+  // Aprovados para lote (itens com newItems > 0 ou com edições pendentes e NÃO suspeitos)
   const approvedForBatch = useMemo(() => {
-    return candidates.filter((g) => g.newItems.length > 0 && !g.isSuspicious)
+    return candidates.filter(
+      (g) =>
+        (g.newItems.length > 0 ||
+          g.allCandidateItems.some((ci) => ci.editedCategory || ci.editedSector)) &&
+        !g.isSuspicious,
+    )
   }, [candidates])
 
   // Alternar expansão de accordion de itens
@@ -474,6 +484,7 @@ export default function SyncCompositionsPage() {
           ...target,
           category: trimmedCat,
           category_id: resolvedId,
+          editedCategory: true,
         }
         updatedAll[itemIdx] = updatedItem
 
@@ -488,6 +499,7 @@ export default function SyncCompositionsPage() {
               ...ni,
               category: trimmedCat,
               category_id: resolvedId,
+              editedCategory: true,
             }
           }
           return ni
@@ -515,6 +527,7 @@ export default function SyncCompositionsPage() {
         const updatedItem: SyncCandidateItem = {
           ...target,
           sector: newSector,
+          editedSector: true,
         }
         updatedAll[itemIdx] = updatedItem
 
@@ -528,6 +541,7 @@ export default function SyncCompositionsPage() {
             return {
               ...ni,
               sector: newSector,
+              editedSector: true,
             }
           }
           return ni
@@ -542,7 +556,7 @@ export default function SyncCompositionsPage() {
     )
   }
 
-  // Executar merge aditivo idempotente no produto
+  // Executar merge aditivo e atualização de edições de itens existentes no produto
   const applySyncToProduct = async (group: SyncCandidateGroup): Promise<boolean> => {
     try {
       // 1. Relê o produto fresco do banco
@@ -562,8 +576,10 @@ export default function SyncCompositionsPage() {
       }
 
       let added = 0
+      let updatedExisting = 0
       const nextIndexStart = currentComp.length + 1
 
+      // 2. Adicionar novos itens (merge aditivo)
       for (const newItem of group.newItems) {
         const itemCode = normCode(newItem.code)
         const itemDesc = (newItem.description || '').trim()
@@ -611,7 +627,112 @@ export default function SyncCompositionsPage() {
         added++
       }
 
-      if (added > 0) {
+      // 3. Atualizar itens existentes que foram editados pelo gestor (editedCategory / editedSector)
+      // Exclusivamente category, category_id e etapa/sector — nunca alterar quantity, measurements, unit, etc.
+      const editedCandidateItems = group.allCandidateItems.filter(
+        (ci) => ci.editedCategory || ci.editedSector,
+      )
+
+      for (const editedItem of editedCandidateItems) {
+        const eCode = normCode(editedItem.code)
+        const eDesc = normDesc(editedItem.description)
+
+        // Localizar item na composição atual por código normalizado com trim ou descrição
+        const idx = currentComp.findIndex((comp) => {
+          const compCode = normCode(comp.code)
+          if (eCode && compCode) {
+            return compCode === eCode
+          }
+          if (!eCode && eDesc) {
+            const compDesc = normDesc(comp.description)
+            return compDesc === eDesc || compDesc.includes(eDesc) || eDesc.includes(compDesc)
+          }
+          return false
+        })
+
+        if (idx !== -1) {
+          const existingTarget = currentComp[idx]
+          let modified = false
+          const updatedItem: CompositionItem = { ...existingTarget }
+
+          if (editedItem.editedCategory) {
+            const categoryName = (editedItem.category || '').trim()
+            const categoryId =
+              editedItem.category_id ||
+              (categoryName ? catNameToIdMap.get(categoryName.toLowerCase()) || '' : '')
+
+            if (
+              updatedItem.category !== categoryName ||
+              (categoryId && updatedItem.category_id !== categoryId)
+            ) {
+              updatedItem.category = categoryName
+              updatedItem.category_id = categoryId
+              modified = true
+            }
+          }
+
+          if (editedItem.editedSector) {
+            const sectorVal = editedItem.sector || 'FABRICAÇÃO'
+            if (updatedItem.etapa !== sectorVal) {
+              updatedItem.etapa = sectorVal
+              modified = true
+            }
+          }
+
+          if (modified) {
+            currentComp[idx] = updatedItem
+            updatedExisting++
+          }
+        }
+
+        // 4. Se o item editado tiver categoria alterada e for componente cadastrado na coleção components,
+        // atualizar a categoria dele no catálogo mestre (escolha do gestor prevalece)
+        if (editedItem.editedCategory) {
+          const catName = (editedItem.category || '').trim()
+          const catId =
+            editedItem.category_id ||
+            (catName ? catNameToIdMap.get(catName.toLowerCase()) || '' : '')
+
+          if (catId) {
+            try {
+              let matchedComponentId: string | null = null
+              if (eCode) {
+                const cleanC = eCode.replace(/["'\\]/g, '')
+                const comps = await pb.collection('components').getList<any>(1, 1, {
+                  filter: `code = "${cleanC}"`,
+                })
+                if (comps.items.length > 0) {
+                  matchedComponentId = comps.items[0].id
+                }
+              }
+              if (!matchedComponentId && eDesc) {
+                const cleanD = (editedItem.description || '').trim().replace(/["'\\]/g, '')
+                if (cleanD) {
+                  const comps = await pb.collection('components').getList<any>(1, 1, {
+                    filter: `description ~ "${cleanD}"`,
+                  })
+                  if (comps.items.length > 0) {
+                    matchedComponentId = comps.items[0].id
+                  }
+                }
+              }
+
+              if (matchedComponentId) {
+                await pb.collection('components').update(matchedComponentId, {
+                  category: catId,
+                })
+              }
+            } catch (errComp) {
+              console.warn(
+                `Aviso ao atualizar categoria mestre de componente ${eCode || editedItem.description}:`,
+                errComp,
+              )
+            }
+          }
+        }
+      }
+
+      if (added > 0 || updatedExisting > 0) {
         await pb.collection('products').update(group.productId, {
           data: {
             ...freshProduct.data,
@@ -639,21 +760,34 @@ export default function SyncCompositionsPage() {
     setApplyingProductId(null)
 
     if (ok) {
-      toast.success(
-        `Composição de "${group.product.name}" sincronizada com sucesso (${group.newItems.length} novos itens)!`,
-      )
+      const editedCount = group.allCandidateItems.filter(
+        (ci) => ci.editedCategory || ci.editedSector,
+      ).length
+      const feedbackMsg =
+        group.newItems.length > 0 && editedCount > 0
+          ? `Composição de "${group.product.name}" sincronizada (${group.newItems.length} novos itens, ${editedCount} atualizados)!`
+          : group.newItems.length > 0
+            ? `Composição de "${group.product.name}" sincronizada com sucesso (${group.newItems.length} novos itens)!`
+            : `Composição de "${group.product.name}" atualizada com sucesso (${editedCount} item(ns) com categoria/etapa atualizados)!`
+
+      toast.success(feedbackMsg)
       // Atualizar estado local
       setCandidates((prev) =>
-        prev.map((c) =>
-          c.productId === group.productId
-            ? {
-                ...c,
-                newItems: [],
-                status: 'applied',
-                existingItemsCount: c.existingItemsCount + c.newItems.length,
-              }
-            : c,
-        ),
+        prev.map((c) => {
+          if (c.productId !== group.productId) return c
+          const cleanedAll = c.allCandidateItems.map((ci) => ({
+            ...ci,
+            editedCategory: false,
+            editedSector: false,
+          }))
+          return {
+            ...c,
+            newItems: [],
+            allCandidateItems: cleanedAll,
+            status: 'applied',
+            existingItemsCount: c.existingItemsCount + c.newItems.length,
+          }
+        }),
       )
     } else {
       toast.error(`Erro ao sincronizar produto "${group.product.name}".`)
@@ -675,16 +809,21 @@ export default function SyncCompositionsPage() {
         `Composição de "${target.product.name}" sincronizada mediante confirmação expressa do gestor!`,
       )
       setCandidates((prev) =>
-        prev.map((c) =>
-          c.productId === target.productId
-            ? {
-                ...c,
-                newItems: [],
-                status: 'applied',
-                existingItemsCount: c.existingItemsCount + c.newItems.length,
-              }
-            : c,
-        ),
+        prev.map((c) => {
+          if (c.productId !== target.productId) return c
+          const cleanedAll = c.allCandidateItems.map((ci) => ({
+            ...ci,
+            editedCategory: false,
+            editedSector: false,
+          }))
+          return {
+            ...c,
+            newItems: [],
+            allCandidateItems: cleanedAll,
+            status: 'applied',
+            existingItemsCount: c.existingItemsCount + c.newItems.length,
+          }
+        }),
       )
     } else {
       toast.error(`Erro ao sincronizar "${target.product.name}".`)
@@ -894,6 +1033,15 @@ export default function SyncCompositionsPage() {
                           >
                             +{group.newItems.length} novo(s) a acrescentar
                           </Badge>
+                        ) : group.allCandidateItems.some(
+                            (ci) => ci.editedCategory || ci.editedSector,
+                          ) ? (
+                          <Badge
+                            variant="outline"
+                            className="bg-purple-50 text-purple-700 border-purple-300 font-semibold text-[10px]"
+                          >
+                            Edição pendente
+                          </Badge>
                         ) : (
                           <Badge
                             variant="outline"
@@ -938,25 +1086,29 @@ export default function SyncCompositionsPage() {
                         {isExpanded ? 'Ocultar Itens' : 'Ver Detalhes'}
                       </Button>
 
-                      {hasNew && isManager && (
-                        <Button
-                          size="sm"
-                          onClick={() => handleApplySingle(group)}
-                          disabled={applyingProductId === group.productId}
-                          className={`text-xs h-8 font-semibold ${
-                            group.isSuspicious
-                              ? 'bg-amber-600 hover:bg-amber-700 text-white'
-                              : 'bg-primary hover:bg-primary/90 text-primary-foreground'
-                          }`}
-                        >
-                          {applyingProductId === group.productId ? (
-                            <RefreshCw className="size-3 animate-spin mr-1" />
-                          ) : (
-                            <Sparkles className="size-3 mr-1" />
-                          )}
-                          {group.isSuspicious ? 'Revisar & Aplicar' : 'Aplicar no Catálogo'}
-                        </Button>
-                      )}
+                      {(hasNew ||
+                        group.allCandidateItems.some(
+                          (ci) => ci.editedCategory || ci.editedSector,
+                        )) &&
+                        isManager && (
+                          <Button
+                            size="sm"
+                            onClick={() => handleApplySingle(group)}
+                            disabled={applyingProductId === group.productId}
+                            className={`text-xs h-8 font-semibold ${
+                              group.isSuspicious
+                                ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                                : 'bg-primary hover:bg-primary/90 text-primary-foreground'
+                            }`}
+                          >
+                            {applyingProductId === group.productId ? (
+                              <RefreshCw className="size-3 animate-spin mr-1" />
+                            ) : (
+                              <Sparkles className="size-3 mr-1" />
+                            )}
+                            {group.isSuspicious ? 'Revisar & Aplicar' : 'Aplicar no Catálogo'}
+                          </Button>
+                        )}
                     </div>
                   </div>
                 </CardHeader>

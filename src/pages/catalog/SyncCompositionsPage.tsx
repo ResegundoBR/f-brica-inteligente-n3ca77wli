@@ -5,7 +5,6 @@ import {
   RefreshCw,
   AlertTriangle,
   CheckCircle2,
-  Layers,
   ChevronDown,
   ChevronRight,
   ShieldAlert,
@@ -15,9 +14,16 @@ import {
   Search,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Table,
   TableBody,
@@ -39,10 +45,20 @@ import {
 import { toast } from 'sonner'
 import pb from '@/lib/pocketbase/client'
 import { useAuth } from '@/hooks/use-auth'
-import type { Product, PcpOrder, PcpOrderMaterial, CompositionItem } from '@/types'
-import { fetchUnifiedCatalogMap, UnifiedCatalogEntry } from '@/services/components'
+import type {
+  Product,
+  PcpOrder,
+  PcpOrderMaterial,
+  CompositionItem,
+  ComponentCategory,
+} from '@/types'
+import { fetchUnifiedCatalogMap } from '@/services/components'
+import { getComponentCategories } from '@/services/component-categories'
+
+const STAGES = ['FABRICAÇÃO', 'PREPARAÇÃO', 'MONTAGEM', 'EXPEDIÇÃO']
 
 export interface SyncCandidateItem {
+  id?: string
   code: string
   description: string
   rawQty: number
@@ -51,6 +67,7 @@ export interface SyncCandidateItem {
   sector: string
   measurements: string
   category_id?: string
+  category?: string
   origem: string
   status: 'new' | 'already_exists'
 }
@@ -78,6 +95,7 @@ export default function SyncCompositionsPage() {
   const [showOnlyPending, setShowOnlyPending] = useState(true)
   const [showOnlySuspicious, setShowOnlySuspicious] = useState(false)
   const [expandedProductIds, setExpandedProductIds] = useState<Set<string>>(new Set())
+  const [availableCategories, setAvailableCategories] = useState<ComponentCategory[]>([])
 
   // Diálogo de confirmação de suspeito para aplicação individual
   const [suspiciousConfirmGroup, setSuspiciousConfirmGroup] = useState<SyncCandidateGroup | null>(
@@ -176,13 +194,28 @@ export default function SyncCompositionsPage() {
         materialsByOrderId.set(m.order_id, l)
       }
 
-      // 5. Carregar catálogo mestre de components para enriquecer categoria/unidade
-      let compCatalogMap: Map<string, UnifiedCatalogEntry> = new Map()
+      // 5. Carregar catálogo mestre de components e lista de categorias para enriquecer categoria/unidade
+      let compCatalogMap = new Map<string, any>()
+      let catList: ComponentCategory[] = []
       try {
-        compCatalogMap = await fetchUnifiedCatalogMap()
+        const [uMap, cats] = await Promise.all([
+          fetchUnifiedCatalogMap(),
+          getComponentCategories({ includeInactive: false }).catch(() => []),
+        ])
+        compCatalogMap = uMap
+        catList = cats
+        setAvailableCategories(cats)
       } catch (errCat) {
-        console.warn('Aviso ao carregar catálogo unificado:', errCat)
+        console.warn('Aviso ao carregar catálogo unificado / categorias:', errCat)
       }
+
+      // Mapa de categoria por ID para nome e vice-versa
+      const catIdToName = new Map<string, string>()
+      const catNameToId = new Map<string, string>()
+      catList.forEach((c) => {
+        catIdToName.set(c.id, c.name)
+        catNameToId.set(c.name.toLowerCase().trim(), c.id)
+      })
 
       // 6. Detecção prévia de contaminação cruzada (padrão OP 483):
       // Construir conjunto de códigos por OP para verificar se o MESMO conjunto exato
@@ -260,13 +293,17 @@ export default function SyncCompositionsPage() {
             perPiece % 1 === 0 ? String(Math.round(perPiece)) : String(Number(perPiece.toFixed(4)))
 
           const catalogEntry = mCode ? compCatalogMap.get(mCode.toUpperCase()) : undefined
-          const resolvedCatId =
+          const rawCatId =
             (catalogEntry?.component as any)?.category ||
             (catalogEntry?.component as any)?.category_id ||
             ''
+          const rawCatName =
+            (catalogEntry?.component as any)?.expand?.category?.name ||
+            (rawCatId ? catIdToName.get(rawCatId) || '' : '')
           const resolvedUnit = catalogEntry?.unit || m.unit || 'UN'
 
           const candidateItem: SyncCandidateItem = {
+            id: `item_${prodId}_${m.id || allCandidateItems.length}_${mCode}`,
             code: mCode,
             description: mDesc,
             rawQty: matQty,
@@ -274,7 +311,8 @@ export default function SyncCompositionsPage() {
             unit: resolvedUnit,
             sector: m.sector || 'FABRICAÇÃO',
             measurements: m.measurements || '',
-            category_id: resolvedCatId,
+            category_id: rawCatId,
+            category: rawCatName,
             origem: `OP ${sourceOrder.op_number || sourceOrder.order_number || sourceOrder.id}`,
             status: alreadyExists ? 'already_exists' : 'new',
           }
@@ -392,6 +430,100 @@ export default function SyncCompositionsPage() {
     })
   }
 
+  // Mapa rápido de nome de categoria -> id (para gravação em category_id)
+  const catNameToIdMap = useMemo(() => {
+    const map = new Map<string, string>()
+    availableCategories.forEach((c) => {
+      map.set(c.name.toLowerCase().trim(), c.id)
+    })
+    return map
+  }, [availableCategories])
+
+  // Atualização em tempo real de categoria editada pelo usuário no preview
+  const handleUpdateItemCategory = (productId: string, itemIdx: number, newCategory: string) => {
+    setCandidates((prev) =>
+      prev.map((group) => {
+        if (group.productId !== productId) return group
+
+        const updatedAll = [...group.allCandidateItems]
+        const target = updatedAll[itemIdx]
+        if (!target) return group
+
+        const trimmedCat = newCategory.trim()
+        const resolvedId = catNameToIdMap.get(trimmedCat.toLowerCase()) || target.category_id || ''
+
+        const updatedItem: SyncCandidateItem = {
+          ...target,
+          category: trimmedCat,
+          category_id: resolvedId,
+        }
+        updatedAll[itemIdx] = updatedItem
+
+        // Atualizar também na lista newItems correspondente
+        const updatedNew = group.newItems.map((ni) => {
+          if (
+            ni.id === target.id ||
+            (normCode(ni.code) && normCode(ni.code) === normCode(target.code)) ||
+            normDesc(ni.description) === normDesc(target.description)
+          ) {
+            return {
+              ...ni,
+              category: trimmedCat,
+              category_id: resolvedId,
+            }
+          }
+          return ni
+        })
+
+        return {
+          ...group,
+          allCandidateItems: updatedAll,
+          newItems: updatedNew,
+        }
+      }),
+    )
+  }
+
+  // Atualização em tempo real de etapa/setor editada pelo usuário no preview
+  const handleUpdateItemSector = (productId: string, itemIdx: number, newSector: string) => {
+    setCandidates((prev) =>
+      prev.map((group) => {
+        if (group.productId !== productId) return group
+
+        const updatedAll = [...group.allCandidateItems]
+        const target = updatedAll[itemIdx]
+        if (!target) return group
+
+        const updatedItem: SyncCandidateItem = {
+          ...target,
+          sector: newSector,
+        }
+        updatedAll[itemIdx] = updatedItem
+
+        // Atualizar também na lista newItems correspondente
+        const updatedNew = group.newItems.map((ni) => {
+          if (
+            ni.id === target.id ||
+            (normCode(ni.code) && normCode(ni.code) === normCode(target.code)) ||
+            normDesc(ni.description) === normDesc(target.description)
+          ) {
+            return {
+              ...ni,
+              sector: newSector,
+            }
+          }
+          return ni
+        })
+
+        return {
+          ...group,
+          allCandidateItems: updatedAll,
+          newItems: updatedNew,
+        }
+      }),
+    )
+  }
+
   // Executar merge aditivo idempotente no produto
   const applySyncToProduct = async (group: SyncCandidateGroup): Promise<boolean> => {
     try {
@@ -435,6 +567,11 @@ export default function SyncCompositionsPage() {
           continue
         }
 
+        const categoryName = (newItem.category || '').trim()
+        const categoryId =
+          newItem.category_id ||
+          (categoryName ? catNameToIdMap.get(categoryName.toLowerCase()) || '' : '')
+
         const compEntry: CompositionItem = {
           id: `sync_${group.sourceOrder.id}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
           index: String(nextIndexStart + added),
@@ -444,7 +581,8 @@ export default function SyncCompositionsPage() {
           unit: newItem.unit || 'UN',
           etapa: newItem.sector || 'FABRICAÇÃO',
           measurements: newItem.measurements || '',
-          category_id: newItem.category_id || '',
+          category_id: categoryId,
+          category: categoryName,
           origem: newItem.origem,
           data_importacao: new Date().toISOString(),
         }
@@ -825,11 +963,12 @@ export default function SyncCompositionsPage() {
                             <TableRow className="bg-muted/50 text-[11px]">
                               <TableHead className="w-[100px]">Status</TableHead>
                               <TableHead className="w-[110px]">Código</TableHead>
-                              <TableHead>Descrição</TableHead>
-                              <TableHead className="w-[120px]">Etapa/Setor</TableHead>
+                              <TableHead className="min-w-[200px]">Descrição</TableHead>
+                              <TableHead className="w-[160px]">Categoria</TableHead>
+                              <TableHead className="w-[150px]">Etapa/Setor</TableHead>
                               <TableHead className="w-[90px] text-right">Qtd / Peça</TableHead>
-                              <TableHead className="w-[80px]">Unidade</TableHead>
-                              <TableHead className="w-[120px]">Medida</TableHead>
+                              <TableHead className="w-[70px]">Unidade</TableHead>
+                              <TableHead className="w-[110px]">Medida</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody className="text-xs">
@@ -865,7 +1004,52 @@ export default function SyncCompositionsPage() {
                                   )}
                                 </TableCell>
                                 <TableCell>{item.description}</TableCell>
-                                <TableCell>{item.sector}</TableCell>
+
+                                {/* Coluna Categoria (Editável com datalist de categorias cadastradas) */}
+                                <TableCell>
+                                  <div className="relative">
+                                    <input
+                                      list={`categories-list-${group.productId}`}
+                                      value={item.category || ''}
+                                      onChange={(e) =>
+                                        handleUpdateItemCategory(
+                                          group.productId,
+                                          idx,
+                                          e.target.value,
+                                        )
+                                      }
+                                      placeholder="Selecione ou digite..."
+                                      className="h-7 w-full text-xs px-2 rounded-md border border-input bg-background shadow-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                                    />
+                                    <datalist id={`categories-list-${group.productId}`}>
+                                      {availableCategories.map((c) => (
+                                        <option key={c.id} value={c.name} />
+                                      ))}
+                                    </datalist>
+                                  </div>
+                                </TableCell>
+
+                                {/* Coluna Etapa/Setor (Dropdown Select editável) */}
+                                <TableCell>
+                                  <Select
+                                    value={item.sector || 'FABRICAÇÃO'}
+                                    onValueChange={(val) =>
+                                      handleUpdateItemSector(group.productId, idx, val)
+                                    }
+                                  >
+                                    <SelectTrigger className="h-7 text-xs w-full bg-background">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {STAGES.map((stage) => (
+                                        <SelectItem key={stage} value={stage} className="text-xs">
+                                          {stage}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </TableCell>
+
                                 <TableCell className="text-right font-semibold">
                                   {item.qtyPerPiece}
                                 </TableCell>

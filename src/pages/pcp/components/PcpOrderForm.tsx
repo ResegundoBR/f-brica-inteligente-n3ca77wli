@@ -215,6 +215,7 @@ export function PcpOrderForm({
       quantity: number
       unit: string
       measurements?: string
+      category?: string
     }>
   >([])
   const { toast } = useToast()
@@ -739,6 +740,7 @@ export function PcpOrderForm({
           quantity: m.quantity,
           unit: m.unit,
           measurements: m.measurements,
+          category: m.category || '',
           status: 'Pendente' as const,
         }))
         await createOrderMaterialsBatch(matsToCreate)

@@ -8,6 +8,7 @@ export interface CreatePcpOrderMaterialInput {
   description: string
   quantity: number
   unit?: string
+  category?: string
   status?: PcpOrderMaterialStatus
   measurements?: string
   notes?: string
@@ -81,6 +82,7 @@ export function buildOrderMaterialsFromComposition(params: {
     unit?: string
     measurements?: string
     etapa?: string
+    category?: string
   }>
 }): CreatePcpOrderMaterialInput[] {
   const { orderId, orderQuantity, composition } = params
@@ -103,6 +105,7 @@ export function buildOrderMaterialsFromComposition(params: {
       description: c.description || '',
       quantity: totalQty,
       unit: c.unit || 'UN',
+      category: c.category || '',
       measurements: c.measurements || '',
       status: 'Pendente',
     }
@@ -138,6 +141,7 @@ export function scaleReviewedPdfMaterialsForOp(params: {
       description: m.description,
       quantity: totalQty,
       unit: m.unit,
+      category: m.category || '',
       measurements: m.measurements,
       status: 'Pendente',
     }

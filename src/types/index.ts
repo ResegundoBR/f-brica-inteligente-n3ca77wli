@@ -560,6 +560,7 @@ export interface PcpOrderMaterial {
   description: string
   quantity: number
   unit?: string
+  category?: string
   status: PcpOrderMaterialStatus
   measurements?: string
   separated_by?: string

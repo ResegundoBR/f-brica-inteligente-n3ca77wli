@@ -293,14 +293,32 @@ export default function SyncCompositionsPage() {
             perPiece % 1 === 0 ? String(Math.round(perPiece)) : String(Number(perPiece.toFixed(4)))
 
           const catalogEntry = mCode ? compCatalogMap.get(mCode.toUpperCase()) : undefined
-          const rawCatId =
+          const catalogCatId =
             (catalogEntry?.component as any)?.category ||
             (catalogEntry?.component as any)?.category_id ||
             ''
-          const rawCatName =
+          const catalogCatName =
             (catalogEntry?.component as any)?.expand?.category?.name ||
-            (rawCatId ? catIdToName.get(rawCatId) || '' : '')
+            (catalogCatId ? catIdToName.get(catalogCatId) || '' : '')
           const resolvedUnit = catalogEntry?.unit || m.unit || 'UN'
+
+          // Prioridade de categoria:
+          // 1. Categoria da linha do material da OP (se preenchida na importação)
+          // 2. Categoria do cadastro no catálogo unificado (fallback para OPs antigas)
+          // 3. Em branco
+          const opMatCategory = (m.category || '').trim()
+          let finalCategoryName = ''
+          let finalCategoryId = ''
+
+          if (opMatCategory) {
+            finalCategoryName = opMatCategory
+            finalCategoryId =
+              catNameToId.get(opMatCategory.toLowerCase()) ||
+              (catNameToIdMap ? catNameToIdMap.get(opMatCategory.toLowerCase()) || '' : '')
+          } else if (catalogCatName) {
+            finalCategoryName = catalogCatName
+            finalCategoryId = catalogCatId
+          }
 
           const candidateItem: SyncCandidateItem = {
             id: `item_${prodId}_${m.id || allCandidateItems.length}_${mCode}`,
@@ -311,8 +329,8 @@ export default function SyncCompositionsPage() {
             unit: resolvedUnit,
             sector: m.sector || 'FABRICAÇÃO',
             measurements: m.measurements || '',
-            category_id: rawCatId,
-            category: rawCatName,
+            category_id: finalCategoryId,
+            category: finalCategoryName,
             origem: `OP ${sourceOrder.op_number || sourceOrder.order_number || sourceOrder.id}`,
             status: alreadyExists ? 'already_exists' : 'new',
           }

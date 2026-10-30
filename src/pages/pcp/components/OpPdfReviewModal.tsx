@@ -546,9 +546,9 @@ export function OpPdfReviewModal({
             source: 'imported',
             active: true,
           }).catch(() => {})
-        } else if (!match.category && targetCatId) {
-          // Já existe mas não tem categoria: vincula a categoria escolhida
-          // (sem alterar outros dados)
+        } else if (targetCatId && match.category !== targetCatId) {
+          // Já existe no catálogo com categoria diferente da escolhida (ou sem categoria):
+          // a escolha do gestor prevalece na importação
           await import('@/lib/pocketbase/client').then(({ default: pb }) =>
             pb
               .collection('components')

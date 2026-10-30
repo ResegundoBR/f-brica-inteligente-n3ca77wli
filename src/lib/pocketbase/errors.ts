@@ -28,44 +28,50 @@ export function getErrorMessage(error: unknown): string {
   return msgs.length > 0 ? msgs.join(' ') : error.message || 'An unexpected error occurred.'
 }
 
-const FIELD_LABELS_PT: Record<string, string> = {
+const FIELD_LABEL_MAP: Record<string, string> = {
   expected_date: 'Previsão de Entrega',
   supplier: 'Fornecedor',
   supplier_id: 'Fornecedor',
-  total: 'Valor Total',
-  payment_terms: 'Condições de Pagamento',
-  delivery_terms: 'Condições de Entrega',
-  delivery_type: 'Tipo de Entrega',
-  oc_number: 'Número da OC',
+  quantity: 'Quantidade',
+  unit_price: 'Preço Unitário',
+  total_price: 'Preço Total',
+  payment_terms: 'Condição de Pagamento',
+  delivery_type: 'Tipo de Frete',
+  status: 'Status',
 }
 
 export function formatDetailedErrorMessage(error: unknown, fallbackMessage?: string): string {
+  if (!error || typeof error !== 'object') {
+    return fallbackMessage || 'Erro inesperado.'
+  }
+
   const errObj = error as any
-  const data =
-    errObj?.response?.data || (errObj instanceof ClientResponseError ? errObj.response?.data : null)
+  const responseData =
+    errObj?.response?.data || (error instanceof ClientResponseError ? error.response?.data : null)
 
-  if (data && typeof data === 'object') {
+  if (responseData && typeof responseData === 'object' && Object.keys(responseData).length > 0) {
     const details: string[] = []
-    for (const [field, val] of Object.entries(data)) {
-      const label = FIELD_LABELS_PT[field] || field
-      const valObj = val as any
-      const code = valObj?.code || ''
-      let msg = valObj?.message || ''
+    for (const [field, val] of Object.entries(responseData)) {
+      const label = FIELD_LABEL_MAP[field] || field
+      const rawMsg =
+        val && typeof val === 'object' && 'message' in val
+          ? String((val as any).message)
+          : String(val || '')
 
-      if (code === 'validation_invalid_date' || /datetime/i.test(msg)) {
-        msg = 'Data inválida'
-      } else if (code === 'validation_required' || /cannot be blank/i.test(msg)) {
-        msg = 'Obrigatório'
+      let friendlyMsg = rawMsg
+      if (rawMsg.includes('valid datetime') || rawMsg.includes('invalid_date')) {
+        friendlyMsg = 'Data inválida'
+      } else if (rawMsg.includes('cannot be blank') || rawMsg.includes('required')) {
+        friendlyMsg = 'Obrigatório'
       }
 
-      details.push(`${label}: ${msg}`)
+      details.push(`${label}: ${friendlyMsg}`)
     }
     if (details.length > 0) {
       return details.join(' | ')
     }
   }
 
-  const baseMsg =
-    errObj?.response?.message || errObj?.message || fallbackMessage || 'Erro inesperado.'
-  return fallbackMessage ? `${fallbackMessage}: ${baseMsg}` : baseMsg
+  if (errObj.message) return errObj.message
+  return fallbackMessage || 'Erro inesperado.'
 }

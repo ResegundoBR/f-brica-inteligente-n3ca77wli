@@ -85,11 +85,18 @@ function messageForDetail(field: string, detail: unknown): string | null {
 /**
  * Converte um erro do PocketBase em uma mensagem detalhada e legível em
  * português, linha a linha para cada campo com problema de validação.
+ *
+ * Aceita ClientResponseError real e também objetos com a mesma forma
+ * (erros serializados ou mocks em testes), preservando as mensagens
+ * legíveis com rótulos de campo e códigos de validação do PocketBase.
  */
 export function formatDetailedErrorMessage(error: unknown, fallback?: string): string {
   // Aceita tanto ClientResponseError quanto objetos com a mesma forma
   // (mocks em testes, erros serializados).
-  const candidate = error as { response?: { data?: unknown; message?: unknown }; message?: unknown } | null
+  const candidate = error as {
+    response?: { data?: unknown; message?: unknown }
+    message?: unknown
+  } | null
   const data = candidate?.response?.data
   if (data && typeof data === 'object') {
     const parts: string[] = []

@@ -611,11 +611,21 @@ export type OrderCostCategory =
   | 'Frete'
   | 'Outros'
 
+export interface PcpCostCategory {
+  id: string
+  name: string
+  sort_order?: number
+  active?: boolean
+  created: string
+  updated: string
+}
+
 export interface PcpOrderCost {
   id: string
   order_id?: string
   order_number?: string
-  category: OrderCostCategory
+  category: OrderCostCategory | string
+  category_id?: string
   description?: string
   quantity?: number
   unit_cost?: number

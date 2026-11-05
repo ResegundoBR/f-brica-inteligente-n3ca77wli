@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-05T17:31:02.488Z",
+  "generatedAt": "2026-11-05T18:33:02.924Z",
   "collections": [
     {
       "name": "users",
@@ -3429,7 +3429,7 @@
         {
           "name": "order_id",
           "type": "relation",
-          "required": true,
+          "required": false,
           "system": false,
           "collectionRef": "pcp_orders"
         },
@@ -3513,11 +3513,18 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "order_number",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
         "CREATE INDEX idx_pcp_order_costs_order ON pcp_order_costs (order_id)",
-        "CREATE INDEX idx_pcp_order_costs_category ON pcp_order_costs (category)"
+        "CREATE INDEX idx_pcp_order_costs_category ON pcp_order_costs (category)",
+        "CREATE INDEX idx_pcp_order_costs_order_number ON pcp_order_costs (order_number)"
       ]
     }
   ]

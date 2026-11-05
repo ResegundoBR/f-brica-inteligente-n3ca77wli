@@ -14,6 +14,8 @@ import {
   CostLine,
 } from '@/services/order-costs'
 import { PcpOrderCostsModal } from './components/PcpOrderCostsModal'
+import { OrderLevelCostsModal } from './components/OrderLevelCostsModal'
+import { listOrderCostsByOrderNumber } from '@/services/order-costs'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -71,6 +73,8 @@ interface OpRowData {
   manualCount: number
   automaticMaterial: number
   manualLines: CostLine[]
+  /** Linhas de custo attachadas ao PEDIDO (sem OP) — só no modo Por Pedido */
+  orderLevelLines?: CostLine[]
 }
 
 const statusBadgeVariant = (
@@ -158,6 +162,17 @@ export default function PcpRentabilidadeEspeciais() {
   const [selectedOrderForCost, setSelectedOrderForCost] = useState<PcpOrder | null>(null)
   const [costModalOpen, setCostModalOpen] = useState(false)
 
+  // Modal de Custos do Pedido (nível order_number, sem OP)
+  const [orderLevelCostState, setOrderLevelCostState] = useState<{
+    orderNumber: string
+    representativeOrder: PcpOrder
+    orders: PcpOrder[]
+  } | null>(null)
+  const [orderLevelCostOpen, setOrderLevelCostOpen] = useState(false)
+  const [orderLevelCostsByNumber, setOrderLevelCostsByNumber] = useState<
+    Record<string, PcpOrderCost[]>
+  >({})
+
   // Carrega OPs Especiais e settings
   const loadData = useCallback(async () => {
     try {
@@ -179,10 +194,26 @@ export default function PcpRentabilidadeEspeciais() {
         sort: '-created',
       })
       const manualCostsByOrder: Record<string, PcpOrderCost[]> = {}
+      const orderLevelCosts: Record<string, PcpOrderCost[]> = {}
       for (const c of allCosts) {
+        // Linhas attachadas ao PEDIDO (order_id vazio + order_number) ficam fora
+        // do detalhamento por OP, mas entram no consolidado do período.
+        if (!c.order_id) {
+          const onum = (c.order_number || '').trim()
+          if (onum) {
+            if (!orderLevelCosts[onum]) orderLevelCosts[onum] = []
+            orderLevelCosts[onum].push(c)
+          }
+          continue
+        }
         if (!manualCostsByOrder[c.order_id]) manualCostsByOrder[c.order_id] = []
         manualCostsByOrder[c.order_id].push(c)
       }
+      const orderLevelCount: Record<string, number> = {}
+      for (const [onum, lines] of Object.entries(orderLevelCosts)) {
+        orderLevelCount[onum] = lines.length
+      }
+      setOrderLevelCostsByNumber(orderLevelCosts)
 
       // 2. inventory_movements do tipo Entrada com order_id
       const allMovements = await pb.collection('inventory_movements').getFullList({
@@ -382,17 +413,29 @@ export default function PcpRentabilidadeEspeciais() {
       const groupOrders = rows.map((r) => r.order)
       const automaticMaterial = rows.reduce((acc, r) => acc + (r.automaticMaterial || 0), 0)
       const manualLines = rows.flatMap((r) => r.manualLines)
+      // Linhas de custo attachadas ao PEDIDO (sem OP) entram no consolidado
+      const orderLines = orderLevelCostsByNumber[first.order_number || ''] || []
+      const orderLevelLines = orderLines.map((c) => ({
+        id: c.id,
+        category: c.category,
+        description: c.description || '',
+        quantity: c.quantity ?? 1,
+        unitCost: c.unit_cost ?? 0,
+        total: c.total ?? 0,
+        source: 'Manual' as const,
+      }))
       // Receita do pedido = soma dos sale_price das OPs; sem nenhuma receita, fica sinalizado
       const salePrice = groupOrders.reduce((acc, o) => acc + (Number(o.sale_price) || 0), 0)
       const summary = summarizeCosts({
         automaticMaterial,
-        manualLines,
+        manualLines: [...manualLines, ...orderLevelLines],
         salePrice,
         overheadPercent,
       })
       return {
         order: first,
         orders: groupOrders,
+        orderLevelLines,
         label: first.order_number
           ? `Pedido ${first.order_number} · ${
               first.client_name || first.expand?.client_id?.name || '-'
@@ -410,7 +453,7 @@ export default function PcpRentabilidadeEspeciais() {
       consolidated.filter((r) => passesRevenueFilter(r.summary.hasSalePrice)),
       marginSort,
     )
-  }, [baseRows, viewMode, revenueFilter, marginSort, settings])
+  }, [baseRows, viewMode, revenueFilter, marginSort, settings, orderLevelCostsByNumber])
 
   // KPIs agregados
   const kpis = useMemo(() => {
@@ -506,6 +549,17 @@ export default function PcpRentabilidadeEspeciais() {
   const handleOpenCostsModal = (order: PcpOrder) => {
     setSelectedOrderForCost(order)
     setCostModalOpen(true)
+  }
+
+  const handleOpenOrderLevelCosts = (row: OpRowData) => {
+    const orderNumber = row.order.order_number || ''
+    if (!orderNumber) return
+    setOrderLevelCostState({
+      orderNumber,
+      representativeOrder: row.order,
+      orders: row.orders,
+    })
+    setOrderLevelCostOpen(true)
   }
 
   return (
@@ -888,267 +942,317 @@ export default function PcpRentabilidadeEspeciais() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  viewRows.map(({ order, orders, label, summary, automaticCount, manualCount }) => {
-                    const client = order.client_name || order.expand?.client_id?.name || '-'
-                    const productNames = Array.from(
-                      new Set(orders.map((o) => o.manual_product_name).filter(Boolean)),
-                    )
-                    const product = productNames.join(' · ') || '-'
-                    const otherCosts =
-                      (summary.manualByCategory['Insumo'] || 0) +
-                      (summary.manualByCategory['Impostos'] || 0) +
-                      (summary.manualByCategory['Comissão'] || 0) +
-                      (summary.manualByCategory['RT'] || 0) +
-                      (summary.manualByCategory['Frete'] || 0) +
-                      (summary.manualByCategory['Outros'] || 0)
+                  viewRows.map(
+                    ({
+                      order,
+                      orders,
+                      label,
+                      summary,
+                      automaticCount,
+                      manualCount,
+                      automaticMaterial,
+                      manualLines,
+                    }) => {
+                      const client = order.client_name || order.expand?.client_id?.name || '-'
+                      const productNames = Array.from(
+                        new Set(orders.map((o) => o.manual_product_name).filter(Boolean)),
+                      )
+                      const product = productNames.join(' · ') || '-'
+                      const otherCosts =
+                        (summary.manualByCategory['Insumo'] || 0) +
+                        (summary.manualByCategory['Impostos'] || 0) +
+                        (summary.manualByCategory['Comissão'] || 0) +
+                        (summary.manualByCategory['RT'] || 0) +
+                        (summary.manualByCategory['Frete'] || 0) +
+                        (summary.manualByCategory['Outros'] || 0)
 
-                    return (
-                      <TableRow
-                        key={orders.map((o) => o.id).join('-')}
-                        className="hover:bg-slate-50 dark:hover:bg-slate-900/60 transition-colors"
-                      >
-                        {/* OP / Pedido */}
-                        <TableCell className="font-medium">
-                          {viewMode === 'op' ? (
-                            <>
-                              <div className="font-semibold text-xs text-foreground">
-                                {order.op_number
-                                  ? `OP ${order.op_number}`
-                                  : `OP #${order.id.slice(0, 5)}`}
-                              </div>
-                              <div className="text-[11px] text-muted-foreground">
-                                Ped: {order.order_number || '-'}
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              <div className="font-semibold text-xs text-foreground">{label}</div>
-                              <div
-                                className="text-[11px] text-muted-foreground truncate max-w-[150px]"
-                                title={orders
-                                  .map((o) =>
-                                    o.op_number ? `OP ${o.op_number}` : `#${o.id.slice(0, 5)}`,
-                                  )
-                                  .join(', ')}
-                              >
-                                {orders.length} OP(s)
-                              </div>
-                            </>
-                          )}
-                        </TableCell>
-
-                        {/* Cliente / Produto */}
-                        <TableCell>
-                          <div
-                            className="font-medium text-xs truncate max-w-[220px]"
-                            title={client}
-                          >
-                            {client}
-                          </div>
-                          <div
-                            className="text-[11px] text-muted-foreground truncate max-w-[220px]"
-                            title={product}
-                          >
-                            <NoTranslate>{product}</NoTranslate>
-                          </div>
-                          <div className="text-[10px] text-muted-foreground flex items-center gap-1.5 mt-0.5">
-                            <span>
-                              Qtd:{' '}
-                              {viewMode === 'op'
-                                ? order.quantity || 1
-                                : orders.reduce((acc, o) => acc + (o.quantity || 0), 0)}
-                            </span>
-                            {automaticCount > 0 && (
-                              <span className="text-blue-600 dark:text-blue-400">
-                                • {automaticCount} mat. autom.
-                              </span>
-                            )}
-                            {manualCount > 0 && (
-                              <span className="text-muted-foreground">
-                                • {manualCount} linha(s) manual
-                              </span>
-                            )}
-                          </div>
-                        </TableCell>
-
-                        {/* Status */}
-                        <TableCell className="text-center">
-                          {(() => {
-                            const statuses = Array.from(
-                              new Set(orders.map((o) => o.status).filter(Boolean)),
-                            )
-                            if (viewMode === 'op' || statuses.length <= 1) {
-                              return (
-                                <Badge
-                                  variant={statusBadgeVariant(statuses[0] || order.status)}
-                                  className="text-[10px] px-1.5 py-0"
-                                >
-                                  {statuses[0] || order.status}
-                                </Badge>
-                              )
-                            }
-                            return (
-                              <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                                {statuses.length} status
-                              </Badge>
-                            )
-                          })()}
-                        </TableCell>
-
-                        {/* Receita (Venda) */}
-                        <TableCell className="text-right">
-                          {summary.hasSalePrice ? (
-                            <span className="font-semibold text-xs text-foreground">
-                              {fmtBRL(summary.salePrice)}
-                            </span>
-                          ) : (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-300 dark:border-amber-800 cursor-pointer">
-                                  <AlertTriangle className="size-3" />
-                                  Sem receita lançada
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                Clique em "Custos da OP" para cadastrar o valor de venda deste
-                                projeto.
-                              </TooltipContent>
-                            </Tooltip>
-                          )}
-                        </TableCell>
-
-                        {/* Material (automático + manual) */}
-                        <TableCell className="text-right text-xs">
-                          {summary.materialTotal > 0 ? (
-                            <div>
-                              <span>{fmtBRL(summary.materialTotal)}</span>
-                              {summary.automaticMaterial > 0 && summary.materialManual > 0 && (
-                                <div className="text-[10px] text-muted-foreground">
-                                  (aut: {fmtBRL(summary.automaticMaterial)})
+                      return (
+                        <TableRow
+                          key={orders.map((o) => o.id).join('-')}
+                          className="hover:bg-slate-50 dark:hover:bg-slate-900/60 transition-colors"
+                        >
+                          {/* OP / Pedido */}
+                          <TableCell className="font-medium">
+                            {viewMode === 'op' ? (
+                              <>
+                                <div className="font-semibold text-xs text-foreground">
+                                  {order.op_number
+                                    ? `OP ${order.op_number}`
+                                    : `OP #${order.id.slice(0, 5)}`}
                                 </div>
+                                <div className="text-[11px] text-muted-foreground">
+                                  Ped: {order.order_number || '-'}
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <div className="font-semibold text-xs text-foreground">{label}</div>
+                                <div
+                                  className="text-[11px] text-muted-foreground truncate max-w-[150px]"
+                                  title={orders
+                                    .map((o) =>
+                                      o.op_number ? `OP ${o.op_number}` : `#${o.id.slice(0, 5)}`,
+                                    )
+                                    .join(', ')}
+                                >
+                                  {orders.length} OP(s)
+                                </div>
+                              </>
+                            )}
+                          </TableCell>
+
+                          {/* Cliente / Produto */}
+                          <TableCell>
+                            <div
+                              className="font-medium text-xs truncate max-w-[220px]"
+                              title={client}
+                            >
+                              {client}
+                            </div>
+                            <div
+                              className="text-[11px] text-muted-foreground truncate max-w-[220px]"
+                              title={product}
+                            >
+                              <NoTranslate>{product}</NoTranslate>
+                            </div>
+                            <div className="text-[10px] text-muted-foreground flex items-center gap-1.5 mt-0.5">
+                              <span>
+                                Qtd:{' '}
+                                {viewMode === 'op'
+                                  ? order.quantity || 1
+                                  : orders.reduce((acc, o) => acc + (o.quantity || 0), 0)}
+                              </span>
+                              {automaticCount > 0 && (
+                                <span className="text-blue-600 dark:text-blue-400">
+                                  • {automaticCount} mat. autom.
+                                </span>
+                              )}
+                              {manualCount > 0 && (
+                                <span className="text-muted-foreground">
+                                  • {manualCount} linha(s) manual
+                                </span>
                               )}
                             </div>
-                          ) : (
-                            <span className="text-muted-foreground text-[11px]">—</span>
-                          )}
-                        </TableCell>
+                          </TableCell>
 
-                        {/* Mão de Obra */}
-                        <TableCell className="text-right text-xs">
-                          {summary.manualByCategory['Mão de Obra'] > 0 ? (
-                            fmtBRL(summary.manualByCategory['Mão de Obra'])
-                          ) : (
-                            <span className="text-muted-foreground text-[11px]">—</span>
-                          )}
-                        </TableCell>
-
-                        {/* Terceirização */}
-                        <TableCell className="text-right text-xs">
-                          {summary.manualByCategory['Terceirização'] > 0 ? (
-                            fmtBRL(summary.manualByCategory['Terceirização'])
-                          ) : (
-                            <span className="text-muted-foreground text-[11px]">—</span>
-                          )}
-                        </TableCell>
-
-                        {/* Outros */}
-                        <TableCell className="text-right text-xs">
-                          {otherCosts > 0 ? (
-                            fmtBRL(otherCosts)
-                          ) : (
-                            <span className="text-muted-foreground text-[11px]">—</span>
-                          )}
-                        </TableCell>
-
-                        {/* Custo Direto */}
-                        <TableCell className="text-right font-semibold text-xs">
-                          {fmtBRL(summary.directCost)}
-                        </TableCell>
-
-                        {/* Margem Bruta (Receita - Material) */}
-                        <TableCell className="text-right text-xs">
-                          {summary.hasSalePrice && summary.grossMarginPercent !== null ? (
-                            <div
-                              className={
-                                summary.grossMarginPercent >= 0
-                                  ? 'text-emerald-700 dark:text-emerald-400'
-                                  : 'text-rose-600'
+                          {/* Status */}
+                          <TableCell className="text-center">
+                            {(() => {
+                              const statuses = Array.from(
+                                new Set(orders.map((o) => o.status).filter(Boolean)),
+                              )
+                              if (viewMode === 'op' || statuses.length <= 1) {
+                                return (
+                                  <Badge
+                                    variant={statusBadgeVariant(statuses[0] || order.status)}
+                                    className="text-[10px] px-1.5 py-0"
+                                  >
+                                    {statuses[0] || order.status}
+                                  </Badge>
+                                )
                               }
-                            >
-                              <div className="font-medium">
-                                {fmtPct(summary.grossMarginPercent)}
-                              </div>
-                              <div className="text-[10px] text-muted-foreground">
-                                {fmtBRL(summary.grossMarginValue)}
-                              </div>
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground text-[11px]">—</span>
-                          )}
-                        </TableCell>
+                              return (
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                                  {statuses.length} status
+                                </Badge>
+                              )
+                            })()}
+                          </TableCell>
 
-                        {/* Margem de Contribuição (Receita - Custo Direto) */}
-                        <TableCell className="text-right text-xs">
-                          {summary.hasSalePrice && summary.contributionMarginPercent !== null ? (
-                            <div
-                              className={
-                                summary.contributionMarginPercent >= 0
-                                  ? 'text-emerald-700 dark:text-emerald-400 font-bold'
-                                  : 'text-rose-600 font-bold'
-                              }
-                            >
-                              <div>{fmtPct(summary.contributionMarginPercent)}</div>
-                              <div className="text-[10px] font-normal text-muted-foreground">
-                                {fmtBRL(summary.contributionMarginValue)}
-                              </div>
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground text-[11px]">—</span>
-                          )}
-                        </TableCell>
+                          {/* Receita (Venda) */}
+                          <TableCell className="text-right">
+                            {summary.hasSalePrice ? (
+                              <span className="font-semibold text-xs text-foreground">
+                                {fmtBRL(summary.salePrice)}
+                              </span>
+                            ) : (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-300 dark:border-amber-800 cursor-pointer">
+                                    <AlertTriangle className="size-3" />
+                                    Sem receita lançada
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  Clique em "Custos da OP" para cadastrar o valor de venda deste
+                                  projeto.
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                          </TableCell>
 
-                        {/* Ações */}
-                        <TableCell className="text-center">
-                          {viewMode === 'op' ? (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-7 text-xs px-2 gap-1 border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
-                              onClick={() => handleOpenCostsModal(order)}
-                            >
-                              <DollarSign className="size-3.5" />
-                              Custos da OP
-                            </Button>
-                          ) : (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-7 text-xs px-2 gap-1"
-                                >
-                                  <Users className="size-3.5" />
-                                  {orders.length} OPs
-                                  <ChevronDown className="size-3" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="max-h-64 overflow-y-auto">
-                                {orders.map((o) => (
-                                  <DropdownMenuItem
-                                    key={o.id}
-                                    onClick={() => handleOpenCostsModal(o)}
+                          {/* Material (automático + manual) */}
+                          <TableCell className="text-right text-xs">
+                            {summary.materialTotal > 0 ? (
+                              <div>
+                                <span>{fmtBRL(summary.materialTotal)}</span>
+                                {summary.automaticMaterial > 0 && summary.materialManual > 0 && (
+                                  <div className="text-[10px] text-muted-foreground">
+                                    (aut: {fmtBRL(summary.automaticMaterial)})
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground text-[11px]">—</span>
+                            )}
+                          </TableCell>
+
+                          {/* Mão de Obra */}
+                          <TableCell className="text-right text-xs">
+                            {summary.manualByCategory['Mão de Obra'] > 0 ? (
+                              fmtBRL(summary.manualByCategory['Mão de Obra'])
+                            ) : (
+                              <span className="text-muted-foreground text-[11px]">—</span>
+                            )}
+                          </TableCell>
+
+                          {/* Terceirização */}
+                          <TableCell className="text-right text-xs">
+                            {summary.manualByCategory['Terceirização'] > 0 ? (
+                              fmtBRL(summary.manualByCategory['Terceirização'])
+                            ) : (
+                              <span className="text-muted-foreground text-[11px]">—</span>
+                            )}
+                          </TableCell>
+
+                          {/* Outros */}
+                          <TableCell className="text-right text-xs">
+                            {otherCosts > 0 ? (
+                              fmtBRL(otherCosts)
+                            ) : (
+                              <span className="text-muted-foreground text-[11px]">—</span>
+                            )}
+                          </TableCell>
+
+                          {/* Custo Direto */}
+                          <TableCell className="text-right font-semibold text-xs">
+                            {fmtBRL(summary.directCost)}
+                          </TableCell>
+
+                          {/* Margem Bruta (Receita - Material) */}
+                          <TableCell className="text-right text-xs">
+                            {summary.hasSalePrice && summary.grossMarginPercent !== null ? (
+                              <div
+                                className={
+                                  summary.grossMarginPercent >= 0
+                                    ? 'text-emerald-700 dark:text-emerald-400'
+                                    : 'text-rose-600'
+                                }
+                              >
+                                <div className="font-medium">
+                                  {fmtPct(summary.grossMarginPercent)}
+                                </div>
+                                <div className="text-[10px] text-muted-foreground">
+                                  {fmtBRL(summary.grossMarginValue)}
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground text-[11px]">—</span>
+                            )}
+                          </TableCell>
+
+                          {/* Margem de Contribuição (Receita - Custo Direto) */}
+                          <TableCell className="text-right text-xs">
+                            {summary.hasSalePrice && summary.contributionMarginPercent !== null ? (
+                              <div
+                                className={
+                                  summary.contributionMarginPercent >= 0
+                                    ? 'text-emerald-700 dark:text-emerald-400 font-bold'
+                                    : 'text-rose-600 font-bold'
+                                }
+                              >
+                                <div>{fmtPct(summary.contributionMarginPercent)}</div>
+                                <div className="text-[10px] font-normal text-muted-foreground">
+                                  {fmtBRL(summary.contributionMarginValue)}
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground text-[11px]">—</span>
+                            )}
+                          </TableCell>
+
+                          {/* Ações */}
+                          <TableCell className="text-center">
+                            {viewMode === 'op' ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs px-2 gap-1 border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+                                onClick={() => handleOpenCostsModal(order)}
+                              >
+                                <DollarSign className="size-3.5" />
+                                Custos da OP
+                              </Button>
+                            ) : (
+                              <div className="flex flex-col items-center gap-1.5">
+                                {order.order_number ? (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 text-xs px-2 gap-1 border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+                                    onClick={() =>
+                                      handleOpenOrderLevelCosts({
+                                        order,
+                                        orders,
+                                        label,
+                                        summary,
+                                        automaticCount,
+                                        manualCount,
+                                        automaticMaterial,
+                                        manualLines,
+                                      })
+                                    }
                                   >
                                     <DollarSign className="size-3.5" />
-                                    Custos da OP {o.op_number || `#${o.id.slice(0, 5)}`}
-                                  </DropdownMenuItem>
-                                ))}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })
+                                    Custos do Pedido
+                                    {orderLevelCostsByNumber[order.order_number || '']?.length ? (
+                                      <Badge
+                                        variant="secondary"
+                                        className="ml-0.5 h-4 px-1 text-[9px]"
+                                      >
+                                        {orderLevelCostsByNumber[order.order_number || ''].length}
+                                      </Badge>
+                                    ) : null}
+                                  </Button>
+                                ) : (
+                                  <span className="text-[10px] text-muted-foreground">
+                                    Sem nº pedido
+                                  </span>
+                                )}
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-7 text-xs px-2 gap-1"
+                                    >
+                                      <Users className="size-3.5" />
+                                      {orders.length} OPs
+                                      <ChevronDown className="size-3" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent
+                                    align="end"
+                                    className="max-h-64 overflow-y-auto"
+                                  >
+                                    {orders.map((o) => (
+                                      <DropdownMenuItem
+                                        key={o.id}
+                                        onClick={() => handleOpenCostsModal(o)}
+                                      >
+                                        <DollarSign className="size-3.5" />
+                                        Custos da OP {o.op_number || `#${o.id.slice(0, 5)}`}
+                                      </DropdownMenuItem>
+                                    ))}
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    },
+                  )
                 )}
               </TableBody>
             </Table>
@@ -1211,6 +1315,22 @@ export default function PcpRentabilidadeEspeciais() {
             setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)))
             loadData()
           }}
+        />
+      )}
+
+      {/* Modal de Custos do Pedido (nível order_number, sem OP) */}
+      {orderLevelCostState && (
+        <OrderLevelCostsModal
+          open={orderLevelCostOpen}
+          onOpenChange={(v) => {
+            setOrderLevelCostOpen(v)
+            if (!v) setOrderLevelCostState(null)
+          }}
+          orderNumber={orderLevelCostState.orderNumber}
+          representativeOrder={orderLevelCostState.representativeOrder}
+          orders={orderLevelCostState.orders}
+          onChanged={() => loadData()}
+          onOpen={() => loadData()}
         />
       )}
     </div>

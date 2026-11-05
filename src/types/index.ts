@@ -612,7 +612,8 @@ export type OrderCostCategory =
 
 export interface PcpOrderCost {
   id: string
-  order_id: string
+  order_id?: string
+  order_number?: string
   category: OrderCostCategory
   description?: string
   quantity?: number

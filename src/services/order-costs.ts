@@ -151,14 +151,28 @@ export async function listOrderCosts(orderId: string): Promise<PcpOrderCost[]> {
   })
 }
 
+/** Linhas de custo attachadas ao PEDIDO (order_id vazio + order_number preenchido). */
+export async function listOrderCostsByOrderNumber(orderNumber: string): Promise<PcpOrderCost[]> {
+  return pb.collection('pcp_order_costs').getFullList<PcpOrderCost>({
+    filter: `order_number="${orderNumber}" && order_id=""`,
+    sort: '-created',
+    expand: 'created_by',
+  })
+}
+
 export async function createOrderCost(
-  data: Partial<PcpOrderCost> & { order_id: string; category: OrderCostCategory },
+  data: Omit<Partial<PcpOrderCost>, 'order_id'> & {
+    category: OrderCostCategory
+    order_id?: string
+    order_number?: string
+  },
 ): Promise<PcpOrderCost> {
-  const payload = {
+  const payload: Record<string, unknown> = {
     ...data,
     source: 'Manual' as const,
     created_by: pb.authStore.isValid ? pb.authStore.record?.id : undefined,
   }
+  if (!data.order_id) payload.order_id = ''
   return pb.collection('pcp_order_costs').create<PcpOrderCost>(payload)
 }
 

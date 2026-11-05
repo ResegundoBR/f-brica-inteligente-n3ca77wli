@@ -500,11 +500,36 @@ export default function PcpRentabilidadeEspeciais() {
     )
   }, [baseRows, viewMode, revenueFilter, marginSort, settings, orderLevelCostsByNumber])
 
-  // KPIs agregados
-  const kpis = useMemo(() => {
+  // Identifica os order_numbers únicos presentes em baseRows (respeitam período, busca, status e arquivados)
+  const scopedOrderNumbers = useMemo<Set<string>>(() => {
+    const set = new Set<string>()
+    for (const row of baseRows) {
+      const onum = (row.order.order_number || '').trim()
+      if (onum) set.add(onum)
+    }
+    return set
+  }, [baseRows])
+
+  // Linhas de custo attachadas ao PEDIDO (sem OP) dos pedidos do período filtrado
+  const scopedOrderLevelCosts = useMemo<PcpOrderCost[]>(() => {
+    const list: PcpOrderCost[] = []
+    for (const onum of scopedOrderNumbers) {
+      const lines = orderLevelCostsByNumber[onum] || []
+      list.push(...lines)
+    }
+    return list
+  }, [scopedOrderNumbers, orderLevelCostsByNumber])
+
+  // Soma de custos de pedido fora das OPs (usado no rodapé do modo Por OP e nos KPIs consolidados)
+  const totalOrderLevelCost = useMemo<number>(() => {
+    return scopedOrderLevelCosts.reduce((acc, c) => acc + (Number(c.total) || 0), 0)
+  }, [scopedOrderLevelCosts])
+
+  // KPIs agregados do PERÍODO: OPs filtradas (baseRows) + custos attachados a pedidos
+  // INDEPENDENTE do viewMode (Por OP vs Por Pedido têm exatamente os mesmos números nos cards)
+  const periodKpis = useMemo(() => {
     let totalRevenue = 0
     let totalDirectCost = 0
-    let totalFullCost = 0
     let totalMaterial = 0
     let totalLabor = 0
     let totalOutsourcing = 0
@@ -513,35 +538,21 @@ export default function PcpRentabilidadeEspeciais() {
     let opsWithRevenueCount = 0
     let opsWithoutRevenueCount = 0
 
-    // Para médias de margem, EXCLUI OPs sem receita lançada
-    let marginContributionSum = 0
-    let marginGrossSum = 0
-
-    // Top e piores margens (entre as que possuem receita lançada)
-    const withRevenueRows = viewRows.filter((r) => r.summary.hasSalePrice)
-
-    for (const row of viewRows) {
+    // 1. Soma os dados das OPs filtradas (baseRows)
+    for (const row of baseRows) {
       const s = row.summary
       if (s.hasSalePrice) {
         totalRevenue += s.salePrice
         opsWithRevenueCount++
-        if (s.contributionMarginPercent !== null) {
-          marginContributionSum += s.contributionMarginPercent
-        }
-        if (s.grossMarginPercent !== null) {
-          marginGrossSum += s.grossMarginPercent
-        }
       } else {
         opsWithoutRevenueCount++
       }
 
       totalDirectCost += s.directCost
-      totalFullCost += s.fullCost
       totalMaterial += s.materialTotal
       totalLabor += s.manualByCategory['Mão de Obra'] || 0
       totalOutsourcing += s.manualByCategory['Terceirização'] || 0
 
-      // "Outros" soma qualquer categoria manual além de Mão de Obra e Terceirização (exceto Material que já está em materialTotal)
       for (const [catName, val] of Object.entries(s.manualByCategory)) {
         if (catName !== 'Mão de Obra' && catName !== 'Terceirização' && catName !== 'Material') {
           totalOther += val || 0
@@ -549,43 +560,94 @@ export default function PcpRentabilidadeEspeciais() {
       }
     }
 
-    const avgContributionMargin =
-      opsWithRevenueCount > 0 ? marginContributionSum / opsWithRevenueCount : null
-    const avgGrossMargin = opsWithRevenueCount > 0 ? marginGrossSum / opsWithRevenueCount : null
+    // 2. Incorpora os custos attachados ao nível do PEDIDO
+    for (const c of scopedOrderLevelCosts) {
+      const val = Number(c.total) || 0
+      totalDirectCost += val
+      const cat = (c.category || '').trim()
+      if (cat === 'Material') {
+        totalMaterial += val
+      } else if (cat === 'Mão de Obra') {
+        totalLabor += val
+      } else if (cat === 'Terceirização') {
+        totalOutsourcing += val
+      } else {
+        totalOther += val
+      }
+    }
 
-    // Margem global consolidada: (Receita Total - Custo Total das OPs com receita) / Receita Total
+    // Margem global consolidada do período: ((receita - custo) / receita) * 100
     const consolidatedProfit = totalRevenue - totalDirectCost
     const consolidatedMarginPct =
       totalRevenue > 0 ? ((totalRevenue - totalDirectCost) / totalRevenue) * 100 : null
 
-    // Melhores e piores
+    return {
+      totalOps: baseRows.length,
+      opsWithRevenueCount,
+      opsWithoutRevenueCount,
+      totalRevenue,
+      totalDirectCost,
+      totalMaterial,
+      totalLabor,
+      totalOutsourcing,
+      totalOther,
+      consolidatedProfit,
+      consolidatedMarginPct,
+    }
+  }, [baseRows, scopedOrderLevelCosts])
+
+  // Destaques (melhor e pior margem) calculados sobre a granularidade ativa (viewRows)
+  const highlights = useMemo(() => {
+    const withRevenueRows = viewRows.filter((r) => r.summary.hasSalePrice)
     const sortedByMargin = [...withRevenueRows].sort((a, b) => {
       const m1 = a.summary.contributionMarginPercent ?? -9999
       const m2 = b.summary.contributionMarginPercent ?? -9999
       return m2 - m1
     })
 
-    const bestMarginOp = sortedByMargin.length > 0 ? sortedByMargin[0] : null
-    const worstMarginOp =
-      sortedByMargin.length > 0 ? sortedByMargin[sortedByMargin.length - 1] : null
+    return {
+      best: sortedByMargin.length > 0 ? sortedByMargin[0] : null,
+      worst: sortedByMargin.length > 0 ? sortedByMargin[sortedByMargin.length - 1] : null,
+    }
+  }, [viewRows])
+
+  // Totais somados estritamente sobre a tabela visível (para o rodapé)
+  const tableTotals = useMemo(() => {
+    let revenue = 0
+    let material = 0
+    let labor = 0
+    let outsourcing = 0
+    let directCost = 0
+    let marginContributionSum = 0
+    let withRevenueCount = 0
+
+    for (const row of viewRows) {
+      const s = row.summary
+      if (s.hasSalePrice) {
+        revenue += s.salePrice
+        withRevenueCount++
+        if (s.contributionMarginPercent !== null) {
+          marginContributionSum += s.contributionMarginPercent
+        }
+      }
+      directCost += s.directCost
+      material += s.materialTotal
+      labor += s.manualByCategory['Mão de Obra'] || 0
+      outsourcing += s.manualByCategory['Terceirização'] || 0
+    }
+
+    const avgMargin = withRevenueCount > 0 ? marginContributionSum / withRevenueCount : null
+    const consolidatedMargin = revenue > 0 ? ((revenue - directCost) / revenue) * 100 : null
 
     return {
-      totalOps: viewRows.length,
-      opsWithRevenueCount,
-      opsWithoutRevenueCount,
-      totalRevenue,
-      totalDirectCost,
-      totalFullCost,
-      totalMaterial,
-      totalLabor,
-      totalOutsourcing,
-      totalOther,
-      avgContributionMargin,
-      avgGrossMargin,
-      consolidatedProfit,
-      consolidatedMarginPct,
-      bestMarginOp,
-      worstMarginOp,
+      revenue,
+      material,
+      labor,
+      outsourcing,
+      directCost,
+      avgMargin,
+      consolidatedMargin,
+      withRevenueCount,
     }
   }, [viewRows])
 
@@ -698,14 +760,14 @@ export default function PcpRentabilidadeEspeciais() {
       </div>
 
       {/* Alerta de OPs sem receita */}
-      {kpis.opsWithoutRevenueCount > 0 && (
+      {periodKpis.opsWithoutRevenueCount > 0 && (
         <div className="p-3.5 rounded-lg border border-amber-300 dark:border-amber-900 bg-amber-50/70 dark:bg-amber-950/20 text-amber-900 dark:text-amber-200 flex items-center justify-between gap-3 text-sm">
           <div className="flex items-center gap-2.5">
             <AlertTriangle className="size-5 text-amber-600 dark:text-amber-400 shrink-0" />
             <span>
-              <strong>Atenção:</strong> Existem <strong>{kpis.opsWithoutRevenueCount}</strong>{' '}
-              {entityPlural} sem valor de venda lançado. Foram excluídos do cálculo das margens
-              médias para não distorcer o resultado financeiro.
+              <strong>Atenção:</strong> Existem <strong>{periodKpis.opsWithoutRevenueCount}</strong>{' '}
+              OP(s) sem valor de venda lançado. Foram excluídas do cálculo das margens para não
+              distorcer o resultado financeiro.
             </span>
           </div>
           <Button
@@ -721,7 +783,7 @@ export default function PcpRentabilidadeEspeciais() {
         </div>
       )}
 
-      {/* Cards de Resumo / KPIs */}
+      {/* Cards de Resumo / KPIs (valores consolidados do período, idênticos em Por OP e Por Pedido) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Receita Total */}
         <Card className="border-l-4 border-l-emerald-600 shadow-sm">
@@ -731,11 +793,11 @@ export default function PcpRentabilidadeEspeciais() {
               <DollarSign className="size-4 text-emerald-600" />
             </CardDescription>
             <CardTitle className="text-2xl font-bold text-emerald-700 dark:text-emerald-400">
-              {fmtBRL(kpis.totalRevenue)}
+              {fmtBRL(periodKpis.totalRevenue)}
             </CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground pt-0">
-            {kpis.opsWithRevenueCount} de {kpis.totalOps} {entityPlural} com preço cadastrado
+            {periodKpis.opsWithRevenueCount} de {periodKpis.totalOps} OPs com preço cadastrado
           </CardContent>
         </Card>
 
@@ -747,20 +809,21 @@ export default function PcpRentabilidadeEspeciais() {
               <Layers className="size-4 text-blue-600" />
             </CardDescription>
             <CardTitle className="text-2xl font-bold text-blue-700 dark:text-blue-400">
-              {fmtBRL(kpis.totalDirectCost)}
+              {fmtBRL(periodKpis.totalDirectCost)}
             </CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground pt-0 space-y-0.5">
             <div>
-              Material: {fmtBRL(kpis.totalMaterial)} | MO: {fmtBRL(kpis.totalLabor)}
+              Material: {fmtBRL(periodKpis.totalMaterial)} | MO: {fmtBRL(periodKpis.totalLabor)}
             </div>
             <div>
-              Terceirização: {fmtBRL(kpis.totalOutsourcing)} | Outros: {fmtBRL(kpis.totalOther)}
+              Terceirização: {fmtBRL(periodKpis.totalOutsourcing)} | Outros:{' '}
+              {fmtBRL(periodKpis.totalOther)}
             </div>
           </CardContent>
         </Card>
 
-        {/* Margem Média de Contribuição */}
+        {/* Margem de Contribuição Consolidada do Período */}
         <Card className="border-l-4 border-l-purple-600 shadow-sm">
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center justify-between">
@@ -768,17 +831,17 @@ export default function PcpRentabilidadeEspeciais() {
               <TrendingUp className="size-4 text-purple-600" />
             </CardDescription>
             <CardTitle className="text-2xl font-bold text-purple-700 dark:text-purple-400">
-              {fmtPct(kpis.avgContributionMargin)}
+              {fmtPct(periodKpis.consolidatedMarginPct)}
             </CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground pt-0">
-            {kpis.consolidatedMarginPct !== null
-              ? `Margem consolidada: ${fmtPct(kpis.consolidatedMarginPct)} (${fmtBRL(kpis.consolidatedProfit)})`
+            {periodKpis.consolidatedMarginPct !== null
+              ? `Resultado consolidado: ${fmtBRL(periodKpis.consolidatedProfit)}`
               : 'Sem receita suficiente'}
           </CardContent>
         </Card>
 
-        {/* Destaques: Melhor e Pior */}
+        {/* Destaques: Melhor e Pior (da granularidade do modo ativo) */}
         <Card className="border-l-4 border-l-amber-600 shadow-sm">
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center justify-between">
@@ -786,23 +849,23 @@ export default function PcpRentabilidadeEspeciais() {
               <Sparkles className="size-4 text-amber-600" />
             </CardDescription>
             <CardTitle className="text-sm font-semibold truncate">
-              {kpis.bestMarginOp ? (
+              {highlights.best ? (
                 <span className="text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
                   <TrendingUp className="size-3.5 inline" />
-                  {kpis.bestMarginOp.label}:{' '}
-                  {fmtPct(kpis.bestMarginOp.summary.contributionMarginPercent)}
+                  {highlights.best.label}:{' '}
+                  {fmtPct(highlights.best.summary.contributionMarginPercent)}
                 </span>
               ) : (
-                <span className="text-muted-foreground">Nenhuma OP avaliada</span>
+                <span className="text-muted-foreground">Nenhum registro avaliado</span>
               )}
             </CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground pt-0">
-            {kpis.worstMarginOp && kpis.worstMarginOp !== kpis.bestMarginOp ? (
+            {highlights.worst && highlights.worst !== highlights.best ? (
               <span className="text-rose-700 dark:text-rose-400 flex items-center gap-1">
                 <TrendingDown className="size-3.5 inline" />
-                {kpis.worstMarginOp.label}:{' '}
-                {fmtPct(kpis.worstMarginOp.summary.contributionMarginPercent)}
+                {highlights.worst.label}:{' '}
+                {fmtPct(highlights.worst.summary.contributionMarginPercent)}
               </span>
             ) : (
               <span>Cadastre receitas e custos para comparar</span>
@@ -1475,44 +1538,76 @@ export default function PcpRentabilidadeEspeciais() {
           </div>
         </CardContent>
 
-        {/* Rodapé com Totais Consolidados */}
+        {/* Rodapé com Totais da Tabela */}
         {viewRows.length > 0 && (
-          <div className="p-4 bg-slate-100/70 dark:bg-slate-900/90 border-t flex flex-wrap items-center justify-between gap-4 text-xs">
-            <div className="font-semibold text-slate-700 dark:text-slate-300">
-              Totais Consolidados ({viewRows.length} {entityPlural}):
+          <div className="border-t divide-y text-xs">
+            {/* Totais das linhas visíveis da tabela */}
+            <div className="p-4 bg-slate-100/70 dark:bg-slate-900/90 flex flex-wrap items-center justify-between gap-4">
+              <div className="font-semibold text-slate-700 dark:text-slate-300">
+                Totais da Tabela ({viewRows.length} {entityPlural}):
+              </div>
+              <div className="flex flex-wrap items-center gap-6">
+                <div>
+                  <span className="text-muted-foreground">Receita Total: </span>
+                  <span className="font-bold text-emerald-700 dark:text-emerald-400">
+                    {fmtBRL(tableTotals.revenue)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Custo Material: </span>
+                  <span className="font-medium">{fmtBRL(tableTotals.material)}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Custo MO: </span>
+                  <span className="font-medium">{fmtBRL(tableTotals.labor)}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Terceirização: </span>
+                  <span className="font-medium">{fmtBRL(tableTotals.outsourcing)}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Custo Direto Total: </span>
+                  <span className="font-bold text-blue-700 dark:text-blue-400">
+                    {fmtBRL(tableTotals.directCost)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Margem Média Contribuição: </span>
+                  <span className="font-bold text-purple-700 dark:text-purple-400">
+                    {fmtPct(tableTotals.avgMargin)}
+                  </span>
+                </div>
+              </div>
             </div>
-            <div className="flex flex-wrap items-center gap-6">
-              <div>
-                <span className="text-muted-foreground">Receita Total: </span>
-                <span className="font-bold text-emerald-700 dark:text-emerald-400">
-                  {fmtBRL(kpis.totalRevenue)}
-                </span>
+
+            {/* No modo Por OP: linha destacada com custos de pedido fora das OPs para conferência com os cards de resumo */}
+            {viewMode === 'op' && (
+              <div className="p-3.5 bg-blue-50/70 dark:bg-blue-950/30 text-blue-950 dark:text-blue-200 flex flex-wrap items-center justify-between gap-3 border-t border-blue-200 dark:border-blue-900">
+                <div className="flex items-center gap-2">
+                  <Layers className="size-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                  <span className="font-medium">
+                    Custos de pedido (fora das OPs):{' '}
+                    <strong className="text-blue-700 dark:text-blue-300 font-bold">
+                      {fmtBRL(totalOrderLevelCost)}
+                    </strong>
+                  </span>
+                  <span className="text-[11px] text-muted-foreground">
+                    ({scopedOrderLevelCosts.length} lançamento
+                    {scopedOrderLevelCosts.length === 1 ? '' : 's'} em {scopedOrderNumbers.size}{' '}
+                    pedido{scopedOrderNumbers.size === 1 ? '' : 's'} do período)
+                  </span>
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  Total Geral do Período (OPs + Pedido):{' '}
+                  <strong className="text-foreground font-semibold">
+                    {fmtBRL(tableTotals.directCost + totalOrderLevelCost)}
+                  </strong>{' '}
+                  <span className="text-emerald-700 dark:text-emerald-400 font-medium">
+                    (bate com o card Custo Direto Total)
+                  </span>
+                </div>
               </div>
-              <div>
-                <span className="text-muted-foreground">Custo Material: </span>
-                <span className="font-medium">{fmtBRL(kpis.totalMaterial)}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Custo MO: </span>
-                <span className="font-medium">{fmtBRL(kpis.totalLabor)}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Terceirização: </span>
-                <span className="font-medium">{fmtBRL(kpis.totalOutsourcing)}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Custo Direto Total: </span>
-                <span className="font-bold text-blue-700 dark:text-blue-400">
-                  {fmtBRL(kpis.totalDirectCost)}
-                </span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Margem Média Contribuição: </span>
-                <span className="font-bold text-purple-700 dark:text-purple-400">
-                  {fmtPct(kpis.avgContributionMargin)}
-                </span>
-              </div>
-            </div>
+            )}
           </div>
         )}
       </Card>

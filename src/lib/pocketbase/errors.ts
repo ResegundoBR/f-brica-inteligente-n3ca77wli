@@ -3,9 +3,8 @@ import { ClientResponseError } from 'pocketbase'
 export type FieldErrors = Record<string, string>
 
 export function extractFieldErrors(error: unknown): FieldErrors {
-  if (!error || typeof error !== 'object') return {}
-  const res = (error as { response?: { data?: unknown } }).response
-  const data = res?.data
+  if (!(error instanceof ClientResponseError)) return {}
+  const data = error.response?.data
   if (!data || typeof data !== 'object') return {}
   const errors: FieldErrors = {}
   for (const [field, detail] of Object.entries(data)) {
@@ -33,69 +32,59 @@ const FIELD_LABELS: Record<string, string> = {
   supplier: 'Fornecedor',
   supplier_id: 'Fornecedor',
   expected_date: 'Previsão de Entrega',
-  delivery_terms: 'Condição de Frete',
-  payment_terms: 'Condição de Pagamento',
+  delivery_terms: 'Condições de Entrega',
+  payment_terms: 'Condições de Pagamento',
   delivery_type: 'Tipo de Entrega',
   total: 'Valor Total',
-  itens: 'Itens da OC',
   oc_number: 'Número da OC',
-  notes: 'Observações',
-  discount: 'Desconto',
-  shipping_cost: 'Frete',
-  order_id: 'OP',
-  order_number: 'Número do Pedido',
-  category: 'Categoria',
-  category_id: 'Categoria',
-  unit_cost: 'Custo Unitário',
-  quantity: 'Quantidade',
-  description: 'Descrição',
 }
 
 const ERROR_CODE_LABELS: Record<string, string> = {
   validation_required: 'Obrigatório',
-  validation_not_empty: 'Não pode ser vazio',
   validation_invalid_date: 'Data inválida',
-  validation_invalid_datetime: 'Data/hora inválida',
-  validation_invalid_number: 'Número inválido',
-  validation_min_number: 'Valor abaixo do mínimo',
-  validation_max_number: 'Valor acima do máximo',
-  validation_unique: 'Já existe registro com este valor',
+  validation_not_unique: 'Já cadastrado',
+  validation_min_numeric_value: 'Valor abaixo do mínimo',
+  validation_max_numeric_value: 'Valor acima do máximo',
 }
 
-export function formatDetailedErrorMessage(error: unknown, fallback?: string): string {
-  if (!error) return fallback || 'Erro inesperado.'
+export function formatDetailedErrorMessage(error: unknown, fallback = 'Erro na operação'): string {
+  if (!error) return fallback
 
-  // Tenta extrair resposta com data (seja ClientResponseError ou mock)
-  const errObj = error as {
-    response?: {
-      message?: string
-      data?: Record<string, { code?: string; message?: string }>
-    }
-    message?: string
-  }
+  const resp =
+    (error as any)?.response || (error instanceof ClientResponseError ? error.response : null)
 
-  const data = errObj.response?.data
+  const data = resp?.data
   if (data && typeof data === 'object') {
-    const fieldDetails: string[] = []
+    const lines: string[] = []
     for (const [field, detail] of Object.entries(data)) {
-      if (!detail || typeof detail !== 'object') continue
       const fieldLabel = FIELD_LABELS[field] || field
-      const codeMessage = detail.code ? ERROR_CODE_LABELS[detail.code] : undefined
-      const msg = codeMessage || detail.message || 'Inválido'
-      fieldDetails.push(`${fieldLabel}: ${msg}`)
+      let msg = ''
+      if (detail && typeof detail === 'object') {
+        const code = (detail as any).code
+        if (code && ERROR_CODE_LABELS[code]) {
+          msg = ERROR_CODE_LABELS[code]
+        } else if (typeof (detail as any).message === 'string') {
+          msg = (detail as any).message
+        }
+      } else if (typeof detail === 'string') {
+        msg = detail
+      }
+      if (msg) {
+        lines.push(`${fieldLabel}: ${msg}`)
+      }
     }
-    if (fieldDetails.length > 0) {
-      return fieldDetails.join(' | ')
+    if (lines.length > 0) {
+      return lines.join(' · ')
     }
   }
 
-  if (errObj.response?.message) {
-    return errObj.response.message
+  if (resp?.message && typeof resp.message === 'string') {
+    return resp.message
   }
 
-  if (errObj.message) {
-    return errObj.message
+  if (error instanceof Error && error.message) {
+    return error.message
   }
 
-  return fallback || 'Erro ao processar requisição.'
+  return fallback
 }

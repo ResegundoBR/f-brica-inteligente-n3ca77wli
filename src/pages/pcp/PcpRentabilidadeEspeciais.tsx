@@ -34,6 +34,13 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   DollarSign,
   TrendingUp,
@@ -50,21 +57,79 @@ import {
   Clock,
   Layers,
   FileSpreadsheet,
+  Users,
+  ChevronDown,
 } from 'lucide-react'
 import { NoTranslate } from '@/components/NoTranslate'
 
 interface OpRowData {
   order: PcpOrder
+  orders: PcpOrder[]
+  label: string
   summary: CostSummary
   automaticCount: number
   manualCount: number
+  automaticMaterial: number
+  manualLines: CostLine[]
+}
+
+const statusBadgeVariant = (
+  status?: string | null,
+): 'default' | 'secondary' | 'destructive' | 'outline' =>
+  status === 'Concluído'
+    ? 'default'
+    : status === 'Em Andamento'
+      ? 'secondary'
+      : status === 'Parado'
+        ? 'destructive'
+        : 'outline'
+
+function sortOpRows(
+  rows: OpRowData[],
+  marginSort: 'default' | 'margin_asc' | 'margin_desc' | 'sale_desc' | 'cost_desc',
+): OpRowData[] {
+  const sorted = [...rows]
+  if (marginSort === 'margin_desc') {
+    sorted.sort(
+      (a, b) =>
+        (b.summary.contributionMarginPercent ?? -9999) -
+        (a.summary.contributionMarginPercent ?? -9999),
+    )
+  } else if (marginSort === 'margin_asc') {
+    sorted.sort(
+      (a, b) =>
+        (a.summary.contributionMarginPercent ?? 9999) -
+        (b.summary.contributionMarginPercent ?? 9999),
+    )
+  } else if (marginSort === 'sale_desc') {
+    sorted.sort((a, b) => (b.summary.salePrice || 0) - (a.summary.salePrice || 0))
+  } else if (marginSort === 'cost_desc') {
+    sorted.sort((a, b) => (b.summary.directCost || 0) - (a.summary.directCost || 0))
+  } else {
+    // default: mais recentes primeiro (na consolidada, usa a OP mais recente do grupo)
+    sorted.sort((a, b) => {
+      const da = a.orders.reduce((acc, o) => (o.created || '' > acc ? o.created || '' : acc), '')
+      const db = b.orders.reduce((acc, o) => (o.created || '' > acc ? o.created || '' : acc), '')
+      return db.localeCompare(da)
+    })
+  }
+  return sorted
 }
 
 export default function PcpRentabilidadeEspeciais() {
   const [orders, setOrders] = useState<PcpOrder[]>([])
   const [settings, setSettings] = useState<PcpCostSettings | null>(null)
   const [summariesMap, setSummariesMap] = useState<
-    Record<string, { summary: CostSummary; automaticCount: number; manualCount: number }>
+    Record<
+      string,
+      {
+        summary: CostSummary
+        automaticCount: number
+        manualCount: number
+        manualLines: CostLine[]
+        automaticMaterial: number
+      }
+    >
   >({})
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -85,6 +150,9 @@ export default function PcpRentabilidadeEspeciais() {
   const [marginSort, setMarginSort] = useState<
     'default' | 'margin_asc' | 'margin_desc' | 'sale_desc' | 'cost_desc'
   >('default')
+
+  // Alternador de visualização: Por OP (padrão) ou consolidado Por Pedido
+  const [viewMode, setViewMode] = useState<'op' | 'order'>('op')
 
   // Modal de Custos da OP
   const [selectedOrderForCost, setSelectedOrderForCost] = useState<PcpOrder | null>(null)
@@ -129,7 +197,13 @@ export default function PcpRentabilidadeEspeciais() {
 
       const map: Record<
         string,
-        { summary: CostSummary; automaticCount: number; manualCount: number }
+        {
+          summary: CostSummary
+          automaticCount: number
+          manualCount: number
+          manualLines: CostLine[]
+          automaticMaterial: number
+        }
       > = {}
       for (const ord of ordersRes) {
         const orderMovs = movementsByOrder[ord.id] || []
@@ -175,6 +249,8 @@ export default function PcpRentabilidadeEspeciais() {
           summary,
           automaticCount: autoLines.length,
           manualCount: manual.length,
+          manualLines: manual,
+          automaticMaterial: autoMatTotal,
         }
       }
 
@@ -216,8 +292,8 @@ export default function PcpRentabilidadeEspeciais() {
     setStartDate(start.toISOString().slice(0, 10))
   }
 
-  // Filtragem
-  const filteredRows = useMemo<OpRowData[]>(() => {
+  // Filtragem base (busca, status, período) — por OP
+  const baseRows = useMemo<OpRowData[]>(() => {
     return orders
       .filter((order) => {
         // Busca textual
@@ -242,14 +318,6 @@ export default function PcpRentabilidadeEspeciais() {
           return false
         }
 
-        // Receita
-        const hasSale =
-          order.sale_price !== null &&
-          order.sale_price !== undefined &&
-          Number(order.sale_price) > 0
-        if (revenueFilter === 'with_revenue' && !hasSale) return false
-        if (revenueFilter === 'without_revenue' && hasSale) return false
-
         // Período (baseado em created ou delivery_date)
         const refDate = (order.delivery_date || order.created || '').slice(0, 10)
         if (startDate && refDate < startDate) return false
@@ -267,42 +335,82 @@ export default function PcpRentabilidadeEspeciais() {
         })
         return {
           order,
+          orders: [order],
+          label: order.op_number ? `OP ${order.op_number}` : `OP #${order.id.slice(0, 5)}`,
           summary: item?.summary || fallbackSummary,
           automaticCount: item?.automaticCount || 0,
           manualCount: item?.manualCount || 0,
+          automaticMaterial: item?.automaticMaterial || 0,
+          manualLines: item?.manualLines || [],
         }
       })
-      .sort((a, b) => {
-        if (marginSort === 'margin_desc') {
-          const m1 = a.summary.contributionMarginPercent ?? -9999
-          const m2 = b.summary.contributionMarginPercent ?? -9999
-          return m2 - m1
-        }
-        if (marginSort === 'margin_asc') {
-          const m1 = a.summary.contributionMarginPercent ?? 9999
-          const m2 = b.summary.contributionMarginPercent ?? 9999
-          return m1 - m2
-        }
-        if (marginSort === 'sale_desc') {
-          return (b.summary.salePrice || 0) - (a.summary.salePrice || 0)
-        }
-        if (marginSort === 'cost_desc') {
-          return (b.summary.directCost || 0) - (a.summary.directCost || 0)
-        }
-        // default: created desc
-        return (b.order.created || '').localeCompare(a.order.created || '')
+  }, [orders, summariesMap, search, statusFilter, startDate, endDate, settings])
+
+  // Visualização: Por OP (padrão) ou consolidada Por Pedido
+  const viewRows = useMemo<OpRowData[]>(() => {
+    const passesRevenueFilter = (hasSale: boolean) => {
+      if (revenueFilter === 'with_revenue') return hasSale
+      if (revenueFilter === 'without_revenue') return !hasSale
+      return true
+    }
+
+    if (viewMode === 'op') {
+      return sortOpRows(
+        baseRows.filter((r) => passesRevenueFilter(r.summary.hasSalePrice)),
+        marginSort,
+      )
+    }
+
+    // Agrupa as OPs Especiais do mesmo order_number numa única linha consolidada
+    const groups = new Map<string, OpRowData[]>()
+    for (const row of baseRows) {
+      const key = row.order.order_number || `__op_${row.order.id}`
+      const list = groups.get(key) || []
+      list.push(row)
+      groups.set(key, list)
+    }
+    // Ordena OPs de cada grupo pela numeração da OP (quando existir)
+    for (const list of groups.values()) {
+      list.sort((a, b) =>
+        (a.order.op_number || a.order.id).localeCompare(b.order.op_number || b.order.id),
+      )
+    }
+
+    const overheadPercent = settings?.overhead_percent || 0
+    const consolidated = Array.from(groups.values()).map((rows) => {
+      const first = rows[0].order
+      const groupOrders = rows.map((r) => r.order)
+      const automaticMaterial = rows.reduce((acc, r) => acc + (r.automaticMaterial || 0), 0)
+      const manualLines = rows.flatMap((r) => r.manualLines)
+      // Receita do pedido = soma dos sale_price das OPs; sem nenhuma receita, fica sinalizado
+      const salePrice = groupOrders.reduce((acc, o) => acc + (Number(o.sale_price) || 0), 0)
+      const summary = summarizeCosts({
+        automaticMaterial,
+        manualLines,
+        salePrice,
+        overheadPercent,
       })
-  }, [
-    orders,
-    summariesMap,
-    search,
-    statusFilter,
-    revenueFilter,
-    startDate,
-    endDate,
-    marginSort,
-    settings,
-  ])
+      return {
+        order: first,
+        orders: groupOrders,
+        label: first.order_number
+          ? `Pedido ${first.order_number} · ${
+              first.client_name || first.expand?.client_id?.name || '-'
+            } · ${groupOrders.length} OP${groupOrders.length > 1 ? 's' : ''}`
+          : 'Pedido —',
+        summary,
+        automaticCount: rows.reduce((acc, r) => acc + r.automaticCount, 0),
+        manualCount: rows.reduce((acc, r) => acc + r.manualCount, 0),
+        automaticMaterial,
+        manualLines,
+      }
+    })
+
+    return sortOpRows(
+      consolidated.filter((r) => passesRevenueFilter(r.summary.hasSalePrice)),
+      marginSort,
+    )
+  }, [baseRows, viewMode, revenueFilter, marginSort, settings])
 
   // KPIs agregados
   const kpis = useMemo(() => {
@@ -322,9 +430,9 @@ export default function PcpRentabilidadeEspeciais() {
     let marginGrossSum = 0
 
     // Top e piores margens (entre as que possuem receita lançada)
-    const withRevenueRows = filteredRows.filter((r) => r.summary.hasSalePrice)
+    const withRevenueRows = viewRows.filter((r) => r.summary.hasSalePrice)
 
-    for (const row of filteredRows) {
+    for (const row of viewRows) {
       const s = row.summary
       if (s.hasSalePrice) {
         totalRevenue += s.salePrice
@@ -374,7 +482,7 @@ export default function PcpRentabilidadeEspeciais() {
       sortedByMargin.length > 0 ? sortedByMargin[sortedByMargin.length - 1] : null
 
     return {
-      totalOps: filteredRows.length,
+      totalOps: viewRows.length,
       opsWithRevenueCount,
       opsWithoutRevenueCount,
       totalRevenue,
@@ -391,7 +499,9 @@ export default function PcpRentabilidadeEspeciais() {
       bestMarginOp,
       worstMarginOp,
     }
-  }, [filteredRows])
+  }, [viewRows])
+
+  const entityPlural = viewMode === 'op' ? 'OPs' : 'pedidos'
 
   const handleOpenCostsModal = (order: PcpOrder) => {
     setSelectedOrderForCost(order)
@@ -445,8 +555,8 @@ export default function PcpRentabilidadeEspeciais() {
           <div className="flex items-center gap-2.5">
             <AlertTriangle className="size-5 text-amber-600 dark:text-amber-400 shrink-0" />
             <span>
-              <strong>Atenção:</strong> Existem <strong>{kpis.opsWithoutRevenueCount}</strong> OP(s)
-              Especiais sem valor de venda lançado. Elas foram excluídas do cálculo das margens
+              <strong>Atenção:</strong> Existem <strong>{kpis.opsWithoutRevenueCount}</strong>{' '}
+              {entityPlural} sem valor de venda lançado. Foram excluídos do cálculo das margens
               médias para não distorcer o resultado financeiro.
             </span>
           </div>
@@ -477,7 +587,7 @@ export default function PcpRentabilidadeEspeciais() {
             </CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground pt-0">
-            {kpis.opsWithRevenueCount} de {kpis.totalOps} OPs com preço cadastrado
+            {kpis.opsWithRevenueCount} de {kpis.totalOps} {entityPlural} com preço cadastrado
           </CardContent>
         </Card>
 
@@ -531,7 +641,7 @@ export default function PcpRentabilidadeEspeciais() {
               {kpis.bestMarginOp ? (
                 <span className="text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
                   <TrendingUp className="size-3.5 inline" />
-                  OP {kpis.bestMarginOp.order.op_number || kpis.bestMarginOp.order.order_number}:{' '}
+                  {kpis.bestMarginOp.label}:{' '}
                   {fmtPct(kpis.bestMarginOp.summary.contributionMarginPercent)}
                 </span>
               ) : (
@@ -543,7 +653,7 @@ export default function PcpRentabilidadeEspeciais() {
             {kpis.worstMarginOp && kpis.worstMarginOp !== kpis.bestMarginOp ? (
               <span className="text-rose-700 dark:text-rose-400 flex items-center gap-1">
                 <TrendingDown className="size-3.5 inline" />
-                OP {kpis.worstMarginOp.order.op_number || kpis.worstMarginOp.order.order_number}:{' '}
+                {kpis.worstMarginOp.label}:{' '}
                 {fmtPct(kpis.worstMarginOp.summary.contributionMarginPercent)}
               </span>
             ) : (
@@ -556,6 +666,28 @@ export default function PcpRentabilidadeEspeciais() {
       {/* Barra de Filtros e Busca */}
       <Card className="shadow-sm">
         <CardContent className="p-4 space-y-3">
+          {/* Alternador de visualização */}
+          <div className="flex flex-wrap items-center gap-3 pb-2 border-b">
+            <span className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
+              <Layers className="size-3.5" />
+              Visualização
+            </span>
+            <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as 'op' | 'order')}>
+              <TabsList>
+                <TabsTrigger value="op" className="text-xs px-3">
+                  Por OP
+                </TabsTrigger>
+                <TabsTrigger value="order" className="text-xs px-3">
+                  Por Pedido
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <span className="text-[11px] text-muted-foreground">
+              {viewMode === 'op'
+                ? 'Uma linha por OP Especial'
+                : 'OPs do mesmo pedido consolidadas em uma linha'}
+            </span>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 items-end">
             {/* Busca */}
             <div className="space-y-1 sm:col-span-2">
@@ -706,10 +838,14 @@ export default function PcpRentabilidadeEspeciais() {
           <div>
             <CardTitle className="text-base font-bold flex items-center gap-2">
               <FileSpreadsheet className="size-4 text-emerald-600" />
-              Detalhamento de Custos e Margens por Ordem de Produção
+              {viewMode === 'op'
+                ? 'Detalhamento de Custos e Margens por Ordem de Produção'
+                : 'Detalhamento de Custos e Margens por Pedido (consolidado)'}
             </CardTitle>
             <CardDescription className="text-xs">
-              Exibindo {filteredRows.length} de {orders.length} OPs Especiais
+              {viewMode === 'op'
+                ? `Exibindo ${viewRows.length} de ${orders.length} OPs Especiais`
+                : `Exibindo ${viewRows.length} pedido(s) cobrindo ${viewRows.reduce((acc, r) => acc + r.orders.length, 0)} de ${orders.length} OPs Especiais`}
             </CardDescription>
           </div>
         </CardHeader>
@@ -718,8 +854,12 @@ export default function PcpRentabilidadeEspeciais() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-50">
-                  <TableHead className="w-[120px]">OP / Pedido</TableHead>
-                  <TableHead className="min-w-[180px]">Cliente / Produto</TableHead>
+                  <TableHead className="w-[120px]">
+                    {viewMode === 'op' ? 'OP / Pedido' : 'Pedido / OPs'}
+                  </TableHead>
+                  <TableHead className="min-w-[180px]">
+                    {viewMode === 'op' ? 'Cliente / Produto' : 'Cliente / Produtos'}
+                  </TableHead>
                   <TableHead className="w-[100px] text-center">Status</TableHead>
                   <TableHead className="w-[120px] text-right">Receita (Venda)</TableHead>
                   <TableHead className="w-[110px] text-right">Material</TableHead>
@@ -741,16 +881,19 @@ export default function PcpRentabilidadeEspeciais() {
                       Carregando dados financeiros e custos das OPs...
                     </TableCell>
                   </TableRow>
-                ) : filteredRows.length === 0 ? (
+                ) : viewRows.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={12} className="h-32 text-center text-muted-foreground">
                       Nenhuma Ordem de Produção Especial encontrada com os filtros selecionados.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredRows.map(({ order, summary, automaticCount, manualCount }) => {
+                  viewRows.map(({ order, orders, label, summary, automaticCount, manualCount }) => {
                     const client = order.client_name || order.expand?.client_id?.name || '-'
-                    const product = order.manual_product_name || '-'
+                    const productNames = Array.from(
+                      new Set(orders.map((o) => o.manual_product_name).filter(Boolean)),
+                    )
+                    const product = productNames.join(' · ') || '-'
                     const otherCosts =
                       (summary.manualByCategory['Insumo'] || 0) +
                       (summary.manualByCategory['Impostos'] || 0) +
@@ -761,19 +904,37 @@ export default function PcpRentabilidadeEspeciais() {
 
                     return (
                       <TableRow
-                        key={order.id}
+                        key={orders.map((o) => o.id).join('-')}
                         className="hover:bg-slate-50 dark:hover:bg-slate-900/60 transition-colors"
                       >
                         {/* OP / Pedido */}
                         <TableCell className="font-medium">
-                          <div className="font-semibold text-xs text-foreground">
-                            {order.op_number
-                              ? `OP ${order.op_number}`
-                              : `OP #${order.id.slice(0, 5)}`}
-                          </div>
-                          <div className="text-[11px] text-muted-foreground">
-                            Ped: {order.order_number || '-'}
-                          </div>
+                          {viewMode === 'op' ? (
+                            <>
+                              <div className="font-semibold text-xs text-foreground">
+                                {order.op_number
+                                  ? `OP ${order.op_number}`
+                                  : `OP #${order.id.slice(0, 5)}`}
+                              </div>
+                              <div className="text-[11px] text-muted-foreground">
+                                Ped: {order.order_number || '-'}
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="font-semibold text-xs text-foreground">{label}</div>
+                              <div
+                                className="text-[11px] text-muted-foreground truncate max-w-[150px]"
+                                title={orders
+                                  .map((o) =>
+                                    o.op_number ? `OP ${o.op_number}` : `#${o.id.slice(0, 5)}`,
+                                  )
+                                  .join(', ')}
+                              >
+                                {orders.length} OP(s)
+                              </div>
+                            </>
+                          )}
                         </TableCell>
 
                         {/* Cliente / Produto */}
@@ -791,7 +952,12 @@ export default function PcpRentabilidadeEspeciais() {
                             <NoTranslate>{product}</NoTranslate>
                           </div>
                           <div className="text-[10px] text-muted-foreground flex items-center gap-1.5 mt-0.5">
-                            <span>Qtd: {order.quantity || 1}</span>
+                            <span>
+                              Qtd:{' '}
+                              {viewMode === 'op'
+                                ? order.quantity || 1
+                                : orders.reduce((acc, o) => acc + (o.quantity || 0), 0)}
+                            </span>
                             {automaticCount > 0 && (
                               <span className="text-blue-600 dark:text-blue-400">
                                 • {automaticCount} mat. autom.
@@ -807,20 +973,26 @@ export default function PcpRentabilidadeEspeciais() {
 
                         {/* Status */}
                         <TableCell className="text-center">
-                          <Badge
-                            variant={
-                              order.status === 'Concluído'
-                                ? 'default'
-                                : order.status === 'Em Andamento'
-                                  ? 'secondary'
-                                  : order.status === 'Parado'
-                                    ? 'destructive'
-                                    : 'outline'
+                          {(() => {
+                            const statuses = Array.from(
+                              new Set(orders.map((o) => o.status).filter(Boolean)),
+                            )
+                            if (viewMode === 'op' || statuses.length <= 1) {
+                              return (
+                                <Badge
+                                  variant={statusBadgeVariant(statuses[0] || order.status)}
+                                  className="text-[10px] px-1.5 py-0"
+                                >
+                                  {statuses[0] || order.status}
+                                </Badge>
+                              )
                             }
-                            className="text-[10px] px-1.5 py-0"
-                          >
-                            {order.status}
-                          </Badge>
+                            return (
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                                {statuses.length} status
+                              </Badge>
+                            )
+                          })()}
                         </TableCell>
 
                         {/* Receita (Venda) */}
@@ -937,15 +1109,42 @@ export default function PcpRentabilidadeEspeciais() {
 
                         {/* Ações */}
                         <TableCell className="text-center">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-7 text-xs px-2 gap-1 border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
-                            onClick={() => handleOpenCostsModal(order)}
-                          >
-                            <DollarSign className="size-3.5" />
-                            Custos da OP
-                          </Button>
+                          {viewMode === 'op' ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs px-2 gap-1 border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+                              onClick={() => handleOpenCostsModal(order)}
+                            >
+                              <DollarSign className="size-3.5" />
+                              Custos da OP
+                            </Button>
+                          ) : (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 text-xs px-2 gap-1"
+                                >
+                                  <Users className="size-3.5" />
+                                  {orders.length} OPs
+                                  <ChevronDown className="size-3" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="max-h-64 overflow-y-auto">
+                                {orders.map((o) => (
+                                  <DropdownMenuItem
+                                    key={o.id}
+                                    onClick={() => handleOpenCostsModal(o)}
+                                  >
+                                    <DollarSign className="size-3.5" />
+                                    Custos da OP {o.op_number || `#${o.id.slice(0, 5)}`}
+                                  </DropdownMenuItem>
+                                ))}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
                         </TableCell>
                       </TableRow>
                     )
@@ -957,10 +1156,10 @@ export default function PcpRentabilidadeEspeciais() {
         </CardContent>
 
         {/* Rodapé com Totais Consolidados */}
-        {filteredRows.length > 0 && (
+        {viewRows.length > 0 && (
           <div className="p-4 bg-slate-100/70 dark:bg-slate-900/90 border-t flex flex-wrap items-center justify-between gap-4 text-xs">
             <div className="font-semibold text-slate-700 dark:text-slate-300">
-              Totais Consolidados ({filteredRows.length} OPs):
+              Totais Consolidados ({viewRows.length} {entityPlural}):
             </div>
             <div className="flex flex-wrap items-center gap-6">
               <div>

@@ -68,6 +68,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { NoTranslate } from '@/components/NoTranslate'
 import { PcpOrderNotesSection } from './components/PcpOrderNotesSection'
 import { DeadlineOrdersModal } from './components/DeadlineOrdersModal'
+import { PcpOrderCostsModal } from './components/PcpOrderCostsModal'
+import { DollarSign } from 'lucide-react'
 
 const MACRO_GROUPS = [
   {
@@ -1609,11 +1611,21 @@ export default function PcpKanban() {
           <DialogHeader className="shrink-0">
             <DialogTitle>Detalhes da OP</DialogTitle>
           </DialogHeader>
-          {selectedOrder?.stage === 'Expedição' && (
-            <div className="shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
+            {selectedOrder?.op_type === 'Especial' && (
+              <Button
+                variant="outline"
+                className="border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 gap-1.5 text-xs font-semibold"
+                onClick={() => setCostsModalOpen(true)}
+              >
+                <DollarSign className="size-4 text-emerald-600" />
+                Custos da OP
+              </Button>
+            )}
+            {selectedOrder?.stage === 'Expedição' && (
               <Button
                 variant="default"
-                className="bg-teal-600 hover:bg-teal-700 text-white gap-2 w-fit"
+                className="bg-teal-600 hover:bg-teal-700 text-white gap-2 w-fit text-xs"
                 onClick={() => {
                   setExpeditionOrderNumber(selectedOrder.order_number)
                   setSelectedOrder(null)
@@ -1623,8 +1635,8 @@ export default function PcpKanban() {
                 <Truck className="size-4" />
                 Registrar Expedição
               </Button>
-            </div>
-          )}
+            )}
+          </div>
           {selectedOrder && (
             <Tabs defaultValue="detalhes" className="flex-1 flex flex-col min-h-0 overflow-hidden">
               <TabsList className="grid w-full grid-cols-4 shrink-0">
@@ -2129,6 +2141,19 @@ export default function PcpKanban() {
         orders={filteredOrders}
         onSelectOrder={(order) => setSelectedOrder(order)}
       />
+      {selectedOrder && selectedOrder.op_type === 'Especial' && (
+        <PcpOrderCostsModal
+          order={selectedOrder}
+          open={costsModalOpen}
+          onOpenChange={setCostsModalOpen}
+          onOrderUpdated={(updated) => {
+            setSelectedOrder(updated as any)
+            setOrdersOptimistic((prev) =>
+              prev.map((o) => (o.id === updated.id ? { ...o, ...(updated as any) } : o)),
+            )
+          }}
+        />
+      )}
       {selectedOrder && (
         <PromisedDateModal
           open={promisedModalOpen}

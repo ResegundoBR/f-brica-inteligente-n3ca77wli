@@ -61,7 +61,7 @@ export function buildAutomaticMaterialCosts(
   )
   if (relevant.length === 0) return []
 
-  const totalQty = relevant.reduce((acc, m) => acc + Number(m.quantity) || 0, 0)
+  const totalQty = relevant.reduce((acc, m) => acc + (Number(m.quantity) || 0), 0)
   const totalFreight = relevant.reduce((acc, m) => acc + (Number(m.freight) || 0), 0)
 
   return relevant
@@ -117,6 +117,32 @@ export function buildAutomaticMaterialCosts(
     )
 }
 
+/** Busca os movimentos automáticos vinculados à OP diretamente da API */
+export async function fetchAutomaticMaterialCosts(orderId: string): Promise<CostLine[]> {
+  try {
+    const movements = await pb.collection('inventory_movements').getFullList<InventoryMovement>({
+      filter: `order_id="${orderId}" && type="Entrada"`,
+      expand: 'inventory_id',
+      sort: 'created',
+    })
+    return buildAutomaticMaterialCosts(movements, orderId)
+  } catch (err) {
+    console.error('Erro ao buscar custos automáticos de material:', err)
+    return []
+  }
+}
+
+/** Atualiza dados de venda e taxa de hora da OP */
+export async function updateOrderFinancialData(
+  orderId: string,
+  data: { sale_price?: number | null; labor_hour_rate?: number | null },
+) {
+  return pb.collection('pcp_orders').update(orderId, {
+    sale_price: data.sale_price ?? null,
+    labor_hour_rate: data.labor_hour_rate ?? null,
+  })
+}
+
 export async function listOrderCosts(orderId: string): Promise<PcpOrderCost[]> {
   return pb.collection('pcp_order_costs').getFullList<PcpOrderCost>({
     filter: `order_id="${orderId}"`,
@@ -158,12 +184,17 @@ export interface CostSummary {
   materialTotal: number
   otherCategoriesTotal: number
   directCost: number
+  overheadPercent: number
+  overheadValue: number
   fullCost: number // direto + overhead
   salePrice: number
   hasSalePrice: boolean
+  contributionMarginValue: number | null
   contributionMarginPercent: number | null
   markup: number | null
+  grossMarginValue: number | null
   grossMarginPercent: number | null
+  netMarginValue: number | null
   netMarginPercent: number | null
 }
 
@@ -186,7 +217,9 @@ export function summarizeCosts(options: {
 
   const manualByCategory = emptyByCategory()
   for (const line of manualLines) {
-    manualByCategory[line.category] += line.total || 0
+    if (manualByCategory[line.category] !== undefined) {
+      manualByCategory[line.category] += Number(line.total) || 0
+    }
   }
 
   const materialManual = manualByCategory['Material'] || 0
@@ -204,6 +237,17 @@ export function summarizeCosts(options: {
 
   const pct = (value: number) => (Number.isFinite(value) ? value : null)
 
+  const contributionMarginValue = hasSalePrice ? price - directCost : null
+  const contributionMarginPercent =
+    hasSalePrice && price > 0 ? pct(((price - directCost) / price) * 100) : null
+  const markup = directCost > 0 && hasSalePrice ? pct(price / directCost) : null
+  const grossMarginValue = hasSalePrice ? price - materialTotal : null
+  const grossMarginPercent =
+    hasSalePrice && price > 0 ? pct(((price - materialTotal) / price) * 100) : null
+  const netMarginValue = hasSalePrice ? price - fullCost : null
+  const netMarginPercent =
+    hasSalePrice && price > 0 ? pct(((price - fullCost) / price) * 100) : null
+
   return {
     automaticMaterial,
     manualByCategory,
@@ -211,13 +255,18 @@ export function summarizeCosts(options: {
     materialTotal,
     otherCategoriesTotal,
     directCost,
+    overheadPercent,
+    overheadValue,
     fullCost,
     salePrice: price,
     hasSalePrice,
-    contributionMarginPercent: hasSalePrice ? pct(((price - directCost) / price) * 100) : null,
-    markup: directCost > 0 && hasSalePrice ? pct(price / directCost) : null,
-    grossMarginPercent: hasSalePrice ? pct(((price - materialTotal) / price) * 100) : null,
-    netMarginPercent: hasSalePrice ? pct(((price - fullCost) / price) * 100) : null,
+    contributionMarginValue,
+    contributionMarginPercent,
+    markup,
+    grossMarginValue,
+    grossMarginPercent,
+    netMarginValue,
+    netMarginPercent,
   }
 }
 

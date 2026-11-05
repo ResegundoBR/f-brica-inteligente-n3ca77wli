@@ -18,7 +18,9 @@ import {
   Truck,
   Calendar,
   MessageSquare,
+  DollarSign,
 } from 'lucide-react'
+import { PcpOrderCostsModal } from './PcpOrderCostsModal'
 import { Badge } from '@/components/ui/badge'
 import pb from '@/lib/pocketbase/client'
 import { cn } from '@/lib/utils'
@@ -56,6 +58,7 @@ export function PcpOrderDetails({
   const [logs, setLogs] = useState<any[]>([])
   const [deliveries, setDeliveries] = useState<PcpOrderDelivery[]>([])
   const [promisedModalOpen, setPromisedModalOpen] = useState(false)
+  const [costsModalOpen, setCostsModalOpen] = useState(false)
   const [isEmergencyContext, setIsEmergencyContext] = useState(false)
   const { user } = useAuth()
   const { toast } = useToast()
@@ -197,6 +200,17 @@ export function PcpOrderDetails({
                 >
                   <MessageSquare className="size-4" />
                   Central de Comunicação da OP
+                </Button>
+              )}
+              {op.op_type === 'Especial' && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full gap-2 border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 font-semibold shadow-xs"
+                  onClick={() => setCostsModalOpen(true)}
+                >
+                  <DollarSign className="size-4 text-emerald-600" />
+                  Custos e Rentabilidade da OP Especial
                 </Button>
               )}
               {isAdmin && (
@@ -622,6 +636,16 @@ export function PcpOrderDetails({
           opIdentifier={op.op_number ? `OP ${op.op_number}` : `Pedido #${op.order_number}`}
           isEmergencyContext={isEmergencyContext}
           onConfirm={handlePromisedConfirm}
+        />
+      )}
+      {op && op.op_type === 'Especial' && (
+        <PcpOrderCostsModal
+          order={op}
+          open={costsModalOpen}
+          onOpenChange={setCostsModalOpen}
+          onOrderUpdated={(updated) => {
+            onOrderUpdated?.(updated)
+          }}
         />
       )}
     </Sheet>

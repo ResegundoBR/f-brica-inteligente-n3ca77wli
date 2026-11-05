@@ -1,5 +1,11 @@
 import pb from '@/lib/pocketbase/client'
-import { InventoryMovement, OrderCostCategory, PcpCostSettings, PcpOrderCost } from '@/types'
+import {
+  InventoryMovement,
+  OrderCostCategory,
+  PcpCostCategory,
+  PcpCostSettings,
+  PcpOrderCost,
+} from '@/types'
 
 export const ORDER_COST_CATEGORIES: OrderCostCategory[] = [
   'Material',
@@ -13,9 +19,80 @@ export const ORDER_COST_CATEGORIES: OrderCostCategory[] = [
   'Outros',
 ]
 
+/**
+ * Normaliza string para comparação sem acento e case-insensitive
+ */
+export function normalizeCategoryName(name: string): string {
+  return name
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+}
+
+/**
+ * Lista categorias ativas de pcp_cost_categories ordenadas por sort_order, name
+ */
+export async function listCostCategories(onlyActive = true): Promise<PcpCostCategory[]> {
+  try {
+    return await pb.collection('pcp_cost_categories').getFullList<PcpCostCategory>({
+      filter: onlyActive ? 'active = true' : '',
+      sort: 'sort_order,name',
+    })
+  } catch (err) {
+    console.error('Erro ao listar categorias de custo:', err)
+    // Fallback gracioso para as 9 fixas se a coleção falhar
+    return ORDER_COST_CATEGORIES.map((name, i) => ({
+      id: `fallback-${i}`,
+      name,
+      sort_order: i + 1,
+      active: true,
+      created: '',
+      updated: '',
+    }))
+  }
+}
+
+/**
+ * Cria ou retorna categoria existente (verificando duplicidade case-insensitive/sem acento).
+ * Retorna { category, existed: boolean }
+ */
+export async function findOrCreateCostCategory(
+  rawName: string,
+): Promise<{ category: PcpCostCategory; existed: boolean }> {
+  const trimmed = rawName.trim()
+  if (!trimmed) {
+    throw new Error('O nome da categoria não pode estar em branco.')
+  }
+
+  const normalizedInput = normalizeCategoryName(trimmed)
+
+  // Busca todas as categorias existentes
+  const all = await pb.collection('pcp_cost_categories').getFullList<PcpCostCategory>({
+    sort: 'sort_order,name',
+  })
+
+  const existing = all.find((c) => normalizeCategoryName(c.name) === normalizedInput)
+  if (existing) {
+    return { category: existing, existed: true }
+  }
+
+  // Descobre o próximo sort_order
+  const maxSort = all.reduce((acc, c) => Math.max(acc, c.sort_order || 0), 0)
+
+  const created = await pb.collection('pcp_cost_categories').create<PcpCostCategory>({
+    name: trimmed,
+    sort_order: maxSort + 1,
+    active: true,
+  })
+
+  return { category: created, existed: false }
+}
+
 export interface CostLine {
   id: string
-  category: OrderCostCategory
+  category: string
+  categoryId?: string
   description: string
   quantity: number
   unitCost: number
@@ -79,7 +156,7 @@ export function buildAutomaticMaterialCosts(
         .filter(Boolean)
       return {
         id: `auto-${m.id}`,
-        category: 'Material' as OrderCostCategory,
+        category: 'Material',
         description: descParts.join(' ') || 'Material comprado',
         quantity: qty,
         unitCost: qty > 0 ? total / qty : total,
@@ -103,7 +180,7 @@ export function buildAutomaticMaterialCosts(
         return [
           {
             id: `auto-freight-adjust-${first.id}`,
-            category: 'Material' as OrderCostCategory,
+            category: 'Material',
             description: `Ajuste de rateio de frete${inv?.code ? ` [${inv.code}]` : ''}`,
             quantity: 0,
             unitCost: 0,
@@ -147,7 +224,7 @@ export async function listOrderCosts(orderId: string): Promise<PcpOrderCost[]> {
   return pb.collection('pcp_order_costs').getFullList<PcpOrderCost>({
     filter: `order_id="${orderId}"`,
     sort: '-created',
-    expand: 'created_by',
+    expand: 'created_by,category_id',
   })
 }
 
@@ -156,13 +233,14 @@ export async function listOrderCostsByOrderNumber(orderNumber: string): Promise<
   return pb.collection('pcp_order_costs').getFullList<PcpOrderCost>({
     filter: `order_number="${orderNumber}" && order_id=""`,
     sort: '-created',
-    expand: 'created_by',
+    expand: 'created_by,category_id',
   })
 }
 
 export async function createOrderCost(
   data: Omit<Partial<PcpOrderCost>, 'order_id'> & {
-    category: OrderCostCategory
+    category: string
+    category_id?: string
     order_id?: string
     order_number?: string
   },
@@ -173,11 +251,15 @@ export async function createOrderCost(
     created_by: pb.authStore.isValid ? pb.authStore.record?.id : undefined,
   }
   if (!data.order_id) payload.order_id = ''
-  return pb.collection('pcp_order_costs').create<PcpOrderCost>(payload)
+  return pb.collection('pcp_order_costs').create<PcpOrderCost>(payload, {
+    expand: 'created_by,category_id',
+  })
 }
 
 export async function updateOrderCost(id: string, data: Partial<PcpOrderCost>) {
-  return pb.collection('pcp_order_costs').update<PcpOrderCost>(id, data)
+  return pb.collection('pcp_order_costs').update<PcpOrderCost>(id, data, {
+    expand: 'created_by,category_id',
+  })
 }
 
 export async function deleteOrderCost(id: string) {
@@ -187,13 +269,13 @@ export async function deleteOrderCost(id: string) {
 export async function getAllOrderCosts(): Promise<PcpOrderCost[]> {
   return pb.collection('pcp_order_costs').getFullList<PcpOrderCost>({
     sort: '-created',
-    expand: 'created_by,order_id',
+    expand: 'created_by,order_id,category_id',
   })
 }
 
 export interface CostSummary {
   automaticMaterial: number
-  manualByCategory: Record<OrderCostCategory, number>
+  manualByCategory: Record<string, number>
   materialManual: number
   materialTotal: number
   otherCategoriesTotal: number
@@ -212,13 +294,13 @@ export interface CostSummary {
   netMarginPercent: number | null
 }
 
-const emptyByCategory = (): Record<OrderCostCategory, number> =>
+const emptyByCategory = (): Record<string, number> =>
   ORDER_COST_CATEGORIES.reduce(
     (acc, c) => {
       acc[c] = 0
       return acc
     },
-    {} as Record<OrderCostCategory, number>,
+    {} as Record<string, number>,
   )
 
 export function summarizeCosts(options: {
@@ -229,19 +311,23 @@ export function summarizeCosts(options: {
 }): CostSummary {
   const { automaticMaterial, manualLines, salePrice, overheadPercent = 0 } = options
 
-  const manualByCategory = emptyByCategory()
+  const manualByCategory: Record<string, number> = emptyByCategory()
   for (const line of manualLines) {
-    if (manualByCategory[line.category] !== undefined) {
-      manualByCategory[line.category] += Number(line.total) || 0
-    }
+    const cat = line.category || 'Outros'
+    manualByCategory[cat] = (manualByCategory[cat] || 0) + (Number(line.total) || 0)
   }
 
   const materialManual = manualByCategory['Material'] || 0
   const materialTotal = automaticMaterial + materialManual
-  const otherCategoriesTotal = ORDER_COST_CATEGORIES.filter((c) => c !== 'Material').reduce(
-    (acc, c) => acc + (manualByCategory[c] || 0),
-    0,
-  )
+
+  // Categorias que não são Material (inclui todas as 8 fixas + quaisquer novas dinâmicas)
+  let otherCategoriesTotal = 0
+  for (const [cat, val] of Object.entries(manualByCategory)) {
+    if (cat !== 'Material') {
+      otherCategoriesTotal += val || 0
+    }
+  }
+
   const directCost = materialTotal + otherCategoriesTotal
   const overheadValue = directCost * (overheadPercent / 100)
   const fullCost = directCost + overheadValue

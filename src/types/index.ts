@@ -639,6 +639,7 @@ export interface PcpOrderCost {
   expand?: {
     order_id?: PcpOrder
     created_by?: User
+    category_id?: PcpCostCategory
   }
 }
 

@@ -28,9 +28,8 @@ import {
 } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useToast } from '@/hooks/use-toast'
-import { PcpOrder, OrderCostCategory, PcpOrderCost, PcpCostSettings } from '@/types'
+import { PcpOrder, PcpCostCategory, PcpOrderCost, PcpCostSettings } from '@/types'
 import {
-  ORDER_COST_CATEGORIES,
   CostLine,
   fetchAutomaticMaterialCosts,
   listOrderCosts,
@@ -38,11 +37,13 @@ import {
   updateOrderCost,
   deleteOrderCost,
   getCostSettings,
+  listCostCategories,
   updateOrderFinancialData,
   summarizeCosts,
   fmtBRL,
   fmtPct,
 } from '@/services/order-costs'
+import { NewCostCategoryDialog } from './NewCostCategoryDialog'
 import {
   DollarSign,
   Plus,
@@ -77,6 +78,7 @@ export function PcpOrderCostsModal({
 
   const [loading, setLoading] = useState(false)
   const [costSettings, setCostSettings] = useState<PcpCostSettings | null>(null)
+  const [categoriesList, setCategoriesList] = useState<PcpCostCategory[]>([])
   const [automaticLines, setAutomaticLines] = useState<CostLine[]>([])
   const [manualList, setManualList] = useState<PcpOrderCost[]>([])
 
@@ -87,7 +89,8 @@ export function PcpOrderCostsModal({
 
   // Formulário de nova linha / edição
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [formCategory, setFormCategory] = useState<OrderCostCategory>('Material')
+  const [formCategory, setFormCategory] = useState<string>('Material')
+  const [formCategoryId, setFormCategoryId] = useState<string>('')
   const [formDescription, setFormDescription] = useState('')
   const [formQuantity, setFormQuantity] = useState<string>('1')
   const [formUnitCost, setFormUnitCost] = useState<string>('')
@@ -96,19 +99,30 @@ export function PcpOrderCostsModal({
   const [formNotes, setFormNotes] = useState<string>('')
   const [isSubmittingLine, setIsSubmittingLine] = useState(false)
 
-  // Carrega configurações, automáticos e manuais
+  // Diálogo de nova categoria
+  const [newCatDialogOpen, setNewCatDialogOpen] = useState(false)
+
+  // Carrega configurações, automáticos, categorias e manuais
   const loadData = useCallback(async () => {
     if (!order || !open) return
     setLoading(true)
     try {
-      const [settings, autoCosts, manualCosts] = await Promise.all([
+      const [settings, autoCosts, manualCosts, cats] = await Promise.all([
         getCostSettings(),
         fetchAutomaticMaterialCosts(order.id),
         listOrderCosts(order.id),
+        listCostCategories(),
       ])
       setCostSettings(settings)
       setAutomaticLines(autoCosts)
       setManualList(manualCosts)
+      setCategoriesList(cats)
+
+      // Se a categoria selecionada não tiver category_id ainda, busca nas categorias
+      const foundCat = cats.find((c) => c.name === 'Material')
+      if (foundCat) {
+        setFormCategoryId(foundCat.id)
+      }
       setSalePriceInput(
         order.sale_price !== null && order.sale_price !== undefined ? String(order.sale_price) : '',
       )
@@ -168,7 +182,9 @@ export function PcpOrderCostsModal({
 
   const resetForm = () => {
     setEditingId(null)
+    const matCat = categoriesList.find((c) => c.name === 'Material')
     setFormCategory('Material')
+    setFormCategoryId(matCat ? matCat.id : '')
     setFormDescription('')
     setFormQuantity('1')
     setFormUnitCost('')
@@ -180,13 +196,31 @@ export function PcpOrderCostsModal({
   // Prepara edição
   const startEdit = (cost: PcpOrderCost) => {
     setEditingId(cost.id)
-    setFormCategory(cost.category)
+    const effectiveCategoryName = cost.expand?.category_id?.name || cost.category || 'Outros'
+    setFormCategory(effectiveCategoryName)
+    setFormCategoryId(cost.category_id || '')
     setFormDescription(cost.description || '')
     setFormQuantity(cost.quantity !== undefined ? String(cost.quantity) : '1')
     setFormUnitCost(cost.unit_cost !== undefined ? String(cost.unit_cost) : '')
     setFormTotal(cost.total !== undefined ? String(cost.total) : '')
     setFormDate(cost.date ? cost.date.slice(0, 10) : '')
     setFormNotes(cost.notes || '')
+  }
+
+  const handleSelectCategory = (catName: string) => {
+    setFormCategory(catName)
+    const found = categoriesList.find((c) => c.name === catName)
+    setFormCategoryId(found ? found.id : '')
+  }
+
+  const handleCategoryCreated = (newCat: PcpCostCategory) => {
+    setCategoriesList((prev) => {
+      const exists = prev.some((c) => c.id === newCat.id)
+      if (exists) return prev
+      return [...prev, newCat].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+    })
+    setFormCategory(newCat.name)
+    setFormCategoryId(newCat.id)
   }
 
   // Salvar linha (criação ou edição)
@@ -208,9 +242,17 @@ export function PcpOrderCostsModal({
       const qty = parseFloat(formQuantity) || 1
       const unit = parseFloat(formUnitCost) || (qty > 0 ? totalVal / qty : totalVal)
 
+      // Garante category_id preenchido caso exista no categoriesList
+      let catId = formCategoryId
+      if (!catId) {
+        const match = categoriesList.find((c) => c.name === formCategory)
+        if (match) catId = match.id
+      }
+
       if (editingId) {
         const updated = await updateOrderCost(editingId, {
           category: formCategory,
+          category_id: catId || undefined,
           description: formDescription,
           quantity: qty,
           unit_cost: unit,
@@ -224,6 +266,7 @@ export function PcpOrderCostsModal({
         const created = await createOrderCost({
           order_id: order.id,
           category: formCategory,
+          category_id: catId || undefined,
           description: formDescription,
           quantity: qty,
           unit_cost: unit,
@@ -315,7 +358,9 @@ export function PcpOrderCostsModal({
       }
     }
 
+    const laborCat = categoriesList.find((c) => c.name === 'Mão de Obra')
     setFormCategory('Mão de Obra')
+    setFormCategoryId(laborCat ? laborCat.id : '')
     setFormDescription(
       totalHours > 0
         ? `Mão de Obra estimada dos processos (${totalHours}h)`
@@ -331,10 +376,12 @@ export function PcpOrderCostsModal({
   const handlePrefillOutsourcing = () => {
     const od = order?.outsourcing_data
     const items = Array.isArray(od) ? od : Array.isArray(od?.services) ? od.services : []
+    const outCat = categoriesList.find((c) => c.name === 'Terceirização')
 
     if (items.length > 0) {
       const item = items[0]
       setFormCategory('Terceirização')
+      setFormCategoryId(outCat ? outCat.id : '')
       setFormDescription(
         item.service
           ? `${item.service} (${item.supplier || 'Fornecedor'})`
@@ -346,6 +393,7 @@ export function PcpOrderCostsModal({
       setFormNotes(item.expected_date ? `Previsão: ${item.expected_date}` : '')
     } else {
       setFormCategory('Terceirização')
+      setFormCategoryId(outCat ? outCat.id : '')
       setFormDescription('Serviço de Terceirização')
       setFormQuantity('1')
       setFormUnitCost('')
@@ -356,17 +404,21 @@ export function PcpOrderCostsModal({
   // Cálculo consolidado de margens
   const summary = useMemo(() => {
     const autoMaterialTotal = automaticLines.reduce((acc, l) => acc + (l.total || 0), 0)
-    const manualLines: CostLine[] = manualList.map((m) => ({
-      id: m.id,
-      category: m.category,
-      description: m.description || '',
-      quantity: m.quantity || 1,
-      unitCost: m.unit_cost || 0,
-      total: m.total || 0,
-      source: 'Manual',
-      date: m.date,
-      notes: m.notes,
-    }))
+    const manualLines: CostLine[] = manualList.map((m) => {
+      const categoryName = m.expand?.category_id?.name || m.category || 'Outros'
+      return {
+        id: m.id,
+        category: categoryName,
+        categoryId: m.category_id,
+        description: m.description || '',
+        quantity: m.quantity || 1,
+        unitCost: m.unit_cost || 0,
+        total: m.total || 0,
+        source: 'Manual',
+        date: m.date,
+        notes: m.notes,
+      }
+    })
 
     const parsedSale = salePriceInput.trim() === '' ? null : parseFloat(salePriceInput)
     const overhead = costSettings?.overhead_percent ?? 0
@@ -712,20 +764,35 @@ export function PcpOrderCostsModal({
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5">
                     {/* Categoria */}
                     <div className="lg:col-span-2">
-                      <Label className="text-[11px] text-muted-foreground">Categoria</Label>
-                      <Select
-                        value={formCategory}
-                        onValueChange={(val) => setFormCategory(val as OrderCostCategory)}
-                      >
+                      <div className="flex items-center justify-between mb-0.5">
+                        <Label className="text-[11px] text-muted-foreground">Categoria</Label>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-5 px-1.5 text-[10px] text-emerald-700 hover:text-emerald-800 dark:text-emerald-400 gap-1"
+                          onClick={() => setNewCatDialogOpen(true)}
+                        >
+                          <Plus className="size-2.5" />
+                          Nova categoria
+                        </Button>
+                      </div>
+                      <Select value={formCategory} onValueChange={handleSelectCategory}>
                         <SelectTrigger className="h-8 text-xs bg-white dark:bg-slate-800">
                           <SelectValue placeholder="Selecione..." />
                         </SelectTrigger>
-                        <SelectContent>
-                          {ORDER_COST_CATEGORIES.map((cat) => (
-                            <SelectItem key={cat} value={cat} className="text-xs">
-                              {cat}
+                        <SelectContent className="max-h-60">
+                          {categoriesList.map((cat) => (
+                            <SelectItem key={cat.id} value={cat.name} className="text-xs">
+                              {cat.name}
                             </SelectItem>
                           ))}
+                          {/* Garante que se formCategory for um valor antigo que não está na lista, ainda renderize */}
+                          {formCategory && !categoriesList.some((c) => c.name === formCategory) && (
+                            <SelectItem value={formCategory} className="text-xs">
+                              {formCategory}
+                            </SelectItem>
+                          )}
                         </SelectContent>
                       </Select>
                     </div>
@@ -841,8 +908,11 @@ export function PcpOrderCostsModal({
                         {manualList.map((item) => (
                           <TableRow key={item.id} className="text-xs">
                             <TableCell>
-                              <Badge variant="outline" className="text-[10px] font-semibold">
-                                {item.category}
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] font-semibold bg-slate-50 dark:bg-slate-900"
+                              >
+                                {item.expand?.category_id?.name || item.category || 'Outros'}
                               </Badge>
                             </TableCell>
                             <TableCell className="font-medium">
@@ -894,6 +964,12 @@ export function PcpOrderCostsModal({
           )}
         </div>
       </DialogContent>
+
+      <NewCostCategoryDialog
+        open={newCatDialogOpen}
+        onOpenChange={setNewCatDialogOpen}
+        onCategorySelected={handleCategoryCreated}
+      />
     </Dialog>
   )
 }

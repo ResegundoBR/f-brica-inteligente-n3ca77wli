@@ -1,13 +1,20 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import pb from '@/lib/pocketbase/client'
-import { PcpOrder, PcpCostSettings, PcpOrderCost, OrderCostCategory } from '@/types'
+import {
+  PcpOrder,
+  PcpCostSettings,
+  PcpOrderCost,
+  OrderCostCategory,
+  PcpCostCategory,
+} from '@/types'
 import {
   ORDER_COST_CATEGORIES,
   getCostSettings,
   summarizeCosts,
   fetchAutomaticMaterialCosts,
   listOrderCosts,
+  listCostCategories,
   fmtBRL,
   fmtPct,
   CostSummary,
@@ -197,20 +204,25 @@ export default function PcpRentabilidadeEspeciais() {
     Record<string, PcpOrderCost[]>
   >({})
 
-  // Carrega OPs Especiais e settings
+  // Categorias cadastradas para agrupamento dinâmico
+  const [registeredCategories, setRegisteredCategories] = useState<PcpCostCategory[]>([])
+
+  // Carrega OPs Especiais, settings e categorias
   const loadData = useCallback(async () => {
     try {
       setRefreshing(true)
-      const [costConf, ordersRes] = await Promise.all([
+      const [costConf, ordersRes, catRes] = await Promise.all([
         getCostSettings(),
         pb.collection('pcp_orders').getFullList<PcpOrder>({
           filter: "op_type = 'Especial'",
           sort: '-created',
           expand: 'client_id,operator_id',
         }),
+        listCostCategories(true).catch(() => [] as PcpCostCategory[]),
       ])
       setSettings(costConf)
       setOrders(ordersRes)
+      setRegisteredCategories(catRes)
 
       // Carrega custos em lote
       // 1. todos pcp_order_costs
@@ -528,13 +540,13 @@ export default function PcpRentabilidadeEspeciais() {
       totalMaterial += s.materialTotal
       totalLabor += s.manualByCategory['Mão de Obra'] || 0
       totalOutsourcing += s.manualByCategory['Terceirização'] || 0
-      totalOther +=
-        (s.manualByCategory['Insumo'] || 0) +
-        (s.manualByCategory['Impostos'] || 0) +
-        (s.manualByCategory['Comissão'] || 0) +
-        (s.manualByCategory['RT'] || 0) +
-        (s.manualByCategory['Frete'] || 0) +
-        (s.manualByCategory['Outros'] || 0)
+
+      // "Outros" soma qualquer categoria manual além de Mão de Obra e Terceirização (exceto Material que já está em materialTotal)
+      for (const [catName, val] of Object.entries(s.manualByCategory)) {
+        if (catName !== 'Mão de Obra' && catName !== 'Terceirização' && catName !== 'Material') {
+          totalOther += val || 0
+        }
+      }
     }
 
     const avgContributionMargin =
@@ -578,6 +590,26 @@ export default function PcpRentabilidadeEspeciais() {
   }, [viewRows])
 
   const entityPlural = viewMode === 'op' ? 'OPs' : 'pedidos'
+
+  // Categorias adicionais além das 9 fixas padrão que aparecem como colunas/grupos
+  const additionalCategories = useMemo<string[]>(() => {
+    const names = new Set<string>()
+    // 1. categorias cadastradas ativas que não sejam uma das 9 fixas
+    for (const cat of registeredCategories) {
+      if (!ORDER_COST_CATEGORIES.includes(cat.name as any)) {
+        names.add(cat.name)
+      }
+    }
+    // 2. categorias encontradas nas linhas de custo carregadas
+    for (const row of viewRows) {
+      for (const catName of Object.keys(row.summary.manualByCategory)) {
+        if (!ORDER_COST_CATEGORIES.includes(catName as any)) {
+          names.add(catName)
+        }
+      }
+    }
+    return Array.from(names).sort((a, b) => a.localeCompare(b, 'pt-BR'))
+  }, [registeredCategories, viewRows])
 
   const handleOpenCostsModal = (order: PcpOrder) => {
     setSelectedOrderForCost(order)
@@ -990,6 +1022,11 @@ export default function PcpRentabilidadeEspeciais() {
                   <TableHead className="w-[110px] text-right">Material</TableHead>
                   <TableHead className="w-[110px] text-right">Mão de Obra</TableHead>
                   <TableHead className="w-[110px] text-right">Terceirização</TableHead>
+                  {additionalCategories.map((catName) => (
+                    <TableHead key={catName} className="w-[110px] text-right">
+                      {catName}
+                    </TableHead>
+                  ))}
                   <TableHead className="w-[100px] text-right">Outros</TableHead>
                   <TableHead className="w-[120px] text-right font-semibold">Custo Direto</TableHead>
                   <TableHead className="w-[120px] text-right font-semibold">Margem Bruta</TableHead>
@@ -1002,13 +1039,19 @@ export default function PcpRentabilidadeEspeciais() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={12} className="h-32 text-center text-muted-foreground">
+                    <TableCell
+                      colSpan={12 + additionalCategories.length}
+                      className="h-32 text-center text-muted-foreground"
+                    >
                       Carregando dados financeiros e custos das OPs...
                     </TableCell>
                   </TableRow>
                 ) : viewRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={12} className="h-32 text-center text-muted-foreground">
+                    <TableCell
+                      colSpan={12 + additionalCategories.length}
+                      className="h-32 text-center text-muted-foreground"
+                    >
                       Nenhuma Ordem de Produção Especial encontrada com os filtros selecionados.
                     </TableCell>
                   </TableRow>
@@ -1197,7 +1240,21 @@ export default function PcpRentabilidadeEspeciais() {
                             )}
                           </TableCell>
 
-                          {/* Outros */}
+                          {/* Categorias adicionais dinâmicas */}
+                          {additionalCategories.map((catName) => {
+                            const val = summary.manualByCategory[catName] || 0
+                            return (
+                              <TableCell key={catName} className="text-right text-xs">
+                                {val > 0 ? (
+                                  fmtBRL(val)
+                                ) : (
+                                  <span className="text-muted-foreground text-[11px]">—</span>
+                                )}
+                              </TableCell>
+                            )
+                          })}
+
+                          {/* Outros (Insumo, Impostos, Comissão, RT, Frete, Outros padrão) */}
                           <TableCell className="text-right text-xs">
                             {otherCosts > 0 ? (
                               fmtBRL(otherCosts)

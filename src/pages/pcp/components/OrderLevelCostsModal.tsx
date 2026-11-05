@@ -27,9 +27,8 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { useToast } from '@/hooks/use-toast'
-import { PcpOrder, OrderCostCategory, PcpOrderCost, PcpCostSettings } from '@/types'
+import { PcpOrder, PcpCostCategory, PcpOrderCost, PcpCostSettings } from '@/types'
 import {
-  ORDER_COST_CATEGORIES,
   CostLine,
   fetchAutomaticMaterialCosts,
   listOrderCosts,
@@ -38,10 +37,12 @@ import {
   updateOrderCost,
   deleteOrderCost,
   getCostSettings,
+  listCostCategories,
   summarizeCosts,
   fmtBRL,
   fmtPct,
 } from '@/services/order-costs'
+import { NewCostCategoryDialog } from './NewCostCategoryDialog'
 import { DollarSign, Plus, Trash2, Pencil, Package, Layers, Info, Loader2 } from 'lucide-react'
 import { NoTranslate } from '@/components/NoTranslate'
 
@@ -79,13 +80,15 @@ export function OrderLevelCostsModal({
 
   const [loading, setLoading] = useState(false)
   const [costSettings, setCostSettings] = useState<PcpCostSettings | null>(null)
+  const [categoriesList, setCategoriesList] = useState<PcpCostCategory[]>([])
   const [automaticByOp, setAutomaticByOp] = useState<Record<string, CostLine[]>>({})
   const [manualByOp, setManualByOp] = useState<Record<string, PcpOrderCost[]>>({})
   const [orderLevelLines, setOrderLevelLines] = useState<PcpOrderCost[]>([])
 
   // Formulário de nova linha / edição (nível do pedido)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [formCategory, setFormCategory] = useState<OrderCostCategory>('Material')
+  const [formCategory, setFormCategory] = useState<string>('Material')
+  const [formCategoryId, setFormCategoryId] = useState<string>('')
   const [formDescription, setFormDescription] = useState('')
   const [formQuantity, setFormQuantity] = useState<string>('1')
   const [formUnitCost, setFormUnitCost] = useState<string>('')
@@ -94,12 +97,16 @@ export function OrderLevelCostsModal({
   const [formNotes, setFormNotes] = useState<string>('')
   const [isSubmittingLine, setIsSubmittingLine] = useState(false)
 
+  // Diálogo de nova categoria
+  const [newCatDialogOpen, setNewCatDialogOpen] = useState(false)
+
   const loadData = useCallback(async () => {
     if (!open || !orderNumber) return
     setLoading(true)
     try {
-      const [settings, autoResults, manualResults, orderLines] = await Promise.all([
+      const [settings, cats, autoResults, manualResults, orderLines] = await Promise.all([
         getCostSettings(),
+        listCostCategories(),
         Promise.all(orders.map((o) => fetchAutomaticMaterialCosts(o.id))),
         Promise.all(orders.map((o) => listOrderCosts(o.id))),
         listOrderCostsByOrderNumber(orderNumber),
@@ -115,9 +122,15 @@ export function OrderLevelCostsModal({
       })
 
       setCostSettings(settings)
+      setCategoriesList(cats)
       setAutomaticByOp(auto)
       setManualByOp(manual)
       setOrderLevelLines(orderLines)
+
+      const foundCat = cats.find((c) => c.name === 'Material')
+      if (foundCat) {
+        setFormCategoryId(foundCat.id)
+      }
     } catch (err) {
       console.error('Erro ao carregar custos do pedido:', err)
       toast({
@@ -163,7 +176,9 @@ export function OrderLevelCostsModal({
 
   const resetForm = () => {
     setEditingId(null)
+    const matCat = categoriesList.find((c) => c.name === 'Material')
     setFormCategory('Material')
+    setFormCategoryId(matCat ? matCat.id : '')
     setFormDescription('')
     setFormQuantity('1')
     setFormUnitCost('')
@@ -174,13 +189,31 @@ export function OrderLevelCostsModal({
 
   const startEdit = (cost: PcpOrderCost) => {
     setEditingId(cost.id)
-    setFormCategory(cost.category)
+    const effectiveCategoryName = cost.expand?.category_id?.name || cost.category || 'Outros'
+    setFormCategory(effectiveCategoryName)
+    setFormCategoryId(cost.category_id || '')
     setFormDescription(cost.description || '')
     setFormQuantity(cost.quantity !== undefined ? String(cost.quantity) : '1')
     setFormUnitCost(cost.unit_cost !== undefined ? String(cost.unit_cost) : '')
     setFormTotal(cost.total !== undefined ? String(cost.total) : '')
     setFormDate(cost.date ? cost.date.slice(0, 10) : '')
     setFormNotes(cost.notes || '')
+  }
+
+  const handleSelectCategory = (catName: string) => {
+    setFormCategory(catName)
+    const found = categoriesList.find((c) => c.name === catName)
+    setFormCategoryId(found ? found.id : '')
+  }
+
+  const handleCategoryCreated = (newCat: PcpCostCategory) => {
+    setCategoriesList((prev) => {
+      const exists = prev.some((c) => c.id === newCat.id)
+      if (exists) return prev
+      return [...prev, newCat].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+    })
+    setFormCategory(newCat.name)
+    setFormCategoryId(newCat.id)
   }
 
   const handleSaveLine = async (e: React.FormEvent) => {
@@ -200,9 +233,16 @@ export function OrderLevelCostsModal({
       const qty = parseFloat(formQuantity) || 1
       const unit = parseFloat(formUnitCost) || (qty > 0 ? totalVal / qty : totalVal)
 
+      let catId = formCategoryId
+      if (!catId) {
+        const match = categoriesList.find((c) => c.name === formCategory)
+        if (match) catId = match.id
+      }
+
       if (editingId) {
         const updated = await updateOrderCost(editingId, {
           category: formCategory,
+          category_id: catId || undefined,
           description: formDescription,
           quantity: qty,
           unit_cost: unit,
@@ -216,6 +256,7 @@ export function OrderLevelCostsModal({
         const created = await createOrderCost({
           order_number: orderNumber,
           category: formCategory,
+          category_id: catId || undefined,
           description: formDescription,
           quantity: qty,
           unit_cost: unit,
@@ -263,7 +304,8 @@ export function OrderLevelCostsModal({
     const allOpManual = Object.values(manualByOp).flat()
     const toCostLine = (c: PcpOrderCost): CostLine => ({
       id: c.id,
-      category: c.category,
+      category: c.expand?.category_id?.name || c.category || 'Outros',
+      categoryId: c.category_id,
       description: c.description || '',
       quantity: c.quantity ?? 1,
       unitCost: c.unit_cost ?? 0,
@@ -602,20 +644,34 @@ export function OrderLevelCostsModal({
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5">
                     <div className="lg:col-span-2">
-                      <Label className="text-[11px] text-muted-foreground">Categoria</Label>
-                      <Select
-                        value={formCategory}
-                        onValueChange={(val) => setFormCategory(val as OrderCostCategory)}
-                      >
+                      <div className="flex items-center justify-between mb-0.5">
+                        <Label className="text-[11px] text-muted-foreground">Categoria</Label>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-5 px-1.5 text-[10px] text-emerald-700 hover:text-emerald-800 dark:text-emerald-400 gap-1"
+                          onClick={() => setNewCatDialogOpen(true)}
+                        >
+                          <Plus className="size-2.5" />
+                          Nova categoria
+                        </Button>
+                      </div>
+                      <Select value={formCategory} onValueChange={handleSelectCategory}>
                         <SelectTrigger className="h-8 text-xs bg-white dark:bg-slate-800">
                           <SelectValue placeholder="Selecione..." />
                         </SelectTrigger>
-                        <SelectContent>
-                          {ORDER_COST_CATEGORIES.map((cat) => (
-                            <SelectItem key={cat} value={cat} className="text-xs">
-                              {cat}
+                        <SelectContent className="max-h-60">
+                          {categoriesList.map((cat) => (
+                            <SelectItem key={cat.id} value={cat.name} className="text-xs">
+                              {cat.name}
                             </SelectItem>
                           ))}
+                          {formCategory && !categoriesList.some((c) => c.name === formCategory) && (
+                            <SelectItem value={formCategory} className="text-xs">
+                              {formCategory}
+                            </SelectItem>
+                          )}
                         </SelectContent>
                       </Select>
                     </div>
@@ -725,8 +781,11 @@ export function OrderLevelCostsModal({
                         {orderLevelLines.map((c) => (
                           <TableRow key={c.id} className="text-xs">
                             <TableCell>
-                              <Badge variant="outline" className="text-[10px] font-semibold">
-                                {c.category}
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] font-semibold bg-slate-50 dark:bg-slate-900"
+                              >
+                                {c.expand?.category_id?.name || c.category || 'Outros'}
                               </Badge>
                             </TableCell>
                             <TableCell className="font-medium">
@@ -778,6 +837,12 @@ export function OrderLevelCostsModal({
           )}
         </div>
       </DialogContent>
+
+      <NewCostCategoryDialog
+        open={newCatDialogOpen}
+        onOpenChange={setNewCatDialogOpen}
+        onCategorySelected={handleCategoryCreated}
+      />
     </Dialog>
   )
 }

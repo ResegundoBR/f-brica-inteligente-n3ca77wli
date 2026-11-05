@@ -1,10 +1,9 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import pb from '@/lib/pocketbase/client'
-import { PcpOrder, PcpCostSettings, PcpOrderCost } from '@/types'
+import { PcpOrder, PcpCostSettings, PcpOrderCost, OrderCostCategory } from '@/types'
 import {
   ORDER_COST_CATEGORIES,
-  OrderCostCategory,
   getCostSettings,
   summarizeCosts,
   fetchAutomaticMaterialCosts,

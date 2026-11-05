@@ -276,6 +276,8 @@ export interface PcpOrder {
   delivered_quantity?: number
   created: string
   updated: string
+  sale_price?: number
+  labor_hour_rate?: number
   bottleneck_by?: string
   expand?: {
     product_id?: Product
@@ -595,6 +597,45 @@ export interface MaterialReservation {
     separation_id?: any
     created_by?: User
   }
+}
+
+export type OrderCostCategory =
+  | 'Material'
+  | 'Insumo'
+  | 'Mão de Obra'
+  | 'Terceirização'
+  | 'Impostos'
+  | 'Comissão'
+  | 'RT'
+  | 'Frete'
+  | 'Outros'
+
+export interface PcpOrderCost {
+  id: string
+  order_id: string
+  category: OrderCostCategory
+  description?: string
+  quantity?: number
+  unit_cost?: number
+  total?: number
+  source: 'Automático' | 'Manual'
+  date?: string
+  notes?: string
+  created_by?: string
+  created: string
+  updated: string
+  expand?: {
+    order_id?: PcpOrder
+    created_by?: User
+  }
+}
+
+export interface PcpCostSettings {
+  id: string
+  default_hour_rate?: number
+  overhead_percent?: number
+  created: string
+  updated: string
 }
 
 export interface PcpRework {

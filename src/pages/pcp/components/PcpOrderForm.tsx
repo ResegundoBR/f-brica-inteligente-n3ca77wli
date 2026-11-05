@@ -66,6 +66,7 @@ const schema = z
     delivery_date: z.string().min(1, 'Data de entrega é obrigatória'),
     manual_priority: z.number().default(0),
     estimates: z.record(z.string(), z.any()).optional(),
+    sale_price: z.any().optional(),
     observations: z
       .array(
         z.object({
@@ -316,6 +317,7 @@ export function PcpOrderForm({
           delivery_date: deliveryDate,
           manual_priority: editingOrder.manual_priority || 0,
           estimates,
+          sale_price: editingOrder.sale_price ?? '',
           observations: obs,
         })
       } else {
@@ -328,6 +330,7 @@ export function PcpOrderForm({
           delivery_date: toDateFieldValue(new Date()),
           manual_priority: 0,
           estimates: {},
+          sale_price: '',
           observations: [],
         })
       }
@@ -391,7 +394,6 @@ export function PcpOrderForm({
       })
     } finally {
       setParsingPdf(false)
-      if (e.target) e.target.value = ''
     }
   }
 
@@ -506,6 +508,7 @@ export function PcpOrderForm({
 
           // Helper para saber se um item da revisão já existe na composição atual
           const existsInComp = (revItem: { code?: string; description?: string }) => {
+>>>>>>>
             const rCode = (revItem.code || '').trim()
             const rDesc = (revItem.description || '').trim().toLowerCase()
             return currentComp.some((existing) => {
@@ -817,6 +820,15 @@ export function PcpOrderForm({
         }
       }
 
+      // Valor de venda da OP Especial (custos/rentabilidade)
+      if (editingOrder.op_type === 'Especial') {
+        const sp =
+          data.sale_price === undefined || data.sale_price === null
+            ? editingOrder.sale_price ?? ''
+            : data.sale_price
+        const parsedSp = parseFloat(String(sp))
+        payload.sale_price = Number.isNaN(parsedSp) ? '' : parsedSp
+      }
       await pb.collection('pcp_orders').update(editingOrder.id, payload)
 
       const existingObs = await pb

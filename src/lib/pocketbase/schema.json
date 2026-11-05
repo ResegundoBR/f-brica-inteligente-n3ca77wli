@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-30T14:17:07.274Z",
+  "generatedAt": "2026-11-05T15:33:04.284Z",
   "collections": [
     {
       "name": "users",
@@ -1180,6 +1180,18 @@
         },
         {
           "name": "manual_sequence",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "sale_price",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "labor_hour_rate",
           "type": "number",
           "required": false,
           "system": false
@@ -3361,6 +3373,151 @@
       "indexes": [
         "CREATE INDEX idx_pcp_order_notes_order ON pcp_order_notes (order_id)",
         "CREATE INDEX idx_pcp_order_notes_created ON pcp_order_notes (created DESC)"
+      ]
+    },
+    {
+      "name": "pcp_cost_settings",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": null
+      },
+      "fields": [
+        {
+          "name": "default_hour_rate",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "overhead_percent",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "name": "pcp_order_costs",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "order_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "pcp_orders"
+        },
+        {
+          "name": "category",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": [
+            "Material",
+            "Insumo",
+            "Mão de Obra",
+            "Terceirização",
+            "Impostos",
+            "Comissão",
+            "RT",
+            "Frete",
+            "Outros"
+          ]
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "quantity",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "unit_cost",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "total",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "source",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["Automático", "Manual"]
+        },
+        {
+          "name": "date",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created_by",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_pcp_order_costs_order ON pcp_order_costs (order_id)",
+        "CREATE INDEX idx_pcp_order_costs_category ON pcp_order_costs (category)"
       ]
     }
   ]

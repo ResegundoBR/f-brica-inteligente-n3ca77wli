@@ -61,7 +61,21 @@ import {
   FileSpreadsheet,
   Users,
   ChevronDown,
+  Archive,
+  ArchiveRestore,
 } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { useToast } from '@/hooks/use-toast'
 import { NoTranslate } from '@/components/NoTranslate'
 
 interface OpRowData {
@@ -75,6 +89,10 @@ interface OpRowData {
   manualLines: CostLine[]
   /** Linhas de custo attachadas ao PEDIDO (sem OP) — só no modo Por Pedido */
   orderLevelLines?: CostLine[]
+  /** Quantidade de OPs arquivadas dentro da linha (1 no modo Por OP) */
+  archivedCount: number
+  /** true quando TODAS as OPs da linha estão arquivadas */
+  archivedAll: boolean
 }
 
 const statusBadgeVariant = (
@@ -121,6 +139,7 @@ function sortOpRows(
 }
 
 export default function PcpRentabilidadeEspeciais() {
+  const { toast } = useToast()
   const [orders, setOrders] = useState<PcpOrder[]>([])
   const [settings, setSettings] = useState<PcpCostSettings | null>(null)
   const [summariesMap, setSummariesMap] = useState<
@@ -157,6 +176,11 @@ export default function PcpRentabilidadeEspeciais() {
 
   // Alternador de visualização: Por OP (padrão) ou consolidado Por Pedido
   const [viewMode, setViewMode] = useState<'op' | 'order'>('op')
+
+  // Arquivamento: por padrão o painel exclui as OPs arquivadas
+  const [showArchived, setShowArchived] = useState(false)
+  const [archivingRow, setArchivingRow] = useState<OpRowData | null>(null)
+  const [archivingInProgress, setArchivingInProgress] = useState(false)
 
   // Modal de Custos da OP
   const [selectedOrderForCost, setSelectedOrderForCost] = useState<PcpOrder | null>(null)
@@ -327,6 +351,9 @@ export default function PcpRentabilidadeEspeciais() {
   const baseRows = useMemo<OpRowData[]>(() => {
     return orders
       .filter((order) => {
+        // Arquivadas só aparecem quando "Ver arquivados" está ativo
+        if (order.archived && !showArchived) return false
+
         // Busca textual
         if (search.trim()) {
           const q = search.toLowerCase()
@@ -373,9 +400,11 @@ export default function PcpRentabilidadeEspeciais() {
           manualCount: item?.manualCount || 0,
           automaticMaterial: item?.automaticMaterial || 0,
           manualLines: item?.manualLines || [],
+          archivedCount: order.archived ? 1 : 0,
+          archivedAll: order.archived === true,
         }
       })
-  }, [orders, summariesMap, search, statusFilter, startDate, endDate, settings])
+  }, [orders, summariesMap, search, statusFilter, startDate, endDate, settings, showArchived])
 
   // Visualização: Por OP (padrão) ou consolidada Por Pedido
   const viewRows = useMemo<OpRowData[]>(() => {
@@ -413,6 +442,8 @@ export default function PcpRentabilidadeEspeciais() {
       const groupOrders = rows.map((r) => r.order)
       const automaticMaterial = rows.reduce((acc, r) => acc + (r.automaticMaterial || 0), 0)
       const manualLines = rows.flatMap((r) => r.manualLines)
+      const archivedCount = rows.reduce((acc, r) => acc + (r.archivedCount || 0), 0)
+      const archivedAll = groupOrders.every((o) => o.archived === true)
       // Linhas de custo attachadas ao PEDIDO (sem OP) entram no consolidado
       const orderLines = orderLevelCostsByNumber[first.order_number || ''] || []
       const orderLevelLines = orderLines.map((c) => ({
@@ -436,6 +467,8 @@ export default function PcpRentabilidadeEspeciais() {
         order: first,
         orders: groupOrders,
         orderLevelLines,
+        archivedCount,
+        archivedAll,
         label: first.order_number
           ? `Pedido ${first.order_number} · ${
               first.client_name || first.expand?.client_id?.name || '-'
@@ -549,6 +582,35 @@ export default function PcpRentabilidadeEspeciais() {
   const handleOpenCostsModal = (order: PcpOrder) => {
     setSelectedOrderForCost(order)
     setCostModalOpen(true)
+  }
+
+  const archivedTotalCount = orders.filter((o) => o.archived === true).length
+
+  /** Grava o flag archived nas OPs da linha. Afeta SOMENTE a rentabilidade:
+   *  não cancela, não exclui e não muda status/estágio da OP. */
+  const applyArchivedFlag = async (ids: string[], archived: boolean) => {
+    if (ids.length === 0) return
+    setArchivingInProgress(true)
+    try {
+      await Promise.all(ids.map((id) => pb.collection('pcp_orders').update(id, { archived })))
+      setOrders((prev) => prev.map((o) => (ids.includes(o.id) ? { ...o, archived } : o)))
+      toast({
+        title: archived ? 'Projeto arquivado' : 'Projeto desarquivado',
+        description: archived
+          ? `${ids.length} OP(s) ${ids.length > 1 ? 'saíram' : 'saiu'} da tabela e dos totais de rentabilidade. Kanban e demais fluxos permanecem inalterados.`
+          : `${ids.length} OP(s) ${ids.length > 1 ? 'voltaram' : 'voltou'} para a rentabilidade.`,
+      })
+    } catch (err) {
+      console.error('Erro ao atualizar arquivamento:', err)
+      toast({
+        title: archived ? 'Erro ao arquivar' : 'Erro ao desarquivar',
+        description: err instanceof Error ? err.message : 'Tente novamente.',
+        variant: 'destructive',
+      })
+    } finally {
+      setArchivingInProgress(false)
+      setArchivingRow(null)
+    }
   }
 
   const handleOpenOrderLevelCosts = (row: OpRowData) => {
@@ -741,6 +803,15 @@ export default function PcpRentabilidadeEspeciais() {
                 ? 'Uma linha por OP Especial'
                 : 'OPs do mesmo pedido consolidadas em uma linha'}
             </span>
+            <label className="ml-auto flex items-center gap-1.5 text-xs font-medium text-muted-foreground cursor-pointer select-none">
+              <Checkbox
+                checked={showArchived}
+                onCheckedChange={(v) => setShowArchived(v === true)}
+              />
+              <Archive className="size-3.5" />
+              Ver arquivados
+              {archivedTotalCount > 0 ? ` (${archivedTotalCount})` : ''}
+            </label>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 items-end">
             {/* Busca */}
@@ -952,6 +1023,8 @@ export default function PcpRentabilidadeEspeciais() {
                       manualCount,
                       automaticMaterial,
                       manualLines,
+                      archivedCount,
+                      archivedAll,
                     }) => {
                       const client = order.client_name || order.expand?.client_id?.name || '-'
                       const productNames = Array.from(
@@ -1057,6 +1130,15 @@ export default function PcpRentabilidadeEspeciais() {
                                 </Badge>
                               )
                             })()}
+                            {archivedCount > 0 && (
+                              <Badge
+                                variant="outline"
+                                className="mt-1 text-[9px] px-1.5 py-0 border-slate-400 text-slate-600 dark:text-slate-400"
+                              >
+                                <Archive className="size-2.5 mr-0.5" />
+                                {archivedAll ? 'Arquivado' : `${archivedCount} arquivada(s)`}
+                              </Badge>
+                            )}
                           </TableCell>
 
                           {/* Receita (Venda) */}
@@ -1174,15 +1256,51 @@ export default function PcpRentabilidadeEspeciais() {
                           {/* Ações */}
                           <TableCell className="text-center">
                             {viewMode === 'op' ? (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-7 text-xs px-2 gap-1 border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
-                                onClick={() => handleOpenCostsModal(order)}
-                              >
-                                <DollarSign className="size-3.5" />
-                                Custos da OP
-                              </Button>
+                              <div className="flex flex-col items-center gap-1.5">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 text-xs px-2 gap-1 border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+                                  onClick={() => handleOpenCostsModal(order)}
+                                >
+                                  <DollarSign className="size-3.5" />
+                                  Custos da OP
+                                </Button>
+                                {order.archived ? (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 text-[10px] px-2 gap-1 text-muted-foreground hover:text-foreground"
+                                    onClick={() => applyArchivedFlag([order.id], false)}
+                                  >
+                                    <ArchiveRestore className="size-3" />
+                                    Desarquivar
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 text-[10px] px-2 gap-1 text-muted-foreground hover:text-foreground"
+                                    onClick={() =>
+                                      setArchivingRow({
+                                        order,
+                                        orders,
+                                        label,
+                                        summary,
+                                        automaticCount,
+                                        manualCount,
+                                        automaticMaterial,
+                                        manualLines,
+                                        archivedCount,
+                                        archivedAll,
+                                      })
+                                    }
+                                  >
+                                    <Archive className="size-3" />
+                                    Arquivar
+                                  </Button>
+                                )}
+                              </div>
                             ) : (
                               <div className="flex flex-col items-center gap-1.5">
                                 {order.order_number ? (
@@ -1200,6 +1318,8 @@ export default function PcpRentabilidadeEspeciais() {
                                         manualCount,
                                         automaticMaterial,
                                         manualLines,
+                                        archivedCount,
+                                        archivedAll,
                                       })
                                     }
                                   >
@@ -1246,6 +1366,45 @@ export default function PcpRentabilidadeEspeciais() {
                                     ))}
                                   </DropdownMenuContent>
                                 </DropdownMenu>
+                                {archivedAll ? (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 text-[10px] px-2 gap-1 text-muted-foreground hover:text-foreground"
+                                    onClick={() =>
+                                      applyArchivedFlag(
+                                        orders.map((o) => o.id),
+                                        false,
+                                      )
+                                    }
+                                  >
+                                    <ArchiveRestore className="size-3" />
+                                    Desarquivar
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 text-[10px] px-2 gap-1 text-muted-foreground hover:text-foreground"
+                                    onClick={() =>
+                                      setArchivingRow({
+                                        order,
+                                        orders,
+                                        label,
+                                        summary,
+                                        automaticCount,
+                                        manualCount,
+                                        automaticMaterial,
+                                        manualLines,
+                                        archivedCount,
+                                        archivedAll,
+                                      })
+                                    }
+                                  >
+                                    <Archive className="size-3" />
+                                    Arquivar
+                                  </Button>
+                                )}
                               </div>
                             )}
                           </TableCell>
@@ -1300,6 +1459,49 @@ export default function PcpRentabilidadeEspeciais() {
           </div>
         )}
       </Card>
+
+      {/* Confirmação antes de arquivar */}
+      <AlertDialog open={archivingRow !== null} onOpenChange={(v) => !v && setArchivingRow(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {viewMode === 'order'
+                ? `Arquivar pedido ${archivingRow?.order.order_number || ''}`
+                : `Arquivar ${archivingRow?.label || 'OP'}`}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <span className="block">
+                {viewMode === 'order'
+                  ? `Todas as ${archivingRow?.orders.length ?? 0} OP(s) deste pedido serão marcadas como arquivadas e sairão da tabela, dos cards de resumo e dos totais de rentabilidade.`
+                  : 'Esta OP sairá da tabela, dos cards de resumo e dos totais de rentabilidade.'}
+              </span>
+              <span className="block text-xs">
+                O arquivamento é apenas visual/financeiro: não cancela, não exclui a OP e não afeta
+                o Kanban, gargalos ou qualquer outro fluxo do PCP. É possível desarquivar a qualquer
+                momento.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              disabled={archivingInProgress}
+              onClick={(e) => {
+                e.preventDefault()
+                if (archivingRow) {
+                  applyArchivedFlag(
+                    archivingRow.orders.map((o) => o.id),
+                    true,
+                  )
+                }
+              }}
+            >
+              {archivingInProgress ? 'Arquivando...' : 'Arquivar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Modal de Custos da OP integrado */}
       {selectedOrderForCost && (

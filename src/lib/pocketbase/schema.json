@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-05T18:33:02.924Z",
+  "generatedAt": "2026-11-05T18:59:59.323Z",
   "collections": [
     {
       "name": "users",
@@ -1193,6 +1193,12 @@
         {
           "name": "labor_hour_rate",
           "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "archived",
+          "type": "bool",
           "required": false,
           "system": false
         }

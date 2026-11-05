@@ -2,115 +2,99 @@ import { ClientResponseError } from 'pocketbase'
 
 export type FieldErrors = Record<string, string>
 
+/** Extrai erros por campo da resposta de validação do PocketBase (aceita também
+ *  objetos em forma de mock usados nos testes, sem ser ClientResponseError). */
 export function extractFieldErrors(error: unknown): FieldErrors {
-  if (!(error instanceof ClientResponseError)) return {}
-  const data = error.response?.data
+  const response =
+    error instanceof ClientResponseError
+      ? error.response
+      : (error as { response?: { data?: unknown } } | null)?.response
+  const data = (response as { data?: unknown } | null)?.data
   if (!data || typeof data !== 'object') return {}
   const errors: FieldErrors = {}
-  for (const [field, detail] of Object.entries(data)) {
+  for (const [field, value] of Object.entries(data as Record<string, unknown>)) {
     if (
-      detail &&
-      typeof detail === 'object' &&
-      'message' in detail &&
-      typeof (detail as { message: unknown }).message === 'string'
+      value &&
+      typeof value === 'object' &&
+      'message' in value &&
+      typeof (value as { message: unknown }).message === 'string'
     ) {
-      errors[field] = (detail as { message: string }).message
+      errors[field] = (value as { message: string }).message
     }
   }
   return errors
 }
 
-export function getErrorMessage(error: unknown): string {
-  if (!(error instanceof ClientResponseError)) {
-    return error instanceof Error ? error.message : 'An unexpected error occurred.'
-  }
-  const msgs = Object.values(extractFieldErrors(error))
-  return msgs.length > 0 ? msgs.join(' ') : error.message || 'An unexpected error occurred.'
-}
-
-/** Rótulos legíveis para os campos mais validados do PocketBase. */
+/** Rótulos legíveis para os campos mais usados nas validações do app. */
 const FIELD_LABELS: Record<string, string> = {
-  order_id: 'OP',
-  order_number: 'Número do Pedido',
-  category: 'Categoria',
+  code: 'Código',
   description: 'Descrição',
   quantity: 'Quantidade',
-  unit_cost: 'Valor Unitário',
-  total: 'Valor Total',
-  date: 'Data',
-  notes: 'Observações',
+  unit_price: 'Valor Unitário',
+  total: 'Total',
+  oc_number: 'Número da OC',
   supplier: 'Fornecedor',
-  supplier_id: 'Fornecedor',
-  material_code: 'Código do Material',
-  material_description: 'Descrição do Material',
-  quantity_requested: 'Quantidade Solicitada',
-  quantity_purchased: 'Quantidade Comprada',
-  unit_price: 'Preço Unitário',
-  freight: 'Frete',
-  status: 'Situação',
-  observation: 'Observação',
-  reason: 'Motivo',
   expected_date: 'Previsão de Entrega',
+  payment_terms: 'Condições de Pagamento',
+  delivery_terms: 'Condições de Entrega',
+  status: 'Status',
+  sale_price: 'Valor de Venda',
+  labor_hour_rate: 'Valor da Hora de Mão de Obra',
+  category: 'Categoria',
+  order_id: 'OP',
+  order_number: 'Número do Pedido',
 }
 
-/** Códigos de validação do PocketBase traduzidos para português. */
+/** Códigos de validação do PocketBase mapeados para mensagens curtas em português;
+ *  têm prioridade sobre a mensagem crua enviada pelo backend. */
 const ERROR_CODE_LABELS: Record<string, string> = {
   validation_required: 'Obrigatório',
-  validation_length_out_of_range: 'Tamanho inválido',
-  validation_min_value: 'Valor abaixo do mínimo permitido',
-  validation_max_value: 'Valor acima do máximo permitido',
+  validation_length_out_of_range: 'Tamanho fora do intervalo permitido',
+  validation_values_mismatch: 'Valor fora das opções permitidas',
+  validation_not_unique: 'Valor já utilizado em outro registro',
   validation_invalid_value: 'Valor inválido',
   validation_invalid_date: 'Data inválida',
-  validation_not_unique: 'Já existe um registro com este valor',
-  validation_invalid_text_format: 'Formato inválido',
-  validation_is_object_empty: 'Não pode ficar vazio',
+  validation_missing_field_value: 'Campo sem valor',
 }
 
-function labelForField(field: string): string {
-  return FIELD_LABELS[field] || field
+function prettyFieldLabel(field: string): string {
+  return FIELD_LABELS[field] || field.replace(/_/g, ' ')
 }
 
-function messageForDetail(field: string, detail: unknown): string | null {
-  if (!detail || typeof detail !== 'object') return null
-  const d = detail as { message?: unknown; code?: unknown }
-  if (typeof d.code === 'string' && ERROR_CODE_LABELS[d.code]) {
-    return `${labelForField(field)}: ${ERROR_CODE_LABELS[d.code]}`
-  }
-  if (typeof d.message === 'string' && d.message.trim()) {
-    return `${labelForField(field)}: ${d.message}`
-  }
-  return null
+function prettifyMessage(message: string, code?: string): string {
+  if (code && ERROR_CODE_LABELS[code]) return ERROR_CODE_LABELS[code]
+  const matched = Object.keys(ERROR_CODE_LABELS).find((key) => message.includes(key))
+  if (matched) return ERROR_CODE_LABELS[matched]
+  return message
+    .replace(/validation_/g, 'validação: ')
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
-/**
- * Converte um erro do PocketBase em uma mensagem detalhada e legível em
- * português, linha a linha para cada campo com problema de validação.
- *
- * Aceita ClientResponseError real e também objetos com a mesma forma
- * (erros serializados ou mocks em testes), preservando as mensagens
- * legíveis com rótulos de campo e códigos de validação do PocketBase.
- */
-export function formatDetailedErrorMessage(error: unknown, fallback?: string): string {
-  // Aceita tanto ClientResponseError quanto objetos com a mesma forma
-  // (mocks em testes, erros serializados).
-  const candidate = error as {
-    response?: { data?: unknown; message?: unknown }
-    message?: unknown
-  } | null
-  const data = candidate?.response?.data
-  if (data && typeof data === 'object') {
-    const parts: string[] = []
-    for (const [field, detail] of Object.entries(data as Record<string, unknown>)) {
-      const msg = messageForDetail(field, detail)
-      if (msg) parts.push(msg)
-    }
-    if (parts.length > 0) return parts.join(' · ')
+/** Formata um erro de API em mensagem legível em português, priorizando os erros
+ *  por campo (código de validação sobre a mensagem crua). */
+export function formatDetailedErrorMessage(error: unknown, fallback = 'Erro inesperado.'): string {
+  const fieldErrors = extractFieldErrors(error)
+  if (Object.keys(fieldErrors).length > 0) {
+    const response = (error as { response?: { data?: Record<string, { code?: string }> } })
+      ?.response as { data?: Record<string, { code?: string }> } | undefined
+    return Object.entries(fieldErrors)
+      .map(([field, message]) => {
+        const code = response?.data?.[field]?.code
+        return `${prettyFieldLabel(field)}: ${prettifyMessage(message, code)}`
+      })
+      .join(' · ')
   }
-  if (typeof candidate?.message === 'string' && candidate.message.trim()) {
-    return candidate.message
+  if (error instanceof Error && error.message) return error.message
+  if (typeof (error as { message?: unknown })?.message === 'string') {
+    const raw = (error as { message: string }).message
+    if (raw) return raw
   }
-  if (error instanceof Error && error.message?.trim()) {
-    return error.message
-  }
-  return fallback || 'Ocorreu um erro inesperado. Tente novamente.'
+  return fallback
+}
+
+/** Mensagem de erro amigável para toasts e diálogos do app. */
+export function getErrorMessage(error: unknown, fallback = 'Erro inesperado.'): string {
+  return formatDetailedErrorMessage(error, fallback)
 }

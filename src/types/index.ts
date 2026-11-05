@@ -278,6 +278,7 @@ export interface PcpOrder {
   updated: string
   sale_price?: number
   labor_hour_rate?: number
+  archived?: boolean
   bottleneck_by?: string
   expand?: {
     product_id?: Product

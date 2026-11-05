@@ -31,6 +31,7 @@ import {
   Calendar,
   Link2,
   RefreshCw,
+  DollarSign,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -120,6 +121,12 @@ const navItems = [
   { title: 'Dashboard PCP', url: '/pcp/dashboard', icon: LayoutDashboard, group: 'PCP' },
   { title: 'Painel de Controle', url: '/pcp/kanban', icon: Kanban, group: 'PCP' },
   { title: 'Ordens de Produção', url: '/pcp/ordens', icon: FileText, group: 'PCP' },
+  {
+    title: 'Rentabilidade Especiais',
+    url: '/pcp/rentabilidade-especiais',
+    icon: DollarSign,
+    group: 'PCP',
+  },
   { title: 'Programação', url: '/pcp/programacao', icon: Calendar, group: 'PCP' },
   { title: 'Vínculos de PDF', url: '/pcp/vinculos-pdf', icon: Link2, group: 'PCP' },
   { title: 'Central de Comunicações', url: '/pcp/comunicacoes', icon: MessageSquare, group: 'PCP' },
@@ -207,6 +214,7 @@ export function AppSidebar() {
       case 'Painel de Controle':
         return !!role.access_painel_controle || !!role.access_pcp
       case 'Ordens de Produção':
+      case 'Rentabilidade Especiais':
       case 'Programação':
       case 'Vínculos de PDF':
         return !!role.access_ordens_producao || !!role.access_pcp

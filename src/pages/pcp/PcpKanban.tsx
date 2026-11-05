@@ -202,6 +202,7 @@ export default function PcpKanban() {
   }, [isAdmin, user])
 
   const [promisedModalOpen, setPromisedModalOpen] = useState(false)
+  const [costsModalOpen, setCostsModalOpen] = useState(false)
   const [isEmergencyContext, setIsEmergencyContext] = useState(false)
 
   // Sincroniza selectedOrder e listSelectedOp quando orders mudar na fonte única

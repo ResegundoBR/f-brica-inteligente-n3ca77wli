@@ -508,7 +508,6 @@ export function PcpOrderForm({
 
           // Helper para saber se um item da revisão já existe na composição atual
           const existsInComp = (revItem: { code?: string; description?: string }) => {
->>>>>>>
             const rCode = (revItem.code || '').trim()
             const rDesc = (revItem.description || '').trim().toLowerCase()
             return currentComp.some((existing) => {
@@ -824,7 +823,7 @@ export function PcpOrderForm({
       if (editingOrder.op_type === 'Especial') {
         const sp =
           data.sale_price === undefined || data.sale_price === null
-            ? editingOrder.sale_price ?? ''
+            ? (editingOrder.sale_price ?? '')
             : data.sale_price
         const parsedSp = parseFloat(String(sp))
         payload.sale_price = Number.isNaN(parsedSp) ? '' : parsedSp

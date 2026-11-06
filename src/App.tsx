@@ -40,6 +40,7 @@ import PcpOperator from './pages/pcp/PcpOperator'
 import PcpCommercial from './pages/pcp/PcpCommercial'
 import PcpOcorrencias from './pages/pcp/PcpOcorrencias'
 import PcpMelhorias from './pages/pcp/PcpMelhorias'
+import PcpAlertas from './pages/pcp/PcpAlertas'
 import ConsultationList from './pages/consultation/ConsultationList'
 import ConsultationDetail from './pages/consultation/ConsultationDetail'
 import ConsultationPrint from './pages/consultation/ConsultationPrint'
@@ -378,6 +379,14 @@ const App = () => (
                 element={
                   <RoleGuard module="pcp">
                     <PcpOcorrencias />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/pcp/alertas"
+                element={
+                  <RoleGuard module="pcp">
+                    <PcpAlertas />
                   </RoleGuard>
                 }
               />

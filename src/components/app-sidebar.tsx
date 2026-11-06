@@ -32,6 +32,7 @@ import {
   Link2,
   RefreshCw,
   DollarSign,
+  Bell,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -134,6 +135,7 @@ const navItems = [
   { title: 'Portal do Operador', url: '/pcp/operador', icon: TabletSmartphone, group: 'PCP' },
   { title: 'Visão Comercial', url: '/pcp/comercial', icon: Eye, group: 'PCP' },
   { title: 'Relatório de Ocorrências', url: '/pcp/ocorrencias', icon: Activity, group: 'PCP' },
+  { title: 'Central de Alertas', url: '/pcp/alertas', icon: Bell, group: 'PCP' },
   { title: 'Central de Melhorias', url: '/pcp/melhorias', icon: Lightbulb, group: 'PCP' },
   { title: 'Usuários', url: '/admin/usuarios', icon: Users, group: 'Administração' },
   { title: 'Funções', url: '/admin/funcoes', icon: Shield, group: 'Administração' },
@@ -208,6 +210,7 @@ export function AppSidebar() {
       case 'Dashboard PCP':
       case 'Clientes':
       case 'Relatório de Ocorrências':
+      case 'Central de Alertas':
         return !!role.access_pcp
       case 'Central de Melhorias':
         return !!role.access_pcp || !!role.access_commercial || !!role.access_operator

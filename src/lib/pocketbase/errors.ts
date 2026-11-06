@@ -20,83 +20,73 @@ export function extractFieldErrors(error: unknown): FieldErrors {
   return errors
 }
 
-export const FIELD_LABELS: Record<string, string> = {
-  supplier: 'Fornecedor',
-  supplier_id: 'Fornecedor',
-  expected_date: 'Previsão de Entrega',
-  delivery_terms: 'Condições de Entrega',
-  payment_terms: 'Condições de Pagamento',
-  payment_condition: 'Condições de Pagamento',
-  order_number: 'Número da OC',
-  status: 'Status',
-  items: 'Itens',
-  total_amount: 'Valor Total',
-  unit_price: 'Preço Unitário',
-  quantity: 'Quantidade',
-  code: 'Código',
-  description: 'Descrição',
-  notes: 'Observações',
-}
-
-export const ERROR_CODE_LABELS: Record<string, string> = {
-  validation_required: 'Obrigatório',
-  validation_invalid_date: 'Data inválida',
-  validation_invalid_email: 'E-mail inválido',
-  validation_invalid_url: 'URL inválida',
-  validation_min_text_constraint: 'Muito curto',
-  validation_max_text_constraint: 'Muito longo',
-  validation_not_unique: 'Já existe no sistema',
-}
-
-export function formatDetailedErrorMessage(error: unknown, fallbackMessage?: string): string {
-  if (!error) return fallbackMessage || 'Erro inesperado.'
-
-  // Suporte a ClientResponseError ou objeto mock/resposta similar
-  const anyErr = error as any
-  const responseData = anyErr?.response?.data || anyErr?.data
-
-  if (responseData && typeof responseData === 'object') {
-    const details: string[] = []
-    for (const [field, detail] of Object.entries(responseData)) {
-      const fieldLabel = FIELD_LABELS[field] || field
-      let reason = ''
-
-      if (detail && typeof detail === 'object') {
-        const d = detail as { code?: string; message?: string }
-        if (d.code && ERROR_CODE_LABELS[d.code]) {
-          reason = ERROR_CODE_LABELS[d.code]
-        } else if (d.message) {
-          reason = d.message
-        }
-      } else if (typeof detail === 'string') {
-        reason = detail
-      }
-
-      if (reason) {
-        details.push(`${fieldLabel}: ${reason}`)
-      }
-    }
-
-    if (details.length > 0) {
-      return details.join(' • ')
-    }
-  }
-
-  if (anyErr?.response?.message && typeof anyErr.response.message === 'string') {
-    return anyErr.response.message
-  }
-
-  if (anyErr?.message && typeof anyErr.message === 'string') {
-    return anyErr.message
-  }
-
-  return fallbackMessage || 'Erro inesperado.'
-}
-
 export function getErrorMessage(error: unknown): string {
   if (!(error instanceof ClientResponseError)) {
     return error instanceof Error ? error.message : 'An unexpected error occurred.'
   }
   const msgs = Object.values(extractFieldErrors(error))
   return msgs.length > 0 ? msgs.join(' ') : error.message || 'An unexpected error occurred.'
+}
+
+const FIELD_LABELS: Record<string, string> = {
+  expected_date: 'Previsão de Entrega',
+  supplier: 'Fornecedor',
+  supplier_id: 'Fornecedor',
+  order_number: 'Número da OC',
+  items: 'Itens',
+  status: 'Status',
+  payment_terms: 'Condições de Pagamento',
+  delivery_terms: 'Prazo de Entrega',
+}
+
+function translateValidationMsg(msg: string): string {
+  const m = msg.toLowerCase()
+  if (m.includes('blank') || m.includes('required') || m.includes('cannot be blank'))
+    return 'Obrigatório'
+  if (m.includes('invalid datetime') || m.includes('invalid date') || m.includes('valid datetime'))
+    return 'Data inválida'
+  if (m.includes('already exists') || m.includes('unique')) return 'Já cadastrado'
+  return msg
+}
+
+export function formatDetailedErrorMessage(error: unknown, fallbackMessage?: string): string {
+  if (!error) return fallbackMessage || 'Erro desconhecido.'
+
+  const errObj = error as {
+    response?: {
+      data?: Record<string, unknown>
+      message?: string
+    }
+    message?: string
+  }
+
+  const data = errObj.response?.data
+  if (data && typeof data === 'object' && Object.keys(data).length > 0) {
+    const fieldMsgs: string[] = []
+    for (const [field, detail] of Object.entries(data)) {
+      const fieldLabel = FIELD_LABELS[field] || field
+      let rawMsg = ''
+      if (detail && typeof detail === 'object' && 'message' in detail) {
+        rawMsg = String((detail as { message: unknown }).message)
+      } else if (typeof detail === 'string') {
+        rawMsg = detail
+      }
+      const friendlyMsg = translateValidationMsg(rawMsg)
+      fieldMsgs.push(`${fieldLabel}: ${friendlyMsg}`)
+    }
+    if (fieldMsgs.length > 0) {
+      return fieldMsgs.join('; ')
+    }
+  }
+
+  if (errObj.response?.message) {
+    return errObj.response.message
+  }
+
+  const baseMsg = getErrorMessage(error)
+  if (baseMsg && baseMsg !== 'An unexpected error occurred.') {
+    return baseMsg
+  }
+
+  return fallbackMessage || baseMsg || 'Ocorreu um erro inesperado.'
 }

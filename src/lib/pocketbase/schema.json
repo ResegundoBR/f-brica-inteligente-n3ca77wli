@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-06T19:31:29.055Z",
+  "generatedAt": "2026-11-06T20:12:48.337Z",
   "collections": [
     {
       "name": "users",
@@ -3574,6 +3574,130 @@
         }
       ],
       "indexes": ["CREATE UNIQUE INDEX idx_pcp_cost_categories_name ON pcp_cost_categories (name)"]
+    },
+    {
+      "name": "pcp_alert_configs",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "check_key",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "category",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "enabled",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "params",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX idx_pcp_alert_configs_check_key ON pcp_alert_configs (check_key)"
+      ]
+    },
+    {
+      "name": "pcp_alert_runs",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "started",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "finished",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "trigger_type",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "results",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "summary",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": ["CREATE INDEX idx_pcp_alert_runs_created ON pcp_alert_runs (created DESC)"]
     }
   ]
 }

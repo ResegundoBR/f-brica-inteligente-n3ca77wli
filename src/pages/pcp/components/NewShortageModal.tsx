@@ -1,6 +1,12 @@
 import { useState, useEffect, useMemo } from 'react'
 import pb from '@/lib/pocketbase/client'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -472,11 +478,11 @@ export function NewShortageModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] overflow-visible">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-[600px] max-h-[85vh] flex flex-col p-0 gap-0 overflow-hidden">
+        <DialogHeader className="px-6 py-4 border-b shrink-0 pr-12">
           <DialogTitle>Nova Solicitação de Compra / Material</DialogTitle>
         </DialogHeader>
-        <div className="grid gap-5 py-4">
+        <div className="grid gap-5 px-6 py-4 overflow-y-auto flex-1">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>Ordem de Produção (Opcional)</Label>
@@ -861,19 +867,18 @@ export function NewShortageModal({
               placeholder="Detalhes adicionais..."
             />
           </div>
-
-          <div className="flex justify-end gap-3 mt-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
-              Cancelar
-            </Button>
-            <Button
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-              onClick={() => handleSubmit()}
-            >
-              Salvar Solicitação
-            </Button>
-          </div>
         </div>
+        <DialogFooter className="px-6 py-4 border-t bg-slate-50/50 dark:bg-slate-900/50 shrink-0 flex items-center justify-end gap-3 sm:space-x-0">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+            onClick={() => handleSubmit()}
+          >
+            Salvar Solicitação
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

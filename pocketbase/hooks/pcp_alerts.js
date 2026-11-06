@@ -489,6 +489,282 @@ routerAdd(
         }
       }
 
+      // VERIFICAÇÃO 8: OPs com prazo próximo e ainda não iniciadas
+      var checkPrazoSemIniciar = configMap['prazo_sem_iniciar']
+      if (checkPrazoSemIniciar && checkPrazoSemIniciar.enabled) {
+        var antecDays = Number(checkPrazoSemIniciar.params.antecedencia_dias)
+        if (isNaN(antecDays) || antecDays < 1) antecDays = 21
+
+        try {
+          var notStartedOrders = $app.findRecordsByFilter(
+            'pcp_orders',
+            'status != "Concluído" && started_at = ""',
+            'delivery_date',
+            500,
+            0,
+          )
+
+          for (var n = 0; n < notStartedOrders.length; n++) {
+            var nsOrder = notStartedOrders[n]
+            var nsDeliveryStr = nsOrder.getString('delivery_date')
+            if (!nsDeliveryStr) continue
+
+            var nsDelivery = new Date(nsDeliveryStr)
+            if (isNaN(nsDelivery.getTime())) continue
+
+            var daysUntil = Math.ceil(diffDays(nsDelivery, now))
+            if (daysUntil >= 0 && daysUntil <= antecDays) {
+              var nsOpNum =
+                nsOrder.getString('op_number') || nsOrder.getString('order_number') || nsOrder.id
+              var nsClient = nsOrder.getString('client_name') || 'Cliente não informado'
+              var nsSev = daysUntil <= 7 ? 'Crítica' : daysUntil <= 14 ? 'Alta' : 'Média'
+
+              alerts.push({
+                id: 'prazo_sem_iniciar_' + nsOrder.id,
+                check_key: 'prazo_sem_iniciar',
+                category: 'Inconsistência',
+                entity_type: 'pcp_order',
+                entity_id: nsOrder.id,
+                entity_ref: 'OP ' + nsOpNum,
+                title:
+                  'OP ' +
+                  nsOpNum +
+                  ' (' +
+                  nsClient +
+                  ') vence em ' +
+                  daysUntil +
+                  ' dias e ainda não foi iniciada',
+                time_info: 'Vence em ' + daysUntil + ' dias (janela: ' + antecDays + ' dias)',
+                severity: nsSev,
+                action_suggestion:
+                  'Priorizar liberação da OP ' +
+                  nsOpNum +
+                  ' no sequenciamento e verificar se há material disponível para começar a produção.',
+                details: {
+                  op_number: nsOpNum,
+                  client_name: nsClient,
+                  delivery_date: nsDeliveryStr,
+                  days_until_delivery: daysUntil,
+                },
+              })
+            }
+          }
+        } catch (err8) {
+          console.log('[PCP ALERTS] Erro na checagem prazo_sem_iniciar:', String(err8))
+        }
+      }
+
+      // VERIFICAÇÃO 9: Data prometida em risco
+      var checkPrometidaEmRisco = configMap['prometida_em_risco']
+      if (checkPrometidaEmRisco && checkPrometidaEmRisco.enabled) {
+        var margemDays = Number(checkPrometidaEmRisco.params.margem_dias)
+        if (isNaN(margemDays) || margemDays < 1) margemDays = 7
+
+        try {
+          var promisedOrders = $app.findRecordsByFilter(
+            'pcp_orders',
+            'status != "Concluído" && promised_date != "" && data_saida = ""',
+            'promised_date',
+            500,
+            0,
+          )
+
+          for (var pr = 0; pr < promisedOrders.length; pr++) {
+            var pOrder = promisedOrders[pr]
+            var pPromisedStr = pOrder.getString('promised_date')
+            if (!pPromisedStr) continue
+
+            var pPromised = new Date(pPromisedStr)
+            if (isNaN(pPromised.getTime())) continue
+
+            var pDaysUntil = Math.ceil(diffDays(pPromised, now))
+            if (pDaysUntil > 14) continue // fora das janelas monitoradas
+
+            var pOpNum =
+              pOrder.getString('op_number') || pOrder.getString('order_number') || pOrder.id
+            var pClient = pOrder.getString('client_name') || 'Cliente não informado'
+            var pNote = pOrder.getString('promised_note') || 'Sem observação registrada'
+            var pById = pOrder.getString('promised_by') || ''
+            var pByName = pById
+            if (pById) {
+              try {
+                var pUser = $app.findRecordById('users', pById)
+                if (pUser) pByName = pUser.getString('name') || pUser.getString('email') || pById
+              } catch (_) {
+                pByName = pById
+              }
+            }
+            var pStage = pOrder.getString('stage') || 'Fase não definida'
+            var pSev = pDaysUntil < 0 ? 'Crítica' : pDaysUntil <= margemDays ? 'Alta' : 'Média'
+
+            var pTitle, pTimeInfo, pSuggestion
+            if (pDaysUntil < 0) {
+              pTitle =
+                'Prometida vencida: OP ' +
+                pOpNum +
+                ' (' +
+                pClient +
+                ') passou ' +
+                Math.abs(pDaysUntil) +
+                ' dias da data prometida'
+              pTimeInfo = 'Vencida há ' + Math.abs(pDaysUntil) + ' dias'
+              pSuggestion =
+                'Comunicar ' +
+                pByName +
+                ' (autor da promessa) e renegociar a data com o cliente ' +
+                pClient +
+                ' ou priorizar a OP na etapa ' +
+                pStage +
+                '.'
+            } else if (pDaysUntil <= margemDays) {
+              pTitle =
+                'Prometida em risco: OP ' +
+                pOpNum +
+                ' (' +
+                pClient +
+                ') vence em ' +
+                pDaysUntil +
+                ' dias'
+              pTimeInfo = 'Vence em ' + pDaysUntil + ' dias (margem: ' + margemDays + ' dias)'
+              pSuggestion =
+                'Confirmar viabilidade com ' +
+                pByName +
+                ' e cobrar andamento na etapa ' +
+                pStage +
+                ' para cumprir o que foi prometido ao cliente ' +
+                pClient +
+                '.'
+            } else {
+              pTitle =
+                'Prometida próximo do vencimento: OP ' +
+                pOpNum +
+                ' (' +
+                pClient +
+                ') vence em ' +
+                pDaysUntil +
+                ' dias'
+              pTimeInfo = 'Vence em ' + pDaysUntil + ' dias'
+              pSuggestion =
+                'Monitorar andamento da OP ' +
+                pOpNum +
+                ' na etapa ' +
+                pStage +
+                ' — a data prometida por ' +
+                pByName +
+                ' vence em breve.'
+            }
+
+            alerts.push({
+              id: 'prometida_em_risco_' + pOrder.id,
+              check_key: 'prometida_em_risco',
+              category: 'Inconsistência',
+              entity_type: 'pcp_order',
+              entity_id: pOrder.id,
+              entity_ref: 'OP ' + pOpNum,
+              title: pTitle,
+              time_info: pTimeInfo,
+              severity: pSev,
+              action_suggestion: pSuggestion,
+              details: {
+                op_number: pOpNum,
+                client_name: pClient,
+                promised_date: pPromisedStr,
+                promised_note: pNote,
+                promised_by_name: pByName,
+                days_until_promised: pDaysUntil,
+              },
+            })
+          }
+        } catch (err9) {
+          console.log('[PCP ALERTS] Erro na checagem prometida_em_risco:', String(err9))
+        }
+      }
+
+      // VERIFICAÇÃO 10: Especiais com entrega próxima e ainda longe do fim do fluxo
+      var checkEspecialPrazo = configMap['especial_prazo']
+      if (checkEspecialPrazo && checkEspecialPrazo.enabled) {
+        var espDays = Number(checkEspecialPrazo.params.antecedencia_dias)
+        if (isNaN(espDays) || espDays < 1) espDays = 21
+
+        var finalStages = {}
+        var finalStageList = [
+          'Pintura',
+          'Retoques',
+          'Montagem',
+          'Qualidade',
+          'Embalagem',
+          'Expedição',
+        ]
+        for (var fs = 0; fs < finalStageList.length; fs++) {
+          finalStages[finalStageList[fs]] = true
+        }
+
+        try {
+          var specialOrders = $app.findRecordsByFilter(
+            'pcp_orders',
+            'op_type = "Especial" && status != "Concluído"',
+            'delivery_date',
+            500,
+            0,
+          )
+
+          for (var sp = 0; sp < specialOrders.length; sp++) {
+            var spOrder = specialOrders[sp]
+            var spDeliveryStr = spOrder.getString('delivery_date')
+            if (!spDeliveryStr) continue
+
+            var spDelivery = new Date(spDeliveryStr)
+            if (isNaN(spDelivery.getTime())) continue
+
+            var spDaysUntil = Math.ceil(diffDays(spDelivery, now))
+            if (spDaysUntil < 0 || spDaysUntil > espDays) continue
+
+            var spStage = spOrder.getString('stage') || 'Fase não definida'
+            if (finalStages[spStage]) continue // já está no fim do fluxo, ok
+
+            var spOpNum =
+              spOrder.getString('op_number') || spOrder.getString('order_number') || spOrder.id
+            var spClient = spOrder.getString('client_name') || 'Cliente não informado'
+
+            alerts.push({
+              id: 'especial_prazo_' + spOrder.id,
+              check_key: 'especial_prazo',
+              category: 'Inconsistência',
+              entity_type: 'pcp_order',
+              entity_id: spOrder.id,
+              entity_ref: 'OP ' + spOpNum,
+              title:
+                'Especial com entrega em ' +
+                spDaysUntil +
+                ' dias ainda na etapa ' +
+                spStage +
+                ' (' +
+                spClient +
+                ')',
+              time_info: 'Entrega em ' + spDaysUntil + ' dias (janela: ' + espDays + ' dias)',
+              severity: spDaysUntil <= 7 ? 'Crítica' : spDaysUntil <= 14 ? 'Alta' : 'Média',
+              action_suggestion:
+                'Especial ' +
+                spOpNum +
+                ' de ' +
+                spClient +
+                ' ainda está na etapa ' +
+                spStage +
+                ' com entrega próxima — revisar caminho crítico e considerar antecipar etapas ou terceirizar.',
+              details: {
+                op_number: spOpNum,
+                client_name: spClient,
+                delivery_date: spDeliveryStr,
+                stage: spStage,
+                days_until_delivery: spDaysUntil,
+              },
+            })
+          }
+        } catch (err10) {
+          console.log('[PCP ALERTS] Erro na checagem especial_prazo:', String(err10))
+        }
+      }
+
       // 2. CONSULTA AO AGENTE NATIVO SKIP CLOUD ("supervisor-producao")
       var agentSummaryText = ''
 
@@ -1107,6 +1383,282 @@ cronAdd('pcp_daily_alerts', '5 4 * * *', () => {
           }
         }
       } catch (_) {}
+    }
+
+    // 8. Prazo sem iniciar (prazo_sem_iniciar)
+    var cPrazoSemIniciar = configMap['prazo_sem_iniciar']
+    if (cPrazoSemIniciar && cPrazoSemIniciar.enabled) {
+      var antDays = Number(cPrazoSemIniciar.params.antecedencia_dias)
+      if (isNaN(antDays) || antDays < 1) antDays = 21
+
+      try {
+        var notStarted = $app.findRecordsByFilter(
+          'pcp_orders',
+          'status != "Concluído" && started_at = ""',
+          'delivery_date',
+          500,
+          0,
+        )
+
+        for (var n = 0; n < notStarted.length; n++) {
+          var nOrder = notStarted[n]
+          var nDeliveryStr = nOrder.getString('delivery_date')
+          if (!nDeliveryStr) continue
+
+          var nDelivery = new Date(nDeliveryStr)
+          if (isNaN(nDelivery.getTime())) continue
+
+          var nDaysUntil = Math.ceil(diffDaysCron(nDelivery, now))
+          if (nDaysUntil >= 0 && nDaysUntil <= antDays) {
+            var nOpNum =
+              nOrder.getString('op_number') || nOrder.getString('order_number') || nOrder.id
+            var nClient = nOrder.getString('client_name') || 'Cliente não informado'
+            var nSev = nDaysUntil <= 7 ? 'Crítica' : nDaysUntil <= 14 ? 'Alta' : 'Média'
+
+            alerts.push({
+              id: 'prazo_sem_iniciar_' + nOrder.id,
+              check_key: 'prazo_sem_iniciar',
+              category: 'Inconsistência',
+              entity_type: 'pcp_order',
+              entity_id: nOrder.id,
+              entity_ref: 'OP ' + nOpNum,
+              title:
+                'OP ' +
+                nOpNum +
+                ' (' +
+                nClient +
+                ') vence em ' +
+                nDaysUntil +
+                ' dias e ainda não foi iniciada',
+              time_info: 'Vence em ' + nDaysUntil + ' dias (janela: ' + antDays + ' dias)',
+              severity: nSev,
+              action_suggestion:
+                'Priorizar liberação da OP ' +
+                nOpNum +
+                ' no sequenciamento e verificar se há material disponível para começar a produção.',
+              details: {
+                op_number: nOpNum,
+                client_name: nClient,
+                delivery_date: nDeliveryStr,
+                days_until_delivery: nDaysUntil,
+              },
+            })
+          }
+        }
+      } catch (errCron8) {
+        console.log('[PCP ALERTS] Erro no cron prazo_sem_iniciar:', String(errCron8))
+      }
+    }
+
+    // 9. Prometida em risco (prometida_em_risco)
+    var cPrometidaRisco = configMap['prometida_em_risco']
+    if (cPrometidaRisco && cPrometidaRisco.enabled) {
+      var margemDaysC = Number(cPrometidaRisco.params.margem_dias)
+      if (isNaN(margemDaysC) || margemDaysC < 1) margemDaysC = 7
+
+      try {
+        var promisedOrders = $app.findRecordsByFilter(
+          'pcp_orders',
+          'status != "Concluído" && promised_date != "" && data_saida = ""',
+          'promised_date',
+          500,
+          0,
+        )
+
+        for (var pr = 0; pr < promisedOrders.length; pr++) {
+          var pOrder = promisedOrders[pr]
+          var pPromisedStr = pOrder.getString('promised_date')
+          if (!pPromisedStr) continue
+
+          var pPromised = new Date(pPromisedStr)
+          if (isNaN(pPromised.getTime())) continue
+
+          var pDaysUntil = Math.ceil(diffDaysCron(pPromised, now))
+          if (pDaysUntil > 14) continue // fora das janelas monitoradas
+
+          var pOpNum =
+            pOrder.getString('op_number') || pOrder.getString('order_number') || pOrder.id
+          var pClient = pOrder.getString('client_name') || 'Cliente não informado'
+          var pNote = pOrder.getString('promised_note') || 'Sem observação registrada'
+          var pById = pOrder.getString('promised_by') || ''
+          var pByName = pById
+          if (pById) {
+            try {
+              var pUser = $app.findRecordById('users', pById)
+              if (pUser) pByName = pUser.getString('name') || pUser.getString('email') || pById
+            } catch (_) {
+              pByName = pById
+            }
+          }
+          var pStage = pOrder.getString('stage') || 'Fase não definida'
+          var pSev = pDaysUntil < 0 ? 'Crítica' : pDaysUntil <= margemDaysC ? 'Alta' : 'Média'
+
+          var pTitle, pTimeInfo, pSuggestion
+          if (pDaysUntil < 0) {
+            pTitle =
+              'Prometida vencida: OP ' +
+              pOpNum +
+              ' (' +
+              pClient +
+              ') passou ' +
+              Math.abs(pDaysUntil) +
+              ' dias da data prometida'
+            pTimeInfo = 'Vencida há ' + Math.abs(pDaysUntil) + ' dias'
+            pSuggestion =
+              'Comunicar ' +
+              pByName +
+              ' (autor da promessa) e renegociar a data com o cliente ' +
+              pClient +
+              ' ou priorizar a OP na etapa ' +
+              pStage +
+              '.'
+          } else if (pDaysUntil <= margemDaysC) {
+            pTitle =
+              'Prometida em risco: OP ' +
+              pOpNum +
+              ' (' +
+              pClient +
+              ') vence em ' +
+              pDaysUntil +
+              ' dias'
+            pTimeInfo = 'Vence em ' + pDaysUntil + ' dias (margem: ' + margemDaysC + ' dias)'
+            pSuggestion =
+              'Confirmar viabilidade com ' +
+              pByName +
+              ' e cobrar andamento na etapa ' +
+              pStage +
+              ' para cumprir o que foi prometido ao cliente ' +
+              pClient +
+              '.'
+          } else {
+            pTitle =
+              'Prometida próximo do vencimento: OP ' +
+              pOpNum +
+              ' (' +
+              pClient +
+              ') vence em ' +
+              pDaysUntil +
+              ' dias'
+            pTimeInfo = 'Vence em ' + pDaysUntil + ' dias'
+            pSuggestion =
+              'Monitorar andamento da OP ' +
+              pOpNum +
+              ' na etapa ' +
+              pStage +
+              ' — a data prometida por ' +
+              pByName +
+              ' vence em breve.'
+          }
+
+          alerts.push({
+            id: 'prometida_em_risco_' + pOrder.id,
+            check_key: 'prometida_em_risco',
+            category: 'Inconsistência',
+            entity_type: 'pcp_order',
+            entity_id: pOrder.id,
+            entity_ref: 'OP ' + pOpNum,
+            title: pTitle,
+            time_info: pTimeInfo,
+            severity: pSev,
+            action_suggestion: pSuggestion,
+            details: {
+              op_number: pOpNum,
+              client_name: pClient,
+              promised_date: pPromisedStr,
+              promised_note: pNote,
+              promised_by_name: pByName,
+              days_until_promised: pDaysUntil,
+            },
+          })
+        }
+      } catch (errCron9) {
+        console.log('[PCP ALERTS] Erro no cron prometida_em_risco:', String(errCron9))
+      }
+    }
+
+    // 10. Especial com prazo apertado (especial_prazo)
+    var cEspecialPrazo = configMap['especial_prazo']
+    if (cEspecialPrazo && cEspecialPrazo.enabled) {
+      var espDaysC = Number(cEspecialPrazo.params.antecedencia_dias)
+      if (isNaN(espDaysC) || espDaysC < 1) espDaysC = 21
+
+      var finalStages = {}
+      var finalStageList = [
+        'Pintura',
+        'Retoques',
+        'Montagem',
+        'Qualidade',
+        'Embalagem',
+        'Expedição',
+      ]
+      for (var fs = 0; fs < finalStageList.length; fs++) {
+        finalStages[finalStageList[fs]] = true
+      }
+
+      try {
+        var specialOrders = $app.findRecordsByFilter(
+          'pcp_orders',
+          'op_type = "Especial" && status != "Concluído"',
+          'delivery_date',
+          500,
+          0,
+        )
+
+        for (var sp = 0; sp < specialOrders.length; sp++) {
+          var spOrder = specialOrders[sp]
+          var spDeliveryStr = spOrder.getString('delivery_date')
+          if (!spDeliveryStr) continue
+
+          var spDelivery = new Date(spDeliveryStr)
+          if (isNaN(spDelivery.getTime())) continue
+
+          var spDaysUntil = Math.ceil(diffDaysCron(spDelivery, now))
+          if (spDaysUntil < 0 || spDaysUntil > espDaysC) continue
+
+          var spStage = spOrder.getString('stage') || 'Fase não definida'
+          if (finalStages[spStage]) continue // já está no fim do fluxo, ok
+
+          var spOpNum =
+            spOrder.getString('op_number') || spOrder.getString('order_number') || spOrder.id
+          var spClient = spOrder.getString('client_name') || 'Cliente não informado'
+
+          alerts.push({
+            id: 'especial_prazo_' + spOrder.id,
+            check_key: 'especial_prazo',
+            category: 'Inconsistência',
+            entity_type: 'pcp_order',
+            entity_id: spOrder.id,
+            entity_ref: 'OP ' + spOpNum,
+            title:
+              'Especial com entrega em ' +
+              spDaysUntil +
+              ' dias ainda na etapa ' +
+              spStage +
+              ' (' +
+              spClient +
+              ')',
+            time_info: 'Entrega em ' + spDaysUntil + ' dias (janela: ' + espDaysC + ' dias)',
+            severity: spDaysUntil <= 7 ? 'Crítica' : spDaysUntil <= 14 ? 'Alta' : 'Média',
+            action_suggestion:
+              'Especial ' +
+              spOpNum +
+              ' de ' +
+              spClient +
+              ' ainda está na etapa ' +
+              spStage +
+              ' com entrega próxima — revisar caminho crítico e considerar antecipar etapas ou terceirizar.',
+            details: {
+              op_number: spOpNum,
+              client_name: spClient,
+              delivery_date: spDeliveryStr,
+              stage: spStage,
+              days_until_delivery: spDaysUntil,
+            },
+          })
+        }
+      } catch (errCron10) {
+        console.log('[PCP ALERTS] Erro no cron especial_prazo:', String(errCron10))
+      }
     }
 
     // Agente IA (supervisor-producao)

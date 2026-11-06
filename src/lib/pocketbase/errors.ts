@@ -22,6 +22,7 @@ export function extractFieldErrors(error: unknown): FieldErrors {
 
 /**
  * Formata erros de validação do PocketBase em mensagem amigável em português,
+ * aceitando labels como Record<string, string> ou string (texto de contexto).
  * traduzindo os nomes dos campos por meio de um mapa de labels (ex.:
  * { 'data.delivery_forecast': 'Previsão de Entrega' }).
  * Fallback para o mapa padrão de labels quando nenhum é fornecido.

@@ -35,56 +35,53 @@ const FIELD_LABELS: Record<string, string> = {
   delivery_terms: 'Condições de Entrega',
   payment_terms: 'Condições de Pagamento',
   delivery_type: 'Tipo de Entrega',
-  total: 'Valor Total',
-  oc_number: 'Número da OC',
+  total: 'Total',
+  description: 'Descrição',
+  code: 'Código',
+  quantity: 'Quantidade',
+  unit_price: 'Preço Unitário',
 }
 
 const ERROR_CODE_LABELS: Record<string, string> = {
   validation_required: 'Obrigatório',
   validation_invalid_date: 'Data inválida',
-  validation_not_unique: 'Já cadastrado',
-  validation_min_numeric_value: 'Valor abaixo do mínimo',
-  validation_max_numeric_value: 'Valor acima do máximo',
+  validation_min_numeric: 'Valor muito baixo',
+  validation_max_numeric: 'Valor muito alto',
 }
 
-export function formatDetailedErrorMessage(error: unknown, fallback = 'Erro na operação'): string {
-  if (!error) return fallback
+export function formatDetailedErrorMessage(error: unknown, fallback?: string): string {
+  if (!error || typeof error !== 'object') {
+    return fallback || 'Verifique os dados informados.'
+  }
 
-  const resp =
-    (error as any)?.response || (error instanceof ClientResponseError ? error.response : null)
+  // Suporte tanto a ClientResponseError quanto a mocks de teste
+  const responseData =
+    (error as ClientResponseError).response?.data ||
+    (error as { response?: { data?: Record<string, unknown> } }).response?.data
 
-  const data = resp?.data
-  if (data && typeof data === 'object') {
-    const lines: string[] = []
-    for (const [field, detail] of Object.entries(data)) {
+  if (responseData && typeof responseData === 'object') {
+    const parts: string[] = []
+    for (const [field, detail] of Object.entries(responseData)) {
       const fieldLabel = FIELD_LABELS[field] || field
-      let msg = ''
       if (detail && typeof detail === 'object') {
-        const code = (detail as any).code
-        if (code && ERROR_CODE_LABELS[code]) {
-          msg = ERROR_CODE_LABELS[code]
-        } else if (typeof (detail as any).message === 'string') {
-          msg = (detail as any).message
-        }
+        const code = (detail as { code?: string }).code
+        const msg = (detail as { message?: string }).message
+        const friendlyMsg = (code && ERROR_CODE_LABELS[code]) || msg || 'Inválido'
+        parts.push(`${fieldLabel}: ${friendlyMsg}`)
       } else if (typeof detail === 'string') {
-        msg = detail
-      }
-      if (msg) {
-        lines.push(`${fieldLabel}: ${msg}`)
+        parts.push(`${fieldLabel}: ${detail}`)
       }
     }
-    if (lines.length > 0) {
-      return lines.join(' · ')
+
+    if (parts.length > 0) {
+      return parts.join(' | ')
     }
   }
 
-  if (resp?.message && typeof resp.message === 'string') {
-    return resp.message
-  }
+  const generalMsg =
+    (error as ClientResponseError).message ||
+    (error as { response?: { message?: string } }).response?.message ||
+    (error instanceof Error ? error.message : undefined)
 
-  if (error instanceof Error && error.message) {
-    return error.message
-  }
-
-  return fallback
+  return generalMsg || fallback || 'Verifique os dados informados.'
 }

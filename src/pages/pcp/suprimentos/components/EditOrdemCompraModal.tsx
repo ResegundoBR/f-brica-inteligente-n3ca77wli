@@ -26,6 +26,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Plus, Trash2, Loader2, ChevronsUpDown, Check } from 'lucide-react'
+import { ComponentCodeAutocomplete } from './ComponentCodeAutocomplete'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Command,
@@ -172,6 +173,21 @@ export function EditOrdemCompraModal({
           const ipi = Number(updated.ipi_value) || 0
           updated.total = q * p + st + ipi
         }
+        return updated
+      }),
+    )
+  }
+
+  const updateItemFields = (index: number, patch: Partial<EditableItem>) => {
+    setItems((prev) =>
+      prev.map((it, i) => {
+        if (i !== index) return it
+        const updated = { ...it, ...patch }
+        const q = Number(updated.quantity) || 0
+        const p = Number(updated.unit_price) || 0
+        const st = Number(updated.st_value) || 0
+        const ipi = Number(updated.ipi_value) || 0
+        updated.total = q * p + st + ipi
         return updated
       }),
     )
@@ -480,16 +496,22 @@ export function EditOrdemCompraModal({
 
                         return (
                           <TableRow key={item.clientKey}>
-                            <TableCell>
-                              <Input
-                                className="h-8 w-24 notranslate font-mono text-xs"
-                                translate="no"
+                            <TableCell className="align-top py-2">
+                              <ComponentCodeAutocomplete
                                 value={item.code || ''}
-                                onChange={(e) => updateItemField(idx, 'code', e.target.value)}
+                                onChange={(val) => updateItemField(idx, 'code', val)}
+                                onSelectSuggestion={(sug) => {
+                                  updateItemFields(idx, {
+                                    code: sug.code,
+                                    ...(sug.description ? { description: sug.description } : {}),
+                                  })
+                                }}
                                 placeholder="-"
+                                className="w-28 sm:w-32"
+                                inputClassName="h-8 w-full"
                               />
                             </TableCell>
-                            <TableCell>
+                            <TableCell className="align-top py-2">
                               <Input
                                 className="h-8 text-xs notranslate"
                                 translate="no"
@@ -577,14 +599,19 @@ export function EditOrdemCompraModal({
 
           {/* ADICIONAR NOVO ITEM */}
           <div className="flex flex-wrap items-end gap-2 p-3 border-2 border-dashed rounded-lg bg-slate-50/50 dark:bg-slate-900/50">
-            <div className="w-24 space-y-1">
+            <div className="w-32 sm:w-36 space-y-1">
               <Label className="text-xs">Código</Label>
-              <Input
+              <ComponentCodeAutocomplete
                 value={newCode}
-                onChange={(e) => setNewCode(e.target.value)}
+                onChange={setNewCode}
+                onSelectSuggestion={(sug) => {
+                  setNewCode(sug.code)
+                  if (sug.description) {
+                    setNewDesc(sug.description)
+                  }
+                }}
                 placeholder="-"
-                className="notranslate font-mono text-xs h-8"
-                translate="no"
+                inputClassName="h-8"
               />
             </div>
             <div className="flex-1 min-w-[160px] space-y-1">

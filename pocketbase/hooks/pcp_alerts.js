@@ -522,7 +522,7 @@ routerAdd(
               alerts.push({
                 id: 'prazo_sem_iniciar_' + nsOrder.id,
                 check_key: 'prazo_sem_iniciar',
-                category: 'Inconsistência',
+                category: 'Prazo em Risco',
                 entity_type: 'pcp_order',
                 entity_id: nsOrder.id,
                 entity_ref: 'OP ' + nsOpNum,
@@ -657,7 +657,7 @@ routerAdd(
             alerts.push({
               id: 'prometida_em_risco_' + pOrder.id,
               check_key: 'prometida_em_risco',
-              category: 'Inconsistência',
+              category: 'Prazo em Risco',
               entity_type: 'pcp_order',
               entity_id: pOrder.id,
               entity_ref: 'OP ' + pOpNum,
@@ -729,7 +729,7 @@ routerAdd(
             alerts.push({
               id: 'especial_prazo_' + spOrder.id,
               check_key: 'especial_prazo',
-              category: 'Inconsistência',
+              category: 'Prazo em Risco',
               entity_type: 'pcp_order',
               entity_id: spOrder.id,
               entity_ref: 'OP ' + spOpNum,
@@ -876,6 +876,7 @@ routerAdd(
         Atrasado: 0,
         Parado: 0,
         'Problema de Material': 0,
+        'Prazo em Risco': 0,
         Inconsistência: 0,
         'Padrões Suspeitos': 0,
       }
@@ -1418,7 +1419,7 @@ cronAdd('pcp_daily_alerts', '5 4 * * *', () => {
             alerts.push({
               id: 'prazo_sem_iniciar_' + nOrder.id,
               check_key: 'prazo_sem_iniciar',
-              category: 'Inconsistência',
+              category: 'Prazo em Risco',
               entity_type: 'pcp_order',
               entity_id: nOrder.id,
               entity_ref: 'OP ' + nOpNum,
@@ -1553,7 +1554,7 @@ cronAdd('pcp_daily_alerts', '5 4 * * *', () => {
           alerts.push({
             id: 'prometida_em_risco_' + pOrder.id,
             check_key: 'prometida_em_risco',
-            category: 'Inconsistência',
+            category: 'Prazo em Risco',
             entity_type: 'pcp_order',
             entity_id: pOrder.id,
             entity_ref: 'OP ' + pOpNum,
@@ -1625,7 +1626,7 @@ cronAdd('pcp_daily_alerts', '5 4 * * *', () => {
           alerts.push({
             id: 'especial_prazo_' + spOrder.id,
             check_key: 'especial_prazo',
-            category: 'Inconsistência',
+            category: 'Prazo em Risco',
             entity_type: 'pcp_order',
             entity_id: spOrder.id,
             entity_ref: 'OP ' + spOpNum,
@@ -1744,6 +1745,7 @@ cronAdd('pcp_daily_alerts', '5 4 * * *', () => {
       Atrasado: 0,
       Parado: 0,
       'Problema de Material': 0,
+      'Prazo em Risco': 0,
       Inconsistência: 0,
       'Padrões Suspeitos': 0,
     }

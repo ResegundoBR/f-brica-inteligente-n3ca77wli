@@ -20,60 +20,89 @@ export function extractFieldErrors(error: unknown): FieldErrors {
   return errors
 }
 
-const FIELD_LABELS: Record<string, string> = {
-  supplier: 'Fornecedor',
-  expected_date: 'Previsão de Entrega',
-  delivery_terms: 'Condições de Entrega',
-  payment_terms: 'Condições de Pagamento',
-  delivery_type: 'Tipo de Entrega',
+/**
+ * Formata erros de validação do PocketBase em mensagem amigável em português,
+ * traduzindo os nomes dos campos por meio de um mapa de labels (ex.:
+ * { 'data.delivery_forecast': 'Previsão de Entrega' }).
+ * Fallback para o mapa padrão de labels quando nenhum é fornecido.
+ */
+const DEFAULT_FIELD_LABELS: Record<string, string> = {
   oc_number: 'Número da OC',
+  supplier: 'Fornecedor',
+  supplier_id: 'Fornecedor',
+  expected_date: 'Previsão de Entrega',
+  'data.delivery_forecast': 'Previsão de Entrega',
+  'data.supplier': 'Fornecedor',
+  payment_terms: 'Condições de Pagamento',
+  delivery_terms: 'Condições de Entrega',
+  delivery_type: 'Tipo de Entrega',
+  total: 'Total',
   code: 'Código',
   description: 'Descrição',
   quantity: 'Quantidade',
-  unit_price: 'Valor Unitário',
-  total: 'Total',
-  observation: 'Observação',
+  unit_price: 'Preço Unitário',
 }
 
-const ERROR_CODE_LABELS: Record<string, string> = {
-  validation_required: 'Obrigatório',
-  validation_invalid_date: 'Data inválida',
-  validation_is_email: 'E-mail inválido',
-  validation_not_in: 'Valor não permitido',
-  validation_length_out_of_range: 'Fora do intervalo permitido',
-  validation_min_text_constraint: 'Texto muito curto',
-  validation_max_text_constraint: 'Texto muito longo',
-  validation_greater_than_required: 'Valor abaixo do mínimo',
-  validation_less_than_required: 'Valor acima do máximo',
+const FRIENDLY_MESSAGES: Array<{ pattern: RegExp; text: string }> = [
+  { pattern: /required|cannot be blank|valor vazio/i, text: 'Obrigatório' },
+  {
+    pattern: /invalid datetime|invalid date|valid datetime|not a valid date/i,
+    text: 'Data inválida',
+  },
+  { pattern: /invalid.*number|must be a( valid)? number/i, text: 'Número inválido' },
+  { pattern: /invalid.*email/i, text: 'E-mail inválido' },
+  { pattern: /must be greater/i, text: 'Valor muito baixo' },
+  { pattern: /must be less/i, text: 'Valor muito alto' },
+  { pattern: /length|too long|too short/i, text: 'Tamanho inválido' },
+]
+
+function fieldLabel(field: string, labels?: Record<string, string>): string {
+  const custom = labels?.[field]
+  if (custom) return custom
+  const normalized = field.replace(/^[a-z_]+\./i, '')
+  return DEFAULT_FIELD_LABELS[normalized] || DEFAULT_FIELD_LABELS[field] || normalized
 }
 
-/**
- * Formata erros de validação do PocketBase em mensagem amigável em português,
- * campo por campo (ex.: "Previsão de Entrega: Data inválida — Fornecedor: Obrigatório").
- * Recebe um fallback para quando o erro não tem detalhe de campo útil.
- */
+function friendlyDetail(detail: unknown): string {
+  const message =
+    detail && typeof detail === 'object' && 'message' in detail
+      ? String((detail as { message: unknown }).message)
+      : String(detail ?? '')
+  for (const { pattern, text } of FRIENDLY_MESSAGES) {
+    if (pattern.test(message)) return text
+  }
+  return message
+}
+
 export function formatDetailedErrorMessage(
   error: unknown,
-  fallback = 'Verifique os dados informados.',
+  fieldLabels?: Record<string, string> | string,
 ): string {
-  if (!(error instanceof ClientResponseError)) {
-    return error instanceof Error ? error.message : fallback
-  }
-  const data = error.response?.data as
-    | Record<string, { code?: string; message?: string }>
-    | undefined
-  const parts: string[] = []
+  // Suporta chamadas antigas no formato (erro, 'Mensagem de contexto'), em que o
+  // segundo argumento é apenas texto de fallback — não um mapa de labels.
+  const labels =
+    fieldLabels && typeof fieldLabels === 'object'
+      ? (fieldLabels as Record<string, string>)
+      : undefined
+
+  // Aceita tanto instâncias reais de ClientResponseError quanto objetos com a mesma
+  // forma (response.data) — testes e wrappers podem produzir o segundo caso.
+  const candidate = error as { response?: { data?: unknown; message?: string }; message?: string }
+  const data = candidate?.response?.data
   if (data && typeof data === 'object') {
-    for (const [field, detail] of Object.entries(data)) {
-      if (detail && typeof detail === 'object') {
-        const label = FIELD_LABELS[field] || field
-        const friendly = ERROR_CODE_LABELS[detail.code || ''] || detail.message || fallback
-        parts.push(`${label}: ${friendly}`)
-      }
+    const parts: string[] = []
+    for (const [field, detail] of Object.entries(data as Record<string, unknown>)) {
+      const text = friendlyDetail(detail)
+      if (text) parts.push(`${fieldLabel(field, labels)}: ${text}`)
     }
+    if (parts.length > 0) return parts.join(' · ')
   }
-  if (parts.length === 0) return error.message || fallback
-  return parts.join(' — ')
+  return (
+    candidate?.message ||
+    (error instanceof ClientResponseError ? error.message : undefined) ||
+    (error instanceof Error ? error.message : undefined) ||
+    'Erro inesperado.'
+  )
 }
 
 export function getErrorMessage(error: unknown): string {

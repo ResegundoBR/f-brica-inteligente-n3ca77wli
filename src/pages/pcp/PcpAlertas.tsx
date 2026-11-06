@@ -211,6 +211,7 @@ export default function PcpAlertsPage() {
   const categoryOrder: AlertCategory[] = [
     'Atrasado',
     'Parado',
+    'Prazo em Risco',
     'Problema de Material',
     'Inconsistência',
     'Padrões Suspeitos',
@@ -260,6 +261,8 @@ export default function PcpAlertsPage() {
         return 'border-l-red-500'
       case 'Parado':
         return 'border-l-amber-500'
+      case 'Prazo em Risco':
+        return 'border-l-yellow-500'
       case 'Problema de Material':
         return 'border-l-orange-500'
       case 'Inconsistência':
@@ -663,18 +666,21 @@ export default function PcpAlertsPage() {
                       </div>
                       <p className="text-xs text-muted-foreground">{config.description}</p>
 
-                      {/* Exibição dos Parâmetros vigentes */}
-                      {config.params && Object.keys(config.params).length > 0 && (
-                        <div className="flex items-center gap-2 text-[11px] text-muted-foreground pt-1">
-                          <Sliders className="size-3" />
-                          <span>Parâmetros:</span>
-                          <span className="font-mono bg-muted/60 px-1.5 py-0.5 rounded">
-                            {Object.entries(config.params)
-                              .map(([k, v]) => `${k}: ${v}`)
-                              .join(' | ')}
-                          </span>
-                        </div>
-                      )}
+                      {/* Exibição dos Parâmetros vigentes (exclui band_days — faixas internas) */}
+                      {config.params &&
+                        Object.entries(config.params).filter(([k]) => k !== 'band_days').length >
+                          0 && (
+                          <div className="flex items-center gap-2 text-[11px] text-muted-foreground pt-1">
+                            <Sliders className="size-3" />
+                            <span>Parâmetros:</span>
+                            <span className="font-mono bg-muted/60 px-1.5 py-0.5 rounded">
+                              {Object.entries(config.params)
+                                .filter(([k]) => k !== 'band_days')
+                                .map(([k, v]) => `${k}: ${v}`)
+                                .join(' | ')}
+                            </span>
+                          </div>
+                        )}
                     </div>
 
                     <div className="flex items-center gap-3 shrink-0">
@@ -803,6 +809,7 @@ export default function PcpAlertsPage() {
                   <Input
                     id={key}
                     type="number"
+                    disabled={key === 'band_days'}
                     value={
                       editingParams[key] !== undefined
                         ? String(editingParams[key])

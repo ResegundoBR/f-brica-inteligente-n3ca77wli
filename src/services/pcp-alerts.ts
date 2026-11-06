@@ -5,6 +5,7 @@ export type AlertSeverity = 'Crítica' | 'Alta' | 'Média' | 'Baixa'
 export type AlertCategory =
   | 'Atrasado'
   | 'Parado'
+  | 'Prazo em Risco'
   | 'Problema de Material'
   | 'Inconsistência'
   | 'Padrões Suspeitos'

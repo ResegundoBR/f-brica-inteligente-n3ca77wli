@@ -1117,8 +1117,10 @@ routerAdd(
       var arrivalDate = traceability.arrival_date || todayStr
       var unitPrice = safeParseFloat(traceability.unit_price)
       var freight = safeParseFloat(traceability.freight)
+      // total_value = valor do item + PARTE do frete deste item (rateio por VALOR);
+      // o frete integral jamais entra aqui para não haver dupla contagem na entrega.
       var totalValue =
-        unitPrice > 0 ? unitPrice * totalReceived + freight : freight > 0 ? freight : 0
+        unitPrice > 0 ? unitPrice * totalReceived + freightPart : freightPart > 0 ? freightPart : 0
 
       console.log(
         'Prepared: runningBalance=' +

@@ -138,60 +138,32 @@ export function buildAutomaticMaterialCosts(
   )
   if (relevant.length === 0) return []
 
-  const totalQty = relevant.reduce((acc, m) => acc + (Number(m.quantity) || 0), 0)
-  const totalFreight = relevant.reduce((acc, m) => acc + (Number(m.freight) || 0), 0)
-
-  return relevant
-    .map((m) => {
-      const inv = m.expand?.inventory_id
-      const qty = Number(m.quantity) || 0
-      const baseValue =
-        m.total_value != null && Number(m.total_value) > 0
-          ? Number(m.total_value)
-          : (Number(m.unit_price) || 0) * qty
-      const freightShare = totalQty > 0 ? (Number(m.freight) || 0) * (qty / totalQty) : 0
-      const total = baseValue + freightShare
-      const descParts = [inv?.code ? `[${inv.code}]` : '', inv?.description || m.reason || '']
-        .map((p) => p.trim())
-        .filter(Boolean)
-      return {
-        id: `auto-${m.id}`,
-        category: 'Material',
-        description: descParts.join(' ') || 'Material comprado',
-        quantity: qty,
-        unitCost: qty > 0 ? total / qty : total,
-        total,
-        source: 'Automático' as const,
-        date: m.purchase_date || m.created,
-        notes: freightShare > 0 ? `Frete rateado: R$ ${freightShare.toFixed(2)}` : '',
-      }
-    })
-    .concat(
-      // sobras de rateio de frete vão para a primeira linha para fechar a conta
-      (() => {
-        const allocated = relevant.reduce((acc, m) => {
-          const qty = Number(m.quantity) || 0
-          return acc + (totalQty > 0 ? (Number(m.freight) || 0) * (qty / totalQty) : 0)
-        }, 0)
-        const diff = totalFreight - allocated
-        if (Math.abs(diff) < 0.005 || relevant.length === 0) return []
-        const first = relevant[0]
-        const inv = first.expand?.inventory_id
-        return [
-          {
-            id: `auto-freight-adjust-${first.id}`,
-            category: 'Material',
-            description: `Ajuste de rateio de frete${inv?.code ? ` [${inv.code}]` : ''}`,
-            quantity: 0,
-            unitCost: 0,
-            total: diff,
-            source: 'Automático' as const,
-            date: first.purchase_date || first.created,
-            notes: '',
-          },
-        ]
-      })(),
-    )
+  return relevant.map((m) => {
+    const inv = m.expand?.inventory_id
+    const qty = Number(m.quantity) || 0
+    // total_value já contém a parte do frete rateada por VALOR (gravada no backend
+    // no recebimento). Usá-lo direto evita dupla contagem do frete.
+    const total =
+      m.total_value != null && Number(m.total_value) > 0
+        ? Number(m.total_value)
+        : (Number(m.unit_price) || 0) * qty
+    // m.freight é a PARTE do frete que coube a este item na entrega (informativo)
+    const itemFreight = Number(m.freight) || 0
+    const descParts = [inv?.code ? `[${inv.code}]` : '', inv?.description || m.reason || '']
+      .map((p) => p.trim())
+      .filter(Boolean)
+    return {
+      id: `auto-${m.id}`,
+      category: 'Material',
+      description: descParts.join(' ') || 'Material comprado',
+      quantity: qty,
+      unitCost: qty > 0 ? total / qty : total,
+      total,
+      source: 'Automático' as const,
+      date: m.purchase_date || m.created,
+      notes: itemFreight > 0 ? `inclui frete rateado R$ ${itemFreight.toFixed(2)}` : '',
+    }
+  })
 }
 
 /** Busca os movimentos automáticos vinculados à OP diretamente da API */

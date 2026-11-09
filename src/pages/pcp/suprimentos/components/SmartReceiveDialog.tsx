@@ -21,6 +21,7 @@ import {
 import { MaterialShortage } from '@/types'
 import { Loader2, Package, ArrowRight, Warehouse, AlertCircle } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { FreightApportionPreview } from './FreightApportionPreview'
 import pb from '@/lib/pocketbase/client'
 import { distributeMaterials, type TraceabilityInfo } from '@/services/material-distribution'
 import { useToast } from '@/hooks/use-toast'
@@ -509,6 +510,21 @@ export function SmartReceiveDialog({
                 </div>
               )}
             </div>
+
+            {/* Prévia do rateio de frete (apenas visual; recebimento de um único material = 100% do frete nele) */}
+            <FreightApportionPreview
+              freight={numFreight}
+              rows={[
+                {
+                  key: item?.id || 'material',
+                  label: `${item?.code ? item.code + ' — ' : ''}${item?.description || related[0]?.description || 'Material'}`,
+                  quantity: numTotalReceived,
+                  unitPrice: numUnitPrice,
+                  freightShare: numFreight,
+                  totalValue: computedTotalValue,
+                },
+              ]}
+            />
 
             <div className="border rounded-lg overflow-hidden">
               <Table>

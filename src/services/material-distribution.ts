@@ -12,6 +12,15 @@ export interface TraceabilityInfo {
   arrival_date?: string
   unit_price?: number
   freight?: number
+  /** Chave do item desta chamada dentro da entrega (rateio por valor) */
+  freight_key?: string
+  /** Todos os itens da entrega, para o backend ratear o frete por VALOR */
+  freight_items?: Array<{
+    key: string
+    quantity: number
+    unit_price: number
+    description?: string
+  }>
 }
 
 export const distributeMaterials = (
@@ -48,6 +57,10 @@ export interface DistributeOcFullPayload {
   oc_id: string
   selected_item_ids?: string[]
   reconcile_only?: boolean
+  /** Frete pago na entrega; rateado por VALOR entre os itens selecionados */
+  traceability?: {
+    freight?: number
+  }
 }
 
 export interface DistributeOcFullResult {

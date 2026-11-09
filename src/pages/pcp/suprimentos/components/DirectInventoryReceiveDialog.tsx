@@ -19,6 +19,7 @@ import { getErrorMessage } from '@/lib/pocketbase/errors'
 import { toDateFieldValue, formatQuantity, parseQuantityInput } from '@/lib/pcp-utils'
 import { checkAndUpdateAffectedOcs } from '@/services/oc-receiving-automation'
 import { NoTranslate } from '@/components/NoTranslate'
+import { FreightApportionPreview } from './FreightApportionPreview'
 
 interface DirectInventoryReceiveDialogProps {
   ocItem: OrdemCompraItem | null
@@ -288,6 +289,21 @@ export function DirectInventoryReceiveDialog({
               </div>
             )}
           </div>
+
+          {/* Prévia do rateio de frete (apenas visual; item único = 100% do frete) */}
+          <FreightApportionPreview
+            freight={numFreight}
+            rows={[
+              {
+                key: ocItem.id,
+                label: `${ocItem.code ? ocItem.code + ' — ' : ''}${ocItem.description}`,
+                quantity: numReceivedQty,
+                unitPrice: numUnitPrice,
+                freightShare: numFreight,
+                totalValue: computedTotalValue,
+              },
+            ]}
+          />
         </div>
 
         <DialogFooter className="mt-4">

@@ -217,7 +217,9 @@ routerAdd(
       if (purchaseDate) entrada.set('purchase_date', purchaseDate)
       if (unitPrice > 0) entrada.set('unit_price', unitPrice)
       if (totalValue > 0) entrada.set('total_value', totalValue)
-      if (freight > 0) entrada.set('freight', freight)
+      // Recebimento de item único: 100% do frete da entrega pertence a este item.
+      // freight = PARTE do frete do item; total_value = valor do item + sua parte do frete.
+      if (freight > 0) entrada.set('freight', Math.round(freight * 10000) / 10000)
       if (userId) entrada.set('user_id', userId)
       $app.save(entrada)
 
@@ -352,6 +354,34 @@ routerAdd(
       var movCol = $app.findCollectionByNameOrId('inventory_movements')
       var processedItems = []
       var skippedItems = []
+
+      // --- Rateio de frete por VALOR entre os itens desta entrega ---
+      // O modal envia traceability.freight (total da entrega), traceability.freight_key
+      // (chave do item) e traceability.freight_items (lista com key, quantity e
+      // unit_price de cada item da entrega). Cada Entrada grava apenas a parte do
+      // frete proporcional ao VALOR do seu item; item sem preço rateia por QUANTIDADE.
+      var traceability = body.traceability || {}
+      var freight = safeParseFloat(traceability.freight)
+      var freightKey = (traceability.freight_key || '').trim()
+      var freightItems = Array.isArray(traceability.freight_items) ? traceability.freight_items : []
+
+      function computeFreightShare(fKey) {
+        if (freight <= 0) return 0
+        if (!fKey || freightItems.length === 0) return freight // item único: 100%
+        var totalWeight = 0
+        var itemWeight = 0
+        for (var fi = 0; fi < freightItems.length; fi++) {
+          var fit = freightItems[fi]
+          var fitQty = safeParseFloat(fit.quantity)
+          var fitPrice = safeParseFloat(fit.unit_price)
+          var w = fitPrice > 0 ? fitPrice * fitQty : fitQty // fallback por quantidade
+          if (w < 0) w = 0
+          if (fit.key === fKey) itemWeight = w
+          totalWeight = totalWeight + w
+        }
+        if (totalWeight <= 0) return 0
+        return (freight * itemWeight) / totalWeight
+      }
 
       for (var i = 0; i < ocItems.length; i++) {
         var it = ocItems[i]
@@ -593,6 +623,13 @@ routerAdd(
           // O restante (excedente) fica como entrada direta ao estoque geral.
           // Registramos a movimentação de Entrada do total do saldo de uma só vez:
           var balanceAfterEntrada = Math.round((runningBalance + itemSaldo) * 10000) / 10000
+
+          // Rateio de frete por VALOR deste item da entrega
+          var itemFreightShare = computeFreightShare(itemId)
+          var itemBaseValue = unitPrice > 0 ? unitPrice * itemSaldo : 0
+          var itemTotalValue =
+            unitPrice > 0 ? Math.round((itemBaseValue + itemFreightShare) * 10000) / 10000 : 0
+
           var entrada = new Record(movCol)
           entrada.set('inventory_id', invRecord.id)
           entrada.set('quantity', itemSaldo)
@@ -601,6 +638,9 @@ routerAdd(
           entrada.set('arrival_date', todayStr)
           entrada.set('balance_after', balanceAfterEntrada)
           if (unitPrice > 0) entrada.set('unit_price', unitPrice)
+          if (itemTotalValue > 0) entrada.set('total_value', itemTotalValue)
+          if (itemFreightShare > 0)
+            entrada.set('freight', Math.round(itemFreightShare * 10000) / 10000)
           if (userId) entrada.set('user_id', userId)
           $app.save(entrada)
           runningBalance = balanceAfterEntrada
@@ -933,6 +973,46 @@ routerAdd(
       var code = (traceability.code || '').trim()
       var description = (traceability.description || '').trim()
 
+      // Rateio de frete por VALOR: a entrega pode trazer vários itens (uma chamada
+      // /distribute por item, todas com o mesmo delivery_key no traceability).
+      // Cada chamada grava na Entrada apenas a parte do frete proporcional ao
+      // VALOR do seu item; item sem preço unitário rateia a sua parte por QUANTIDADE.
+      function freightApportion() {
+        var share = 0
+        try {
+          var freightKey = (traceability.freight_key || '').trim()
+          var itemsInfo = traceability.freight_items
+          if (!freightKey || !Array.isArray(itemsInfo) || itemsInfo.length === 0) {
+            // Entrega de item único (sem chave de entrega): 100% do frete
+            return freight
+          }
+          var totalWeight = 0
+          var itemWeight = 0
+          for (var fi = 0; fi < itemsInfo.length; fi++) {
+            var it = itemsInfo[fi]
+            var w = 0
+            if (safeParseFloat(it.unit_price) > 0 && safeParseFloat(it.quantity) > 0) {
+              // peso por VALOR
+              w = safeParseFloat(it.unit_price) * safeParseFloat(it.quantity)
+            } else {
+              // fallback por QUANTIDADE para itens sem preço
+              w = safeParseFloat(it.quantity)
+            }
+            if (w < 0) w = 0
+            if (it.key === freightKey) itemWeight = w
+            totalWeight = totalWeight + w
+          }
+          if (totalWeight > 0 && itemWeight >= 0) {
+            share = (freight * itemWeight) / totalWeight
+          }
+        } catch (faErr) {
+          console.log('freightApportion error: ' + String(faErr))
+        }
+        return share
+      }
+
+      var freightPart = freightApportion()
+
       console.log(
         'Distribute input: distributions=' +
           JSON.stringify(distributions) +
@@ -1085,7 +1165,9 @@ routerAdd(
       if (purchaseDate) entrada.set('purchase_date', purchaseDate)
       if (unitPrice > 0) entrada.set('unit_price', unitPrice)
       if (totalValue > 0) entrada.set('total_value', totalValue)
-      if (freight > 0) entrada.set('freight', freight)
+      // Rateio por VALOR: gravar na Entrada apenas a PARTE do frete que coube a
+      // este item (freightPart); total_value acima já é valor do item + sua parte.
+      if (freightPart > 0) entrada.set('freight', Math.round(freightPart * 10000) / 10000)
       if (userId) entrada.set('user_id', userId)
       console.log('Saving Entrada movement (qty=' + totalReceived + ')')
       $app.save(entrada)

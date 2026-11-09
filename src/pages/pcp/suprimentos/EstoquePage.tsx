@@ -21,9 +21,18 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Inventory } from '@/types'
-import { Warehouse, AlertTriangle, Plus, History, FileSpreadsheet, Pencil } from 'lucide-react'
+import {
+  Warehouse,
+  AlertTriangle,
+  Plus,
+  History,
+  FileSpreadsheet,
+  Pencil,
+  PackageMinus,
+} from 'lucide-react'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
 import { InventoryItemDialog } from './components/InventoryItemDialog'
+import { InternalConsumptionDialog } from './components/InternalConsumptionDialog'
 import { EditInventoryItemDialog } from './components/EditInventoryItemDialog'
 import { ProductDossierModal } from './components/ProductDossierModal'
 import { ProductSearchBar } from './components/ProductSearchBar'
@@ -67,6 +76,7 @@ export default function EstoquePage() {
     isCatalogOnly?: boolean
   } | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
+  const [consumptionOpen, setConsumptionOpen] = useState(false)
   const [newCode, setNewCode] = useState('')
   const [newDesc, setNewDesc] = useState('')
   const [newQty, setNewQty] = useState('0')
@@ -208,6 +218,14 @@ export default function EstoquePage() {
                 setDossierOpen(true)
               }}
             />
+            <Button
+              onClick={() => setConsumptionOpen(true)}
+              variant="outline"
+              className="border-amber-400 text-amber-700 hover:bg-amber-50 dark:text-amber-300 dark:border-amber-700 dark:hover:bg-amber-950/40 font-semibold"
+            >
+              <PackageMinus className="size-4 mr-2 text-amber-600 dark:text-amber-400" /> Saída de
+              Consumo Interno
+            </Button>
             <Button
               onClick={() => setCreateOpen(true)}
               className="bg-blue-600 hover:bg-blue-700 text-white"
@@ -518,6 +536,12 @@ export default function EstoquePage() {
         open={dossierOpen}
         onOpenChange={setDossierOpen}
         initialProduct={dossierItem}
+      />
+
+      <InternalConsumptionDialog
+        open={consumptionOpen}
+        onOpenChange={setConsumptionOpen}
+        onSuccess={fetchInventory}
       />
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>

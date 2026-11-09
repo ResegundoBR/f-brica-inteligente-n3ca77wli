@@ -45,9 +45,11 @@ import {
   Tags,
   History,
   TrendingUp,
+  PackageMinus,
 } from 'lucide-react'
 import { MaterialShortage, PcpOrder, ComponentCategory, MasterComponent } from '@/types'
 import { SuprimentosHeader } from './components/SuprimentosHeader'
+import { InternalConsumptionDialog } from './components/InternalConsumptionDialog'
 import { TriageTable } from './components/TriageTable'
 import { CloseResidualDialog } from './components/CloseResidualDialog'
 import { CotacoesTable } from './components/CotacoesTable'
@@ -107,6 +109,7 @@ export default function HubSuprimentosPage() {
   // Dossiê do produto
   const [dossierOpen, setDossierOpen] = useState(false)
   const [dossierItem, setDossierItem] = useState<MaterialShortage | null>(null)
+  const [consumptionOpen, setConsumptionOpen] = useState(false)
 
   // Atribuição de fornecedor em lote na Fila
   const [batchSupplierOpen, setBatchSupplierOpen] = useState(false)
@@ -844,6 +847,14 @@ export default function HubSuprimentosPage() {
                 setDossierOpen(true)
               }}
             />
+            <Button
+              onClick={() => setConsumptionOpen(true)}
+              variant="outline"
+              className="border-amber-400 text-amber-700 hover:bg-amber-50 dark:text-amber-300 dark:border-amber-700 dark:hover:bg-amber-950/40 font-semibold"
+            >
+              <PackageMinus className="size-4 mr-2 text-amber-600 dark:text-amber-400" /> Saída de
+              Consumo Interno
+            </Button>
             <Button
               onClick={() => setModalOpen(true)}
               className="bg-blue-600 hover:bg-blue-700 text-white shadow-xs"
@@ -1608,6 +1619,13 @@ export default function HubSuprimentosPage() {
       <CloseResidualDialog
         open={closeResidualOpen}
         onOpenChange={setCloseResidualOpen}
+        onSuccess={fetchData}
+      />
+
+      {/* DIÁLOGO: SAÍDA DE CONSUMO INTERNO (BAIXA SEM OP) */}
+      <InternalConsumptionDialog
+        open={consumptionOpen}
+        onOpenChange={setConsumptionOpen}
         onSuccess={fetchData}
       />
 

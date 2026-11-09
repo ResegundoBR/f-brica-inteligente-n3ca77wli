@@ -333,7 +333,11 @@ export function InventoryItemDialog({
                           >
                             {orderLabel(m)}
                           </TableCell>
-                          <TableCell className="text-xs text-muted-foreground max-w-[160px] truncate">
+                          <TableCell
+                            className="text-xs text-muted-foreground max-w-[220px] truncate notranslate"
+                            translate="no"
+                            title={m.reason || ''}
+                          >
                             {m.reason || '-'}
                           </TableCell>
                           <TableCell className="text-xs whitespace-nowrap">

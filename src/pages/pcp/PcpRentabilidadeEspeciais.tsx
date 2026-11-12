@@ -22,7 +22,9 @@ import {
 } from '@/services/order-costs'
 import { PcpOrderCostsModal } from './components/PcpOrderCostsModal'
 import { OrderLevelCostsModal } from './components/OrderLevelCostsModal'
-import { listOrderCostsByOrderNumber } from '@/services/order-costs'
+import { listOrderCostsByOrderNumber, listOrderCostsByOrderGroup } from '@/services/order-costs'
+import { buildGroupRows } from './components/order-group-consolidation'
+import { OrderGroupDialog } from './components/OrderGroupDialog'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -94,8 +96,12 @@ interface OpRowData {
   manualCount: number
   automaticMaterial: number
   manualLines: CostLine[]
-  /** Linhas de custo attachadas ao PEDIDO (sem OP) — só no modo Por Pedido */
+  /** Linhas de custo attachadas ao PEDIDO (sem OP) — modos Por Pedido e Por Grupo */
   orderLevelLines?: CostLine[]
+  /** Etiqueta do grupo (order_group) — modo Por Grupo; vazio = OP individual sem grupo */
+  orderGroup?: string
+  /** Linhas de custo attachadas ao GRUPO (sem OP e sem pedido) — só no modo Por Grupo */
+  groupLevelLines?: CostLine[]
   /** Quantidade de OPs arquivadas dentro da linha (1 no modo Por OP) */
   archivedCount: number
   /** true quando TODAS as OPs da linha estão arquivadas */
@@ -181,8 +187,14 @@ export default function PcpRentabilidadeEspeciais() {
     'default' | 'margin_asc' | 'margin_desc' | 'sale_desc' | 'cost_desc'
   >('default')
 
-  // Alternador de visualização: Por OP (padrão) ou consolidado Por Pedido
-  const [viewMode, setViewMode] = useState<'op' | 'order'>('op')
+  // Alternador de visualização: Por OP (padrão), consolidado Por Pedido ou Por Grupo
+  const [viewMode, setViewMode] = useState<'op' | 'order' | 'group'>('op')
+
+  // Seleção múltipla no modo Por OP para "Agrupar em um Grupo"
+  const [selectedOpIds, setSelectedOpIds] = useState<Set<string>>(new Set())
+  const [groupDialogOpen, setGroupDialogOpen] = useState(false)
+  const [groupDialogInitial, setGroupDialogInitial] = useState('')
+  const [groupingInProgress, setGroupingInProgress] = useState(false)
 
   // Arquivamento: por padrão o painel exclui as OPs arquivadas
   const [showArchived, setShowArchived] = useState(false)
@@ -201,6 +213,10 @@ export default function PcpRentabilidadeEspeciais() {
   } | null>(null)
   const [orderLevelCostOpen, setOrderLevelCostOpen] = useState(false)
   const [orderLevelCostsByNumber, setOrderLevelCostsByNumber] = useState<
+    Record<string, PcpOrderCost[]>
+  >({})
+  // Linhas attachadas ao GRUPO (order_id vazio, order_number vazio, order_group = nome)
+  const [orderGroupCostsByGroup, setOrderGroupCostsByGroup] = useState<
     Record<string, PcpOrderCost[]>
   >({})
 
@@ -231,6 +247,7 @@ export default function PcpRentabilidadeEspeciais() {
       })
       const manualCostsByOrder: Record<string, PcpOrderCost[]> = {}
       const orderLevelCosts: Record<string, PcpOrderCost[]> = {}
+      const groupLevelCosts: Record<string, PcpOrderCost[]> = {}
       for (const c of allCosts) {
         // Linhas attachadas ao PEDIDO (order_id vazio + order_number) ficam fora
         // do detalhamento por OP, mas entram no consolidado do período.
@@ -239,6 +256,13 @@ export default function PcpRentabilidadeEspeciais() {
           if (onum) {
             if (!orderLevelCosts[onum]) orderLevelCosts[onum] = []
             orderLevelCosts[onum].push(c)
+          } else {
+            // Sem OP e sem pedido: linha attachada ao GRUPO (order_group = nome)
+            const g = (c.order_group || '').trim()
+            if (g) {
+              if (!groupLevelCosts[g]) groupLevelCosts[g] = []
+              groupLevelCosts[g].push(c)
+            }
           }
           continue
         }
@@ -250,6 +274,7 @@ export default function PcpRentabilidadeEspeciais() {
         orderLevelCount[onum] = lines.length
       }
       setOrderLevelCostsByNumber(orderLevelCosts)
+      setOrderGroupCostsByGroup(groupLevelCosts)
 
       // 2. inventory_movements do tipo Entrada com order_id
       const allMovements = await pb.collection('inventory_movements').getFullList({
@@ -433,6 +458,35 @@ export default function PcpRentabilidadeEspeciais() {
       )
     }
 
+    // Modo Por Grupo: OPs com a mesma etiqueta order_group viram UMA linha consolidada;
+    // OPs sem etiqueta aparecem como linhas individuais (nunca omitidas).
+    if (viewMode === 'group') {
+      const groupRows = buildGroupRows({
+        rows: baseRows,
+        orderLevelCostsByNumber,
+        orderGroupCostsByGroup,
+        overheadPercent: settings?.overhead_percent || 0,
+      }).map((g) => ({
+        order: g.order,
+        orders: g.orders,
+        label: g.label,
+        summary: g.summary,
+        automaticCount: g.automaticCount,
+        manualCount: g.manualCount,
+        automaticMaterial: g.automaticMaterial,
+        manualLines: g.manualLines,
+        orderLevelLines: g.orderLevelLines,
+        orderGroup: g.orderGroup,
+        groupLevelLines: g.groupLevelLines,
+        archivedCount: g.archivedCount,
+        archivedAll: g.archivedAll,
+      }))
+      return sortOpRows(
+        groupRows.filter((r) => passesRevenueFilter(r.summary.hasSalePrice)),
+        marginSort,
+      )
+    }
+
     // Agrupa as OPs Especiais do mesmo order_number numa única linha consolidada
     const groups = new Map<string, OpRowData[]>()
     for (const row of baseRows) {
@@ -498,7 +552,15 @@ export default function PcpRentabilidadeEspeciais() {
       consolidated.filter((r) => passesRevenueFilter(r.summary.hasSalePrice)),
       marginSort,
     )
-  }, [baseRows, viewMode, revenueFilter, marginSort, settings, orderLevelCostsByNumber])
+  }, [
+    baseRows,
+    viewMode,
+    revenueFilter,
+    marginSort,
+    settings,
+    orderLevelCostsByNumber,
+    orderGroupCostsByGroup,
+  ])
 
   // Identifica os order_numbers únicos presentes em baseRows (respeitam período, busca, status e arquivados)
   const scopedOrderNumbers = useMemo<Set<string>>(() => {
@@ -718,6 +780,59 @@ export default function PcpRentabilidadeEspeciais() {
     setOrderLevelCostOpen(true)
   }
 
+  // ---- Agrupamento em Grupo (modo Por OP: seleção múltipla + dialog) ----
+
+  const toggleOpSelection = (id: string) => {
+    setSelectedOpIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  /** Nome comum quando TODAS as OPs selecionadas já têm a mesma etiqueta (para editar/desagrupar) */
+  const commonGroupName = useMemo(() => {
+    if (selectedOpIds.size === 0) return ''
+    const selected = orders.filter((o) => selectedOpIds.has(o.id))
+    if (selected.length === 0) return ''
+    const names = new Set(selected.map((o) => (o.order_group || '').trim()))
+    return names.size === 1 ? [...names][0] : ''
+  }, [orders, selectedOpIds])
+
+  const openGroupDialog = () => {
+    if (selectedOpIds.size === 0) return
+    setGroupDialogInitial(commonGroupName)
+    setGroupDialogOpen(true)
+  }
+
+  /** Grava (nome) ou remove ('') a etiqueta order_group nas OPs selecionadas */
+  const handleConfirmGroup = async (name: string) => {
+    const ids = [...selectedOpIds]
+    if (ids.length === 0) return
+    setGroupingInProgress(true)
+    try {
+      await Promise.all(
+        ids.map((id) => pb.collection('pcp_orders').update(id, { order_group: name.trim() })),
+      )
+      setOrders((prev) =>
+        prev.map((o) => (ids.includes(o.id) ? { ...o, order_group: name.trim() } : o)),
+      )
+      toast({
+        title: name.trim() ? 'Grupo gravado' : 'Agrupamento removido',
+        description: name.trim()
+          ? `${ids.length} OP(s) agrupadas como "${name.trim()}". Veja no modo "Por Grupo".`
+          : `${ids.length} OP(s) deixaram de pertencer a um grupo.`,
+      })
+      setSelectedOpIds(new Set())
+    } catch (err) {
+      console.error('Erro ao gravar grupo:', err)
+      throw err
+    } finally {
+      setGroupingInProgress(false)
+    }
+  }
+
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-[1600px] mx-auto">
       {/* Cabeçalho */}
@@ -883,7 +998,13 @@ export default function PcpRentabilidadeEspeciais() {
               <Layers className="size-3.5" />
               Visualização
             </span>
-            <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as 'op' | 'order')}>
+            <Tabs
+              value={viewMode}
+              onValueChange={(v) => {
+                setViewMode(v as 'op' | 'order' | 'group')
+                setSelectedOpIds(new Set())
+              }}
+            >
               <TabsList>
                 <TabsTrigger value="op" className="text-xs px-3">
                   Por OP
@@ -891,12 +1012,17 @@ export default function PcpRentabilidadeEspeciais() {
                 <TabsTrigger value="order" className="text-xs px-3">
                   Por Pedido
                 </TabsTrigger>
+                <TabsTrigger value="group" className="text-xs px-3">
+                  Por Grupo
+                </TabsTrigger>
               </TabsList>
             </Tabs>
             <span className="text-[11px] text-muted-foreground">
               {viewMode === 'op'
                 ? 'Uma linha por OP Especial'
-                : 'OPs do mesmo pedido consolidadas em uma linha'}
+                : viewMode === 'group'
+                  ? 'OPs com a mesma etiqueta de grupo consolidadas; sem etiqueta aparecem individualmente'
+                  : 'OPs do mesmo pedido consolidadas em uma linha'}
             </span>
             <label className="ml-auto flex items-center gap-1.5 text-xs font-medium text-muted-foreground cursor-pointer select-none">
               <Checkbox

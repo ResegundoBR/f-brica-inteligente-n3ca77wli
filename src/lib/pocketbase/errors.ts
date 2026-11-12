@@ -1,44 +1,6 @@
 import { ClientResponseError } from 'pocketbase'
 
-// ⚠️ NÃO REMOVER funções deste arquivo — já quebrou o build 3 vezes por reescrita integral.
-// Consumidores de formatDetailedErrorMessage (NÃO REMOVER):
-//   - src/pages/pcp/suprimentos/ComprasPage.tsx
-//   - src/pages/pcp/suprimentos/components/EditOrdemCompraModal.tsx
-//   - src/pages/pcp/suprimentos/components/OrdemCompraModal.tsx
-//   - src/services/ordens-compra.test.ts
-// Edite por cima (patch pontual), nunca reescreva o arquivo inteiro.
-
 export type FieldErrors = Record<string, string>
-
-// Rótulos amigáveis (pt-BR) para campos de validação do backend.
-// NÃO REMOVER — usados por formatDetailedErrorMessage (ver consumidores acima).
-const FIELD_LABELS: Record<string, string> = {
-  expected_date: 'Previsão de Entrega',
-  'data.delivery_forecast': 'Previsão de Entrega',
-  delivery_forecast: 'Previsão de Entrega',
-  supplier: 'Fornecedor',
-  supplier_id: 'Fornecedor',
-  oc_number: 'Número da OC',
-  total: 'Valor Total',
-  payment_terms: 'Condições de Pagamento',
-}
-
-const FIELD_FALLBACKS: Record<string, { invalid: string; required: string }> = {
-  expected_date: { invalid: 'Data inválida', required: 'Obrigatório' },
-  supplier: { required: 'Obrigatório' },
-}
-
-function friendlyMessage(field: string, rawMessage: string): string {
-  const label = FIELD_LABELS[field] ?? field
-  const lower = (rawMessage || '').toLowerCase()
-  let msg = rawMessage
-  if (lower.includes('valid date') || lower.includes('invalid')) {
-    msg = FIELD_FALLBACKS[field]?.invalid ?? 'Data inválida'
-  } else if (lower.includes('blank') || lower.includes('required')) {
-    msg = FIELD_FALLBACKS[field]?.required ?? 'Obrigatório'
-  }
-  return `${label}: ${msg}`
-}
 
 export function extractFieldErrors(error: unknown): FieldErrors {
   if (!(error instanceof ClientResponseError)) return {}
@@ -58,41 +20,88 @@ export function extractFieldErrors(error: unknown): FieldErrors {
   return errors
 }
 
+// NÃO REMOVER formatDetailedErrorMessage abaixo — usado por ComprasPage,
+// EditOrdemCompraModal, OrdemCompraModal e services/ordens-compra.test.ts
+// (já foi apagado 3x manualmente e quebrou o build cada vez).
+
+const FIELD_LABELS: Record<string, string> = {
+  expected_date: 'Previsão de Entrega',
+  'data.delivery_forecast': 'Previsão de Entrega',
+  supplier: 'Fornecedor',
+  supplier_id: 'Fornecedor',
+  delivery_terms: 'Condições de Entrega',
+  oc_number: 'Número da OC',
+  quantity: 'Quantidade',
+  unit_price: 'Preço Unitário',
+  total: 'Total',
+}
+
+const CODE_MESSAGES: Record<string, string> = {
+  required: 'Obrigatório',
+  invalid: 'Valor inválido',
+  invalid_date: 'Data inválida',
+  invalid_value: 'Valor inválido',
+  length_out_of_range: 'Valor fora do intervalo permitido',
+  not_unique: 'Valor já existe',
+  format: 'Formato inválido',
+  missing_required_value: 'Obrigatório',
+}
+
+function friendlyCodeMessage(code: string, rawMessage?: unknown): string {
+  const suffix = code.startsWith('validation_') ? code.slice('validation_'.length) : code
+  const mapped = CODE_MESSAGES[suffix]
+  if (mapped) return mapped
+  if (typeof rawMessage === 'string' && rawMessage.trim()) return rawMessage
+  return 'Valor inválido'
+}
+
+/**
+ * Formata um erro de validação do PocketBase em mensagem amigável em
+ * português ("Previsão de Entrega: Data inválida; Fornecedor: Obrigatório").
+ * `fallback` aceita uma string padrão OU um Record de campo → rótulo amigável
+ * que substitui os rótulos padrão (FIELD_LABELS). Extrai os erros de qualquer
+ * objeto que tenha `response.data` (ClientResponseError ou mock de teste).
+ */
+export function formatDetailedErrorMessage(
+  error: unknown,
+  fallback?: string | FieldErrors,
+): string {
+  const data: unknown =
+    error &&
+    typeof error === 'object' &&
+    'response' in error &&
+    error.response &&
+    typeof error.response === 'object' &&
+    'data' in error.response
+      ? (error.response as { data?: unknown }).data
+      : undefined
+
+  if (!data || typeof data !== 'object') {
+    if (typeof fallback === 'string') return fallback
+    return getErrorMessage(error)
+  }
+
+  const customLabels = typeof fallback === 'object' ? fallback : undefined
+  const parts: string[] = []
+  for (const [field, detail] of Object.entries(data as Record<string, unknown>)) {
+    if (!detail || typeof detail !== 'object') continue
+    const d = detail as { code?: unknown; message?: unknown }
+    const label = customLabels?.[field] ?? FIELD_LABELS[field] ?? field
+    const code = typeof d.code === 'string' ? d.code : ''
+    const msg = friendlyCodeMessage(code, typeof d.message === 'string' ? d.message : undefined)
+    parts.push(`${label}: ${msg}`)
+  }
+  if (parts.length === 0) {
+    if (typeof fallback === 'string') return fallback
+    return getErrorMessage(error)
+  }
+  return parts.join('; ')
+}
+
 export function getErrorMessage(error: unknown): string {
   if (!(error instanceof ClientResponseError)) {
     return error instanceof Error ? error.message : 'An unexpected error occurred.'
   }
   const msgs = Object.values(extractFieldErrors(error))
   return msgs.length > 0 ? msgs.join(' ') : error.message || 'An unexpected error occurred.'
-}
-
-// NÃO REMOVER — formatDetailedErrorMessage: transforma erros de validação do
-// PocketBase em mensagem amigável em pt-BR ("Previsão de Entrega: Data inválida").
-// Aceita um fallback (string) para quando não há erro de campo identificado.
-export function formatDetailedErrorMessage(error: unknown, fallback?: string): string {
-  const isClientError = error instanceof ClientResponseError
-  const response = (error as { response?: { message?: string; data?: Record<string, unknown> } })
-    ?.response
-  const data = response?.data
-
-  if (!data || typeof data !== 'object') {
-    if (isClientError && response?.message) return response.message
-    if (fallback) return fallback
-    return error instanceof Error ? error.message : 'Erro inesperado.'
-  }
-
-  const parts: string[] = []
-  for (const [field, detail] of Object.entries(data)) {
-    if (detail && typeof detail === 'object' && 'message' in detail) {
-      const rawMessage = (detail as { message: unknown }).message
-      if (typeof rawMessage === 'string' && rawMessage) {
-        parts.push(friendlyMessage(field, rawMessage))
-      }
-    }
-  }
-
-  if (parts.length > 0) return parts.join(' · ')
-  if (fallback) return fallback
-  if (isClientError && response?.message) return response.message
-  return error instanceof Error ? error.message : 'Erro inesperado.'
 }

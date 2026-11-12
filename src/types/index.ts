@@ -279,6 +279,7 @@ export interface PcpOrder {
   sale_price?: number
   labor_hour_rate?: number
   archived?: boolean
+  order_group?: string
   bottleneck_by?: string
   expand?: {
     product_id?: Product
@@ -624,6 +625,7 @@ export interface PcpOrderCost {
   id: string
   order_id?: string
   order_number?: string
+  order_group?: string
   category: OrderCostCategory | string
   category_id?: string
   description?: string

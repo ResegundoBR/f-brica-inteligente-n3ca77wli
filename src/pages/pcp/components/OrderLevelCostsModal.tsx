@@ -47,11 +47,14 @@ import { DollarSign, Plus, Trash2, Pencil, Package, Layers, Info, Loader2 } from
 import { NoTranslate } from '@/components/NoTranslate'
 
 interface OrderLevelCostModalProps {
-  /** order_number do pedido consolidado */
+  /** order_number do pedido consolidado (ignorado no modo grupo) */
   orderNumber: string
+  /** Quando preenchido, o modal opera no modo GRUPO de pedidos (Rentabilidade Especiais):
+   *  grava linhas com order_group e order_id/order_number vazios. */
+  orderGroup?: string
   /** Primeira OP do grupo (para cliente / produto no cabeçalho) */
   representativeOrder: PcpOrder
-  /** Todas as OPs Especiais do pedido */
+  /** Todas as OPs Especiais do pedido (ou do grupo) */
   orders: PcpOrder[]
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -69,6 +72,7 @@ interface OrderLevelCostModalProps {
  */
 export function OrderLevelCostsModal({
   orderNumber,
+  orderGroup,
   representativeOrder,
   orders,
   open,
@@ -101,7 +105,9 @@ export function OrderLevelCostsModal({
   const [newCatDialogOpen, setNewCatDialogOpen] = useState(false)
 
   const loadData = useCallback(async () => {
-    if (!open || !orderNumber) return
+    if (!open) return
+    const isGroup = !!orderGroup
+    if (!isGroup && !orderNumber) return
     setLoading(true)
     try {
       const [settings, cats, autoResults, manualResults, orderLines] = await Promise.all([
@@ -109,7 +115,7 @@ export function OrderLevelCostsModal({
         listCostCategories(),
         Promise.all(orders.map((o) => fetchAutomaticMaterialCosts(o.id))),
         Promise.all(orders.map((o) => listOrderCosts(o.id))),
-        listOrderCostsByOrderNumber(orderNumber),
+        isGroup ? listOrderCostsByOrderGroup(orderGroup) : listOrderCostsByOrderNumber(orderNumber),
       ])
 
       const auto: Record<string, CostLine[]> = {}
@@ -141,7 +147,7 @@ export function OrderLevelCostsModal({
     } finally {
       setLoading(false)
     }
-  }, [open, orderNumber, orders, toast])
+  }, [open, orderNumber, orderGroup, orders, toast])
 
   useEffect(() => {
     if (open) {
@@ -150,7 +156,7 @@ export function OrderLevelCostsModal({
       onOpen?.()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, orderNumber])
+  }, [open, orderNumber, orderGroup])
 
   // Recálculo automático do total ao digitar quantidade/preço unitário
   const handleQuantityChange = (val: string) => {
@@ -254,7 +260,8 @@ export function OrderLevelCostsModal({
         toast({ title: 'Linha de custo do pedido atualizada com sucesso!' })
       } else {
         const created = await createOrderCost({
-          order_number: orderNumber,
+          order_number: orderGroup ? '' : orderNumber,
+          order_group: orderGroup || undefined,
           category: formCategory,
           category_id: catId || undefined,
           description: formDescription,
@@ -265,7 +272,11 @@ export function OrderLevelCostsModal({
           notes: formNotes,
         })
         setOrderLevelLines((prev) => [created, ...prev])
-        toast({ title: 'Custo do pedido lançado com sucesso!' })
+        toast({
+          title: orderGroup
+            ? 'Custo do grupo lançado com sucesso!'
+            : 'Custo do pedido lançado com sucesso!',
+        })
       }
       resetForm()
       onChanged?.()
@@ -336,18 +347,25 @@ export function OrderLevelCostsModal({
               <div className="flex items-center gap-2">
                 <DialogTitle className="text-xl font-bold flex items-center gap-2">
                   <DollarSign className="size-5 text-emerald-600" />
-                  Custos do Pedido (consolidado)
+                  {orderGroup ? 'Custos do Grupo (consolidado)' : 'Custos do Pedido (consolidado)'}
                 </DialogTitle>
                 <Badge
                   variant="outline"
                   className="bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 font-semibold"
                 >
-                  <NoTranslate>Pedido {orderNumber}</NoTranslate>
+                  {orderGroup ? (
+                    <NoTranslate>{orderGroup}</NoTranslate>
+                  ) : (
+                    <NoTranslate>Pedido {orderNumber}</NoTranslate>
+                  )}
                 </Badge>
               </div>
               <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-                {clientName} — {orders.length} OP{orders.length > 1 ? 's' : ''} Especial
-                {orders.length > 1 ? 'is' : ''} neste pedido
+                {orderGroup
+                  ? `${clientName} — ${orders.length} OP${orders.length > 1 ? 's' : ''} neste grupo`
+                  : `${clientName} — ${orders.length} OP${orders.length > 1 ? 's' : ''} Especial${
+                      orders.length > 1 ? 'is' : ''
+                    } neste pedido`}
               </DialogDescription>
             </div>
 
@@ -603,7 +621,11 @@ export function OrderLevelCostsModal({
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-2">
                   <div className="flex items-center gap-2">
                     <DollarSign className="size-4 text-emerald-600" />
-                    <h3 className="font-semibold text-sm">Lançamentos do Pedido Inteiro</h3>
+                    <h3 className="font-semibold text-sm">
+                      {orderGroup
+                        ? 'Lançamentos do Grupo Inteiro'
+                        : 'Lançamentos do Pedido Inteiro'}
+                    </h3>
                     <Badge variant="outline" className="text-[10px]">
                       {orderLevelLines.length} registro(s)
                     </Badge>
@@ -620,12 +642,14 @@ export function OrderLevelCostsModal({
                       {editingId ? (
                         <>
                           <Pencil className="size-3.5 text-amber-500" />
-                          Editando Lançamento do Pedido
+                          {orderGroup
+                            ? 'Editando Lançamento do Grupo'
+                            : 'Editando Lançamento do Pedido'}
                         </>
                       ) : (
                         <>
                           <Plus className="size-3.5 text-emerald-600" />
-                          Novo Custo do Pedido
+                          {orderGroup ? 'Novo Custo do Grupo' : 'Novo Custo do Pedido'}
                         </>
                       )}
                     </span>

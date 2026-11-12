@@ -209,6 +209,19 @@ export async function listOrderCostsByOrderNumber(orderNumber: string): Promise<
   })
 }
 
+/**
+ * Linhas de custo attachadas a um GRUPO de pedidos (order_id vazio, order_number
+ * vazio e order_group preenchido) — usadas pelo painel Rentabilidade Especiais
+ * no modo "Por Grupo". Nunca cruza com linhas de OP nem de pedido individual.
+ */
+export async function listOrderCostsByOrderGroup(orderGroup: string): Promise<PcpOrderCost[]> {
+  return pb.collection('pcp_order_costs').getFullList<PcpOrderCost>({
+    filter: `order_group="${orderGroup}" && order_id="" && order_number=""`,
+    sort: '-created',
+    expand: 'created_by,category_id',
+  })
+}
+
 export async function createOrderCost(
   data: Omit<Partial<PcpOrderCost>, 'order_id'> & {
     category: string

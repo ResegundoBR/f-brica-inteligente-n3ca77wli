@@ -1,0 +1,100 @@
+/**
+ * Adaptações de MOBILE — tudo atrás de breakpoints/UA, desktop intocado.
+ * Importado uma única vez em main.tsx. Nenhuma regra aqui afeta desktop:
+ * - .drawer-viewport: só <=767px;
+ * - .mobile-pan-x: só em telas touch/coarse;
+ * - .kanban-columns: comportamento de swipe só <=767px;
+ * - .table-scroll-x: rolagem horizontal de tabelas largas só <=767px;
+ * - modais em tela cheia: só <=767px (o desktop usa as classes originais).
+ */
+@media (max-width: 767px) {
+  /* ---------- (5) Menu lateral = gaveta ---------- */
+  /* O kit ui/sidebar já renderiza a Sidebar como Sheet (gaveta + overlay) sob md:;
+     aqui apenas garantimos largura confortável de toque e viewport estável. */
+  .drawer-viewport {
+    height: 100dvh;
+    overflow-x: hidden;
+  }
+
+  /* ---------- (7) Kanban: swipe horizontal por colunas ---------- */
+  .kanban-columns {
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+    scroll-padding-left: 1rem;
+    overscroll-behavior-x: contain;
+  }
+  /* Em telas de toque o arrasto horizontal não deve iniciar drag&drop do card */
+  .kanban-columns .group\/card {
+    -webkit-touch-callout: none;
+  }
+  .kanban-columns [draggable='true'] {
+    -webkit-user-drag: none;
+  }
+
+  /* ---------- (6) Tabelas largas: carrossel horizontal, sem truncar dados ---------- */
+  .table-scroll-x {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    max-width: 100vw;
+  }
+  /* Células quebram texto em vez de cortar conteúdo crítico */
+  .table-scroll-x td,
+  .table-scroll-x th {
+    white-space: normal;
+    word-break: break-word;
+  }
+  .table-scroll-x td {
+    min-width: 6.5rem;
+  }
+
+  /* ---------- (8) Modais em tela cheia (sheet de baixo para cima) ---------- */
+  [data-slot='dialog-content'],
+  [data-slot='alert-dialog-content'],
+  [data-slot='sheet-content'][data-side='right'],
+  [data-slot='sheet-content'][data-side='left'] {
+    /* mantém as classes originais; só sobrepõe geometria no mobile */
+    left: 0 !important;
+    right: 0 !important;
+    top: auto !important;
+    bottom: 0 !important;
+    translate: none !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    max-height: 94dvh !important;
+    height: auto;
+    border-radius: 1rem 1rem 0 0 !important;
+    border-left: none !important;
+    border-right: none !important;
+    border-bottom: none !important;
+    transform: none !important;
+    animation: mobile-sheet-up 0.25s ease-out;
+  }
+  @keyframes mobile-sheet-up {
+    from {
+      transform: translateY(24px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  /* Fechar com o botão X continua funcionando: garante contraste no topo do sheet */
+  [data-slot='dialog-content'] [data-slot='dialog-close'] {
+    z-index: 10;
+  }
+  /* Corpo do modal rola dentro do sheet */
+  [data-slot='dialog-content'] > * {
+    max-height: 94dvh;
+  }
+}
+
+/* Touch coarse (celular/tablet): swipe natural no fluxo de etapas e no kanban */
+@media (pointer: coarse) {
+  .mobile-pan-x {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+  }
+}

@@ -965,7 +965,7 @@ export default function PcpKanban() {
 
       <div className="flex-1 min-h-0 flex gap-4 items-start w-full">
         {viewMode === 'status' && (
-          <div className="flex gap-4 overflow-x-auto h-full pb-4 w-full">
+          <div className="kanban-columns flex gap-4 overflow-x-auto h-full pb-4 w-full snap-x snap-mandatory">
             {STATUSES.map((status) => {
               const rawOrders = filteredOrders.filter((o) => o.status === status)
               // Na coluna Fila aplicamos a ordenação canônica com prioridades e manual_sequence
@@ -981,7 +981,7 @@ export default function PcpKanban() {
                     handleDropStatus(e, status)
                   }}
                   className={cn(
-                    'w-80 shrink-0 flex flex-col max-h-full rounded-xl border bg-slate-100/50 dark:bg-slate-900/50 p-3',
+                    'w-80 shrink-0 flex flex-col max-h-full rounded-xl border bg-slate-100/50 dark:bg-slate-900/50 p-3 snap-start',
                     status === 'Parado' &&
                       'border-orange-200 bg-orange-50/50 dark:border-orange-900/50 dark:bg-orange-950/20',
                   )}
@@ -1098,7 +1098,7 @@ export default function PcpKanban() {
         )}
 
         {viewMode === 'process' && (
-          <div className="flex w-full h-full border rounded-xl overflow-hidden bg-white dark:bg-slate-950 shadow-sm">
+          <div className="flex w-full h-full border rounded-xl overflow-hidden bg-white dark:bg-slate-950 shadow-sm mobile-pan-x">
             {MACRO_GROUPS.map((group) => (
               <div
                 key={group.name}

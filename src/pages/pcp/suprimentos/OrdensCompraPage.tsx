@@ -180,8 +180,8 @@ export default function OrdensCompraPage() {
           onEdit={handleEditOc}
         />
       ) : (
-        <div className="bg-white dark:bg-slate-900 rounded-lg border shadow-sm overflow-hidden">
-          <Table>
+        <div className="bg-white dark:bg-slate-900 rounded-lg border shadow-sm overflow-hidden mobile-pan-x">
+          <Table className="table-mobile-pan">
             <TableHeader className="bg-slate-50 dark:bg-slate-800/50">
               <TableRow>
                 <TableHead className="w-[100px]">OC Nº</TableHead>

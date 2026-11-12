@@ -86,7 +86,7 @@ export function CotacoesTable({
               allSelected={groupAllSelected}
               onSelectAll={() => onToggleSelectGroup(groupIds)}
             >
-              <Table>
+              <Table className="table-mobile-pan">
                 <TableHeader className="bg-slate-50 dark:bg-slate-800/50">
                   <TableRow>
                     <TableHead className="w-[40px]" />
@@ -178,8 +178,8 @@ export function CotacoesTable({
 
   // MODO CONSOLIDADO POR CÓDIGO (Padrão)
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-lg border shadow-sm overflow-hidden">
-      <Table>
+    <div className="bg-white dark:bg-slate-900 rounded-lg border shadow-sm overflow-hidden mobile-pan-x">
+      <Table className="table-mobile-pan">
         <TableHeader className="bg-slate-50 dark:bg-slate-800/50">
           <TableRow>
             <TableHead className="w-[44px]">

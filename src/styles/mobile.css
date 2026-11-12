@@ -97,4 +97,13 @@
     overscroll-behavior-x: contain;
     scroll-snap-type: x proximity;
   }
+  /* Tabelas largas: força largura mínima para rolar horizontalmente no toque,
+     sem afetar o desktop (a regra inteira vive atrás de pointer: coarse) */
+  .table-mobile-pan {
+    min-width: 720px;
+  }
+  .table-mobile-pan th,
+  .table-mobile-pan td {
+    white-space: nowrap;
+  }
 }

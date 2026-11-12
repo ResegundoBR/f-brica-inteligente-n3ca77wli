@@ -1,4 +1,4 @@
-import { Navigate, Outlet } from 'react-router-dom'
+import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
@@ -6,6 +6,7 @@ import { ShieldAlert } from 'lucide-react'
 
 export function AuthGuard() {
   const { user, loading, signOut } = useAuth()
+  const location = useLocation()
   const [accessDenied, setAccessDenied] = useState(false)
 
   useEffect(() => {
@@ -49,7 +50,7 @@ export function AuthGuard() {
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>
     )
-  if (!user) return <Navigate to="/login" replace />
+  if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />
 
   if (accessDenied) {
     return (

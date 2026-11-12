@@ -641,8 +641,8 @@ export function ComprasTable({
 
   if (!grouped) {
     return (
-      <div className="bg-white dark:bg-slate-900 rounded-lg border shadow-sm overflow-hidden">
-        <Table>
+      <div className="bg-white dark:bg-slate-900 rounded-lg border shadow-sm overflow-hidden mobile-pan-x">
+        <Table className="table-mobile-pan">
           <TableCols
             showCheckbox={!isEmOc}
             allSelected={allSelected}
@@ -687,7 +687,7 @@ export function ComprasTable({
             onSelectAll={() => onToggleSelectGroup?.(group.allItemIds)}
             showCheckbox={!isEmOc}
           >
-            <Table>
+            <Table className="table-mobile-pan">
               <TableCols
                 showCheckbox={false}
                 allSelected={false}

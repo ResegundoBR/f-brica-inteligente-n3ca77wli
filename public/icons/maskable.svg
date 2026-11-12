@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- maskable: toda a arte fica em uma zona segura central de 80% (raio >= 410 de círculo mínimo), fundo sólido até a borda -->
+  <rect width="512" height="512" fill="#0d1b4a"/>
+  <g transform="translate(112,132) scale(10.66)">
+    <path fill="#ffffff" d="M2 22V9l6-4v17H2zM10 22V9l6 4v9h-6zM18 22V13l4 3v6h-4z"/>
+    <rect x="2" y="20" width="20" height="2" fill="#4dabf7"/>
+  </g>
+</svg>

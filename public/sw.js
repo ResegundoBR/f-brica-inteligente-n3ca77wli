@@ -10,8 +10,8 @@ const VERSION = 'v1'
 const STATIC_CACHE = `fabrica-static-${VERSION}`
 const STATIC_ASSETS = [
   '/manifest.webmanifest',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
+  '/icons/icon.svg',
+  '/icons/maskable.svg',
   '/klaxon-logo.svg',
 ]
 

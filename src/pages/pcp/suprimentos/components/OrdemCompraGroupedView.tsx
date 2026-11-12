@@ -72,7 +72,7 @@ function GroupSection({
 }) {
   const [collapsed, setCollapsed] = useState(false)
   return (
-    <div className="border rounded-lg overflow-hidden bg-white dark:bg-slate-900 shadow-sm">
+    <div className="border rounded-lg overflow-hidden bg-white dark:bg-slate-900 shadow-sm mobile-pan-x">
       <div
         className="flex items-center gap-3 px-4 py-3 bg-slate-50 dark:bg-slate-800/50 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
         onClick={() => setCollapsed((c) => !c)}
@@ -99,7 +99,7 @@ function GroupSection({
         )}{' '}
       </div>
       {!collapsed && (
-        <Table>
+        <Table className="table-mobile-pan">
           <TableHeader className="bg-slate-50 dark:bg-slate-800/50">
             <TableRow>
               <TableHead className="w-[100px]">OC Nº</TableHead>

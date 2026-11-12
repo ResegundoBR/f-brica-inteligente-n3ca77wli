@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import pb from '@/lib/pocketbase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,7 +17,17 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [formError, setFormError] = useState('')
   const navigate = useNavigate()
+  const location = useLocation()
   const { toast } = useToast()
+  // Deep-link (ex.: abrir o PWA instalado em /pcp/dashboard sem sessão): volta para a
+  // página original após o login, desde que seja um caminho interno válido.
+  const desiredPath =
+    location.state?.from &&
+    typeof location.state.from === 'string' &&
+    location.state.from.startsWith('/') &&
+    !location.state.from.startsWith('/login')
+      ? (location.state.from as string)
+      : null
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -39,8 +49,12 @@ export default function Login() {
       if (authData.record.must_change_password) {
         navigate('/change-password')
       } else {
-        const redirectPath = await getPostLoginRedirectPath(authData.record as unknown as User)
-        navigate(redirectPath)
+        if (desiredPath) {
+          navigate(desiredPath, { replace: true })
+        } else {
+          const redirectPath = await getPostLoginRedirectPath(authData.record as unknown as User)
+          navigate(redirectPath)
+        }
       }
     } catch (err: any) {
       const fErrors = extractFieldErrors(err)

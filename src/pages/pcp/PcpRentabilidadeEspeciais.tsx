@@ -208,6 +208,8 @@ export default function PcpRentabilidadeEspeciais() {
   // Modal de Custos do Pedido (nível order_number, sem OP)
   const [orderLevelCostState, setOrderLevelCostState] = useState<{
     orderNumber: string
+    /** Quando preenchido, o modal opera no modo GRUPO (Rentabilidade Especiais, Por Grupo) */
+    orderGroup?: string
     representativeOrder: PcpOrder
     orders: PcpOrder[]
   } | null>(null)
@@ -587,6 +589,24 @@ export default function PcpRentabilidadeEspeciais() {
     return scopedOrderLevelCosts.reduce((acc, c) => acc + (Number(c.total) || 0), 0)
   }, [scopedOrderLevelCosts])
 
+  // Grupos presentes nas OPs do período filtrado + linhas de custo attachadas ao GRUPO
+  const scopedGroupNames = useMemo<Set<string>>(() => {
+    const set = new Set<string>()
+    for (const row of baseRows) {
+      const g = (row.order.order_group || '').trim()
+      if (g) set.add(g)
+    }
+    return set
+  }, [baseRows])
+
+  const scopedGroupLevelCosts = useMemo<PcpOrderCost[]>(() => {
+    const list: PcpOrderCost[] = []
+    for (const g of scopedGroupNames) {
+      list.push(...(orderGroupCostsByGroup[g] || []))
+    }
+    return list
+  }, [scopedGroupNames, orderGroupCostsByGroup])
+
   // KPIs agregados do PERÍODO: OPs filtradas (baseRows) + custos attachados a pedidos
   // INDEPENDENTE do viewMode (Por OP vs Por Pedido têm exatamente os mesmos números nos cards)
   const periodKpis = useMemo(() => {
@@ -638,6 +658,22 @@ export default function PcpRentabilidadeEspeciais() {
       }
     }
 
+    // 3. Incorpora os custos attachados ao nível do GRUPO (order_group, sem OP e sem pedido)
+    for (const c of scopedGroupLevelCosts) {
+      const val = Number(c.total) || 0
+      totalDirectCost += val
+      const cat = (c.category || '').trim()
+      if (cat === 'Material') {
+        totalMaterial += val
+      } else if (cat === 'Mão de Obra') {
+        totalLabor += val
+      } else if (cat === 'Terceirização') {
+        totalOutsourcing += val
+      } else {
+        totalOther += val
+      }
+    }
+
     // Margem global consolidada do período: ((receita - custo) / receita) * 100
     const consolidatedProfit = totalRevenue - totalDirectCost
     const consolidatedMarginPct =
@@ -656,7 +692,7 @@ export default function PcpRentabilidadeEspeciais() {
       consolidatedProfit,
       consolidatedMarginPct,
     }
-  }, [baseRows, scopedOrderLevelCosts])
+  }, [baseRows, scopedOrderLevelCosts, scopedGroupLevelCosts])
 
   // Destaques (melhor e pior margem) calculados sobre a granularidade ativa (viewRows)
   const highlights = useMemo(() => {
@@ -713,7 +749,7 @@ export default function PcpRentabilidadeEspeciais() {
     }
   }, [viewRows])
 
-  const entityPlural = viewMode === 'op' ? 'OPs' : 'pedidos'
+  const entityPlural = viewMode === 'op' ? 'OPs' : viewMode === 'group' ? 'grupos' : 'pedidos'
 
   // Categorias adicionais além das 9 fixas padrão que aparecem como colunas/grupos
   const additionalCategories = useMemo<string[]>(() => {
@@ -734,6 +770,9 @@ export default function PcpRentabilidadeEspeciais() {
     }
     return Array.from(names).sort((a, b) => a.localeCompare(b, 'pt-BR'))
   }, [registeredCategories, viewRows])
+
+  // Colunas da tabela: 12 base + categorias dinâmicas + checkbox de seleção (só no modo Por OP)
+  const tableColumnCount = 12 + additionalCategories.length + (viewMode === 'op' ? 1 : 0)
 
   const handleOpenCostsModal = (order: PcpOrder) => {
     setSelectedOrderForCost(order)
@@ -776,6 +815,20 @@ export default function PcpRentabilidadeEspeciais() {
       orderNumber,
       representativeOrder: row.order,
       orders: row.orders,
+    })
+    setOrderLevelCostOpen(true)
+  }
+
+  const handleOpenGroupLevelCosts = (
+    group: string,
+    repOrder: PcpOrder,
+    groupOrders: PcpOrder[],
+  ) => {
+    setOrderLevelCostState({
+      orderNumber: '',
+      orderGroup: group,
+      representativeOrder: repOrder,
+      orders: groupOrders,
     })
     setOrderLevelCostOpen(true)
   }
@@ -1178,6 +1231,40 @@ export default function PcpRentabilidadeEspeciais() {
         </CardContent>
       </Card>
 
+      {/* Barra de ação da seleção múltipla (só no modo Por OP) */}
+      {viewMode === 'op' && selectedOpIds.size > 0 && (
+        <div className="flex flex-wrap items-center gap-3 p-3 rounded-lg border border-emerald-300 dark:border-emerald-800 bg-emerald-50/70 dark:bg-emerald-950/30 text-sm">
+          <span className="font-semibold text-emerald-800 dark:text-emerald-200">
+            {selectedOpIds.size} selecionada{selectedOpIds.size > 1 ? 's' : ''}
+            {commonGroupName ? (
+              <>
+                {' '}
+                · grupo atual: <NoTranslate>{commonGroupName}</NoTranslate>
+              </>
+            ) : (
+              ''
+            )}
+          </span>
+          <Button
+            size="sm"
+            className="h-8 gap-1.5"
+            onClick={openGroupDialog}
+            disabled={groupingInProgress}
+          >
+            <Layers className="size-3.5" />
+            Agrupar em um Grupo
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8"
+            onClick={() => setSelectedOpIds(new Set())}
+          >
+            Limpar seleção
+          </Button>
+        </div>
+      )}
+
       {/* Tabela de OPs Especiais */}
       <Card className="shadow-sm overflow-hidden">
         <CardHeader className="p-4 border-b bg-slate-50/50 dark:bg-slate-900/50 flex flex-row items-center justify-between">
@@ -1186,12 +1273,16 @@ export default function PcpRentabilidadeEspeciais() {
               <FileSpreadsheet className="size-4 text-emerald-600" />
               {viewMode === 'op'
                 ? 'Detalhamento de Custos e Margens por Ordem de Produção'
-                : 'Detalhamento de Custos e Margens por Pedido (consolidado)'}
+                : viewMode === 'group'
+                  ? 'Detalhamento de Custos e Margens por Grupo de Pedido (consolidado)'
+                  : 'Detalhamento de Custos e Margens por Pedido (consolidado)'}
             </CardTitle>
             <CardDescription className="text-xs">
               {viewMode === 'op'
                 ? `Exibindo ${viewRows.length} de ${orders.length} OPs Especiais`
-                : `Exibindo ${viewRows.length} pedido(s) cobrindo ${viewRows.reduce((acc, r) => acc + r.orders.length, 0)} de ${orders.length} OPs Especiais`}
+                : viewMode === 'group'
+                  ? `Exibindo ${viewRows.length} grupo(s)/OP(s) cobrindo ${viewRows.reduce((acc, r) => acc + r.orders.length, 0)} de ${orders.length} OPs Especiais`
+                  : `Exibindo ${viewRows.length} pedido(s) cobrindo ${viewRows.reduce((acc, r) => acc + r.orders.length, 0)} de ${orders.length} OPs Especiais`}
             </CardDescription>
           </div>
         </CardHeader>
@@ -1200,6 +1291,11 @@ export default function PcpRentabilidadeEspeciais() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-50">
+                  {viewMode === 'op' && (
+                    <TableHead className="w-[36px] text-center">
+                      <span className="sr-only">Selecionar</span>
+                    </TableHead>
+                  )}
                   <TableHead className="w-[120px]">
                     {viewMode === 'op' ? 'OP / Pedido' : 'Pedido / OPs'}
                   </TableHead>
@@ -1229,7 +1325,7 @@ export default function PcpRentabilidadeEspeciais() {
                 {loading ? (
                   <TableRow>
                     <TableCell
-                      colSpan={12 + additionalCategories.length}
+                      colSpan={tableColumnCount}
                       className="h-32 text-center text-muted-foreground"
                     >
                       Carregando dados financeiros e custos das OPs...
@@ -1238,7 +1334,7 @@ export default function PcpRentabilidadeEspeciais() {
                 ) : viewRows.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={12 + additionalCategories.length}
+                      colSpan={tableColumnCount}
                       className="h-32 text-center text-muted-foreground"
                     >
                       Nenhuma Ordem de Produção Especial encontrada com os filtros selecionados.
@@ -1257,6 +1353,7 @@ export default function PcpRentabilidadeEspeciais() {
                       manualLines,
                       archivedCount,
                       archivedAll,
+                      orderGroup,
                     }) => {
                       const client = order.client_name || order.expand?.client_id?.name || '-'
                       const productNames = Array.from(
@@ -1276,6 +1373,17 @@ export default function PcpRentabilidadeEspeciais() {
                           key={orders.map((o) => o.id).join('-')}
                           className="hover:bg-slate-50 dark:hover:bg-slate-900/60 transition-colors"
                         >
+                          {/* Seleção (só no modo Por OP) */}
+                          {viewMode === 'op' && (
+                            <TableCell className="text-center">
+                              <Checkbox
+                                checked={selectedOpIds.has(order.id)}
+                                onCheckedChange={() => toggleOpSelection(order.id)}
+                                aria-label={`Selecionar OP ${order.op_number || order.id.slice(0, 5)}`}
+                              />
+                            </TableCell>
+                          )}
+
                           {/* OP / Pedido */}
                           <TableCell className="font-medium">
                             {viewMode === 'op' ? (
@@ -1518,6 +1626,100 @@ export default function PcpRentabilidadeEspeciais() {
                                     size="sm"
                                     className="h-6 text-[10px] px-2 gap-1 text-muted-foreground hover:text-foreground"
                                     onClick={() => applyArchivedFlag([order.id], false)}
+                                  >
+                                    <ArchiveRestore className="size-3" />
+                                    Desarquivar
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 text-[10px] px-2 gap-1 text-muted-foreground hover:text-foreground"
+                                    onClick={() =>
+                                      setArchivingRow({
+                                        order,
+                                        orders,
+                                        label,
+                                        summary,
+                                        automaticCount,
+                                        manualCount,
+                                        automaticMaterial,
+                                        manualLines,
+                                        archivedCount,
+                                        archivedAll,
+                                      })
+                                    }
+                                  >
+                                    <Archive className="size-3" />
+                                    Arquivar
+                                  </Button>
+                                )}
+                              </div>
+                            ) : viewMode === 'group' ? (
+                              <div className="flex flex-col items-center gap-1.5">
+                                {orderGroup ? (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 text-xs px-2 gap-1 border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+                                    onClick={() =>
+                                      handleOpenGroupLevelCosts(orderGroup, order, orders)
+                                    }
+                                  >
+                                    <DollarSign className="size-3.5" />
+                                    Custos do Grupo
+                                    {orderGroupCostsByGroup[orderGroup]?.length ? (
+                                      <Badge
+                                        variant="secondary"
+                                        className="ml-0.5 h-4 px-1 text-[9px]"
+                                      >
+                                        {orderGroupCostsByGroup[orderGroup].length}
+                                      </Badge>
+                                    ) : null}
+                                  </Button>
+                                ) : (
+                                  <span className="text-[10px] text-muted-foreground">
+                                    Sem grupo
+                                  </span>
+                                )}
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-7 text-xs px-2 gap-1"
+                                    >
+                                      <Users className="size-3.5" />
+                                      {orders.length} OPs
+                                      <ChevronDown className="size-3" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent
+                                    align="end"
+                                    className="max-h-64 overflow-y-auto"
+                                  >
+                                    {orders.map((o) => (
+                                      <DropdownMenuItem
+                                        key={o.id}
+                                        onClick={() => handleOpenCostsModal(o)}
+                                      >
+                                        <DollarSign className="size-3.5" />
+                                        Custos da OP {o.op_number || `#${o.id.slice(0, 5)}`}
+                                      </DropdownMenuItem>
+                                    ))}
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                                {archivedAll ? (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 text-[10px] px-2 gap-1 text-muted-foreground hover:text-foreground"
+                                    onClick={() =>
+                                      applyArchivedFlag(
+                                        orders.map((o) => o.id),
+                                        false,
+                                      )
+                                    }
                                   >
                                     <ArchiveRestore className="size-3" />
                                     Desarquivar
@@ -1807,12 +2009,22 @@ export default function PcpRentabilidadeEspeciais() {
             if (!v) setOrderLevelCostState(null)
           }}
           orderNumber={orderLevelCostState.orderNumber}
+          orderGroup={orderLevelCostState.orderGroup}
           representativeOrder={orderLevelCostState.representativeOrder}
           orders={orderLevelCostState.orders}
           onChanged={() => loadData()}
           onOpen={() => loadData()}
         />
       )}
+
+      {/* Dialog "Agrupar em um Grupo" (modo Por OP): grava/remove order_group nas OPs selecionadas */}
+      <OrderGroupDialog
+        open={groupDialogOpen}
+        onOpenChange={setGroupDialogOpen}
+        selectedCount={selectedOpIds.size}
+        initialName={groupDialogInitial}
+        onConfirm={handleConfirmGroup}
+      />
     </div>
   )
 }

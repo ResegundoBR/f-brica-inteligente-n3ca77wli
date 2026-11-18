@@ -7,6 +7,8 @@ export interface ExtractedOpHeader {
   op_number?: string
   delivery_date?: string
   quantity?: number
+  /** Valor do rótulo "Total de Peças" extraído do talão (fonte: extractTotalPecasQuantity). */
+  total_pecas?: number
   client_name?: string
   product_code?: string
   product_name?: string
@@ -813,6 +815,7 @@ export function parseOpPdfDeterministic(
   const extractedTotalPecasQty = extractTotalPecasQuantity(allLines, positionedLines)
   if (extractedTotalPecasQty > 0) {
     header.quantity = extractedTotalPecasQty
+    header.total_pecas = extractedTotalPecasQty
   }
 
   // ----------------------------------------------------

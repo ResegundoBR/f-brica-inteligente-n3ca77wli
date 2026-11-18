@@ -91,6 +91,7 @@ interface OpPdfReviewModalProps {
   rawComponents: ExtractedOpComponent[]
   comparisonRows: ComponentComparisonRow[]
   selectedProduct?: Product | null
+  pdfTotalQuantity?: number
   onConfirm: (decisions: {
     header: Partial<ExtractedOpHeader>
     materialsForOp: Array<{
@@ -121,12 +122,28 @@ export function OpPdfReviewModal({
   open,
   onOpenChange,
   header: initialHeader,
+  rawComponents,
   comparisonRows: initialRows,
   selectedProduct,
+  pdfTotalQuantity,
   onConfirm,
 }: OpPdfReviewModalProps) {
   const [rows, setRows] = useState<ComponentComparisonRow[]>(initialRows)
   const [editableHeader, setEditableHeader] = useState<ExtractedOpHeader>(initialHeader)
+
+  // Divergência Total de Peças vs. Quantidade da OP: quando o total extraído do PDF
+  // (rótulo "Total de Peças") não bate com o valor no campo, sinaliza SEMPRE —
+  // a divergência nunca pode passar despercebida (bug do talão OP 000637/2026).
+  const pdfTotalLabel = (() => {
+    if (typeof pdfTotalQuantity === 'number' && pdfTotalQuantity > 0) return pdfTotalQuantity
+    // Fallback: procura o rótulo "Total de Peças" nos dados extraídos
+    if (typeof initialHeader.total_pecas === 'number' && initialHeader.total_pecas > 0)
+      return initialHeader.total_pecas
+    return null
+  })()
+  const currentQty = Number(editableHeader.quantity) > 0 ? Number(editableHeader.quantity) : 1
+  const showTotalPecasWarning =
+    pdfTotalLabel !== null && Math.abs(pdfTotalLabel - currentQty) > 0.0001
   const [rowSectors, setRowSectors] = useState<Record<string, PcpOrderMaterialSector>>({})
   const [rowMeasurements, setRowMeasurements] = useState<Record<string, string>>({})
   const [rowQuantities, setRowQuantities] = useState<Record<string, number>>({})

@@ -1,5 +1,6 @@
 import type { CompositionItem, Product, PcpOrderMaterialSector } from '@/types'
 import { fixMojibake } from './mojibake'
+import { extractTotalPecasQuantity, isDateLikeHeaderValue } from './op-pdf-quantity'
 
 export interface ExtractedOpHeader {
   order_number?: string
@@ -799,6 +800,22 @@ export function parseOpPdfDeterministic(
   const fullText = allLines.join('\n')
 
   // ----------------------------------------------------
+  // STEP A0: Extração PRIORITÁRIA da quantidade pelo rótulo EXATO "Total de Peças".
+  // Bug real (talão OP 000637/2026, Total de Peças = 1.0000): o matching posicional
+  // genérico abaixo capturava o "12" da data "14/12/2026" da coluna vizinha e preenchia
+  // 12. Este passo usa extração dedicada (src/lib/op-pdf-quantity.ts) que:
+  //  - casa o rótulo completo "Total" + "de" + "Peças" (nunca "Total" sozinho);
+  //  - rejeita datas (dd/mm/aaaa, inclusive espaçadas) e numerações com "/";
+  //  - prefere o formato ERP com 4 decimais (ex. "1.0000").
+  // Roda ANTES de todos os demais passos e os bloqueia quando positivo (guardas
+  // `if (!header.quantity)`), garantindo que o valor do rótulo sempre vença.
+  // ----------------------------------------------------
+  const extractedTotalPecasQty = extractTotalPecasQuantity(allLines, positionedLines)
+  if (extractedTotalPecasQty > 0) {
+    header.quantity = extractedTotalPecasQty
+  }
+
+  // ----------------------------------------------------
   // STEP A: Positional matching for Header fields (X-coordinate matching)
   // ----------------------------------------------------
   if (positionedLines && positionedLines.length > 0) {
@@ -998,10 +1015,15 @@ export function parseOpPdfDeterministic(
               }
               case 'total_pecas': {
                 if (!header.quantity) {
-                  // Match quantity token in this column (e.g. 2,0000 or 2)
+                  // Match quantity token in this column (e.g. 2,0000 or 2).
+                  // Anti-bug (talão OP 000637/2026): nunca aceitar datas (dd/mm/aaaa,
+                  // inclusive "14/12/2026" cujo "12" já vazou aqui) nem fragmentos "/"
+                  // (número de pedido/numeração). Este passo só roda se o STEP A0
+                  // (rótulo exato, prioridade máxima) não encontrou valor.
                   for (const tok of matchedTokens) {
-                    const qMatch = tok.str.match(/^(\d+(?:[.,]\d+)?)$/)
-                    if (qMatch) {
+                    const rawTok = tok.str.trim()
+                    const qMatch = rawTok.match(/^(\d+(?:[.,]\d+)?)$/)
+                    if (qMatch && !isDateLikeHeaderValue(rawTok) && !rawTok.includes('/')) {
                       const q = parseQuantity(qMatch[1])
                       if (q > 0) {
                         header.quantity = q
@@ -1244,7 +1266,8 @@ export function parseOpPdfDeterministic(
   }
 
   // 4. Quantity (Total de Peças / Quantidade) fallback
-  // Specific requirement: "Total de Peças" (X ≈ 160) -> 2,0000 -> 2
+  // Roda SOMENTE se o STEP A0 (extração dedicada pelo rótulo exato "Total de Peças",
+  // src/lib/op-pdf-quantity.ts) não encontrou valor — nunca sobrescreve o rótulo.
   if (!header.quantity) {
     for (let i = 0; i < allLines.length; i++) {
       const line = allLines[i].trim()
@@ -1256,7 +1279,12 @@ export function parseOpPdfDeterministic(
         const inlineQtyMatch = line.match(
           /(?:Total\s+de\s+Pe[çc]as|Total\s+Pe[çc]as|Quantidade\s*(?:de\s*pe[çc]as)?|Qtd\.?\s*Pe[çc]as)\s*[:.-]?\s*(\d+(?:[.,]\d+)?)/i,
         )
-        if (inlineQtyMatch && inlineQtyMatch[1]) {
+        if (
+          inlineQtyMatch &&
+          inlineQtyMatch[1] &&
+          !isDateLikeHeaderValue(inlineQtyMatch[1]) &&
+          !inlineQtyMatch[1].includes('/')
+        ) {
           const q = parseQuantity(inlineQtyMatch[1])
           if (q > 0) {
             header.quantity = q
@@ -1283,7 +1311,7 @@ export function parseOpPdfDeterministic(
               .filter(Boolean)
             if (valCols.length > totalColIdx) {
               const candidate = valCols[totalColIdx].match(/^(\d+(?:[.,]\d+)?)/)
-              if (candidate) {
+              if (candidate && !isDateLikeHeaderValue(candidate[1])) {
                 const q = parseQuantity(candidate[1])
                 if (q > 0) {
                   header.quantity = q
@@ -1293,8 +1321,10 @@ export function parseOpPdfDeterministic(
             }
           }
 
+          // Fallback de início de linha: rejeita datas (o "12" de "14/12/2026"
+          // vazava aqui quando a linha começava pela data de entrega).
           const numMatch = nextLine.match(/^(\d+(?:[.,]\d+)?)/)
-          if (numMatch) {
+          if (numMatch && !isDateLikeHeaderValue(nextLine) && !isDateLikeHeaderValue(numMatch[1])) {
             const q = parseQuantity(numMatch[1])
             if (q > 0) {
               header.quantity = q
@@ -1307,12 +1337,17 @@ export function parseOpPdfDeterministic(
     }
   }
 
-  // Regex fallback for quantity
+  // Regex fallback for quantity — nunca aceita fragmento de data/numeração
   if (!header.quantity) {
     const qtyMatch = fullText.match(
       /(?:Total\s+de\s+Pe[çc]as|Quantidade\s*(?:de\s*pe[çc]as)?|Qtd\.?\s*(?:de\s*pe[çc]as|pe[çc]as)?|Quant\.?)\s*[:.-]?\s*(\d+(?:[.,]\d+)?)/i,
     )
-    if (qtyMatch && qtyMatch[1]) {
+    if (
+      qtyMatch &&
+      qtyMatch[1] &&
+      !isDateLikeHeaderValue(qtyMatch[1]) &&
+      !qtyMatch[1].includes('/')
+    ) {
       const q = parseQuantity(qtyMatch[1])
       if (q > 0) header.quantity = q
     }

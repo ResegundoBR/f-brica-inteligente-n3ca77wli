@@ -28,57 +28,74 @@ export function getErrorMessage(error: unknown): string {
   return msgs.length > 0 ? msgs.join(' ') : error.message || 'An unexpected error occurred.'
 }
 
-// NÃO REMOVER formatDetailedErrorMessage: usado por Suprimentos (ordens-compra, SmartReceiveDialog,
-// EntradaIntegralOcModal etc.) e pelo teste src/services/ordens-compra.test.ts. Já foi apagada por
-// engano 3 vezes e o build/teste quebrou cada vez. Aceita Record (mock simples) ou ClientResponseError.
+// NÃO REMOVER: usado por ComprasPage, EditOrdemCompraModal, OrdemCompraModal e
+// ordens-compra.test.ts (já foi apagado 3 vezes e quebrou o build 3 vezes).
+// Aceita um erro PocketBase (ou qualquer objeto/string) e um fallback opcional;
+// 2º parâmetro adicionado para Suprimentos (formatDetailedErrorMessage(err, fallback)).
+
 const FIELD_LABELS: Record<string, string> = {
   expected_date: 'Previsão de Entrega',
   'data.delivery_forecast': 'Previsão de Entrega',
   delivery_forecast: 'Previsão de Entrega',
   supplier: 'Fornecedor',
+  supplier_id: 'Fornecedor',
+  oc_number: 'Número da OC',
+  total: 'Total',
+  itens: 'Itens',
+  quantity: 'Quantidade',
+  unit_price: 'Valor Unitário',
 }
 
-// NÃO REMOVER (ver comentário acima).
-function friendlyFieldLabel(field: string): string {
-  if (FIELD_LABELS[field]) return FIELD_LABELS[field]
-  const dotted = field.replace(/\./g, '.')
-  if (FIELD_LABELS[dotted]) return FIELD_LABELS[dotted]
-  return field
+interface FieldErrorDetail {
+  code?: string
+  message: string
 }
 
-// NÃO REMOVER (ver comentário acima).
-function friendlyFieldMessage(field: string, message: string): string {
-  const lower = (message || '').toLowerCase()
-  if (field === 'expected_date' || /delivery_forecast/.test(field)) {
-    // 'Must be a valid datetime.' não contém 'invalid' — casa por 'valid' (mas não 'blank')
-    if (/invalid|valid/.test(lower) && !/blank|required|empty/.test(lower)) return 'Data inválida'
-    if (lower.includes('blank') || lower.includes('required')) return 'Obrigatório'
-  }
-  if (lower.includes('blank') || lower.includes('required') || lower.includes('empty')) {
-    return 'Obrigatório'
-  }
-  if (lower.includes('invalid')) return 'Valor inválido'
-  return message
+function friendlyFieldMessage(detail: FieldErrorDetail): string {
+  const m = `${detail.code || ''} ${detail.message}`.toLowerCase()
+  if (/(blank|required|empty)/.test(m)) return 'Obrigatório'
+  if (/invalid/.test(m)) return 'Data inválida'
+  return detail.message
 }
 
-// NÃO REMOVER (ver comentário acima).
 export function formatDetailedErrorMessage(error: unknown, fallback?: string): string {
-  if (!error || typeof error !== 'object') return fallback || 'Ocorreu um erro inesperado.'
-  const response = (error as { response?: unknown }).response
-  const data =
-    response && typeof response === 'object'
-      ? (response as { data?: unknown }).data
-      : (error as { data?: unknown }).data
-  if (!data || typeof data !== 'object') return fallback || 'Ocorreu um erro inesperado.'
+  let base = fallback || ''
+  const fieldErrors: Record<string, FieldErrorDetail> = {}
 
-  const parts: string[] = []
-  for (const [field, detail] of Object.entries(data as Record<string, unknown>)) {
-    if (detail && typeof detail === 'object' && 'message' in (detail as Record<string, unknown>)) {
-      const rawMessage = String((detail as { message: unknown }).message ?? '')
-      const label = friendlyFieldLabel(field)
-      const message = friendlyFieldMessage(field, rawMessage)
-      parts.push(`${label}: ${message}`)
+  const collect = (data: unknown) => {
+    if (!data || typeof data !== 'object') return
+    for (const [field, detail] of Object.entries(data as Record<string, unknown>)) {
+      if (
+        detail &&
+        typeof detail === 'object' &&
+        'message' in detail &&
+        typeof (detail as { message: unknown }).message === 'string'
+      ) {
+        const d = detail as { code?: unknown; message: string }
+        fieldErrors[field] = {
+          code: typeof d.code === 'string' ? d.code : undefined,
+          message: d.message,
+        }
+      }
     }
   }
-  return parts.length > 0 ? parts.join(' ') : fallback || 'Ocorreu um erro inesperado.'
+
+  if (error instanceof ClientResponseError) {
+    collect(error.response?.data)
+    if (!base) base = error.message || ''
+  } else if (error && typeof error === 'object') {
+    const response = (error as { response?: { message?: string; data?: unknown } }).response
+    collect(response?.data)
+    if (!base) base = response?.message || ''
+  } else if (typeof error === 'string' && error) {
+    base = error
+  }
+
+  const parts = Object.entries(fieldErrors).map(([field, detail]) => {
+    const label = FIELD_LABELS[field] || field
+    return `${label}: ${friendlyFieldMessage(detail)}`
+  })
+
+  if (parts.length > 0) return parts.join(' ')
+  return base || 'Erro inesperado.'
 }

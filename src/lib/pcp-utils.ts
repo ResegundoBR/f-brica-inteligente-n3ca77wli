@@ -115,6 +115,31 @@ export function formatDeadline(deliveryDateStr: string | undefined | null, statu
   return `${daysDiff} dia${daysDiff === 1 ? '' : 's'} restante${daysDiff === 1 ? '' : 's'}`
 }
 
+/**
+ * TEMPORÁRIO (reverter em 2027): true APENAS se o ano da data de vencimento for
+ * MAIOR que o ano atual (2027+). Sem janela de dias: OP com vencimento em
+ * dez/2026 fica normal; só o que vira para o ano seguinte é sinalizado.
+ * OPs concluídas ou sem data = false.
+ */
+export function isFarFutureDeadline(
+  deliveryDateStr: string | undefined | null,
+  status?: string,
+): boolean {
+  if (status === 'Concluído') return false
+  if (!deliveryDateStr) return false
+  const date = parseLocalDate(deliveryDateStr)
+  if (!date || isNaN(date.getTime())) return false
+  return date.getFullYear() > new Date().getFullYear()
+}
+
+/**
+ * TEMPORÁRIO (reverter em 2027): classes de fundo escuro (grafite) + texto claro
+ * aplicadas ao card INTEIRO do Kanban quando isFarFutureDeadline(order) é true.
+ * Para reverter em 2027, basta buscar por FAR_FUTURE_CARD_CLASSES e isFarFutureDeadline
+ * e remover os usos (uma linha por ponto de uso).
+ */
+export const FAR_FUTURE_CARD_CLASSES = 'bg-slate-900 text-slate-100'
+
 export function isOrderOverdue(
   deliveryDateStr: string | undefined | null,
   status: string,

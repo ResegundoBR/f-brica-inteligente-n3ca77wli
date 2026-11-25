@@ -36,6 +36,9 @@ import { Input } from '@/components/ui/input'
 import { format, parseISO, differenceInDays, startOfDay } from 'date-fns'
 import {
   formatDeadline,
+  formatLocalDate as formatFullDeadline,
+  isFarFutureDeadline,
+  FAR_FUTURE_CARD_CLASSES,
   isOrderOverdue,
   filterByDeadline,
   isStageDelayed,
@@ -2224,6 +2227,8 @@ function KanbanCard({
   const isPrazoEspecial = order.manual_priority === 2
   const isFixed = isEmergency || isPrazoEspecial || !!order.promised_date
   const materialStatus = getMaterialAvailabilityStatus(shortages)
+  // TEMPORÁRIO (reverter em 2027): vencimento em ano futuro (2027+) → card inteiro escuro
+  const isFarFuture = isFarFutureDeadline(order.delivery_date, order.status)
 
   const borderClass = isEmergency
     ? 'border-l-red-600 border-l-4 animate-pulse shadow-[0_0_10px_rgba(220,38,38,0.3)]'
@@ -2235,17 +2240,19 @@ function KanbanCard({
           ? 'border-l-purple-500'
           : 'border-l-blue-500'
 
-  const cardBgClass = isEmergency
-    ? 'bg-red-50/80 dark:bg-red-950/20 ring-1 ring-red-500/50 text-foreground'
-    : isPrazoEspecial
-      ? 'bg-lime-400 text-black'
-      : color === 'neon-orange'
-        ? 'bg-orange-500 text-white border-orange-600'
-        : color === 'yellow'
-          ? 'bg-yellow-400 text-slate-900 border-yellow-500 shadow-yellow-400/20'
-          : color === 'purple'
-            ? 'bg-purple-50/50 dark:bg-purple-950/10 text-foreground'
-            : 'bg-card text-foreground'
+  const cardBgClass = isFarFuture
+    ? FAR_FUTURE_CARD_CLASSES
+    : isEmergency
+      ? 'bg-red-50/80 dark:bg-red-950/20 ring-1 ring-red-500/50 text-foreground'
+      : isPrazoEspecial
+        ? 'bg-lime-400 text-black'
+        : color === 'neon-orange'
+          ? 'bg-orange-500 text-white border-orange-600'
+          : color === 'yellow'
+            ? 'bg-yellow-400 text-slate-900 border-yellow-500 shadow-yellow-400/20'
+            : color === 'purple'
+              ? 'bg-purple-50/50 dark:bg-purple-950/10 text-foreground'
+              : 'bg-card text-foreground'
 
   return (
     <Card
@@ -2290,9 +2297,11 @@ function KanbanCard({
                   as="span"
                   className={cn(
                     'text-xs font-mono font-medium shrink-0',
-                    color === 'neon-orange' || color === 'yellow'
-                      ? 'opacity-85'
-                      : 'text-muted-foreground',
+                    isFarFuture
+                      ? 'text-slate-400'
+                      : color === 'neon-orange' || color === 'yellow'
+                        ? 'opacity-85'
+                        : 'text-muted-foreground',
                   )}
                 >
                   (OP {order.op_number})
@@ -2385,7 +2394,11 @@ function KanbanCard({
         <div
           className={cn(
             'text-xs line-clamp-1',
-            color === 'neon-orange' || color === 'yellow' ? 'opacity-90' : 'text-muted-foreground',
+            isFarFuture
+              ? 'text-slate-300'
+              : color === 'neon-orange' || color === 'yellow'
+                ? 'opacity-90'
+                : 'text-muted-foreground',
           )}
         >
           {order.expand?.client_id?.name || order.client_name}
@@ -2393,7 +2406,11 @@ function KanbanCard({
         <div
           className={cn(
             'text-xs font-medium line-clamp-1',
-            color === 'neon-orange' || color === 'yellow' ? '' : 'text-foreground',
+            isFarFuture
+              ? 'text-slate-100'
+              : color === 'neon-orange' || color === 'yellow'
+                ? ''
+                : 'text-foreground',
           )}
         >
           {order.op_type === 'Assistência'
@@ -2402,6 +2419,12 @@ function KanbanCard({
               ? order.manual_product_name || 'Produto Especial'
               : order.expand?.product_id?.name || 'S/Produto'}
         </div>
+        {isFarFuture && order.delivery_date && (
+          <div className="text-[10px] font-medium text-slate-300 inline-flex items-center gap-1">
+            <CalendarIcon className="size-3 shrink-0" />
+            Venc. {formatFullDeadline(order.delivery_date)}
+          </div>
+        )}
         {(order.delivered_quantity || 0) > 0 && (
           <div className="mt-0.5">
             <span
@@ -2442,17 +2465,21 @@ function CompactKanbanCard({
   const isFixed = isEmergency || isPrazoEspecial || !!order.promised_date
   const materialStatus = getMaterialAvailabilityStatus(shortages)
 
-  const bgClass = isEmergency
-    ? 'bg-red-600 text-white animate-pulse ring-2 ring-red-500 ring-offset-1 ring-offset-background'
-    : isPrazoEspecial
-      ? 'bg-lime-400 text-black'
-      : color === 'neon-orange'
-        ? 'bg-orange-500 text-white animate-pulse'
-        : color === 'purple'
-          ? 'bg-purple-500 text-white'
-          : color === 'yellow'
-            ? 'bg-yellow-400 text-slate-900 shadow-[0_0_8px_rgba(250,204,21,0.8)] dark:shadow-[0_0_8px_rgba(250,204,21,0.5)]'
-            : 'bg-blue-500 text-white'
+  // TEMPORÁRIO (reverter em 2027): vencimento em ano futuro (2027+) → card inteiro escuro
+  const isFarFuture = isFarFutureDeadline(order.delivery_date, order.status)
+  const bgClass = isFarFuture
+    ? FAR_FUTURE_CARD_CLASSES
+    : isEmergency
+      ? 'bg-red-600 text-white animate-pulse ring-2 ring-red-500 ring-offset-1 ring-offset-background'
+      : isPrazoEspecial
+        ? 'bg-lime-400 text-black'
+        : color === 'neon-orange'
+          ? 'bg-orange-500 text-white animate-pulse'
+          : color === 'purple'
+            ? 'bg-purple-500 text-white'
+            : color === 'yellow'
+              ? 'bg-yellow-400 text-slate-900 shadow-[0_0_8px_rgba(250,204,21,0.8)] dark:shadow-[0_0_8px_rgba(250,204,21,0.5)]'
+              : 'bg-blue-500 text-white'
 
   return (
     <div
@@ -2567,6 +2594,11 @@ function CompactKanbanCard({
           size="compact"
           className="my-0.5"
         />
+      )}
+      {isFarFuture && order.delivery_date && (
+        <span className="block truncate w-full font-normal text-[6.5px] text-slate-300">
+          Venc. {formatFullDeadline(order.delivery_date)}
+        </span>
       )}
       <span className="block truncate w-full font-normal opacity-90 text-[7px]">
         {order.expand?.client_id?.name || order.client_name}

@@ -60,6 +60,15 @@ export interface DistributeOcFullPayload {
   /** Frete pago na entrega; rateado por VALOR entre os itens selecionados */
   traceability?: {
     freight?: number
+    /** Chave que identifica esta entrega (rateio por valor) */
+    freight_key?: string
+    /** Itens selecionados da entrega, para o backend ratear o frete por VALOR */
+    freight_items?: Array<{
+      key: string
+      quantity: number
+      unit_price: number
+      description?: string
+    }>
   }
 }
 

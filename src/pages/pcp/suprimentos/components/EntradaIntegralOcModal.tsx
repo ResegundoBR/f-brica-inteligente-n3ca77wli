@@ -30,12 +30,15 @@ import {
   ArrowRight,
   ShieldAlert,
   GitCompare,
+  Truck,
 } from 'lucide-react'
+import { Input } from '@/components/ui/input'
 import { useToast } from '@/hooks/use-toast'
 import { getErrorMessage } from '@/lib/pocketbase/errors'
 import { formatQuantity } from '@/lib/utils'
 import { NoTranslate } from '@/components/NoTranslate'
 import { distributeOcFull } from '@/services/material-distribution'
+import { FreightApportionPreview, FreightApportionRow } from './FreightApportionPreview'
 
 export interface ItemPrevia {
   ocItem: OrdemCompraItem
@@ -78,6 +81,7 @@ export function EntradaIntegralOcModal({
   const [loading, setLoading] = useState(false)
   const [selectedMap, setSelectedMap] = useState<Record<string, boolean>>({})
   const [reconcileOnly, setReconcileOnly] = useState(false)
+  const [freight, setFreight] = useState('')
   const { toast } = useToast()
 
   // Montar prévia dos itens da OC
@@ -180,6 +184,7 @@ export function EntradaIntegralOcModal({
     // Se a OC tem itens com estoque físico já presente, sugere conciliação como padrão opcional ou mantém false
     // A especificação diz: toggle claro por OC (ex. 'O material já está no estoque — apenas conciliar registros')
     // Inicializamos como false por padrão (ou true se todos os pendentes já têm estoque suficiente)
+    setFreight('')
     setReconcileOnly(hasLikelyReconcileContext)
   }, [open, previas])
 
@@ -199,10 +204,36 @@ export function EntradaIntegralOcModal({
 
   const selectedCount = pendingPrevias.filter((p) => selectedMap[p.ocItem.id]).length
 
+  // Frete (R$) — apenas no modo entrada (conciliação não cria estoque, logo não tem frete)
+  const numFreight = Number(freight) || 0
+  const selectedFreightPrevias = reconcileOnly
+    ? []
+    : pendingPrevias.filter((p) => selectedMap[p.ocItem.id])
+
+  // Rateio proporcional ao VALOR de cada item selecionado (quantidade × unit_price da OC),
+  // mesma fórmula do backend (fallback por quantidade quando o item não tem preço)
+  const freightRows = useMemo<FreightApportionRow[]>(() => {
+    if (numFreight <= 0 || selectedFreightPrevias.length === 0) return []
+    const weights = selectedFreightPrevias.map((p) => {
+      const unitPrice = Number(p.ocItem.unit_price) || 0
+      const w = unitPrice > 0 ? unitPrice * p.saldoQty : p.saldoQty
+      return { p, unitPrice, w: Math.max(0, w) }
+    })
+    const totalWeight = weights.reduce((s, x) => s + x.w, 0)
+    if (totalWeight <= 0) return []
+    return weights.map(({ p, unitPrice, w }) => ({
+      key: p.ocItem.id,
+      label: `${p.code ? p.code + ' — ' : ''}${p.description || 'Material'}`,
+      quantity: p.saldoQty,
+      unitPrice,
+      freightShare: Math.round(((numFreight * w) / totalWeight) * 10000) / 10000,
+      totalValue: unitPrice > 0 ? unitPrice * p.saldoQty : 0,
+    }))
+  }, [numFreight, selectedFreightPrevias])
+
   const handleConfirm = async () => {
     if (!oc) return
     const selectedIds = Object.keys(selectedMap).filter((id) => selectedMap[id])
-
     if (selectedIds.length === 0) {
       toast({
         title: 'Nenhum item selecionado',
@@ -212,12 +243,39 @@ export function EntradaIntegralOcModal({
       return
     }
 
+    // Com frete informado, o envio exige ao menos um item selecionado para receber o rateio
+    if (!reconcileOnly && numFreight > 0 && selectedIds.length === 0) {
+      toast({
+        title: 'Frete sem item selecionado',
+        description:
+          'Com frete preenchido é obrigatório selecionar ao menos um item para receber o rateio.',
+        variant: 'destructive',
+      })
+      return
+    }
+
     setLoading(true)
     try {
+      // Frete rateado por VALOR entre os itens selecionados (mesmo formato do Recebimento Inteligente)
+      const traceability =
+        !reconcileOnly && numFreight > 0 && freightRows.length > 0
+          ? {
+              freight: numFreight,
+              freight_key: freightRows[0].key,
+              freight_items: freightRows.map((r) => ({
+                key: r.key,
+                quantity: r.quantity,
+                unit_price: r.unitPrice,
+                description: r.label,
+              })),
+            }
+          : undefined
+
       const res = await distributeOcFull({
         oc_id: oc.id,
         selected_item_ids: selectedIds,
         reconcile_only: reconcileOnly,
+        traceability,
       })
 
       if (res.oc_marked_received) {
@@ -336,6 +394,36 @@ export function EntradaIntegralOcModal({
               desmarcados por padrão. Desmarque qualquer item cujo material ainda não tenha chegado.
             </div>
           </div>
+
+          {/* Frete (apenas no modo entrada — conciliação não cria estoque) */}
+          {!reconcileOnly && (
+            <div className="p-3 rounded-lg border border-slate-300 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80 space-y-3">
+              <div className="flex items-start gap-2">
+                <Truck className="size-4 text-slate-500 shrink-0 mt-1.5" />
+                <div className="flex-1 space-y-1">
+                  <Label htmlFor="frete-entrada-integral" className="text-xs font-medium">
+                    Frete (R$)
+                  </Label>
+                  <Input
+                    id="frete-entrada-integral"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    className="h-9 text-sm notranslate max-w-[180px]"
+                    translate="no"
+                    value={freight}
+                    onChange={(e) => setFreight(e.target.value)}
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Opcional. Informado, o frete será rateado entre os itens selecionados na
+                    proporção do valor de cada um (quantidade × preço unitário).
+                  </p>
+                </div>
+              </div>
+              <FreightApportionPreview freight={numFreight} rows={freightRows} />
+            </div>
+          )}
 
           {/* Tabela de Itens */}
           <div className="border rounded-lg overflow-hidden bg-white dark:bg-slate-900 shadow-xs">
@@ -485,12 +573,50 @@ export function EntradaIntegralOcModal({
               </TableBody>
             </Table>
           </div>
+
+          {/* Frete + prévia do rateio por VALOR — apenas no modo entrada (conciliação não cria estoque) */}
+          {!reconcileOnly && (
+            <div className="p-3.5 rounded-lg border bg-slate-50/80 dark:bg-slate-900/80 border-slate-300 dark:border-slate-800 space-y-3">
+              <div className="flex items-end gap-3 flex-wrap">
+                <div className="w-40 space-y-1">
+                  <Label htmlFor="entrada-integral-frete" className="text-xs font-semibold">
+                    Frete (R$) <span className="text-muted-foreground font-normal">(opcional)</span>
+                  </Label>
+                  <Input
+                    id="entrada-integral-frete"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    inputMode="decimal"
+                    className="h-9 text-sm notranslate"
+                    translate="no"
+                    value={freight}
+                    onChange={(e) => setFreight(e.target.value)}
+                  />
+                </div>
+                <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground pb-2">
+                  <Truck className="size-3.5 shrink-0" />
+                  <span>
+                    Rateado proporcionalmente ao valor de cada item selecionado (quantidade × preço
+                    unit. da OC) e gravado no custo do material recebido.
+                  </span>
+                </div>
+              </div>
+              <FreightApportionPreview freight={numFreight} rows={freightRows} />
+            </div>
+          )}
         </div>
 
         <DialogFooter className="p-4 border-t bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between sm:justify-between w-full">
           <div className="text-xs text-muted-foreground">
             <strong>{selectedCount}</strong> de <strong>{pendingPrevias.length}</strong> itens
             selecionados para {reconcileOnly ? 'conciliação' : 'entrada'}.
+            {!reconcileOnly && numFreight > 0 && selectedCount === 0 && (
+              <span className="block text-amber-700 dark:text-amber-400">
+                Selecione ao menos um item para ratear o frete informado.
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <Button

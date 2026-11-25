@@ -28,42 +28,33 @@ export function getErrorMessage(error: unknown): string {
   return msgs.length > 0 ? msgs.join(' ') : error.message || 'An unexpected error occurred.'
 }
 
-// NÃO REMOVER: usado por ComprasPage, EditOrdemCompraModal, OrdemCompraModal e
-// ordens-compra.test.ts (já foi apagado 3 vezes e quebrou o build 3 vezes).
-// Aceita um erro PocketBase (ou qualquer objeto/string) e um fallback opcional;
-// 2º parâmetro adicionado para Suprimentos (formatDetailedErrorMessage(err, fallback)).
-
+// NÃO REMOVER — usado por Suprimentos (ComprasPage, EditOrdemCompraModal, OrdemCompraModal)
+// e por src/services/ordens-compra.test.ts. Já foi apagado 3x manualmente e 3x quebrou o build.
 const FIELD_LABELS: Record<string, string> = {
   expected_date: 'Previsão de Entrega',
-  'data.delivery_forecast': 'Previsão de Entrega',
   delivery_forecast: 'Previsão de Entrega',
   supplier: 'Fornecedor',
   supplier_id: 'Fornecedor',
-  oc_number: 'Número da OC',
-  total: 'Total',
-  itens: 'Itens',
+  code: 'Código',
+  description: 'Descrição',
   quantity: 'Quantidade',
-  unit_price: 'Valor Unitário',
+  unit_price: 'Preço Unitário',
+  total: 'Total',
+  oc_number: 'Número da OC',
 }
 
-interface FieldErrorDetail {
-  code?: string
-  message: string
-}
-
-function friendlyFieldMessage(detail: FieldErrorDetail): string {
-  const m = `${detail.code || ''} ${detail.message}`.toLowerCase()
-  if (/(blank|required|empty)/.test(m)) return 'Obrigatório'
-  if (/invalid/.test(m)) return 'Data inválida'
-  return detail.message
+function friendlyFieldMessage(message: string): string {
+  if (/valid datetime|invalid date/i.test(message)) return 'Data inválida'
+  if (/cannot be blank|required|empty/i.test(message)) return 'Obrigatório'
+  return message
 }
 
 export function formatDetailedErrorMessage(error: unknown, fallback?: string): string {
-  let base = fallback || ''
-  const fieldErrors: Record<string, FieldErrorDetail> = {}
-
-  const collect = (data: unknown) => {
-    if (!data || typeof data !== 'object') return
+  // Duck-typing: aceita ClientResponseError OU objeto com shape { response: { message, data } }
+  const anyErr = error as { response?: { message?: string; data?: unknown }; message?: string }
+  const data = anyErr?.response?.data
+  const fieldErrors: FieldErrors = {}
+  if (data && typeof data === 'object') {
     for (const [field, detail] of Object.entries(data as Record<string, unknown>)) {
       if (
         detail &&
@@ -71,31 +62,15 @@ export function formatDetailedErrorMessage(error: unknown, fallback?: string): s
         'message' in detail &&
         typeof (detail as { message: unknown }).message === 'string'
       ) {
-        const d = detail as { code?: unknown; message: string }
-        fieldErrors[field] = {
-          code: typeof d.code === 'string' ? d.code : undefined,
-          message: d.message,
-        }
+        fieldErrors[field] = (detail as { message: string }).message
       }
     }
   }
-
-  if (error instanceof ClientResponseError) {
-    collect(error.response?.data)
-    if (!base) base = error.message || ''
-  } else if (error && typeof error === 'object') {
-    const response = (error as { response?: { message?: string; data?: unknown } }).response
-    collect(response?.data)
-    if (!base) base = response?.message || ''
-  } else if (typeof error === 'string' && error) {
-    base = error
+  const entries = Object.entries(fieldErrors)
+  if (entries.length > 0) {
+    return entries
+      .map(([field, msg]) => `${FIELD_LABELS[field] || field}: ${friendlyFieldMessage(msg)}`)
+      .join(' ')
   }
-
-  const parts = Object.entries(fieldErrors).map(([field, detail]) => {
-    const label = FIELD_LABELS[field] || field
-    return `${label}: ${friendlyFieldMessage(detail)}`
-  })
-
-  if (parts.length > 0) return parts.join(' ')
-  return base || 'Erro inesperado.'
+  return anyErr?.message || fallback || 'An unexpected error occurred.'
 }
